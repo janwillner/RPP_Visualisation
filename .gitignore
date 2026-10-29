@@ -3,3 +3,14 @@ dist/
 *.log
 .vite/
 coverage/
+
+# TwinCAT build output and local files
+plc/**/_Boot/
+plc/**/_CompileInfo/
+plc/**/_Libraries/
+plc/**/*.bak
+plc/**/*.~u
+plc/**/*.tclrs
+plc/**/*.tmc
+plc/**/*.library
+plc/**/.vs/

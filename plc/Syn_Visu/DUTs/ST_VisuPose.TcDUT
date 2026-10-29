@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuPose" Id="{40d26850-cdd1-4e05-a2c6-166fa3367ab7}">
+    <Declaration><![CDATA[TYPE ST_VisuPose :
+STRUCT
+	(* Pose in the MCS: right-handed, Z up, X in product flow direction.
+	   Rotation order R = Rz(fRz) * Ry(fRy) * Rx(fRx). *)
+	fX : LREAL; // mm
+	fY : LREAL; // mm
+	fZ : LREAL; // mm
+	fRx : LREAL; // degrees
+	fRy : LREAL; // degrees
+	fRz : LREAL; // degrees
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

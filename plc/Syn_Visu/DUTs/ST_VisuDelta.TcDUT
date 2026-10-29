@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuDelta" Id="{f1ffe7ae-62d8-4786-adbc-0f6bd9b2b7aa}">
+    <Declaration><![CDATA[TYPE ST_VisuDelta :
+STRUCT
+	(* One visualised Delta robot. Register the instance's symbol path in the manifest with
+	   eType := E_VisuComponentType.DELTA. *)
+	stConfig : ST_VisuDeltaConfig; // read at discovery and after nConfigVersion changes
+	stState : ST_VisuDeltaState; // read every gateway cycle
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

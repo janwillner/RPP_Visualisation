@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuPlanarPose" Id="{7d4ef9b3-977d-4a92-ae2d-76dab781ea87}">
+    <Declaration><![CDATA[TYPE ST_VisuPlanarPose :
+STRUCT
+	(* Position plus rotation about Z in the MCS, used for TCPs and product latch poses. *)
+	fX : LREAL; // mm
+	fY : LREAL; // mm
+	fZ : LREAL; // mm
+	fRz : LREAL; // degrees
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

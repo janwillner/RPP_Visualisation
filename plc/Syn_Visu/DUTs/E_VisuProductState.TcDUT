@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="E_VisuProductState" Id="{64577c8c-34a1-4bb1-a1c1-0d44c8d01688}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_VisuProductState :
+(
+	(* Values are part of the gateway contract: append, never renumber. *)
+	DETECTED := 0,
+	ASSIGNED := 1,
+	PICKED := 2,
+	REJECTED := 3,
+	PLACED := 4
+) UINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

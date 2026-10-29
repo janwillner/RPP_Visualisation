@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuWindow" Id="{0a88d6bc-bd16-493d-b476-096429b44384}">
+    <Declaration><![CDATA[TYPE ST_VisuWindow :
+STRUCT
+	nConveyorId : UDINT; // manifest id of the conveyor
+	fStart : LREAL; // mm along the conveyor's local X (belt coordinates, not MCS)
+	fEnd : LREAL; // mm along the conveyor's local X
+	eKind : E_VisuWindowKind;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

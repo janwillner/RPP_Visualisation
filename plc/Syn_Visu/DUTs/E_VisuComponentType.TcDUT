@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="E_VisuComponentType" Id="{5fe424ae-47e7-4347-ba43-b69ed2ed1896}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_VisuComponentType :
+(
+	(* Values are part of the gateway contract: append, never renumber. *)
+	NONE := 0,
+	CONVEYOR := 1,
+	DELTA := 2
+) UINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuDeltaState" Id="{b9749b2c-cc76-421c-8b8d-a8b13fe1247b}">
+    <Declaration><![CDATA[TYPE ST_VisuDeltaState :
+STRUCT
+	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (see F_VisuDcTime)
+	aAxisPositions : ARRAY[0..3] OF LREAL; // raw actual axis positions, degrees; [3] only with bHasRotationAxis
+	stActualTcp : ST_VisuPlanarPose; // MCS
+	stSetpointTcp : ST_VisuPlanarPose; // MCS
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

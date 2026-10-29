@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuProduct" Id="{e2da59ee-c73b-414a-81df-1b52d5414d95}">
+    <Declaration><![CDATA[TYPE ST_VisuProduct :
+STRUCT
+	nId : UDINT;
+	bValid : BOOL; // invalid entries are not shown
+	stLatchPose : ST_VisuPlanarPose; // MCS, bottom centre of the product at latch time
+	fLatchEncoder : LREAL; // conveyor fEncoder at latch time, mm
+	eState : E_VisuProductState;
+	nRobotId : UDINT; // manifest id of the assigned robot, 0 = none
+	nProductType : UDINT; // id in the conveyor's aProductTypes
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

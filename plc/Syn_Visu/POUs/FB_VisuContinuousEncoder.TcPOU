@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="FB_VisuContinuousEncoder" Id="{fce68e43-7d78-4e50-a1c6-63ceee8adc24}" SpecialFunc="None">
+    <Declaration><![CDATA[(* Turns a modulo axis position into the continuous position required for fEncoder, so that
+   latch + (encoder - latch encoder) stays correct across the wrap. Call once per cycle.
+   The axis must move less than half a modulo period per cycle. *)
+FUNCTION_BLOCK FB_VisuContinuousEncoder
+VAR_INPUT
+	fModuloPosition : LREAL; // mm, in [0, fModuloPeriod)
+	fModuloPeriod : LREAL; // mm; <= 0 passes fModuloPosition through unchanged
+	bReset : BOOL; // TRUE: restart the continuous position at fModuloPosition
+END_VAR
+VAR_OUTPUT
+	fPosition : LREAL; // mm, continuous
+END_VAR
+VAR
+	fLastModuloPosition : LREAL;
+	bInitialised : BOOL;
+	fDelta : LREAL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF bReset OR NOT bInitialised OR fModuloPeriod <= 0 THEN
+	fPosition := fModuloPosition;
+	fLastModuloPosition := fModuloPosition;
+	bInitialised := TRUE;
+	RETURN;
+END_IF
+
+fDelta := fModuloPosition - fLastModuloPosition;
+IF fDelta > fModuloPeriod / 2 THEN
+	fDelta := fDelta - fModuloPeriod;
+ELSIF fDelta < -fModuloPeriod / 2 THEN
+	fDelta := fDelta + fModuloPeriod;
+END_IF
+
+fPosition := fPosition + fDelta;
+fLastModuloPosition := fModuloPosition;]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

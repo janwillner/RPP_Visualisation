@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuManifestEntry" Id="{c2d04939-117c-4835-b659-8fbbadb68549}">
+    <Declaration><![CDATA[TYPE ST_VisuManifestEntry :
+STRUCT
+	nId : UDINT; // unique within the manifest, > 0; used for all cross-references
+	eType : E_VisuComponentType;
+	sName : STRING(80); // display name
+	sPath : STRING(255); // symbol path of the ST_VisuConveyor / ST_VisuDelta instance, e.g. 'MAIN.stInfeed'
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

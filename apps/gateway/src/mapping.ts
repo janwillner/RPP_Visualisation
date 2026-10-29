@@ -22,7 +22,7 @@ import {
   type ST_VisuPose,
 } from "./plc-contract";
 
-/** Maps PLC structures (Tc3_Visu) to the neutral protocol model. */
+/** Maps PLC structures (Syn_Visu) to the neutral protocol model. */
 
 export interface ComponentIdentity {
   id: number;

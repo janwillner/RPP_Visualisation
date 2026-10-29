@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuManifest" Id="{f2970120-750e-4367-80cb-e76dd2e1d114}">
+    <Declaration><![CDATA[TYPE ST_VisuManifest :
+STRUCT
+	(* Discovery entry point. The application declares one instance at the fixed symbol
+	   GVL_Visu.stManifest; the gateway starts reading there. *)
+	nProtocolVersion : UINT := GVL_VisuConstants.nProtocolVersion;
+	(* Increment after any change to the manifest or to a component's stConfig. *)
+	nConfigVersion : UDINT := 1;
+	nCount : UINT; // entries [0..nCount-1] are evaluated
+	aEntries : ARRAY[0..GVL_VisuParam.nMaxManifestEntries - 1] OF ST_VisuManifestEntry;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

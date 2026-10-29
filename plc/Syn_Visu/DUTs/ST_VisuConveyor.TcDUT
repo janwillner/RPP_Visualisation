@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuConveyor" Id="{bd80f3b2-1ef4-41be-952b-58279511f4f9}">
+    <Declaration><![CDATA[TYPE ST_VisuConveyor :
+STRUCT
+	(* One visualised conveyor. Register the instance's symbol path in the manifest with
+	   eType := E_VisuComponentType.CONVEYOR. *)
+	stConfig : ST_VisuConveyorConfig; // read at discovery and after nConfigVersion changes
+	stState : ST_VisuConveyorState; // read every gateway cycle
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

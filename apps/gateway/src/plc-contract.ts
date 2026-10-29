@@ -1,5 +1,5 @@
 /**
- * Shapes of the PLC-side interface structures (library Tc3_Visu) as a symbol reader returns them:
+ * Shapes of the PLC-side interface structures (library Syn_Visu) as a symbol reader returns them:
  * structs as objects keyed by member name, arrays as JS arrays, ULINT as bigint.
  *
  * Member names follow the Beckhoff Hungarian naming convention used in the PLC library.
@@ -16,7 +16,7 @@ export const PLC_TYPES = {
 } as const;
 
 /** E_VisuComponentType */
-export const E_VisuComponentType = { CONVEYOR: 1, DELTA: 2 } as const;
+export const E_VisuComponentType = { NONE: 0, CONVEYOR: 1, DELTA: 2 } as const;
 
 /** E_VisuProductState */
 export const E_VisuProductState = { DETECTED: 0, ASSIGNED: 1, PICKED: 2, REJECTED: 3, PLACED: 4 } as const;

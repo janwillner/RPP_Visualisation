@@ -26,7 +26,7 @@ A read-only web visualisation of packaging machines. It configures itself from w
   - `createGateway` does discovery (manifest at `GVL_Visu.stManifest` → protocol version check → type check per entry → read `stConfig`) and cyclic sum-reads of every `stState` together with `nConfigVersion`. It emits `status` / `config` / `state` messages.
   - **Seam:** `SymbolAccess` (read / typeOf / sumRead). It has two adapters: `AdsSymbolAccess` (ads-client) and `InMemoryPlc`.
   - The simulator is just an `InMemoryPlc` preset that changes values on every `step`, so it runs through real discovery.
-  - PLC struct shapes and their mapping to the neutral model live in `plc-contract.ts` and `mapping.ts`. The ST declarations are in `docs/plc-contract.md`; keep all three in sync.
+  - PLC struct shapes and their mapping to the neutral model live in `plc-contract.ts` and `mapping.ts`. The PLC library `Syn_Visu` (TwinCAT project in `plc/`) implements the contract described in `docs/plc-contract.md`; keep library, `plc-contract.ts` and doc in sync. PLC code is edited only through the TwinCAT MCP tools.
 - `apps/web`: React + React Three Fiber.
   - **Seam:** `buildScene(config, snapshots, renderTime)` in `src/scene/scene-model.ts` is pure. It does interpolation by `tRel`, latch + encoder product positions, the product display lifecycle (normal / atTcp / placeholder / missed), Delta forward kinematics, windows and work areas, and MCS → renderer conversion (`(x, y, z)mm → (x, z, −y)m`).
   - `SceneView.tsx` only draws the model and updates transforms per frame via refs. React re-renders only when the set of objects changes.

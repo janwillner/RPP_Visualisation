@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuWorkArea" Id="{9cfdc47d-038c-4f90-a1af-2c4015c0e979}">
+    <Declaration><![CDATA[TYPE ST_VisuWorkArea :
+STRUCT
+	(* Limit shape the PLC enforces: vertical cylinder in the robot frame, optional cone below. *)
+	fRadius : LREAL; // mm
+	fZMin : LREAL; // mm relative to the base (below the base: negative)
+	fZMax : LREAL; // mm relative to the base
+	fConeHeight : LREAL; // mm below fZMin; 0 = no cone
+	fConeBottomRadius : LREAL; // mm
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

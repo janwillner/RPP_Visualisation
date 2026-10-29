@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuConveyorConfig" Id="{22a951c6-fa54-4f7b-a3ef-19a9b8153bd3}">
+    <Declaration><![CDATA[TYPE ST_VisuConveyorConfig :
+STRUCT
+	stPose : ST_VisuPose; // belt start on the belt surface; local +X = conveying direction
+	fLength : LREAL; // mm
+	fWidth : LREAL; // mm
+	nProductTypeCount : UINT;
+	aProductTypes : ARRAY[0..GVL_VisuParam.nMaxProductTypes - 1] OF ST_VisuProductType;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

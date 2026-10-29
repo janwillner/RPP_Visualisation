@@ -15,7 +15,7 @@ import {
 } from "./plc-contract";
 import type { InMemoryPlc } from "./in-memory-plc";
 
-/** Library defaults (constants in Tc3_Visu, overridable per project). */
+/** Library defaults (constants in Syn_Visu, overridable per project). */
 export const MAX_MANIFEST_ENTRIES = 32;
 export const MAX_PRODUCTS = 128;
 export const MAX_PRODUCT_TYPES = 8;

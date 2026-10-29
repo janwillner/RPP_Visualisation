@@ -140,6 +140,16 @@ describe("gateway discovery", () => {
     ]);
   });
 
+  it("accepts interface types reported with the library namespace", async () => {
+    const t = setup([infeed, robot]);
+    t.plc.define(robot.path, "Syn_Visu.ST_VisuDelta", robot.value);
+    await t.gateway.cycle();
+
+    const [config] = t.configs();
+    expect(config!.errors).toEqual([]);
+    expect(config!.components.map((c) => c.id)).toEqual([10, 20]);
+  });
+
   it("reports a manifest entry whose symbol path does not exist", async () => {
     const t = setup([infeed, robot]);
     t.plc.remove(infeed.path);

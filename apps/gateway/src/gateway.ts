@@ -81,7 +81,7 @@ export function createGateway({ plc, sourceId }: GatewayOptions): Gateway {
     if (manifest.nProtocolVersion !== PROTOCOL_VERSION) {
       errors.push({
         path: MANIFEST_PATH,
-        message: `PLC reports protocol version ${manifest.nProtocolVersion}, but this gateway expects ${PROTOCOL_VERSION}. Update the Tc3_Visu library or the gateway.`,
+        message: `PLC reports protocol version ${manifest.nProtocolVersion}, but this gateway expects ${PROTOCOL_VERSION}. Update the Syn_Visu library or the gateway.`,
       });
       return result();
     }
@@ -98,7 +98,7 @@ export function createGateway({ plc, sourceId }: GatewayOptions): Gateway {
         continue;
       }
       const actualType = await plc.typeOf(entry.sPath);
-      if (actualType !== PLC_TYPES[kind]) {
+      if (!isExpectedType(actualType, PLC_TYPES[kind])) {
         errors.push({
           componentId: entry.nId,
           path: entry.sPath,
@@ -196,3 +196,8 @@ export function createGateway({ plc, sourceId }: GatewayOptions): Gateway {
 }
 
 const CONFIG_VERSION_PATH = `${MANIFEST_PATH}.nConfigVersion`;
+
+/** Library types may be reported with their namespace, e.g. `Syn_Visu.ST_VisuDelta`. */
+function isExpectedType(actual: string | undefined, expected: string): boolean {
+  return actual === expected || (actual?.endsWith(`.${expected}`) ?? false);
+}
