@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   GatewayMessageSchema,
+  PROTOCOL_VERSION,
   type ConfigMessage,
   type GatewayMessage,
   type StateMessage,
@@ -21,7 +22,9 @@ import {
 function setup(components: MachineComponent[], options?: Parameters<typeof defineMachine>[2]) {
   const plc = new InMemoryPlc();
   defineMachine(plc, components, options);
-  const gateway = createGateway({ plc, sourceId: "plc1" });
+  // Gateway clock in ms, advanced explicitly by tests.
+  let time = 0;
+  const gateway = createGateway({ plc, sourceId: "plc1", now: () => time });
   const messages: GatewayMessage[] = [];
   gateway.subscribe((m) => {
     // Every emitted message must satisfy the browser contract.
@@ -31,6 +34,7 @@ function setup(components: MachineComponent[], options?: Parameters<typeof defin
     plc,
     gateway,
     messages,
+    advance: (ms: number) => (time += ms),
     configs: () => messages.filter((m): m is ConfigMessage => m.kind === "config"),
     states: () => messages.filter((m): m is StateMessage => m.kind === "state"),
     statuses: () => messages.filter((m): m is StatusMessage => m.kind === "status"),
@@ -61,11 +65,6 @@ const robot: MachineComponent = {
     effectorRadius: 50,
     upperArmLength: 350,
     lowerArmLength: 800,
-    axes: [
-      { fAngleOffset: 1, nDirection: 1 },
-      { fAngleOffset: 2, nDirection: -1 },
-      { fAngleOffset: 3, nDirection: 1 },
-    ],
     windows: [{ nConveyorId: 10, fStart: 1200, fEnd: 1800, eKind: E_VisuWindowKind.PICK }],
   }),
 };
@@ -101,11 +100,6 @@ describe("gateway discovery", () => {
         upperArmLength: 350,
         lowerArmLength: 800,
         hasRotationAxis: false,
-        axes: [
-          { offset: 1, direction: 1 },
-          { offset: 2, direction: -1 },
-          { offset: 3, direction: 1 },
-        ],
         workArea: { radius: 600, zMin: -1100, zMax: -600, coneHeight: 0, coneBottomRadius: 0 },
         windows: [{ conveyorId: 10, start: 1200, end: 1800, kind: "pick" }],
       },
@@ -120,8 +114,23 @@ describe("gateway discovery", () => {
     const [config] = t.configs();
     expect(config!.components).toEqual([]);
     expect(config!.errors).toHaveLength(1);
-    expect(config!.errors[0]!.message).toMatch(/protocol version 99.*expects 1/i);
+    expect(config!.errors[0]!.message).toMatch(new RegExp(`protocol version 99.*expects ${PROTOCOL_VERSION}`, "i"));
     expect(t.states()).toEqual([]);
+  });
+
+  it("recovers once the PLC reports the expected protocol version, without a config version change", async () => {
+    const t = setup([infeed, robot], { protocolVersion: 99 });
+    await t.gateway.cycle();
+    expect(t.configs()[0]!.components).toEqual([]);
+
+    // E.g. an online change of the library: same config version, new protocol version.
+    t.plc.get<ST_VisuManifest>(MANIFEST_PATH).nProtocolVersion = PROTOCOL_VERSION;
+    await t.gateway.cycle();
+
+    const latest = t.configs().at(-1)!;
+    expect(latest.errors).toEqual([]);
+    expect(latest.components.map((c) => c.id)).toEqual([10, 20]);
+    expect(t.states()).toHaveLength(1);
   });
 
   it("skips and reports a manifest entry whose symbol has the wrong data type, keeping the rest", async () => {
@@ -178,6 +187,35 @@ describe("gateway discovery", () => {
 });
 
 describe("gateway config changes", () => {
+  it("publishes a config changed live in the PLC without a version bump on the next recheck (1 s)", async () => {
+    const t = setup([infeed, robot]);
+    await t.gateway.cycle();
+
+    t.plc.get<ST_VisuDelta>(robot.path).stConfig.stWorkArea.fRadius = 800;
+    t.advance(500);
+    await t.gateway.cycle();
+    expect(t.configs()).toHaveLength(1);
+
+    t.advance(500);
+    await t.gateway.cycle();
+    const configs = t.configs();
+    expect(configs).toHaveLength(2);
+    expect(configs[1]!.configVersion).toBe(1);
+    expect(configs[1]!.components.find((c) => c.id === 20)).toMatchObject({ workArea: { radius: 800 } });
+  });
+
+  it("does not republish an unchanged config on recheck and keeps the snapshot timeline", async () => {
+    const t = setup([infeed, robot]);
+    await t.gateway.cycle();
+    t.advance(1000);
+    t.plc.get<ST_VisuConveyor>(infeed.path).stState.nTimestamp = 50_000_000n;
+    await t.gateway.cycle();
+
+    expect(t.configs()).toHaveLength(1);
+    expect(t.states().map((s) => s.tRel)).toEqual([0, 50]);
+  });
+
+
   it("rediscovers and publishes a new config when the PLC increments the config version", async () => {
     const t = setup([infeed, robot]);
     await t.gateway.cycle();
@@ -297,10 +335,9 @@ describe("gateway state snapshots", () => {
     });
   });
 
-  it("publishes the delta's axis positions and TCPs", async () => {
+  it("publishes the delta's actual and setpoint TCP", async () => {
     const t = setup([infeed, robot]);
     const s = t.plc.get<ST_VisuDelta>(robot.path).stState;
-    s.aAxisPositions = [10, 20, 30, 99];
     s.stActualTcp = { fX: 1, fY: 2, fZ: -900, fRz: 45 };
     s.stSetpointTcp = { fX: 3, fY: 4, fZ: -905, fRz: 46 };
     await t.gateway.cycle();
@@ -309,7 +346,6 @@ describe("gateway state snapshots", () => {
       type: "delta",
       id: 20,
       timestamp: "0",
-      axes: [10, 20, 30],
       actualTcp: { x: 1, y: 2, z: -900, rz: 45 },
       setpointTcp: { x: 3, y: 4, z: -905, rz: 46 },
     });

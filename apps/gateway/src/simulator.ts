@@ -1,4 +1,4 @@
-import { deltaInverse, type Vec3 } from "@rpp/protocol";
+import type { Vec3 } from "@rpp/protocol";
 import { InMemoryPlc } from "./in-memory-plc";
 import { MAX_PRODUCTS, conveyor, defineMachine, delta, emptyProduct } from "./plc-builders";
 import {
@@ -214,9 +214,6 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   }
 
   function writeRobot(dtS: number): void {
-    const local: Vec3 = [tcp[0] - ROBOT.x, tcp[1] - ROBOT.y, tcp[2] - ROBOT.z];
-    const angles = deltaInverse(GEOMETRY, local);
-    if (angles) robot.stState.aAxisPositions = [...angles, tcpRz];
     robot.stState.stActualTcp = { fX: tcp[0], fY: tcp[1], fZ: tcp[2], fRz: tcpRz };
     // Setpoint leads the actual position slightly, like a small following error.
     robot.stState.stSetpointTcp = { fX: tcp[0] + 2, fY: tcp[1], fZ: tcp[2] - 1, fRz: tcpRz };

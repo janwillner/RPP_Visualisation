@@ -77,6 +77,8 @@ export function startServer({ gateway, port, host, staticDir }: ServerOptions): 
   }
 
   const wss = new WebSocketServer({ server, path: WS_PATH });
+  // Listen errors (e.g. port in use) are re-emitted here; the listen promise below reports them.
+  wss.on("error", () => {});
   wss.on("connection", (socket: WebSocket) => {
     const unsubscribe = gateway.subscribe((message) => {
       if (socket.readyState !== socket.OPEN) return;

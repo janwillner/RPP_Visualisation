@@ -9,7 +9,7 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** Full 6-DOF pose. Rotation order: R = Rz(rz) · Ry(ry) · Rx(rx). */
 export const PoseSchema = z.object({
@@ -78,13 +78,6 @@ export const WindowSchema = z.object({
 });
 export type Window = z.infer<typeof WindowSchema>;
 
-export const DeltaAxisConfigSchema = z.object({
-  /** Conventional angle = direction · raw + offset. */
-  offset: z.number(),
-  direction: z.union([z.literal(1), z.literal(-1)]),
-});
-export type DeltaAxisConfig = z.infer<typeof DeltaAxisConfigSchema>;
-
 export const DeltaConfigSchema = z.object({
   type: z.literal("delta"),
   id: z.number().int(),
@@ -96,9 +89,8 @@ export const DeltaConfigSchema = z.object({
   effectorRadius: z.number(),
   upperArmLength: z.number(),
   lowerArmLength: z.number(),
+  /** When true, the effector is drawn rotated by the TCP's rz (4th axis). */
   hasRotationAxis: z.boolean(),
-  /** Three entries, or four when `hasRotationAxis`. */
-  axes: z.array(DeltaAxisConfigSchema).min(3).max(4),
   workArea: WorkAreaSchema,
   windows: z.array(WindowSchema),
 });
@@ -138,8 +130,7 @@ export const DeltaStateSchema = z.object({
   type: z.literal("delta"),
   id: z.number().int(),
   timestamp: TimestampSchema,
-  /** Raw actual axis positions as reported by the PLC (3 or 4 values, degrees). */
-  axes: z.array(z.number()).min(3).max(4),
+  /** Actual TCP (effector centre) in the MCS; the arms are derived from it by inverse kinematics. */
   actualTcp: PlanarPoseSchema,
   setpointTcp: PlanarPoseSchema,
 });

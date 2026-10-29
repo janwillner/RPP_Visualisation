@@ -50,9 +50,6 @@
     <Compile Include="DUTs\ST_VisuDelta.TcDUT">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="DUTs\ST_VisuDeltaAxisConfig.TcDUT">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="DUTs\ST_VisuDeltaConfig.TcDUT">
       <SubType>Code</SubType>
     </Compile>
@@ -83,10 +80,16 @@
     <Compile Include="DUTs\ST_VisuWorkArea.TcDUT">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="GVLs\GVL_Visu.TcGVL">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="GVLs\GVL_VisuConstants.TcGVL">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="GVLs\GVL_VisuParam.TcGVL">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="PlcTask.TcTTO">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\FB_VisuContinuousEncoder.TcPOU">
@@ -101,11 +104,25 @@
     <Compile Include="POUs\F_VisuDcTime.TcPOU">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="POUs\F_VisuDemoCompact.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\F_VisuDemoMoveToward.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\P_VisuDemo.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
   </ItemGroup>
   <ItemGroup>
     <None Include="Syn_Visu.tmc">
       <SubType>Content</SubType>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <LibraryReference Include="Tc3_Module,newest,Beckhoff Automation GmbH">
+      <Namespace>Tc3_Module</Namespace>
+    </LibraryReference>
   </ItemGroup>
   <ProjectExtensions>
     <PlcProjectOptions>

@@ -244,3 +244,44 @@ button.link {
     grid-template-areas: "toolbar" "viewport" "right" "left" "status";
   }
 }
+
+.coords {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  padding: 6px 8px;
+  background: rgba(23, 27, 33, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+  user-select: text;
+}
+
+.coords-pins {
+  margin-top: 6px;
+  border-collapse: collapse;
+}
+
+.coords-pins th,
+.coords-pins td {
+  padding: 1px 6px;
+  text-align: left;
+}
+
+.coords-pins th {
+  color: var(--muted);
+  font-weight: normal;
+}
+
+.coords-pins td.num {
+  text-align: right;
+}
+
+.pin-label {
+  color: var(--select);
+  font-size: 11px;
+  white-space: nowrap;
+  text-shadow: 0 0 3px #000;
+  transform: translate(8px, -50%);
+}

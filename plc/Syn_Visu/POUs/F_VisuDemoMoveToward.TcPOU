@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="F_VisuDemoMoveToward" Id="{149f222c-965c-4e13-8375-607848a034c7}" SpecialFunc="None">
+    <Declaration><![CDATA[(* DEMO ONLY: moves a TCP towards a target by at most fMaxStep mm. TRUE once the target is reached. *)
+FUNCTION F_VisuDemoMoveToward : BOOL
+VAR_IN_OUT
+	stTcp : ST_VisuPlanarPose;
+END_VAR
+VAR_INPUT
+	fTargetX : LREAL;
+	fTargetY : LREAL;
+	fTargetZ : LREAL;
+	fMaxStep : LREAL;
+END_VAR
+VAR
+	fDx : LREAL;
+	fDy : LREAL;
+	fDz : LREAL;
+	fDist : LREAL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[fDx := fTargetX - stTcp.fX;
+fDy := fTargetY - stTcp.fY;
+fDz := fTargetZ - stTcp.fZ;
+fDist := SQRT(fDx * fDx + fDy * fDy + fDz * fDz);
+IF fDist <= fMaxStep THEN
+	stTcp.fX := fTargetX;
+	stTcp.fY := fTargetY;
+	stTcp.fZ := fTargetZ;
+	F_VisuDemoMoveToward := TRUE;
+ELSE
+	stTcp.fX := stTcp.fX + fDx / fDist * fMaxStep;
+	stTcp.fY := stTcp.fY + fDy / fDist * fMaxStep;
+	stTcp.fZ := stTcp.fZ + fDz / fDist * fMaxStep;
+	F_VisuDemoMoveToward := FALSE;
+END_IF]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

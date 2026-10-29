@@ -61,6 +61,17 @@ export function toMcs(frame: Frame, local: Vec3): Vec3 {
   return [r[0] + frame.origin[0], r[1] + frame.origin[1], r[2] + frame.origin[2]];
 }
 
+/** MCS point (mm) → coordinates in a frame's local axes (mm): Rᵀ · (p − origin). */
+export function toLocal(frame: Frame, p: Vec3): Vec3 {
+  const d: Vec3 = [p[0] - frame.origin[0], p[1] - frame.origin[1], p[2] - frame.origin[2]];
+  const r = frame.rotation;
+  return [
+    r[0] * d[0] + r[3] * d[1] + r[6] * d[2],
+    r[1] * d[0] + r[4] * d[1] + r[7] * d[2],
+    r[2] * d[0] + r[5] * d[1] + r[8] * d[2],
+  ];
+}
+
 /** Child frame placed at `local` inside `parent`, additionally rotated by `rotation` (local). */
 export function child(parent: Frame, local: Vec3, rotation: Mat3 = rotZ(0)): Frame {
   return { rotation: mul(parent.rotation, rotation), origin: toMcs(parent, local) };
@@ -69,6 +80,11 @@ export function child(parent: Frame, local: Vec3, rotation: Mat3 = rotZ(0)): Fra
 /** MCS mm (Z up) → renderer metres (Y up): (x, y, z) ↦ (x, z, −y) / 1000. */
 export function toRenderer(p: Vec3): Vec3 {
   return [p[0] / 1000, p[2] / 1000, -p[1] / 1000];
+}
+
+/** Renderer metres (Y up) → MCS mm (Z up): inverse of `toRenderer`. */
+export function fromRenderer(p: Vec3): Vec3 {
+  return [p[0] * 1000, -p[2] * 1000, p[1] * 1000];
 }
 
 /** Change of basis MCS → renderer, applied to rotations as C · R · Cᵀ. */

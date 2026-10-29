@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ConfigMessage, ConveyorConfig, DeltaConfig, Product, StateMessage } from "@rpp/protocol";
-import { buildScene, type Vec3 } from "../src/scene/scene-model";
+import type { ConfigMessage, ConveyorConfig, DeltaConfig, PlanarPose, Product, StateMessage } from "@rpp/protocol";
+import { buildScene, rendererToMcs, type Vec3 } from "../src/scene/scene-model";
 
 const S45 = Math.SQRT1_2;
 
@@ -41,6 +41,12 @@ describe("scene model: MCS to renderer frame", () => {
     closeTo(conveyor!.transform.quaternion, [0, S45, 0, S45]);
     expect(conveyor!.length).toBeCloseTo(3);
     expect(conveyor!.width).toBeCloseTo(0.4);
+  });
+
+  it("converts a point picked in the renderer back to MCS millimetres", () => {
+    // Renderer (x, y, z) m with Y up -> MCS (x, -z, y) mm with Z up.
+    closeTo(rendererToMcs([1, 0.8, -2]), [1000, 2000, 800]);
+    closeTo(rendererToMcs([-0.25, 0, 0.5]), [-250, -500, 0]);
   });
 
   it("applies pose rotations in the order Rz · Ry · Rx", () => {
@@ -134,90 +140,88 @@ function deltaConfig(overrides: Partial<DeltaConfig> = {}): DeltaConfig {
     upperArmLength: 350,
     lowerArmLength: 800,
     hasRotationAxis: false,
-    axes: [
-      { offset: 0, direction: 1 },
-      { offset: 0, direction: 1 },
-      { offset: 0, direction: 1 },
-    ],
     workArea: { radius: 600, zMin: -1100, zMax: -600, coneHeight: 0, coneBottomRadius: 0 },
     windows: [],
     ...overrides,
   };
 }
 
-const TCP0 = { x: 0, y: 0, z: 0, rz: 0 };
+/** sqrt(800² − (200 + 350 − 50)²): TCP depth below the base at which all upper arms are horizontal. */
+const HORIZONTAL_DEPTH = 624.4997998398398;
 
-function deltaState(axes: number[], tcp = TCP0, setpoint = tcp, id = 20): StateMessage["components"][number] {
-  return { type: "delta", id, timestamp: "0", axes, actualTcp: tcp, setpointTcp: setpoint };
+function deltaState(tcp: PlanarPose, setpoint = tcp, id = 20): StateMessage["components"][number] {
+  return { type: "delta", id, timestamp: "0", actualTcp: tcp, setpointTcp: setpoint };
 }
 
-describe("scene model: delta kinematics", () => {
-  it("draws the arms of a delta with all upper arms horizontal", () => {
-    const scene = buildScene(config(deltaConfig()), [snapshot(0, [deltaState([0, 0, 0])])], 0);
-    const [d] = scene.deltas;
+const dist = (a: readonly number[], b: readonly number[]) => Math.hypot(...a.map((v, i) => v - b[i]!));
 
+describe("scene model: delta follows the TCP", () => {
+  it("draws all upper arms horizontal when the TCP is straight below the base at the closing depth", () => {
+    const tcp = { x: 1500, y: 0, z: 1800 - HORIZONTAL_DEPTH, rz: 0 };
+    const [d] = buildScene(config(deltaConfig()), [snapshot(0, [deltaState(tcp)])], 0).deltas;
+
+    expect(d!.reachable).toBe(true);
     closeTo(d!.base.position, [1.5, 1.8, 0]);
     // Arm 1 along +X, arm 2 at 120° counter-clockwise seen from above (MCS +Y is renderer -Z).
     closeTo(d!.shoulders[0]!, [1.7, 1.8, 0]);
     closeTo(d!.elbows[0]!, [2.05, 1.8, 0]);
     closeTo(d!.elbows[1]!, [1.5 - 0.275, 1.8, -0.4763139720814413]);
-    // Lower arms close at sqrt(800² − (200 + 350 − 50)²) = 624.4998 mm below the base.
-    closeTo(d!.effector!.position, [1.5, 1.8 - 0.6244997998398398, 0]);
+    closeTo(d!.effector!.position, [1.5, 1.8 - HORIZONTAL_DEPTH / 1000, 0]);
+    closeTo(d!.angles, [0, 0, 0], 4);
+    // Plate sizes for drawing, in metres.
+    expect(d!.baseRadius).toBeCloseTo(0.2);
+    expect(d!.effectorRadius).toBeCloseTo(0.05);
+  });
+
+  it("keeps every arm at its configured length for an off-centre TCP on a rotated base", () => {
+    const cfg = deltaConfig({ pose: { x: 1500, y: 200, z: 1800, rx: 0, ry: 0, rz: 30 } });
+    const tcp = { x: 1650, y: 80, z: 1050, rz: 0 };
+    const [d] = buildScene(config(cfg), [snapshot(0, [deltaState(tcp)])], 0).deltas;
+
     expect(d!.reachable).toBe(true);
+    closeTo(d!.effector!.position, [1.65, 1.05, -0.08]);
+    for (let i = 0; i < 3; i++) {
+      expect(dist(d!.shoulders[i]!, d!.elbows[i]!)).toBeCloseTo(0.35, 6);
+      expect(dist(d!.elbows[i]!, d!.effectorJoints[i]!)).toBeCloseTo(0.8, 6);
+      expect(dist(d!.effectorJoints[i]!, d!.effector!.position)).toBeCloseTo(0.05, 6);
+    }
   });
 
-  it("applies per-axis offset and direction before the angle convention", () => {
-    // conventional = direction · raw + offset = (−1)(−80) + 10 = 90°: arm 1 hangs straight down.
-    const cfg = deltaConfig({
-      axes: [
-        { offset: 10, direction: -1 },
-        { offset: 0, direction: 1 },
-        { offset: 0, direction: 1 },
-      ],
-    });
-    const scene = buildScene(config(cfg), [snapshot(0, [deltaState([-80, 30, 30])])], 0);
-    closeTo(scene.deltas[0]!.elbows[0]!, [1.7, 1.45, 0]);
+  it("marks a TCP the arms cannot reach as unreachable but still shows the effector at the TCP", () => {
+    const [d] = buildScene(config(deltaConfig()), [snapshot(0, [deltaState({ x: 1500, y: 0, z: 0, rz: 0 })])], 0).deltas;
+    expect(d!.reachable).toBe(false);
+    expect(d!.elbows).toEqual([]);
+    closeTo(d!.effector!.position, [1.5, 0, 0]);
   });
 
-  it("marks a posture whose lower arms cannot close as unreachable", () => {
-    // 100 mm lower arms cannot bridge elbows ~866 mm apart.
-    const scene = buildScene(config(deltaConfig({ lowerArmLength: 100 })), [snapshot(0, [deltaState([0, 0, 0])])], 0);
-    expect(scene.deltas[0]!.reachable).toBe(false);
-    expect(scene.deltas[0]!.effector).toBeNull();
-  });
-
-  it("shows the actual and setpoint TCP reported by the PLC as separate markers", () => {
+  it("shows the setpoint TCP reported by the PLC as a separate marker", () => {
     const scene = buildScene(
       config(deltaConfig()),
-      [snapshot(0, [deltaState([0, 0, 0], { x: 1500, y: 100, z: 1000, rz: 0 }, { x: 1510, y: 100, z: 1000, rz: 0 })])],
+      [snapshot(0, [deltaState({ x: 1500, y: 100, z: 1000, rz: 0 }, { x: 1510, y: 100, z: 1000, rz: 0 })])],
       0,
     );
     closeTo(scene.deltas[0]!.actualTcp!, [1.5, 1, -0.1]);
     closeTo(scene.deltas[0]!.setpointTcp!, [1.51, 1, -0.1]);
   });
 
-  it("interpolates axis angles and TCPs between snapshots", () => {
+  it("interpolates the TCP between snapshots and the arms follow", () => {
     const snapshots = [
-      snapshot(0, [deltaState([0, 0, 0], { x: 1500, y: 0, z: 1000, rz: 0 })]),
-      snapshot(20, [deltaState([20, 40, 60], { x: 1600, y: 0, z: 1000, rz: 0 })]),
+      snapshot(0, [deltaState({ x: 1500, y: 0, z: 1000, rz: 0 })]),
+      snapshot(20, [deltaState({ x: 1600, y: 0, z: 1000, rz: 0 })]),
     ];
     const d = buildScene(config(deltaConfig()), snapshots, 10).deltas[0]!;
-    closeTo(d.angles, [10, 20, 30]);
+    closeTo(d.effector!.position, [1.55, 1, 0]);
     closeTo(d.actualTcp!, [1.55, 1, 0]);
   });
 
-  it("interpolates angles across the ±180° wrap along the short way", () => {
-    const cfg = deltaConfig({
-      hasRotationAxis: true,
-      axes: [...deltaConfig().axes, { offset: 0, direction: 1 }],
-    });
+  it("rotates the effector by the TCP's rz, interpolating across the ±180° wrap the short way", () => {
     const snapshots = [
-      snapshot(0, [deltaState([0, 0, 0, 179])]),
-      snapshot(20, [deltaState([0, 0, 0, -179])]),
+      snapshot(0, [deltaState({ x: 1500, y: 0, z: 1000, rz: 179 })]),
+      snapshot(20, [deltaState({ x: 1500, y: 0, z: 1000, rz: -179 })]),
     ];
-    const d = buildScene(config(cfg), snapshots, 10).deltas[0]!;
-    // Halfway between 179° and −179° is ±180°, not 0°.
-    expect(Math.abs(Math.cos(((d.angles[3] ?? 0) * Math.PI) / 180) + 1)).toBeLessThan(1e-9);
+    const d = buildScene(config(deltaConfig({ hasRotationAxis: true })), snapshots, 10).deltas[0]!;
+    // Halfway between 179° and −179° is 180°: the effector's local +X points along MCS −X.
+    closeTo(rotate(d.effector!.quaternion, [1, 0, 0]), [-1, 0, 0]);
   });
 });
 
@@ -226,7 +230,7 @@ describe("scene model: product lifecycle", () => {
   const robot = deltaConfig();
   const tcp = { x: 1500, y: 0, z: 1000, rz: 0 };
   const show = (p: Product, encoder = 0) =>
-    buildScene(config(belt, robot), [snapshot(0, [conveyorState(encoder, [p]), deltaState([0, 0, 0], tcp)])], 0).products;
+    buildScene(config(belt, robot), [snapshot(0, [conveyorState(encoder, [p]), deltaState(tcp)])], 0).products;
 
   it("hangs a picked product below its robot's TCP and leaves a placeholder travelling on the belt", () => {
     const shown = show(product({ state: "picked", robotId: 20, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } }), 200);

@@ -78,15 +78,12 @@ export interface DeltaSpec {
   upperArmLength?: number;
   lowerArmLength?: number;
   hasRotationAxis?: boolean;
-  axes?: { fAngleOffset: number; nDirection: number }[];
   windows?: ST_VisuWindow[];
   timestamp?: bigint;
-  axisPositions?: number[];
 }
 
 export function delta(spec: DeltaSpec = {}): ST_VisuDelta {
   const windows = spec.windows ?? [];
-  const axes = spec.axes ?? [];
   return {
     stConfig: {
       stPose: pose(spec.pose),
@@ -95,7 +92,6 @@ export function delta(spec: DeltaSpec = {}): ST_VisuDelta {
       fUpperArmLength: spec.upperArmLength ?? 350,
       fLowerArmLength: spec.lowerArmLength ?? 800,
       bHasRotationAxis: spec.hasRotationAxis ?? false,
-      aAxes: padded(axes, 4, () => ({ fAngleOffset: 0, nDirection: 1 })),
       stWorkArea: { fRadius: 600, fZMin: -1100, fZMax: -600, fConeHeight: 0, fConeBottomRadius: 0 },
       nWindowCount: windows.length,
       aWindows: padded(windows, MAX_WINDOWS, () => ({
@@ -107,7 +103,6 @@ export function delta(spec: DeltaSpec = {}): ST_VisuDelta {
     },
     stState: {
       nTimestamp: spec.timestamp ?? 0n,
-      aAxisPositions: padded(spec.axisPositions ?? [0, 0, 0], 4, () => 0),
       stActualTcp: { fX: 0, fY: 0, fZ: 0, fRz: 0 },
       stSetpointTcp: { fX: 0, fY: 0, fZ: 0, fRz: 0 },
     },

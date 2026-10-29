@@ -94,11 +94,6 @@ export interface ST_VisuConveyor {
   stState: ST_VisuConveyorState;
 }
 
-export interface ST_VisuDeltaAxisConfig {
-  fAngleOffset: number;
-  nDirection: number;
-}
-
 export interface ST_VisuWorkArea {
   fRadius: number;
   fZMin: number;
@@ -121,8 +116,6 @@ export interface ST_VisuDeltaConfig {
   fUpperArmLength: number;
   fLowerArmLength: number;
   bHasRotationAxis: boolean;
-  /** Four entries; the fourth is used only with bHasRotationAxis. */
-  aAxes: ST_VisuDeltaAxisConfig[];
   stWorkArea: ST_VisuWorkArea;
   nWindowCount: number;
   aWindows: ST_VisuWindow[];
@@ -130,8 +123,7 @@ export interface ST_VisuDeltaConfig {
 
 export interface ST_VisuDeltaState {
   nTimestamp: bigint;
-  /** Four entries; the fourth is used only with bHasRotationAxis. */
-  aAxisPositions: number[];
+  /** Actual TCP (effector centre) in the MCS; the visualisation derives the arms from it. */
   stActualTcp: ST_VisuPlanarPose;
   stSetpointTcp: ST_VisuPlanarPose;
 }

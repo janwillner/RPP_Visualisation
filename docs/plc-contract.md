@@ -1,4 +1,4 @@
-# PLC contract (library `Syn_Visu`, protocol version 1)
+# PLC contract (library `Syn_Visu`, protocol version 2)
 
 This is the PLC side of the contract the gateway reads. It is implemented by the TwinCAT library project in
 `plc/Syn_Visu` (solution `plc/ProductConfigurator.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
@@ -13,9 +13,11 @@ and the gateway maps it to the neutral model in `packages/protocol`. Change all 
 - Cross-references (`nRobotId`, `nConveyorId`) use manifest `nId` values, never symbol paths.
 - `fEncoder` is a continuous position in mm (no modulo). Use `FB_VisuContinuousEncoder` for modulo axes.
 - Product latch pose = bottom centre of the product on the belt surface when it was latched.
-- Delta angle convention: 0° = upper arm horizontal, positive = arm pointing downward. Arm 1 lies along the base's
-  local +X; arms 2 and 3 follow counter-clockwise (seen from above) at 120°.
-  Conventional angle = `nDirection` · raw + `fAngleOffset`.
+- Delta: the PLC reports only the **TCP** (effector centre) in the MCS. The visualisation derives the arm posture by
+  inverse kinematics from the configured geometry: arm 1 lies along the base's local +X, arms 2 and 3 follow
+  counter-clockwise (seen from above) at 120°; 0° = upper arm horizontal, positive = downward. With
+  `bHasRotationAxis` the effector is drawn rotated by the TCP's `fRz`.
+- Protocol version 2 removed the Delta axis positions (`aAxisPositions`) and axis calibration (`aAxes`) of version 1.
 
 ## What the library contains
 
@@ -23,11 +25,11 @@ and the gateway maps it to the neutral model in `packages/protocol`. Change all 
 | --- | --- |
 | `ST_VisuManifest`, `ST_VisuManifestEntry`, `E_VisuComponentType` | Discovery: which components exist and where |
 | `ST_VisuConveyor` (`stConfig` / `stState`), `ST_VisuProduct`, `ST_VisuProductType`, `E_VisuProductState` | Conveyor with product register |
-| `ST_VisuDelta` (`stConfig` / `stState`), `ST_VisuDeltaAxisConfig`, `ST_VisuWorkArea`, `ST_VisuWindow`, `E_VisuWindowKind` | Delta robot, work area, pick/place windows |
+| `ST_VisuDelta` (`stConfig`: geometry, work area, windows / `stState`: actual and setpoint TCP), `ST_VisuWorkArea`, `ST_VisuWindow`, `E_VisuWindowKind` | Delta robot, work area, pick/place windows |
 | `ST_VisuPose`, `ST_VisuPlanarPose` | MCS poses |
 | `GVL_VisuConstants.nProtocolVersion` | Contract version; `ST_VisuManifest` initialises to it |
 | `GVL_VisuParam` | Array sizes: `nMaxManifestEntries` (32), `nMaxProducts` (128), `nMaxProductTypes` (8), `nMaxWindows` (8) |
-| `F_VisuAddComponent` | Registers a component in the manifest and bumps `nConfigVersion`; idempotent, safe to call every cycle |
+| `F_VisuAddComponent` | Registers a component in the manifest and bumps `nConfigVersion`; idempotent, safe to call every cycle. Also keeps `nProtocolVersion` at the running library's version (survives online changes) |
 | `F_VisuDcTime` | DC time of the current task cycle, for `nTimestamp` |
 | `FB_VisuContinuousEncoder` | Modulo axis position → continuous `fEncoder` |
 | `F_GetVersionSyn_Visu` | Library version at runtime |
@@ -70,11 +72,12 @@ stInfeed.stState.fEncoder := fbInfeedEnc.fPosition;
 
 ## Discovery
 
-The gateway reads `GVL_Visu.stManifest` and refuses to continue when `nProtocolVersion` differs from its own. For each
+The gateway reads `GVL_Visu.stManifest` and refuses to continue when `nProtocolVersion` differs from its own; it keeps
+watching the version and recovers as soon as it matches. For each
 of the first `nCount` entries it checks that the symbol at `sPath` has the data type `ST_VisuConveyor` or `ST_VisuDelta`
 according to `eType`. Names qualified with the library namespace, such as `Syn_Visu.ST_VisuDelta`, are accepted too.
-It then reads `<sPath>.stConfig` once. Every cycle it sum-reads `GVL_Visu.stManifest.nConfigVersion` and all
-`<sPath>.stState`.
+It then reads `<sPath>.stConfig` once. Every cycle it sum-reads `GVL_Visu.stManifest.nProtocolVersion`,
+`GVL_Visu.stManifest.nConfigVersion` and all `<sPath>.stState`, and rediscovers when either version changes.
 
 ## Enumerations
 

@@ -3,15 +3,15 @@
   <DUT Name="ST_VisuDeltaConfig" Id="{8de7830b-8fd5-4591-9561-69e8da135fb8}">
     <Declaration><![CDATA[TYPE ST_VisuDeltaConfig :
 STRUCT
-	(* Arm 1 lies along the base's local +X; arms 2 and 3 follow counter-clockwise
+	(* Geometry the visualisation uses to derive the arm posture from the TCP.
+	   Arm 1 lies along the base's local +X; arms 2 and 3 follow counter-clockwise
 	   (seen from above) at 120 deg each. *)
 	stPose : ST_VisuPose; // base centre in the MCS
 	fBaseRadius : LREAL; // mm, base centre to shoulder joint
 	fEffectorRadius : LREAL; // mm, effector centre to lower-arm joint
 	fUpperArmLength : LREAL; // mm
 	fLowerArmLength : LREAL; // mm
-	bHasRotationAxis : BOOL; // 4th axis rotating the effector
-	aAxes : ARRAY[0..3] OF ST_VisuDeltaAxisConfig; // [3] is used only with bHasRotationAxis
+	bHasRotationAxis : BOOL; // 4th axis: the effector is drawn rotated by the TCP's fRz
 	stWorkArea : ST_VisuWorkArea;
 	nWindowCount : UINT;
 	aWindows : ARRAY[0..GVL_VisuParam.nMaxWindows - 1] OF ST_VisuWindow;

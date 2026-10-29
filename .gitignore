@@ -14,3 +14,7 @@ plc/**/*.tclrs
 plc/**/*.tmc
 plc/**/*.library
 plc/**/.vs/
+
+# .NET ADS bridge build output
+apps/ads-bridge/bin/
+apps/ads-bridge/obj/

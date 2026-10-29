@@ -73,10 +73,6 @@ export function mapDeltaConfig(identity: ComponentIdentity, c: ST_VisuDeltaConfi
     upperArmLength: c.fUpperArmLength,
     lowerArmLength: c.fLowerArmLength,
     hasRotationAxis: c.bHasRotationAxis,
-    axes: take(c.aAxes, c.bHasRotationAxis ? 4 : 3).map((a) => ({
-      offset: a.fAngleOffset,
-      direction: a.nDirection < 0 ? -1 : 1,
-    })),
     workArea: {
       radius: c.stWorkArea.fRadius,
       zMin: c.stWorkArea.fZMin,
@@ -124,12 +120,11 @@ export function mapConveyorState(id: number, s: ST_VisuConveyorState): ConveyorS
   };
 }
 
-export function mapDeltaState(id: number, hasRotationAxis: boolean, s: ST_VisuDeltaState): DeltaState {
+export function mapDeltaState(id: number, s: ST_VisuDeltaState): DeltaState {
   return {
     type: "delta",
     id,
     timestamp: BigInt(s.nTimestamp).toString(),
-    axes: take(s.aAxisPositions, hasRotationAxis ? 4 : 3),
     actualTcp: mapPlanarPose(s.stActualTcp),
     setpointTcp: mapPlanarPose(s.stSetpointTcp),
   };

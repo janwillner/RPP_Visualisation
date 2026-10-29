@@ -1,6 +1,6 @@
 import {
   deltaForward,
-  toConventionalAngle,
+  deltaInverse,
   type ComponentState,
   type ConfigMessage,
   type ConveyorConfig,
@@ -18,7 +18,9 @@ import {
   apply,
   child,
   frameFromPose,
+  fromRenderer,
   rotZ,
+  toLocal,
   toMcs,
   toRenderer,
   toRendererTransform,
@@ -34,6 +36,12 @@ import {
  * direction), local +Y = MCS local up, local +Z = MCS local −Y.
  */
 export type { Transform, Vec3 };
+
+/** A point picked in the renderer (metres, Y up) as MCS coordinates (mm, Z up). */
+export const rendererToMcs = (point: Vec3): Vec3 => fromRenderer(point);
+
+/** An MCS point (mm, Z up) in renderer coordinates (metres, Y up). */
+export const mcsToRenderer = (point: Vec3): Vec3 => toRenderer(point);
 
 export interface SceneConveyor {
   id: number;
@@ -72,18 +80,24 @@ export interface SceneDelta {
   name: string;
   /** Base centre; local axes as in the robot's frame. */
   base: Transform;
+  /** Base centre to shoulder joint, metres. */
+  baseRadius: number;
+  /** Effector centre to lower-arm joint, metres. */
+  effectorRadius: number;
   /** World positions, one per arm. */
   shoulders: Vec3[];
   elbows: Vec3[];
-  /** Lower-arm joints on the effector; empty when unreachable. */
+
+  /** Lower-arm joints on the effector; empty when the TCP is not reachable. */
   effectorJoints: Vec3[];
-  /** Effector centre, rotated by the 4th axis when present; null when unreachable. */
+  /** Effector centre at the actual TCP, rotated by the TCP's rz when the robot has a rotation axis. */
   effector: Transform | null;
+  /** False when the arms cannot reach the reported TCP (the effector is still drawn at the TCP). */
   reachable: boolean;
   /** TCPs reported by the PLC; null before the first state arrives. */
   actualTcp: Vec3 | null;
   setpointTcp: Vec3 | null;
-  /** Conventional angles in degrees (after offset and direction). */
+  /** Upper-arm angles in degrees computed from the TCP (angle convention of the contract); empty if unreachable. */
   angles: number[];
 }
 
@@ -194,25 +208,33 @@ function planarToMcs(p: PlanarPose): Vec3 {
   return [p.x, p.y, p.z];
 }
 
+/**
+ * The PLC reports only the TCP (effector centre); the arms follow it by inverse kinematics in the robot frame.
+ * Before the first state the robot is drawn with horizontal upper arms.
+ */
 function buildDelta(c: DeltaConfig, state: DeltaState | undefined): SceneDelta {
   const frame = frameFromPose(c.pose);
-  const raw = state?.axes ?? [0, 0, 0, 0];
-  const angles = c.axes.map((calibration, i) => toConventionalAngle(raw[i] ?? 0, calibration));
-  const posture = deltaForward(c, [angles[0]!, angles[1]!, angles[2]!]);
   const world = (local: Vec3) => toRenderer(toMcs(frame, local));
-  const effectorRotation = c.hasRotationAxis ? (angles[3] ?? 0) : 0;
+  const localTcp = state ? toLocal(frame, planarToMcs(state.actualTcp)) : undefined;
+  const angles = localTcp ? deltaInverse(c, localTcp) : [0, 0, 0];
+  const posture = deltaForward(c, (angles ?? [0, 0, 0]) as [number, number, number]);
+  // The TCP's rz is absolute in the MCS; the effector rotates about the base's Z axis.
+  const effectorRotation = c.hasRotationAxis && state ? state.actualTcp.rz - c.pose.rz : 0;
+  const effectorCentre = localTcp ?? posture.effector;
   return {
     id: c.id,
     name: c.name,
     base: toRendererTransform(frame),
+    baseRadius: c.baseRadius * MM,
+    effectorRadius: c.effectorRadius * MM,
     shoulders: posture.shoulders.map(world),
-    elbows: posture.elbows.map(world),
-    effectorJoints: posture.effectorJoints.map(world),
-    effector: posture.effector ? toRendererTransform(child(frame, posture.effector, rotZ(effectorRotation))) : null,
-    reachable: posture.effector !== null,
+    elbows: angles ? posture.elbows.map(world) : [],
+    effectorJoints: angles ? posture.effectorJoints.map(world) : [],
+    effector: effectorCentre ? toRendererTransform(child(frame, effectorCentre, rotZ(effectorRotation))) : null,
+    reachable: angles !== null,
     actualTcp: state ? toRenderer(planarToMcs(state.actualTcp)) : null,
     setpointTcp: state ? toRenderer(planarToMcs(state.setpointTcp)) : null,
-    angles,
+    angles: angles ?? [],
   };
 }
 
@@ -256,7 +278,6 @@ function interpolate(a: ComponentState, b: ComponentState, f: number): Component
   if (a.type === "delta" && b.type === "delta") {
     return {
       ...a,
-      axes: a.axes.map((v, i) => lerpAngle(v, b.axes[i] ?? v, f)),
       actualTcp: lerpPlanar(a.actualTcp, b.actualTcp, f),
       setpointTcp: lerpPlanar(a.setpointTcp, b.setpointTcp, f),
     };

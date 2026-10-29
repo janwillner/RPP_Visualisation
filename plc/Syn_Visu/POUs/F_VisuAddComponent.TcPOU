@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="F_VisuAddComponent" Id="{8087d312-3eb3-465d-8135-729f8adaa04d}" SpecialFunc="None">
+  <POU Name="F_VisuAddComponent" Id="{d8c91eba-fa02-4972-9d96-36e7c298973d}" SpecialFunc="None">
     <Declaration><![CDATA[(* Registers a component in the manifest and increments nConfigVersion so the gateway rediscovers.
    Idempotent: registering an identical entry again returns TRUE without changing anything, so it is
    safe to call every cycle. Returns FALSE for nId = 0, type NONE, an id already used by a different
@@ -20,6 +20,8 @@ VAR
 END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[F_VisuAddComponent := FALSE;
+// Always report the contract version of the library actually running, also after an online change.
+stManifest.nProtocolVersion := GVL_VisuConstants.nProtocolVersion;
 IF nId = 0 OR eType = E_VisuComponentType.NONE THEN
 	RETURN;
 END_IF

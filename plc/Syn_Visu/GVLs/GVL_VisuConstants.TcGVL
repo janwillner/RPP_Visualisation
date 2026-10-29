@@ -4,8 +4,9 @@
     <Declaration><![CDATA[{attribute 'qualified_only'}
 VAR_GLOBAL CONSTANT
 	(* Version of the PLC <-> gateway contract. The gateway refuses to read a PLC whose manifest
-	   reports a different value. Bump together with PROTOCOL_VERSION in the gateway. *)
-	nProtocolVersion : UINT := 1;
+	   reports a different value. Bump together with PROTOCOL_VERSION in the gateway.
+	   2: the Delta reports only its TCP; the visualisation derives the arm posture. *)
+	nProtocolVersion : UINT := 2;
 END_VAR]]></Declaration>
   </GVL>
 </TcPlcObject>

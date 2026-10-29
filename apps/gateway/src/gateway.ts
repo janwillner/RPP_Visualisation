@@ -25,6 +25,13 @@ export interface GatewayOptions {
   plc: SymbolAccess;
   /** Identifies the PLC in the neutral model (one PLC per gateway in the MVP). */
   sourceId: string;
+  /**
+   * The full discovery is repeated at this interval and a new config is published if anything differs, so
+   * configs changed live in the PLC show up even without a config version bump. Default 1000 ms; 0 disables.
+   */
+  configRecheckMs?: number;
+  /** Clock in ms (injectable for tests). */
+  now?: () => number;
 }
 
 export type GatewayListener = (message: GatewayMessage) => void;
@@ -52,12 +59,18 @@ interface Discovery {
   active: ActiveComponent[];
 }
 
-export function createGateway({ plc, sourceId }: GatewayOptions): Gateway {
+export function createGateway({
+  plc,
+  sourceId,
+  configRecheckMs = 1000,
+  now = () => performance.now(),
+}: GatewayOptions): Gateway {
   const listeners = new Set<GatewayListener>();
   let discovery: Discovery | undefined;
   let status: GatewayStatus = { plcConnected: false };
   /** PLC timestamp of the first snapshot after discovery; tRel is measured from here. */
   let t0: bigint | undefined;
+  let lastConfigCheck = now();
 
   const emit = (message: GatewayMessage) => {
     for (const l of listeners) l(message);
@@ -130,19 +143,22 @@ export function createGateway({ plc, sourceId }: GatewayOptions): Gateway {
     const c = component.config;
     return c.type === "conveyor"
       ? mapConveyorState(c.id, raw as ST_VisuConveyorState)
-      : mapDeltaState(c.id, c.hasRotationAxis, raw as ST_VisuDeltaState);
+      : mapDeltaState(c.id, raw as ST_VisuDeltaState);
   }
 
   /**
-   * Reads the manifest's config version together with all states in one sum-read, so a config change is
-   * detected in the same snapshot. Returns false (and publishes nothing) when the config version changed.
+   * Reads the manifest's protocol and config version together with all states in one sum-read, so a change
+   * is detected in the same snapshot. Returns false (and publishes nothing) when either version changed.
    */
   async function publishSnapshot(current: Discovery): Promise<boolean> {
-    const [configVersion, ...raws] = await plc.sumRead([
+    const [protocolVersion, configVersion, ...raws] = await plc.sumRead([
+      PROTOCOL_VERSION_PATH,
       CONFIG_VERSION_PATH,
       ...current.active.map((a) => a.statePath),
     ]);
-    if (configVersion !== current.config.configVersion) return false;
+    if (protocolVersion !== current.config.protocolVersion || configVersion !== current.config.configVersion) {
+      return false;
+    }
     if (current.active.length === 0) return true;
     const components = current.active.map((a, i) => mapState(a, raws[i]));
     const newest = components.reduce((max, c) => (BigInt(c.timestamp) > max ? BigInt(c.timestamp) : max), 0n);
@@ -162,6 +178,17 @@ export function createGateway({ plc, sourceId }: GatewayOptions): Gateway {
     setStatus({ plcConnected: true });
     discovery = next;
     t0 = undefined;
+    lastConfigCheck = now();
+    emit(next.config);
+    return next;
+  }
+
+  /** Repeats the discovery and publishes the result only if it differs; the snapshot timeline continues. */
+  async function recheckConfig(current: Discovery): Promise<Discovery> {
+    lastConfigCheck = now();
+    const next = await discover();
+    if (JSON.stringify(next.config) === JSON.stringify(current.config)) return current;
+    discovery = next;
     emit(next.config);
     return next;
   }
@@ -175,7 +202,8 @@ export function createGateway({ plc, sourceId }: GatewayOptions): Gateway {
     },
     async cycle() {
       try {
-        const current = discovery ?? (await rediscover());
+        let current = discovery ?? (await rediscover());
+        if (configRecheckMs > 0 && now() - lastConfigCheck >= configRecheckMs) current = await recheckConfig(current);
         if (!(await publishSnapshot(current))) {
           await publishSnapshot(await rediscover());
         }
@@ -196,6 +224,7 @@ export function createGateway({ plc, sourceId }: GatewayOptions): Gateway {
 }
 
 const CONFIG_VERSION_PATH = `${MANIFEST_PATH}.nConfigVersion`;
+const PROTOCOL_VERSION_PATH = `${MANIFEST_PATH}.nProtocolVersion`;
 
 /** Library types may be reported with their namespace, e.g. `Syn_Visu.ST_VisuDelta`. */
 function isExpectedType(actual: string | undefined, expected: string): boolean {

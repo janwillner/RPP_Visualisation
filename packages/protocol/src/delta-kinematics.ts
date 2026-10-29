@@ -4,7 +4,6 @@
  * Angle convention (part of the PLC contract):
  * - 0° = upper arm horizontal, positive angle = arm pointing downward.
  * - Arm 1 lies along local +X; arms 2 and 3 follow counter-clockwise (seen from above) at 120° each.
- * - Conventional angle = direction · raw + offset, per axis.
  */
 
 export type Vec3 = [number, number, number];
@@ -14,11 +13,6 @@ export interface DeltaGeometry {
   effectorRadius: number;
   upperArmLength: number;
   lowerArmLength: number;
-}
-
-export interface DeltaAxisCalibration {
-  offset: number;
-  direction: 1 | -1;
 }
 
 export interface DeltaPosture {
@@ -34,14 +28,6 @@ export interface DeltaPosture {
 
 const DEG = Math.PI / 180;
 export const ARM_AZIMUTHS_DEG = [0, 120, 240] as const;
-
-export function toConventionalAngle(raw: number, calibration: DeltaAxisCalibration): number {
-  return calibration.direction * raw + calibration.offset;
-}
-
-export function toRawAngle(conventional: number, calibration: DeltaAxisCalibration): number {
-  return (conventional - calibration.offset) * calibration.direction;
-}
 
 function radial(azimuthDeg: number): Vec3 {
   return [Math.cos(azimuthDeg * DEG), Math.sin(azimuthDeg * DEG), 0];

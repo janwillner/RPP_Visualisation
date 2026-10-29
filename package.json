@@ -10,7 +10,8 @@
     "start": "pnpm --filter @rpp/gateway start",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:bridge": "dotnet build apps/ads-bridge -c Release"
   },
   "devDependencies": {
     "typescript": "^5.8.3",

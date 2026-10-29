@@ -6,8 +6,11 @@ import {
   MISSED_COLOR,
   PRODUCT_COLORS,
   SceneView,
+  formatMcs,
   type CameraPreset,
   type Layers,
+  type McsHit,
+  type McsPin,
   type Selection,
 } from "./scene/SceneView";
 
@@ -32,6 +35,11 @@ export function App() {
   const [selection, setSelection] = useState<Selection>();
   const [cameraRequest, setCameraRequest] = useState<{ preset: CameraPreset; seq: number }>({ preset: "iso", seq: 0 });
   const modelRef = useRef<SceneModel | undefined>(undefined);
+  // Written on every pointer move; read by the readout at a fixed rate, so moving the mouse never re-renders the app.
+  const hoverRef = useRef<McsHit | undefined>(undefined);
+  const [pins, setPins] = useState<McsPin[]>([]);
+  const nextPinId = useRef(1);
+  const addPin = (hit: McsHit) => setPins((p) => [...p, { ...hit, id: nextPinId.current++ }]);
 
   const camera = (preset: CameraPreset) => setCameraRequest((r) => ({ preset, seq: r.seq + 1 }));
   const toggle = (key: keyof Layers) => setLayers((l) => ({ ...l, [key]: !l[key] }));
@@ -68,12 +76,84 @@ export function App() {
           onSelect={setSelection}
           cameraRequest={cameraRequest}
           modelRef={modelRef}
+          onPointerMcs={(hit) => (hoverRef.current = hit)}
+          onPin={addPin}
+          pins={pins}
+        />
+        <CoordinateReadout
+          hoverRef={hoverRef}
+          pins={pins}
+          onRemove={(id) => setPins((p) => p.filter((x) => x.id !== id))}
+          onClear={() => setPins([])}
         />
       </main>
       <aside className="panel right">
         <Inspector store={store} config={gateway.config?.components ?? []} selection={selection} modelRef={modelRef} />
       </aside>
       <StatusBar store={store} gateway={gateway} modelRef={modelRef} />
+    </div>
+  );
+}
+
+/** Live MCS coordinates under the pointer, plus the measuring points placed with Shift+click. */
+function CoordinateReadout(props: {
+  hoverRef: React.RefObject<McsHit | undefined>;
+  pins: McsPin[];
+  onRemove: (id: number) => void;
+  onClear: () => void;
+}) {
+  const { hoverRef, pins, onRemove, onClear } = props;
+  useTick(100);
+  const hover = hoverRef.current;
+  return (
+    <div className="coords">
+      <div className="coords-live">
+        <span className="muted">MCS</span>{" "}
+        {hover ? (
+          <>
+            <strong>{formatMcs(hover.point)}</strong> mm <span className="muted">{hover.label}</span>
+          </>
+        ) : (
+          <span className="muted">point at the scene · Shift+click places a measuring point</span>
+        )}
+      </div>
+      {pins.length > 0 && (
+        <>
+          <table className="coords-pins">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>X</th>
+                <th>Y</th>
+                <th>Z</th>
+                <th>On</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {pins.map((p) => (
+                <tr key={p.id}>
+                  <td>{p.id}</td>
+                  {p.point.map((v, i) => (
+                    <td key={i} className="num">
+                      {v.toFixed(1)}
+                    </td>
+                  ))}
+                  <td className="muted">{p.label}</td>
+                  <td>
+                    <button className="link" onClick={() => onRemove(p.id)} aria-label={`Remove point ${p.id}`}>
+                      ×
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <button className="link muted" onClick={onClear}>
+            Clear points
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -176,10 +256,10 @@ function Inspector(props: {
   return (
     <>
       <h2>{component?.name ?? `#${selection.id}`}</h2>
-      {delta && !delta.reachable && <p className="warn">Kinematics: lower arms cannot close for these axis angles.</p>}
-      {delta && (
+      {delta && !delta.reachable && <p className="warn">Kinematics: the arms cannot reach the reported TCP.</p>}
+      {delta && delta.angles.length > 0 && (
         <p>
-          Conventional angles: {delta.angles.map((a) => a.toFixed(2)).join(" / ")}°
+          Arm angles computed from TCP: {delta.angles.map((a) => a.toFixed(2)).join(" / ")}°
         </p>
       )}
       <h3>Config</h3>

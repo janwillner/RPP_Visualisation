@@ -2,21 +2,27 @@ import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { AdsBridgeSymbolAccess } from "./ads-bridge-symbol-access";
 import { AdsSymbolAccess } from "./ads-symbol-access";
 import { createGateway } from "./gateway";
 import { startServer, WS_PATH } from "./server";
 import { createSimulator } from "./simulator";
 import type { SymbolAccess } from "./symbol-access";
 
+const here = dirname(fileURLToPath(import.meta.url));
+const defaultBridge = resolve(here, "../../ads-bridge/bin/Release/net9.0/AdsBridge.dll");
+
 const { values } = parseArgs({
   options: {
     driver: { type: "string", default: "sim" },
     "ams-net-id": { type: "string", default: "127.0.0.1.1.1" },
     "ads-port": { type: "string", default: "851" },
+    "ads-bridge": { type: "string", default: defaultBridge },
     "router-address": { type: "string" },
     "router-port": { type: "string" },
     "local-ams-net-id": { type: "string" },
     "cycle-ms": { type: "string", default: "20" },
+    "config-recheck-ms": { type: "string", default: "1000" },
     port: { type: "string", default: "8080" },
     host: { type: "string" },
     "static-dir": { type: "string" },
@@ -26,13 +32,18 @@ const { values } = parseArgs({
 
 if (values.help) {
   console.log(`Usage: gateway [options]
-  --driver sim|ads           PLC driver (default: sim)
+  --driver sim|ads|ads-tcp   PLC driver (default: sim)
+                             ads:     official Beckhoff ADS library via the .NET bridge (local AMS router,
+                                      no route needed; build it with "pnpm build:bridge")
+                             ads-tcp: pure TCP client (ads-client); needs a route or AMS TCP loopback
   --ams-net-id <id>          ADS target AmsNetId (default: 127.0.0.1.1.1)
   --ads-port <port>          ADS target port (default: 851)
-  --router-address <host>    ADS router host when not using the local TwinCAT router
-  --router-port <port>       ADS router TCP port (default: 48898)
-  --local-ams-net-id <id>    Local AmsNetId when connecting through a remote router
+  --ads-bridge <dll>         Path to AdsBridge.dll (default: apps/ads-bridge/bin/Release/net9.0)
+  --router-address <host>    ads-tcp only: ADS router host when not using the local router
+  --router-port <port>       ads-tcp only: ADS router TCP port (default: 48898)
+  --local-ams-net-id <id>    ads-tcp only: local AmsNetId when connecting through a remote router
   --cycle-ms <ms>            Acquisition cycle (default: 20)
+  --config-recheck-ms <ms>   Re-read the full config at this interval to catch live changes (default: 1000, 0 = off)
   --port <port>              HTTP + WebSocket port (default: 8080)
   --host <addr>              Bind address (default: all interfaces)
   --static-dir <dir>         Built web app to serve (default: apps/web/dist if present)`);
@@ -44,6 +55,16 @@ let plc: SymbolAccess;
 let simulator: ReturnType<typeof createSimulator> | undefined;
 
 if (values.driver === "ads") {
+  if (!existsSync(values["ads-bridge"]!)) {
+    console.error(`ADS bridge not found at ${values["ads-bridge"]}. Build it with "pnpm build:bridge".`);
+    process.exit(1);
+  }
+  plc = new AdsBridgeSymbolAccess({
+    bridgePath: values["ads-bridge"]!,
+    targetAmsNetId: values["ams-net-id"]!,
+    targetAdsPort: Number(values["ads-port"]),
+  });
+} else if (values.driver === "ads-tcp") {
   plc = new AdsSymbolAccess({
     targetAmsNetId: values["ams-net-id"]!,
     targetAdsPort: Number(values["ads-port"]),
@@ -55,14 +76,12 @@ if (values.driver === "ads") {
   simulator = createSimulator();
   plc = simulator.plc;
 } else {
-  console.error(`Unknown driver "${values.driver}". Use sim or ads.`);
+  console.error(`Unknown driver "${values.driver}". Use sim, ads or ads-tcp.`);
   process.exit(1);
 }
 
-const sourceId = values.driver === "ads" ? `ads:${values["ams-net-id"]}:${values["ads-port"]}` : "sim";
-const gateway = createGateway({ plc, sourceId });
-
-const here = dirname(fileURLToPath(import.meta.url));
+const sourceId = values.driver === "sim" ? "sim" : `ads:${values["ams-net-id"]}:${values["ads-port"]}`;
+const gateway = createGateway({ plc, sourceId, configRecheckMs: Number(values["config-recheck-ms"]) });
 const defaultStatic = resolve(here, "../../web/dist");
 const staticDir = values["static-dir"] ?? (existsSync(defaultStatic) ? defaultStatic : undefined);
 
@@ -107,6 +126,7 @@ const shutdown = async () => {
   stopped = true;
   server.close();
   if (plc instanceof AdsSymbolAccess) await plc.close();
+  if (plc instanceof AdsBridgeSymbolAccess) plc.close();
   process.exit(0);
 };
 process.on("SIGINT", shutdown);

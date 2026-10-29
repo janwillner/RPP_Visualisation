@@ -93,6 +93,11 @@ export class GatewayStore {
     return Math.min(latest.tRel, now - offset - RENDER_DELAY_MS);
   }
 
+  private clearBuffer(): void {
+    this.snapshots = [];
+    this.arrivals = [];
+  }
+
   private update(patch: Partial<GatewaySnapshot>): void {
     this.snapshot = { ...this.snapshot, ...patch };
     for (const l of this.listeners) l();
@@ -140,13 +145,14 @@ export class GatewayStore {
         this.update({ status: message.status });
         break;
       case "config":
-        // tRel restarts with every discovery; old snapshots belong to the previous timeline.
-        this.snapshots = [];
-        this.arrivals = [];
+        // A new config version starts a new timeline; a refreshed config of the same version does not.
+        if (message.configVersion !== this.snapshot.config?.configVersion) this.clearBuffer();
         this.update({ config: message, protocolError: undefined });
         break;
       case "state": {
         if (message.configVersion !== this.snapshot.config?.configVersion) break;
+        // tRel restarts when the gateway rediscovers (e.g. after a reconnect): drop the old timeline.
+        if (message.tRel < (this.latest()?.tRel ?? -Infinity)) this.clearBuffer();
         this.lastArrival = performance.now();
         this.snapshots.push(message);
         this.arrivals.push(this.lastArrival);

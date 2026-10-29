@@ -1,0 +1,328 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="P_VisuDemo" Id="{1b914051-4207-4863-aa36-75c3956c13a4}" SpecialFunc="None">
+    <Declaration><![CDATA[(* DEMO ONLY: a simulated sample line behind the Syn_Visu contract, for testing the gateway over ADS.
+   Two infeed conveyors (Y = 0 and Y = 1000) and an outfeed conveyor between them (Y = 500), with three Delta
+   robots one after another along the line (X = 1500, 2500, 3500) above the outfeed. Each robot picks from
+   either infeed and places onto the outfeed. Some products are deliberately missed.
+   Remove together with GVL_Visu and F_VisuDemo* before releasing the library. *)
+PROGRAM P_VisuDemo
+VAR
+	stInfeed1 : ST_VisuConveyor;
+	stInfeed2 : ST_VisuConveyor;
+	stOutfeed : ST_VisuConveyor;
+	stDelta1 : ST_VisuDelta;
+	stDelta2 : ST_VisuDelta;
+	stDelta3 : ST_VisuDelta;
+
+	bInitialised : BOOL;
+	bOk : BOOL;
+	nTaskIndex : DINT;
+	fDt : LREAL; // s
+	nNow : ULINT;
+	nNextId : UDINT := 1;
+	nSeed : UDINT := 12345;
+	aSinceSpawn : ARRAY[0..1] OF LREAL := [0, 0.3];
+
+	// Per robot
+	aPhase : ARRAY[0..2] OF INT;
+	aTargetId : ARRAY[0..2] OF UDINT;
+	aTargetBelt : ARRAY[0..2] OF INT;
+	aTcp : ARRAY[0..2] OF ST_VisuPlanarPose;
+
+	refBelt : REFERENCE TO ST_VisuConveyor;
+	refRobot : REFERENCE TO ST_VisuDelta;
+	nRobot : INT;
+	nBelt : INT;
+	nIndex : INT;
+	nTarget : INT;
+	fBaseX : LREAL;
+	fStep : LREAL;
+	fX : LREAL;
+	fY : LREAL;
+	fTopZ : LREAL;
+END_VAR
+VAR CONSTANT
+	cBeltZ : LREAL := 800;
+	cBeltLength : LREAL := 5000;
+	cBeltWidth : LREAL := 400;
+	cInfeedSpeed : LREAL := 150; // mm/s
+	cOutfeedSpeed : LREAL := 120; // mm/s
+	cInfeed1Y : LREAL := 0;
+	cInfeed2Y : LREAL := 1000;
+	cOutfeedY : LREAL := 500;
+	cRobot1X : LREAL := 1500;
+	cRobotPitch : LREAL := 1000; // distance between robots along X
+	cRobotY : LREAL := 500;
+	cRobotZ : LREAL := 1900;
+	cBaseRadius : LREAL := 200;
+	cEffectorRadius : LREAL := 50;
+	cUpperArmLength : LREAL := 400;
+	cLowerArmLength : LREAL := 1000;
+	cProductHeight : LREAL := 40;
+	cTcpSpeed : LREAL := 2500; // mm/s
+	cHover : LREAL := 120;
+	cPickHalfWindow : LREAL := 400;
+	cPlaceHalfWindow : LREAL := 300;
+	cSpawnInterval : LREAL := 0.6; // s per infeed
+	cRemoveBeyondEnd : LREAL := 300;
+	cLead : LREAL := 7.5; // mm the robot leads the moving product
+
+	cPhaseIdle : INT := 0;
+	cPhaseApproach : INT := 1;
+	cPhaseDescend : INT := 2;
+	cPhaseLift : INT := 3;
+	cPhaseTransfer : INT := 4;
+	cPhaseLower : INT := 5;
+	cPhaseRelease : INT := 6;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[nTaskIndex := Tc2_System.GETCURTASKINDEXEX();
+IF nTaskIndex > 0 THEN
+	fDt := UDINT_TO_LREAL(TwinCAT_SystemInfoVarList._TaskInfo[nTaskIndex].CycleTime) * 1.0E-7;
+ELSE
+	fDt := 0.01;
+END_IF
+nNow := F_VisuDcTime();
+fStep := cTcpSpeed * fDt;
+
+// ----- Configuration (once) -----
+IF NOT bInitialised THEN
+	stInfeed1.stConfig.stPose.fY := cInfeed1Y;
+	stInfeed1.stConfig.stPose.fZ := cBeltZ;
+	stInfeed1.stConfig.fLength := cBeltLength;
+	stInfeed1.stConfig.fWidth := cBeltWidth;
+	stInfeed1.stConfig.nProductTypeCount := 1;
+	stInfeed1.stConfig.aProductTypes[0].nId := 1;
+	stInfeed1.stConfig.aProductTypes[0].fLength := 120;
+	stInfeed1.stConfig.aProductTypes[0].fWidth := 80;
+	stInfeed1.stConfig.aProductTypes[0].fHeight := cProductHeight;
+	stInfeed2.stConfig := stInfeed1.stConfig;
+	stInfeed2.stConfig.stPose.fY := cInfeed2Y;
+	stOutfeed.stConfig := stInfeed1.stConfig;
+	stOutfeed.stConfig.stPose.fY := cOutfeedY;
+
+	FOR nRobot := 0 TO 2 DO
+		CASE nRobot OF
+			0: refRobot REF= stDelta1;
+			1: refRobot REF= stDelta2;
+		ELSE
+			refRobot REF= stDelta3;
+		END_CASE
+		fBaseX := cRobot1X + INT_TO_LREAL(nRobot) * cRobotPitch;
+		refRobot.stConfig.stPose.fX := fBaseX;
+		refRobot.stConfig.stPose.fY := cRobotY;
+		refRobot.stConfig.stPose.fZ := cRobotZ;
+		refRobot.stConfig.fBaseRadius := cBaseRadius;
+		refRobot.stConfig.fEffectorRadius := cEffectorRadius;
+		refRobot.stConfig.fUpperArmLength := cUpperArmLength;
+		refRobot.stConfig.fLowerArmLength := cLowerArmLength;
+		refRobot.stConfig.bHasRotationAxis := TRUE;
+		refRobot.stConfig.stWorkArea.fRadius := 750;
+		refRobot.stConfig.stWorkArea.fZMin := -1300;
+		refRobot.stConfig.stWorkArea.fZMax := -700;
+		refRobot.stConfig.stWorkArea.fConeHeight := 200;
+		refRobot.stConfig.stWorkArea.fConeBottomRadius := 450;
+		refRobot.stConfig.nWindowCount := 3;
+		refRobot.stConfig.aWindows[0].nConveyorId := 1;
+		refRobot.stConfig.aWindows[0].fStart := fBaseX - cPickHalfWindow;
+		refRobot.stConfig.aWindows[0].fEnd := fBaseX + cPickHalfWindow;
+		refRobot.stConfig.aWindows[0].eKind := E_VisuWindowKind.PICK;
+		refRobot.stConfig.aWindows[1] := refRobot.stConfig.aWindows[0];
+		refRobot.stConfig.aWindows[1].nConveyorId := 2;
+		refRobot.stConfig.aWindows[2].nConveyorId := 3;
+		refRobot.stConfig.aWindows[2].fStart := fBaseX - cPlaceHalfWindow;
+		refRobot.stConfig.aWindows[2].fEnd := fBaseX + cPlaceHalfWindow;
+		refRobot.stConfig.aWindows[2].eKind := E_VisuWindowKind.PLACE;
+
+		aTcp[nRobot].fX := fBaseX;
+		aTcp[nRobot].fY := cRobotY;
+		aTcp[nRobot].fZ := cRobotZ - 900;
+	END_FOR
+	bInitialised := TRUE;
+END_IF
+
+// ----- Manifest (idempotent) -----
+bOk := F_VisuAddComponent(stManifest := GVL_Visu.stManifest, nId := 1, eType := E_VisuComponentType.CONVEYOR,
+	sName := 'Infeed 1', sPath := 'P_VisuDemo.stInfeed1');
+bOk := F_VisuAddComponent(stManifest := GVL_Visu.stManifest, nId := 2, eType := E_VisuComponentType.CONVEYOR,
+	sName := 'Infeed 2', sPath := 'P_VisuDemo.stInfeed2');
+bOk := F_VisuAddComponent(stManifest := GVL_Visu.stManifest, nId := 3, eType := E_VisuComponentType.CONVEYOR,
+	sName := 'Outfeed', sPath := 'P_VisuDemo.stOutfeed');
+bOk := F_VisuAddComponent(stManifest := GVL_Visu.stManifest, nId := 10, eType := E_VisuComponentType.DELTA,
+	sName := 'Delta 1', sPath := 'P_VisuDemo.stDelta1');
+bOk := F_VisuAddComponent(stManifest := GVL_Visu.stManifest, nId := 11, eType := E_VisuComponentType.DELTA,
+	sName := 'Delta 2', sPath := 'P_VisuDemo.stDelta2');
+bOk := F_VisuAddComponent(stManifest := GVL_Visu.stManifest, nId := 12, eType := E_VisuComponentType.DELTA,
+	sName := 'Delta 3', sPath := 'P_VisuDemo.stDelta3');
+
+// ----- Conveyors and product infeed -----
+stInfeed1.stState.fEncoder := stInfeed1.stState.fEncoder + cInfeedSpeed * fDt;
+stInfeed2.stState.fEncoder := stInfeed2.stState.fEncoder + cInfeedSpeed * fDt;
+stOutfeed.stState.fEncoder := stOutfeed.stState.fEncoder + cOutfeedSpeed * fDt;
+
+FOR nBelt := 0 TO 1 DO
+	IF nBelt = 0 THEN
+		refBelt REF= stInfeed1;
+	ELSE
+		refBelt REF= stInfeed2;
+	END_IF
+	aSinceSpawn[nBelt] := aSinceSpawn[nBelt] + fDt;
+	IF aSinceSpawn[nBelt] >= cSpawnInterval AND refBelt.stState.nProductCount < GVL_VisuParam.nMaxProducts THEN
+		aSinceSpawn[nBelt] := 0;
+		nSeed := nSeed * 1103515245 + 12345;
+		nIndex := UINT_TO_INT(refBelt.stState.nProductCount);
+		refBelt.stState.aProducts[nIndex].nId := nNextId;
+		nNextId := nNextId + 1;
+		refBelt.stState.aProducts[nIndex].bValid := TRUE;
+		refBelt.stState.aProducts[nIndex].stLatchPose.fX := 100;
+		refBelt.stState.aProducts[nIndex].stLatchPose.fY := refBelt.stConfig.stPose.fY
+			+ (UDINT_TO_LREAL(nSeed MOD 1000) / 1000.0 - 0.5) * 160.0;
+		refBelt.stState.aProducts[nIndex].stLatchPose.fZ := cBeltZ;
+		refBelt.stState.aProducts[nIndex].stLatchPose.fRz := (UDINT_TO_LREAL((nSeed / 1000) MOD 1000) / 1000.0 - 0.5) * 60.0;
+		refBelt.stState.aProducts[nIndex].fLatchEncoder := refBelt.stState.fEncoder;
+		refBelt.stState.aProducts[nIndex].eState := E_VisuProductState.DETECTED;
+		refBelt.stState.aProducts[nIndex].nRobotId := 0;
+		refBelt.stState.aProducts[nIndex].nProductType := 1;
+		refBelt.stState.nProductCount := refBelt.stState.nProductCount + 1;
+	END_IF
+END_FOR
+
+// ----- Robots -----
+FOR nRobot := 0 TO 2 DO
+	CASE nRobot OF
+		0: refRobot REF= stDelta1;
+		1: refRobot REF= stDelta2;
+	ELSE
+		refRobot REF= stDelta3;
+	END_CASE
+	fBaseX := cRobot1X + INT_TO_LREAL(nRobot) * cRobotPitch;
+
+	// Locate the current target in its register (indices shift when entries are dropped).
+	nTarget := -1;
+	IF aTargetId[nRobot] <> 0 THEN
+		IF aTargetBelt[nRobot] = 0 THEN
+			refBelt REF= stInfeed1;
+		ELSE
+			refBelt REF= stInfeed2;
+		END_IF
+		FOR nIndex := 0 TO UINT_TO_INT(refBelt.stState.nProductCount) - 1 DO
+			IF refBelt.stState.aProducts[nIndex].nId = aTargetId[nRobot] THEN
+				nTarget := nIndex;
+			END_IF
+		END_FOR
+	END_IF
+	IF aPhase[nRobot] <> cPhaseIdle AND nTarget < 0 THEN
+		aPhase[nRobot] := cPhaseIdle;
+		aTargetId[nRobot] := 0;
+	END_IF
+	IF nTarget >= 0 THEN
+		fX := refBelt.stState.aProducts[nTarget].stLatchPose.fX
+			+ (refBelt.stState.fEncoder - refBelt.stState.aProducts[nTarget].fLatchEncoder) + cLead;
+		fY := refBelt.stState.aProducts[nTarget].stLatchPose.fY;
+		fTopZ := refBelt.stState.aProducts[nTarget].stLatchPose.fZ + cProductHeight;
+	END_IF
+
+	CASE aPhase[nRobot] OF
+		cPhaseIdle:
+			FOR nBelt := 0 TO 1 DO
+				IF nBelt = 0 THEN
+					refBelt REF= stInfeed1;
+				ELSE
+					refBelt REF= stInfeed2;
+				END_IF
+				FOR nIndex := 0 TO UINT_TO_INT(refBelt.stState.nProductCount) - 1 DO
+					IF aTargetId[nRobot] = 0 AND refBelt.stState.aProducts[nIndex].eState = E_VisuProductState.DETECTED THEN
+						fX := refBelt.stState.aProducts[nIndex].stLatchPose.fX
+							+ (refBelt.stState.fEncoder - refBelt.stState.aProducts[nIndex].fLatchEncoder);
+						IF fX >= fBaseX - cPickHalfWindow AND fX <= fBaseX + cPickHalfWindow - 300 THEN
+							refBelt.stState.aProducts[nIndex].eState := E_VisuProductState.ASSIGNED;
+							refBelt.stState.aProducts[nIndex].nRobotId := INT_TO_UDINT(10 + nRobot);
+							aTargetId[nRobot] := refBelt.stState.aProducts[nIndex].nId;
+							aTargetBelt[nRobot] := nBelt;
+							aPhase[nRobot] := cPhaseApproach;
+						END_IF
+					END_IF
+				END_FOR
+			END_FOR
+			IF aTargetId[nRobot] = 0 THEN
+				bOk := F_VisuDemoMoveToward(aTcp[nRobot], fBaseX, cRobotY, cRobotZ - 900, fStep);
+			END_IF
+
+		cPhaseApproach:
+			IF fX - cLead > fBaseX + cPickHalfWindow THEN
+				// Product left the window: hand it back, a downstream robot may still catch it.
+				refBelt.stState.aProducts[nTarget].eState := E_VisuProductState.DETECTED;
+				refBelt.stState.aProducts[nTarget].nRobotId := 0;
+				aTargetId[nRobot] := 0;
+				aPhase[nRobot] := cPhaseIdle;
+			ELSE
+				aTcp[nRobot].fRz := aTcp[nRobot].fRz
+					+ (refBelt.stState.aProducts[nTarget].stLatchPose.fRz - aTcp[nRobot].fRz) * MIN(1.0, fDt * 10.0);
+				IF F_VisuDemoMoveToward(aTcp[nRobot], fX, fY, fTopZ + cHover, fStep) THEN
+					aPhase[nRobot] := cPhaseDescend;
+				END_IF
+			END_IF
+
+		cPhaseDescend:
+			IF F_VisuDemoMoveToward(aTcp[nRobot], fX, fY, fTopZ, fStep) THEN
+				refBelt.stState.aProducts[nTarget].eState := E_VisuProductState.PICKED;
+				aPhase[nRobot] := cPhaseLift;
+			END_IF
+
+		cPhaseLift:
+			IF F_VisuDemoMoveToward(aTcp[nRobot], aTcp[nRobot].fX, aTcp[nRobot].fY, fTopZ + cHover, fStep) THEN
+				aPhase[nRobot] := cPhaseTransfer;
+			END_IF
+
+		cPhaseTransfer:
+			aTcp[nRobot].fRz := aTcp[nRobot].fRz * (1.0 - MIN(1.0, fDt * 5.0));
+			IF F_VisuDemoMoveToward(aTcp[nRobot], fBaseX, cOutfeedY, cBeltZ + cProductHeight + cHover, fStep) THEN
+				aPhase[nRobot] := cPhaseLower;
+			END_IF
+
+		cPhaseLower:
+			IF F_VisuDemoMoveToward(aTcp[nRobot], aTcp[nRobot].fX, aTcp[nRobot].fY, cBeltZ + cProductHeight, fStep) THEN
+				aPhase[nRobot] := cPhaseRelease;
+			END_IF
+
+		cPhaseRelease:
+			refBelt.stState.aProducts[nTarget].eState := E_VisuProductState.PLACED;
+			IF stOutfeed.stState.nProductCount < GVL_VisuParam.nMaxProducts THEN
+				nIndex := UINT_TO_INT(stOutfeed.stState.nProductCount);
+				stOutfeed.stState.aProducts[nIndex].nId := nNextId;
+				nNextId := nNextId + 1;
+				stOutfeed.stState.aProducts[nIndex].bValid := TRUE;
+				stOutfeed.stState.aProducts[nIndex].stLatchPose.fX := aTcp[nRobot].fX;
+				stOutfeed.stState.aProducts[nIndex].stLatchPose.fY := aTcp[nRobot].fY;
+				stOutfeed.stState.aProducts[nIndex].stLatchPose.fZ := cBeltZ;
+				stOutfeed.stState.aProducts[nIndex].stLatchPose.fRz := aTcp[nRobot].fRz;
+				stOutfeed.stState.aProducts[nIndex].fLatchEncoder := stOutfeed.stState.fEncoder;
+				stOutfeed.stState.aProducts[nIndex].eState := E_VisuProductState.DETECTED;
+				stOutfeed.stState.aProducts[nIndex].nRobotId := 0;
+				stOutfeed.stState.aProducts[nIndex].nProductType := 1;
+				stOutfeed.stState.nProductCount := stOutfeed.stState.nProductCount + 1;
+			END_IF
+			aTargetId[nRobot] := 0;
+			aPhase[nRobot] := cPhaseIdle;
+	END_CASE
+
+	// Robot state: only the TCP; the visualisation derives the arms.
+	refRobot.stState.stActualTcp := aTcp[nRobot];
+	refRobot.stState.stSetpointTcp := aTcp[nRobot];
+	refRobot.stState.stSetpointTcp.fX := aTcp[nRobot].fX + 2;
+	refRobot.stState.stSetpointTcp.fZ := aTcp[nRobot].fZ - 1;
+	refRobot.stState.nTimestamp := nNow;
+END_FOR
+
+// The PLC drops register entries some distance beyond the belt end, so "missed" stays visible briefly.
+bOk := F_VisuDemoCompact(stState := stInfeed1.stState, fRemoveBeyond := cBeltLength + cRemoveBeyondEnd);
+bOk := F_VisuDemoCompact(stState := stInfeed2.stState, fRemoveBeyond := cBeltLength + cRemoveBeyondEnd);
+bOk := F_VisuDemoCompact(stState := stOutfeed.stState, fRemoveBeyond := cBeltLength + cRemoveBeyondEnd);
+
+stInfeed1.stState.nTimestamp := nNow;
+stInfeed2.stState.nTimestamp := nNow;
+stOutfeed.stState.nTimestamp := nNow;]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>
