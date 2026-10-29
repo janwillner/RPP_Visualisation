@@ -1,0 +1,19 @@
+{
+  "name": "rpp-visualisation",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.16.1",
+  "scripts": {
+    "dev:gateway": "pnpm --filter @rpp/gateway dev",
+    "dev:web": "pnpm --filter @rpp/web dev",
+    "build": "pnpm --filter @rpp/web build",
+    "start": "pnpm --filter @rpp/gateway start",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}

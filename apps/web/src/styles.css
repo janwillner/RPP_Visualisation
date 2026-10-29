@@ -1,0 +1,246 @@
+:root {
+  --bg: #15181d;
+  --panel: #1f242c;
+  --border: #2f3640;
+  --text: #dfe5ec;
+  --muted: #8893a2;
+  --accent: #4fc3f7;
+  --ok: #66bb6a;
+  --bad: #ef5350;
+  --select: #ffd54f;
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 13px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.app {
+  display: grid;
+  height: 100%;
+  grid-template-columns: 240px 1fr 320px;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "toolbar toolbar toolbar"
+    "left viewport right"
+    "status status status";
+}
+
+.toolbar {
+  grid-area: toolbar;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.title {
+  font-size: 14px;
+}
+
+.group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: #2a313b;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+.toggle.on {
+  background: #23455a;
+  border-color: var(--accent);
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+}
+
+.legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.legend i.outline {
+  border: 1px dashed var(--text);
+}
+
+.panel {
+  overflow: auto;
+  padding: 8px 12px;
+  background: var(--panel);
+  min-height: 0;
+}
+
+.panel.left {
+  grid-area: left;
+  border-right: 1px solid var(--border);
+}
+
+.panel.right {
+  grid-area: right;
+  border-left: 1px solid var(--border);
+}
+
+.viewport {
+  grid-area: viewport;
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+}
+
+h2 {
+  font-size: 13px;
+  margin: 4px 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+h3 {
+  font-size: 12px;
+  margin: 12px 0 4px;
+  color: var(--muted);
+}
+
+.tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree button {
+  width: 100%;
+  text-align: left;
+  margin-bottom: 4px;
+  background: transparent;
+}
+
+.tree button.selected {
+  border-color: var(--select);
+}
+
+.badge {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #34404e;
+  text-transform: uppercase;
+}
+
+.badge.delta {
+  background: #4b3d5e;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.warn {
+  color: var(--select);
+}
+
+.json {
+  margin: 0;
+  padding: 6px;
+  font-size: 11px;
+  background: #171b21;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.statusbar {
+  grid-area: status;
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.bad {
+  color: var(--bad);
+}
+
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.errors {
+  position: absolute;
+  bottom: 100%;
+  right: 12px;
+  max-width: 600px;
+  max-height: 300px;
+  overflow: auto;
+  margin: 0 0 4px;
+  padding: 8px 8px 8px 24px;
+  background: var(--panel);
+  border: 1px solid var(--bad);
+  border-radius: 4px;
+}
+
+.label {
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 0 3px #000;
+}
+
+.axis-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  pointer-events: none;
+}
+
+@media (max-width: 900px) {
+  .app {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 40vh 1fr auto auto;
+    grid-template-areas: "toolbar" "viewport" "right" "left" "status";
+  }
+}

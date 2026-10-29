@@ -1,0 +1,111 @@
+/**
+ * Rigid transforms in the MCS (mm, degrees, Z up) and the conversion to the renderer frame
+ * (Three.js: metres, Y up). Internal to the scene model.
+ */
+import type { Pose } from "@rpp/protocol";
+
+export type Vec3 = [number, number, number];
+export type Quat = [number, number, number, number];
+/** Row-major 3×3 rotation matrix. */
+export type Mat3 = [number, number, number, number, number, number, number, number, number];
+
+export interface Frame {
+  rotation: Mat3;
+  /** Origin in MCS mm. */
+  origin: Vec3;
+}
+
+const DEG = Math.PI / 180;
+
+export function rotX(deg: number): Mat3 {
+  const c = Math.cos(deg * DEG);
+  const s = Math.sin(deg * DEG);
+  return [1, 0, 0, 0, c, -s, 0, s, c];
+}
+
+export function rotY(deg: number): Mat3 {
+  const c = Math.cos(deg * DEG);
+  const s = Math.sin(deg * DEG);
+  return [c, 0, s, 0, 1, 0, -s, 0, c];
+}
+
+export function rotZ(deg: number): Mat3 {
+  const c = Math.cos(deg * DEG);
+  const s = Math.sin(deg * DEG);
+  return [c, -s, 0, s, c, 0, 0, 0, 1];
+}
+
+export function mul(a: Mat3, b: Mat3): Mat3 {
+  const r = new Array(9).fill(0) as Mat3;
+  for (let i = 0; i < 3; i++)
+    for (let j = 0; j < 3; j++) r[i * 3 + j] = a[i * 3]! * b[j]! + a[i * 3 + 1]! * b[3 + j]! + a[i * 3 + 2]! * b[6 + j]!;
+  return r;
+}
+
+export function apply(m: Mat3, v: Vec3): Vec3 {
+  return [
+    m[0] * v[0] + m[1] * v[1] + m[2] * v[2],
+    m[3] * v[0] + m[4] * v[1] + m[5] * v[2],
+    m[6] * v[0] + m[7] * v[1] + m[8] * v[2],
+  ];
+}
+
+/** Pose → frame. Rotation order per contract: R = Rz(rz) · Ry(ry) · Rx(rx). */
+export function frameFromPose(p: Pose): Frame {
+  return { rotation: mul(rotZ(p.rz), mul(rotY(p.ry), rotX(p.rx))), origin: [p.x, p.y, p.z] };
+}
+
+/** Point given in a frame's local coordinates (mm) → MCS (mm). */
+export function toMcs(frame: Frame, local: Vec3): Vec3 {
+  const r = apply(frame.rotation, local);
+  return [r[0] + frame.origin[0], r[1] + frame.origin[1], r[2] + frame.origin[2]];
+}
+
+/** Child frame placed at `local` inside `parent`, additionally rotated by `rotation` (local). */
+export function child(parent: Frame, local: Vec3, rotation: Mat3 = rotZ(0)): Frame {
+  return { rotation: mul(parent.rotation, rotation), origin: toMcs(parent, local) };
+}
+
+/** MCS mm (Z up) → renderer metres (Y up): (x, y, z) ↦ (x, z, −y) / 1000. */
+export function toRenderer(p: Vec3): Vec3 {
+  return [p[0] / 1000, p[2] / 1000, -p[1] / 1000];
+}
+
+/** Change of basis MCS → renderer, applied to rotations as C · R · Cᵀ. */
+const C: Mat3 = [1, 0, 0, 0, 0, 1, 0, -1, 0];
+const CT: Mat3 = [1, 0, 0, 0, 0, -1, 0, 1, 0];
+
+export function quatFromMat3(m: Mat3): Quat {
+  const [m00, m01, m02, m10, m11, m12, m20, m21, m22] = m;
+  const trace = m00 + m11 + m22;
+  let q: Quat;
+  if (trace > 0) {
+    const s = 0.5 / Math.sqrt(trace + 1);
+    q = [(m21 - m12) * s, (m02 - m20) * s, (m10 - m01) * s, 0.25 / s];
+  } else if (m00 > m11 && m00 > m22) {
+    const s = 2 * Math.sqrt(1 + m00 - m11 - m22);
+    q = [0.25 * s, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s];
+  } else if (m11 > m22) {
+    const s = 2 * Math.sqrt(1 + m11 - m00 - m22);
+    q = [(m01 + m10) / s, 0.25 * s, (m12 + m21) / s, (m02 - m20) / s];
+  } else {
+    const s = 2 * Math.sqrt(1 + m22 - m00 - m11);
+    q = [(m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s];
+  }
+  return q;
+}
+
+export interface Transform {
+  /** Renderer metres. */
+  position: Vec3;
+  /** Renderer quaternion [x, y, z, w]. */
+  quaternion: Quat;
+}
+
+/**
+ * Frame → renderer transform. An object's local axes map like the world axes: local +X stays +X,
+ * local +Z (MCS up) becomes +Y, local +Y becomes −Z.
+ */
+export function toRendererTransform(frame: Frame): Transform {
+  return { position: toRenderer(frame.origin), quaternion: quatFromMat3(mul(C, mul(frame.rotation, CT))) };
+}

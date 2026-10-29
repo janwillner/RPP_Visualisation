@@ -1,0 +1,20 @@
+{
+  "name": "@rpp/gateway",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts --driver sim",
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@rpp/protocol": "workspace:*",
+    "ads-client": "^2.1.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.3"
+  }
+}
