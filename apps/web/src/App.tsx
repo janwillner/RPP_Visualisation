@@ -1,16 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentConfig, ComponentState } from "@rpp/protocol";
 import { GatewayStore, STALE_AFTER_MS, defaultGatewayUrl, useGateway, type GatewaySnapshot } from "./connection";
-import type { SceneModel } from "./scene/scene-model";
+import { formatPointCopy, measureChain, pointsCsv, type SceneModel, type SnapPoint, type Vec3 } from "./scene/scene-model";
 import {
   MISSED_COLOR,
   PRODUCT_COLORS,
   SceneView,
-  formatMcs,
   type CameraPreset,
   type Layers,
-  type McsHit,
-  type McsPin,
+  type MeasurePoint,
   type Selection,
 } from "./scene/SceneView";
 
@@ -31,15 +29,36 @@ export function App() {
     return () => store.stop();
   }, [store]);
   const gateway = useGateway(store);
-  const [layers, setLayers] = useState<Layers>({ workAreas: true, windows: true, tcpMarkers: true });
+  const [layers, setLayers] = useState<Layers>({ workingAreas: true, zones: true, tcpMarkers: true });
   const [selection, setSelection] = useState<Selection>();
   const [cameraRequest, setCameraRequest] = useState<{ preset: CameraPreset; seq: number }>({ preset: "iso", seq: 0 });
   const modelRef = useRef<SceneModel | undefined>(undefined);
-  // Written on every pointer move; read by the readout at a fixed rate, so moving the mouse never re-renders the app.
-  const hoverRef = useRef<McsHit | undefined>(undefined);
-  const [pins, setPins] = useState<McsPin[]>([]);
-  const nextPinId = useRef(1);
-  const addPin = (hit: McsHit) => setPins((p) => [...p, { ...hit, id: nextPinId.current++ }]);
+  const [measureMode, setMeasureMode] = useState(false);
+  const [measurePoints, setMeasurePoints] = useState<MeasurePoint[]>([]);
+  const nextPointId = useRef(1);
+  // Frozen at the moment of the click: later state or config changes do not move a measuring point.
+  const addMeasurePoint = (p: SnapPoint) =>
+    setMeasurePoints((points) => [
+      ...points,
+      { id: nextPointId.current++, label: p.label, mcs: p.mcs, position: p.position, local: p.local },
+    ]);
+  const clearMeasurePoints = () => {
+    setMeasurePoints([]);
+    nextPointId.current = 1;
+  };
+
+  // M toggles measure mode, Esc leaves it (not while typing).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "m" || e.key === "M") setMeasureMode((m) => !m);
+      else if (e.key === "Escape") setMeasureMode(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const camera = (preset: CameraPreset) => setCameraRequest((r) => ({ preset, seq: r.seq + 1 }));
   const toggle = (key: keyof Layers) => setLayers((l) => ({ ...l, [key]: !l[key] }));
@@ -58,11 +77,13 @@ export function App() {
         </div>
         <div className="group">
           <span className="muted">Layers</span>
-          <Toggle label="Work areas" on={layers.workAreas} onClick={() => toggle("workAreas")} />
-          <Toggle label="Windows" on={layers.windows} onClick={() => toggle("windows")} />
+          <Toggle label="Working areas" on={layers.workingAreas} onClick={() => toggle("workingAreas")} />
+          <Toggle label="Zones" on={layers.zones} onClick={() => toggle("zones")} />
           <Toggle label="TCP markers" on={layers.tcpMarkers} onClick={() => toggle("tcpMarkers")} />
         </div>
-        <Legend />
+        <div className="group">
+          <Toggle label="Measure (M)" on={measureMode} onClick={() => setMeasureMode((m) => !m)} />
+        </div>
       </header>
       <aside className="panel left">
         <ComponentTree components={gateway.config?.components ?? []} selection={selection} onSelect={setSelection} />
@@ -76,16 +97,16 @@ export function App() {
           onSelect={setSelection}
           cameraRequest={cameraRequest}
           modelRef={modelRef}
-          onPointerMcs={(hit) => (hoverRef.current = hit)}
-          onPin={addPin}
-          pins={pins}
+          measureMode={measureMode}
+          onMeasure={addMeasurePoint}
+          measurePoints={measurePoints}
         />
-        <CoordinateReadout
-          hoverRef={hoverRef}
-          pins={pins}
-          onRemove={(id) => setPins((p) => p.filter((x) => x.id !== id))}
-          onClear={() => setPins([])}
-        />
+        {(measureMode || measurePoints.length > 0) && (
+          <MeasureList measureMode={measureMode} points={measurePoints} onClear={clearMeasurePoints} />
+        )}
+        {!measureMode && selection?.kind === "product" && (
+          <ProductLegend selection={selection} modelRef={modelRef} onClose={() => setSelection(undefined)} />
+        )}
       </main>
       <aside className="panel right">
         <Inspector store={store} config={gateway.config?.components ?? []} selection={selection} modelRef={modelRef} />
@@ -95,63 +116,61 @@ export function App() {
   );
 }
 
-/** Live MCS coordinates under the pointer, plus the measuring points placed with Shift+click. */
-function CoordinateReadout(props: {
-  hoverRef: React.RefObject<McsHit | undefined>;
-  pins: McsPin[];
-  onRemove: (id: number) => void;
-  onClear: () => void;
-}) {
-  const { hoverRef, pins, onRemove, onClear } = props;
-  useTick(100);
-  const hover = hoverRef.current;
+const fmt = (p: Vec3) => p.map((v) => v.toFixed(1)).join(" / ");
+
+function copy(text: string) {
+  void navigator.clipboard?.writeText(text).catch(() => undefined);
+}
+
+/**
+ * Measuring points as a chain: MCS coordinates, the same point in its component's frame, and offset and
+ * distance to the previous point. A click on a row copies "X;Y;Z".
+ */
+function MeasureList(props: { measureMode: boolean; points: MeasurePoint[]; onClear: () => void }) {
+  const { measureMode, points, onClear } = props;
+  const chain = measureChain(points.map((p) => p.mcs));
   return (
-    <div className="coords">
-      <div className="coords-live">
-        <span className="muted">MCS</span>{" "}
-        {hover ? (
-          <>
-            <strong>{formatMcs(hover.point)}</strong> mm <span className="muted">{hover.label}</span>
-          </>
-        ) : (
-          <span className="muted">point at the scene · Shift+click places a measuring point</span>
-        )}
-      </div>
-      {pins.length > 0 && (
+    <div className="measure">
+      {measureMode && (
+        <div className="muted measure-hint">
+          Measure mode · click a snap point to add it · M or Esc to leave
+        </div>
+      )}
+      {points.length > 0 && (
         <>
-          <table className="coords-pins">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>X</th>
-                <th>Y</th>
-                <th>Z</th>
-                <th>On</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {pins.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.id}</td>
-                  {p.point.map((v, i) => (
-                    <td key={i} className="num">
-                      {v.toFixed(1)}
-                    </td>
-                  ))}
-                  <td className="muted">{p.label}</td>
-                  <td>
-                    <button className="link" onClick={() => onRemove(p.id)} aria-label={`Remove point ${p.id}`}>
-                      ×
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <button className="link muted" onClick={onClear}>
-            Clear points
-          </button>
+          <ol className="measure-points">
+            {points.map((p, i) => {
+              const link = chain[i]!;
+              return (
+                <li key={p.id}>
+                  <button className="measure-row" onClick={() => copy(formatPointCopy(p.mcs))} title="Copy X;Y;Z">
+                    <span className="measure-head">
+                      <strong>#{p.id}</strong> <span className="muted">{p.label}</span>
+                    </span>
+                    <span className="measure-mcs">
+                      MCS <strong>{fmt(p.mcs)}</strong> mm
+                    </span>
+                    <span className="muted">
+                      {p.local.componentName} local {fmt(p.local.point)}
+                    </span>
+                    {link.delta && (
+                      <span className="measure-delta">
+                        Δ {fmt(link.delta)} · distance <strong>{link.distance!.toFixed(1)}</strong> mm
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+          <div className="measure-actions">
+            <button className="link" onClick={() => copy(pointsCsv(points))}>
+              Copy all as CSV
+            </button>
+            <button className="link muted" onClick={onClear}>
+              Clear points
+            </button>
+          </div>
         </>
       )}
     </div>
@@ -166,20 +185,46 @@ function Toggle({ label, on, onClick }: { label: string; on: boolean; onClick: (
   );
 }
 
-function Legend() {
+/**
+ * Colour legend, shown only while a product is selected (the selected product itself is drawn in the
+ * selection colour). The entry matching the selected product is highlighted.
+ */
+function ProductLegend(props: {
+  selection: { kind: "product"; conveyorId: number; productId: number };
+  modelRef: React.RefObject<SceneModel | undefined>;
+  onClose: () => void;
+}) {
+  const { selection, modelRef, onClose } = props;
+  useTick(200);
+  const matches =
+    modelRef.current?.products.filter(
+      (p) => p.conveyorId === selection.conveyorId && p.productId === selection.productId,
+    ) ?? [];
+  const product = matches.find((p) => p.display !== "placeholder") ?? matches[0];
+  const current = product ? (product.display === "missed" ? "missed" : product.state) : undefined;
+  const hasPlaceholder = matches.some((p) => p.display === "placeholder");
+  const entries: { key: string; color?: string; outline?: boolean; active: boolean }[] = [
+    ...Object.entries(PRODUCT_COLORS).map(([state, color]) => ({ key: state, color, active: state === current })),
+    { key: "missed", color: MISSED_COLOR, active: current === "missed" },
+    { key: "placeholder", outline: true, active: hasPlaceholder },
+  ];
   return (
-    <div className="group legend">
-      {Object.entries(PRODUCT_COLORS).map(([state, color]) => (
-        <span key={state}>
-          <i style={{ background: color }} /> {state}
-        </span>
-      ))}
-      <span>
-        <i style={{ background: MISSED_COLOR }} /> missed
-      </span>
-      <span>
-        <i className="outline" /> placeholder
-      </span>
+    <div className="product-legend" role="dialog" aria-label="Product colours">
+      <div className="product-legend-head">
+        <strong>Product #{selection.productId}</strong>
+        <span className="muted"> · conveyor #{selection.conveyorId}</span>
+        <button className="link" onClick={onClose} aria-label="Close">
+          ×
+        </button>
+      </div>
+      <ul className="legend">
+        {entries.map((e) => (
+          <li key={e.key} className={e.active ? "active" : ""}>
+            <i className={e.outline ? "outline" : ""} style={e.color ? { background: e.color } : undefined} /> {e.key}
+          </li>
+        ))}
+      </ul>
+      {!product && <p className="muted">No longer in the register.</p>}
     </div>
   );
 }
@@ -262,11 +307,49 @@ function Inspector(props: {
           Arm angles computed from TCP: {delta.angles.map((a) => a.toFixed(2)).join(" / ")}°
         </p>
       )}
+      {state?.type === "xtsGantry" && (
+        <>
+          <h3>Movers · Z {state.z.toFixed(1)}</h3>
+          <MoverTable
+            head={["Id", "Position", "X", "C", "Gripper"]}
+            rows={state.movers.map((m) => [m.id, m.position.toFixed(1), m.x.toFixed(1), m.c.toFixed(1), m.gripperActive ? "on" : "off"])}
+          />
+        </>
+      )}
+      {state?.type === "xtsLoop" && (
+        <>
+          <h3>Movers</h3>
+          <MoverTable head={["Id", "s"]} rows={state.movers.map((m) => [m.id, m.position.toFixed(1)])} />
+        </>
+      )}
       <h3>Config</h3>
       <Json value={component} />
       <h3>State</h3>
       <Json value={state} />
     </>
+  );
+}
+
+function MoverTable({ head, rows }: { head: string[]; rows: (string | number)[][] }) {
+  return (
+    <table className="movers">
+      <thead>
+        <tr>
+          {head.map((h) => (
+            <th key={h}>{h}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={String(r[0])}>
+            {r.map((v, i) => (
+              <td key={i}>{v}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

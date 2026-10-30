@@ -13,16 +13,18 @@ export const PLC_TYPES = {
   manifest: "ST_VisuManifest",
   conveyor: "ST_VisuConveyor",
   delta: "ST_VisuDelta",
+  xtsGantry: "ST_VisuXtsGantry",
+  xtsLoop: "ST_VisuXtsLoop",
 } as const;
 
 /** E_VisuComponentType */
-export const E_VisuComponentType = { NONE: 0, CONVEYOR: 1, DELTA: 2 } as const;
+export const E_VisuComponentType = { NONE: 0, CONVEYOR: 1, DELTA: 2, XTS_GANTRY: 3, XTS_LOOP: 4 } as const;
 
 /** E_VisuProductState */
 export const E_VisuProductState = { DETECTED: 0, ASSIGNED: 1, PICKED: 2, REJECTED: 3, PLACED: 4 } as const;
 
-/** E_VisuWindowKind */
-export const E_VisuWindowKind = { PICK: 1, PLACE: 2 } as const;
+/** E_VisuZoneKind */
+export const E_VisuZoneKind = { PICK: 1, PLACE: 2 } as const;
 
 /** Enums are numbers, or `{ name, value }` objects when the ADS client objectifies enumerations. */
 export type PlcEnum = number | { name: string; value: number };
@@ -76,15 +78,16 @@ export interface ST_VisuProduct {
   nId: number;
   bValid: boolean;
   stLatchPose: ST_VisuPlanarPose;
-  fLatchEncoder: number;
+  fLatchBeltPosition: number;
   eState: PlcEnum;
   nRobotId: number;
+  nMoverId: number;
   nProductType: number;
 }
 
 export interface ST_VisuConveyorState {
   nTimestamp: bigint;
-  fEncoder: number;
+  fBeltPosition: number;
   nProductCount: number;
   aProducts: ST_VisuProduct[];
 }
@@ -94,7 +97,7 @@ export interface ST_VisuConveyor {
   stState: ST_VisuConveyorState;
 }
 
-export interface ST_VisuWorkArea {
+export interface ST_VisuWorkingArea {
   fRadius: number;
   fZMin: number;
   fZMax: number;
@@ -102,7 +105,7 @@ export interface ST_VisuWorkArea {
   fConeBottomRadius: number;
 }
 
-export interface ST_VisuWindow {
+export interface ST_VisuZone {
   nConveyorId: number;
   fStart: number;
   fEnd: number;
@@ -116,9 +119,9 @@ export interface ST_VisuDeltaConfig {
   fUpperArmLength: number;
   fLowerArmLength: number;
   bHasRotationAxis: boolean;
-  stWorkArea: ST_VisuWorkArea;
-  nWindowCount: number;
-  aWindows: ST_VisuWindow[];
+  stWorkingArea: ST_VisuWorkingArea;
+  nZoneCount: number;
+  aZones: ST_VisuZone[];
 }
 
 export interface ST_VisuDeltaState {
@@ -131,6 +134,73 @@ export interface ST_VisuDeltaState {
 export interface ST_VisuDelta {
   stConfig: ST_VisuDeltaConfig;
   stState: ST_VisuDeltaState;
+}
+
+export interface ST_VisuXtsGantryConfig {
+  stPose: ST_VisuPose;
+  nModuleCount: number;
+  fModuleLength: number;
+  fXMin: number;
+  fXMax: number;
+  fZMin: number;
+  fZMax: number;
+  fCMin: number;
+  fCMax: number;
+  fToolOffsetX: number;
+  fToolOffsetZ: number;
+  fMoverLength: number;
+  fMoverWidth: number;
+  nZoneCount: number;
+  aZones: ST_VisuZone[];
+}
+
+export interface ST_VisuGantryMover {
+  nId: number;
+  bValid: boolean;
+  fPosition: number;
+  fX: number;
+  fC: number;
+  bGripperActive: boolean;
+}
+
+export interface ST_VisuXtsGantryState {
+  nTimestamp: bigint;
+  fZ: number;
+  nMoverCount: number;
+  aMovers: ST_VisuGantryMover[];
+}
+
+export interface ST_VisuXtsGantry {
+  stConfig: ST_VisuXtsGantryConfig;
+  stState: ST_VisuXtsGantryState;
+}
+
+export interface ST_VisuXtsLoopConfig {
+  stPose: ST_VisuPose;
+  fStraightLength: number;
+  fCurveRadius: number;
+  fToolOffset: number;
+  fMoverLength: number;
+  fMoverWidth: number;
+  nZoneCount: number;
+  aZones: ST_VisuZone[];
+}
+
+export interface ST_VisuLoopMover {
+  nId: number;
+  bValid: boolean;
+  fPosition: number;
+}
+
+export interface ST_VisuXtsLoopState {
+  nTimestamp: bigint;
+  nMoverCount: number;
+  aMovers: ST_VisuLoopMover[];
+}
+
+export interface ST_VisuXtsLoop {
+  stConfig: ST_VisuXtsLoopConfig;
+  stState: ST_VisuXtsLoopState;
 }
 
 export function enumValue(value: PlcEnum): number {

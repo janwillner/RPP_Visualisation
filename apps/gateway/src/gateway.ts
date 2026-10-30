@@ -7,7 +7,17 @@ import {
   type GatewayMessage,
   type GatewayStatus,
 } from "@rpp/protocol";
-import { mapConveyorConfig, mapConveyorState, mapDeltaConfig, mapDeltaState } from "./mapping";
+import {
+  mapConveyorConfig,
+  mapConveyorState,
+  mapDeltaConfig,
+  mapDeltaState,
+  mapXtsGantryConfig,
+  mapXtsGantryState,
+  mapXtsLoopConfig,
+  mapXtsLoopState,
+  type ComponentIdentity,
+} from "./mapping";
 import {
   E_VisuComponentType,
   MANIFEST_PATH,
@@ -18,6 +28,10 @@ import {
   type ST_VisuDeltaConfig,
   type ST_VisuDeltaState,
   type ST_VisuManifest,
+  type ST_VisuXtsGantryConfig,
+  type ST_VisuXtsGantryState,
+  type ST_VisuXtsLoopConfig,
+  type ST_VisuXtsLoopState,
 } from "./plc-contract";
 import { SymbolNotFoundError, type SymbolAccess } from "./symbol-access";
 
@@ -43,9 +57,38 @@ export interface Gateway {
   cycle(): Promise<void>;
 }
 
-const COMPONENT_KINDS: Record<number, "conveyor" | "delta"> = {
+type ComponentKind = ComponentConfig["type"];
+
+const COMPONENT_KINDS: Record<number, ComponentKind> = {
   [E_VisuComponentType.CONVEYOR]: "conveyor",
   [E_VisuComponentType.DELTA]: "delta",
+  [E_VisuComponentType.XTS_GANTRY]: "xtsGantry",
+  [E_VisuComponentType.XTS_LOOP]: "xtsLoop",
+};
+
+/** Mapping of each component type's PLC structures to the neutral model. */
+const MAPPERS: {
+  [K in ComponentKind]: {
+    config: (identity: ComponentIdentity, raw: unknown) => ComponentConfig;
+    state: (id: number, raw: unknown) => ComponentState;
+  };
+} = {
+  conveyor: {
+    config: (i, raw) => mapConveyorConfig(i, raw as ST_VisuConveyorConfig),
+    state: (id, raw) => mapConveyorState(id, raw as ST_VisuConveyorState),
+  },
+  delta: {
+    config: (i, raw) => mapDeltaConfig(i, raw as ST_VisuDeltaConfig),
+    state: (id, raw) => mapDeltaState(id, raw as ST_VisuDeltaState),
+  },
+  xtsGantry: {
+    config: (i, raw) => mapXtsGantryConfig(i, raw as ST_VisuXtsGantryConfig),
+    state: (id, raw) => mapXtsGantryState(id, raw as ST_VisuXtsGantryState),
+  },
+  xtsLoop: {
+    config: (i, raw) => mapXtsLoopConfig(i, raw as ST_VisuXtsLoopConfig),
+    state: (id, raw) => mapXtsLoopState(id, raw as ST_VisuXtsLoopState),
+  },
 };
 
 /** A discovered component whose state is read every cycle. */
@@ -121,10 +164,7 @@ export function createGateway({
       }
       try {
         const raw = await plc.read(`${entry.sPath}.stConfig`);
-        const config =
-          kind === "conveyor"
-            ? mapConveyorConfig(identity, raw as ST_VisuConveyorConfig)
-            : mapDeltaConfig(identity, raw as ST_VisuDeltaConfig);
+        const config = MAPPERS[kind].config(identity, raw);
         active.push({ config, statePath: `${entry.sPath}.stState` });
       } catch (error) {
         // A missing member or an unexpected shape affects this entry only; connection errors propagate.
@@ -140,10 +180,7 @@ export function createGateway({
   }
 
   function mapState(component: ActiveComponent, raw: unknown): ComponentState {
-    const c = component.config;
-    return c.type === "conveyor"
-      ? mapConveyorState(c.id, raw as ST_VisuConveyorState)
-      : mapDeltaState(c.id, raw as ST_VisuDeltaState);
+    return MAPPERS[component.config.type].state(component.config.id, raw);
   }
 
   /**

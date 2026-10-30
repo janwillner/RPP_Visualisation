@@ -7,11 +7,16 @@ import type {
   PlanarPose,
   Pose,
   ProductState,
-  WindowKind,
+  XtsGantryConfig,
+  XtsGantryState,
+  XtsLoopConfig,
+  XtsLoopState,
+  Zone,
+  ZoneKind,
 } from "@rpp/protocol";
 import {
   E_VisuProductState,
-  E_VisuWindowKind,
+  E_VisuZoneKind,
   enumValue,
   type PlcEnum,
   type ST_VisuConveyorConfig,
@@ -20,6 +25,11 @@ import {
   type ST_VisuDeltaState,
   type ST_VisuPlanarPose,
   type ST_VisuPose,
+  type ST_VisuXtsGantryConfig,
+  type ST_VisuXtsGantryState,
+  type ST_VisuXtsLoopConfig,
+  type ST_VisuXtsLoopState,
+  type ST_VisuZone,
 } from "./plc-contract";
 
 /** Maps PLC structures (Syn_Visu) to the neutral protocol model. */
@@ -58,9 +68,9 @@ export function mapConveyorConfig(identity: ComponentIdentity, c: ST_VisuConveyo
   };
 }
 
-const WINDOW_KINDS: Record<number, WindowKind> = {
-  [E_VisuWindowKind.PICK]: "pick",
-  [E_VisuWindowKind.PLACE]: "place",
+const ZONE_KINDS: Record<number, ZoneKind> = {
+  [E_VisuZoneKind.PICK]: "pick",
+  [E_VisuZoneKind.PLACE]: "place",
 };
 
 export function mapDeltaConfig(identity: ComponentIdentity, c: ST_VisuDeltaConfig): DeltaConfig {
@@ -73,19 +83,81 @@ export function mapDeltaConfig(identity: ComponentIdentity, c: ST_VisuDeltaConfi
     upperArmLength: c.fUpperArmLength,
     lowerArmLength: c.fLowerArmLength,
     hasRotationAxis: c.bHasRotationAxis,
-    workArea: {
-      radius: c.stWorkArea.fRadius,
-      zMin: c.stWorkArea.fZMin,
-      zMax: c.stWorkArea.fZMax,
-      coneHeight: c.stWorkArea.fConeHeight,
-      coneBottomRadius: c.stWorkArea.fConeBottomRadius,
+    workingArea: {
+      radius: c.stWorkingArea.fRadius,
+      zMin: c.stWorkingArea.fZMin,
+      zMax: c.stWorkingArea.fZMax,
+      coneHeight: c.stWorkingArea.fConeHeight,
+      coneBottomRadius: c.stWorkingArea.fConeBottomRadius,
     },
-    windows: take(c.aWindows, c.nWindowCount).map((w) => ({
-      conveyorId: w.nConveyorId,
-      start: w.fStart,
-      end: w.fEnd,
-      kind: WINDOW_KINDS[enumValue(w.eKind)] ?? "pick",
-    })),
+    zones: mapZones(c.aZones, c.nZoneCount),
+  };
+}
+
+function mapZones(zones: ST_VisuZone[], count: number): Zone[] {
+  return take(zones, count).map((w) => ({
+    conveyorId: w.nConveyorId,
+    start: w.fStart,
+    end: w.fEnd,
+    kind: ZONE_KINDS[enumValue(w.eKind)] ?? "pick",
+  }));
+}
+
+export function mapXtsGantryConfig(identity: ComponentIdentity, c: ST_VisuXtsGantryConfig): XtsGantryConfig {
+  return {
+    type: "xtsGantry",
+    ...identity,
+    pose: mapPose(c.stPose),
+    moduleCount: c.nModuleCount,
+    moduleLength: c.fModuleLength,
+    xMin: c.fXMin,
+    xMax: c.fXMax,
+    zMin: c.fZMin,
+    zMax: c.fZMax,
+    cMin: c.fCMin,
+    cMax: c.fCMax,
+    toolOffsetX: c.fToolOffsetX,
+    toolOffsetZ: c.fToolOffsetZ,
+    moverLength: c.fMoverLength,
+    moverWidth: c.fMoverWidth,
+    zones: mapZones(c.aZones, c.nZoneCount),
+  };
+}
+
+export function mapXtsLoopConfig(identity: ComponentIdentity, c: ST_VisuXtsLoopConfig): XtsLoopConfig {
+  return {
+    type: "xtsLoop",
+    ...identity,
+    pose: mapPose(c.stPose),
+    straightLength: c.fStraightLength,
+    curveRadius: c.fCurveRadius,
+    toolOffset: c.fToolOffset,
+    moverLength: c.fMoverLength,
+    moverWidth: c.fMoverWidth,
+    zones: mapZones(c.aZones, c.nZoneCount),
+  };
+}
+
+export function mapXtsGantryState(id: number, s: ST_VisuXtsGantryState): XtsGantryState {
+  return {
+    type: "xtsGantry",
+    id,
+    timestamp: BigInt(s.nTimestamp).toString(),
+    z: s.fZ,
+    movers: take(s.aMovers, s.nMoverCount)
+      .filter((m) => m.bValid)
+      .map((m) => ({ id: m.nId, position: m.fPosition, x: m.fX, c: m.fC, gripperActive: m.bGripperActive })),
+  };
+}
+
+export function mapXtsLoopState(id: number, s: ST_VisuXtsLoopState): XtsLoopState {
+  return {
+    type: "xtsLoop",
+    id,
+    timestamp: BigInt(s.nTimestamp).toString(),
+    movers: take(s.aMovers, s.nMoverCount)
+      .filter((m) => m.bValid)
+      .map((m) => ({ id: m.nId, position: m.fPosition })),
   };
 }
 
@@ -106,15 +178,16 @@ export function mapConveyorState(id: number, s: ST_VisuConveyorState): ConveyorS
     type: "conveyor",
     id,
     timestamp: BigInt(s.nTimestamp).toString(),
-    encoder: s.fEncoder,
+    beltPosition: s.fBeltPosition,
     products: take(s.aProducts, s.nProductCount)
       .filter((p) => p.bValid)
       .map((p) => ({
         id: p.nId,
         latchPose: mapPlanarPose(p.stLatchPose),
-        latchEncoder: p.fLatchEncoder,
+        latchBeltPosition: p.fLatchBeltPosition,
         state: mapProductState(p.eState),
         robotId: p.nRobotId,
+        moverId: p.nMoverId,
         productType: p.nProductType,
       })),
   };

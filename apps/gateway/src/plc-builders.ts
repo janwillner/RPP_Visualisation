@@ -2,7 +2,7 @@ import { PROTOCOL_VERSION } from "@rpp/protocol";
 import {
   E_VisuComponentType,
   E_VisuProductState,
-  E_VisuWindowKind,
+  E_VisuZoneKind,
   MANIFEST_PATH,
   PLC_TYPES,
   type ST_VisuConveyor,
@@ -11,7 +11,11 @@ import {
   type ST_VisuManifestEntry,
   type ST_VisuPose,
   type ST_VisuProduct,
-  type ST_VisuWindow,
+  type ST_VisuGantryMover,
+  type ST_VisuLoopMover,
+  type ST_VisuXtsGantry,
+  type ST_VisuXtsLoop,
+  type ST_VisuZone,
 } from "./plc-contract";
 import type { InMemoryPlc } from "./in-memory-plc";
 
@@ -19,7 +23,8 @@ import type { InMemoryPlc } from "./in-memory-plc";
 export const MAX_MANIFEST_ENTRIES = 32;
 export const MAX_PRODUCTS = 128;
 export const MAX_PRODUCT_TYPES = 8;
-export const MAX_WINDOWS = 8;
+export const MAX_ZONES = 8;
+export const MAX_MOVERS = 40;
 
 export function pose(p: Partial<ST_VisuPose> = {}): ST_VisuPose {
   return { fX: 0, fY: 0, fZ: 0, fRx: 0, fRy: 0, fRz: 0, ...p };
@@ -30,11 +35,16 @@ export function emptyProduct(): ST_VisuProduct {
     nId: 0,
     bValid: false,
     stLatchPose: { fX: 0, fY: 0, fZ: 0, fRz: 0 },
-    fLatchEncoder: 0,
+    fLatchBeltPosition: 0,
     eState: E_VisuProductState.DETECTED,
     nRobotId: 0,
+    nMoverId: 0,
     nProductType: 0,
   };
+}
+
+function emptyZone(): ST_VisuZone {
+  return { nConveyorId: 0, fStart: 0, fEnd: 0, eKind: E_VisuZoneKind.PICK };
 }
 
 function padded<T>(items: T[], size: number, empty: () => T): T[] {
@@ -46,7 +56,7 @@ export interface ConveyorSpec {
   length?: number;
   width?: number;
   productTypes?: { nId: number; fLength: number; fWidth: number; fHeight: number }[];
-  encoder?: number;
+  beltPosition?: number;
   timestamp?: bigint;
   products?: Partial<ST_VisuProduct>[];
 }
@@ -64,7 +74,7 @@ export function conveyor(spec: ConveyorSpec = {}): ST_VisuConveyor {
     },
     stState: {
       nTimestamp: spec.timestamp ?? 0n,
-      fEncoder: spec.encoder ?? 0,
+      fBeltPosition: spec.beltPosition ?? 0,
       nProductCount: products.length,
       aProducts: padded(products, MAX_PRODUCTS, emptyProduct),
     },
@@ -78,12 +88,12 @@ export interface DeltaSpec {
   upperArmLength?: number;
   lowerArmLength?: number;
   hasRotationAxis?: boolean;
-  windows?: ST_VisuWindow[];
+  zones?: ST_VisuZone[];
   timestamp?: bigint;
 }
 
 export function delta(spec: DeltaSpec = {}): ST_VisuDelta {
-  const windows = spec.windows ?? [];
+  const zones = spec.zones ?? [];
   return {
     stConfig: {
       stPose: pose(spec.pose),
@@ -92,14 +102,9 @@ export function delta(spec: DeltaSpec = {}): ST_VisuDelta {
       fUpperArmLength: spec.upperArmLength ?? 350,
       fLowerArmLength: spec.lowerArmLength ?? 800,
       bHasRotationAxis: spec.hasRotationAxis ?? false,
-      stWorkArea: { fRadius: 600, fZMin: -1100, fZMax: -600, fConeHeight: 0, fConeBottomRadius: 0 },
-      nWindowCount: windows.length,
-      aWindows: padded(windows, MAX_WINDOWS, () => ({
-        nConveyorId: 0,
-        fStart: 0,
-        fEnd: 0,
-        eKind: E_VisuWindowKind.PICK,
-      })),
+      stWorkingArea: { fRadius: 600, fZMin: -1100, fZMax: -600, fConeHeight: 0, fConeBottomRadius: 0 },
+      nZoneCount: zones.length,
+      aZones: padded(zones, MAX_ZONES, emptyZone),
     },
     stState: {
       nTimestamp: spec.timestamp ?? 0n,
@@ -109,9 +114,93 @@ export function delta(spec: DeltaSpec = {}): ST_VisuDelta {
   };
 }
 
+export interface XtsGantrySpec {
+  pose?: Partial<ST_VisuPose>;
+  moduleCount?: number;
+  moduleLength?: number;
+  zones?: ST_VisuZone[];
+  z?: number;
+  movers?: Partial<ST_VisuGantryMover>[];
+  timestamp?: bigint;
+}
+
+export function xtsGantry(spec: XtsGantrySpec = {}): ST_VisuXtsGantry {
+  const zones = spec.zones ?? [];
+  const empty = (): ST_VisuGantryMover => ({ nId: 0, bValid: false, fPosition: 0, fX: 0, fC: 0, bGripperActive: false });
+  const movers = (spec.movers ?? []).map((m) => ({ ...empty(), bValid: true, ...m }));
+  return {
+    stConfig: {
+      stPose: pose(spec.pose),
+      nModuleCount: spec.moduleCount ?? 3,
+      fModuleLength: spec.moduleLength ?? 1000,
+      fXMin: -50,
+      fXMax: 300,
+      fZMin: -200,
+      fZMax: 0,
+      fCMin: -180,
+      fCMax: 180,
+      fToolOffsetX: 150,
+      fToolOffsetZ: -400,
+      fMoverLength: 155,
+      fMoverWidth: 80,
+      nZoneCount: zones.length,
+      aZones: padded(zones, MAX_ZONES, emptyZone),
+    },
+    stState: {
+      nTimestamp: spec.timestamp ?? 0n,
+      fZ: spec.z ?? 0,
+      nMoverCount: movers.length,
+      aMovers: padded(movers, MAX_MOVERS, empty),
+    },
+  };
+}
+
+export interface XtsLoopSpec {
+  pose?: Partial<ST_VisuPose>;
+  straightLength?: number;
+  curveRadius?: number;
+  zones?: ST_VisuZone[];
+  movers?: Partial<ST_VisuLoopMover>[];
+  timestamp?: bigint;
+}
+
+export function xtsLoop(spec: XtsLoopSpec = {}): ST_VisuXtsLoop {
+  const zones = spec.zones ?? [];
+  const empty = (): ST_VisuLoopMover => ({ nId: 0, bValid: false, fPosition: 0 });
+  const movers = (spec.movers ?? []).map((m) => ({ ...empty(), bValid: true, ...m }));
+  return {
+    stConfig: {
+      stPose: pose(spec.pose),
+      fStraightLength: spec.straightLength ?? 2000,
+      fCurveRadius: spec.curveRadius ?? 250,
+      fToolOffset: 120,
+      fMoverLength: 100,
+      fMoverWidth: 60,
+      nZoneCount: zones.length,
+      aZones: padded(zones, MAX_ZONES, emptyZone),
+    },
+    stState: {
+      nTimestamp: spec.timestamp ?? 0n,
+      nMoverCount: movers.length,
+      aMovers: padded(movers, MAX_MOVERS, empty),
+    },
+  };
+}
+
+type Entry<K extends keyof typeof PLC_TYPES, V> = { id: number; name: string; path: string; kind: K; value: V };
+
 export type MachineComponent =
-  | { id: number; name: string; path: string; kind: "conveyor"; value: ST_VisuConveyor }
-  | { id: number; name: string; path: string; kind: "delta"; value: ST_VisuDelta };
+  | Entry<"conveyor", ST_VisuConveyor>
+  | Entry<"delta", ST_VisuDelta>
+  | Entry<"xtsGantry", ST_VisuXtsGantry>
+  | Entry<"xtsLoop", ST_VisuXtsLoop>;
+
+const MANIFEST_TYPES: Record<MachineComponent["kind"], number> = {
+  conveyor: E_VisuComponentType.CONVEYOR,
+  delta: E_VisuComponentType.DELTA,
+  xtsGantry: E_VisuComponentType.XTS_GANTRY,
+  xtsLoop: E_VisuComponentType.XTS_LOOP,
+};
 
 /** Registers a manifest and its components in an in-memory PLC. */
 export function defineMachine(
@@ -121,7 +210,7 @@ export function defineMachine(
 ): void {
   const entries: ST_VisuManifestEntry[] = components.map((c) => ({
     nId: c.id,
-    eType: c.kind === "conveyor" ? E_VisuComponentType.CONVEYOR : E_VisuComponentType.DELTA,
+    eType: MANIFEST_TYPES[c.kind],
     sName: c.name,
     sPath: c.path,
   }));

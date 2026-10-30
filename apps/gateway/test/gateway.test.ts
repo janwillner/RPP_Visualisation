@@ -9,14 +9,16 @@ import {
 } from "@rpp/protocol";
 import { createGateway } from "../src/gateway";
 import { InMemoryPlc } from "../src/in-memory-plc";
-import { conveyor, defineMachine, delta, type MachineComponent } from "../src/plc-builders";
+import { conveyor, defineMachine, delta, xtsGantry, xtsLoop, type MachineComponent } from "../src/plc-builders";
 import {
   E_VisuProductState,
-  E_VisuWindowKind,
+  E_VisuZoneKind,
   MANIFEST_PATH,
   type ST_VisuConveyor,
   type ST_VisuDelta,
   type ST_VisuManifest,
+  type ST_VisuXtsGantry,
+  type ST_VisuXtsLoop,
 } from "../src/plc-contract";
 
 function setup(components: MachineComponent[], options?: Parameters<typeof defineMachine>[2]) {
@@ -65,7 +67,33 @@ const robot: MachineComponent = {
     effectorRadius: 50,
     upperArmLength: 350,
     lowerArmLength: 800,
-    windows: [{ nConveyorId: 10, fStart: 1200, fEnd: 1800, eKind: E_VisuWindowKind.PICK }],
+    zones: [{ nConveyorId: 10, fStart: 1200, fEnd: 1800, eKind: E_VisuZoneKind.PICK }],
+  }),
+};
+
+const gantry: MachineComponent = {
+  id: 30,
+  name: "IDH",
+  path: "MAIN.fbIdh.stVisu",
+  kind: "xtsGantry",
+  value: xtsGantry({
+    pose: { fX: 3000, fY: -500, fZ: 1500 },
+    moduleCount: 3,
+    moduleLength: 1000,
+    zones: [{ nConveyorId: 10, fStart: 0, fEnd: 800, eKind: E_VisuZoneKind.PICK }],
+  }),
+};
+
+const loop: MachineComponent = {
+  id: 40,
+  name: "Fxx",
+  path: "MAIN.fbFxx.stVisu",
+  kind: "xtsLoop",
+  value: xtsLoop({
+    pose: { fX: 5000, fZ: 900 },
+    straightLength: 2000,
+    curveRadius: 250,
+    zones: [{ nConveyorId: 10, fStart: 2500, fEnd: 2900, eKind: E_VisuZoneKind.PLACE }],
   }),
 };
 
@@ -100,8 +128,51 @@ describe("gateway discovery", () => {
         upperArmLength: 350,
         lowerArmLength: 800,
         hasRotationAxis: false,
-        workArea: { radius: 600, zMin: -1100, zMax: -600, coneHeight: 0, coneBottomRadius: 0 },
-        windows: [{ conveyorId: 10, start: 1200, end: 1800, kind: "pick" }],
+        workingArea: { radius: 600, zMin: -1100, zMax: -600, coneHeight: 0, coneBottomRadius: 0 },
+        zones: [{ conveyorId: 10, start: 1200, end: 1800, kind: "pick" }],
+      },
+    ]);
+  });
+
+  it("publishes XTS gantries and loops with their geometry and zones", async () => {
+    const t = setup([infeed, gantry, loop]);
+    await t.gateway.cycle();
+
+    const [config] = t.configs();
+    expect(config!.errors).toEqual([]);
+    expect(config!.components.slice(1)).toEqual([
+      {
+        type: "xtsGantry",
+        id: 30,
+        sourceId: "plc1",
+        name: "IDH",
+        pose: { x: 3000, y: -500, z: 1500, rx: 0, ry: 0, rz: 0 },
+        moduleCount: 3,
+        moduleLength: 1000,
+        xMin: -50,
+        xMax: 300,
+        zMin: -200,
+        zMax: 0,
+        cMin: -180,
+        cMax: 180,
+        toolOffsetX: 150,
+        toolOffsetZ: -400,
+        moverLength: 155,
+        moverWidth: 80,
+        zones: [{ conveyorId: 10, start: 0, end: 800, kind: "pick" }],
+      },
+      {
+        type: "xtsLoop",
+        id: 40,
+        sourceId: "plc1",
+        name: "Fxx",
+        pose: { x: 5000, y: 0, z: 900, rx: 0, ry: 0, rz: 0 },
+        straightLength: 2000,
+        curveRadius: 250,
+        toolOffset: 120,
+        moverLength: 100,
+        moverWidth: 60,
+        zones: [{ conveyorId: 10, start: 2500, end: 2900, kind: "place" }],
       },
     ]);
   });
@@ -191,7 +262,7 @@ describe("gateway config changes", () => {
     const t = setup([infeed, robot]);
     await t.gateway.cycle();
 
-    t.plc.get<ST_VisuDelta>(robot.path).stConfig.stWorkArea.fRadius = 800;
+    t.plc.get<ST_VisuDelta>(robot.path).stConfig.stWorkingArea.fRadius = 800;
     t.advance(500);
     await t.gateway.cycle();
     expect(t.configs()).toHaveLength(1);
@@ -201,7 +272,7 @@ describe("gateway config changes", () => {
     const configs = t.configs();
     expect(configs).toHaveLength(2);
     expect(configs[1]!.configVersion).toBe(1);
-    expect(configs[1]!.components.find((c) => c.id === 20)).toMatchObject({ workArea: { radius: 800 } });
+    expect(configs[1]!.components.find((c) => c.id === 20)).toMatchObject({ workingArea: { radius: 800 } });
   });
 
   it("does not republish an unchanged config on recheck and keeps the snapshot timeline", async () => {
@@ -275,9 +346,9 @@ describe("gateway state snapshots", () => {
   // DC time values beyond 2^53 to prove no precision is lost.
   const T0 = 820_000_000_123_456_789n;
 
-  function advance(plc: InMemoryPlc, timestamp: bigint, encoder: number) {
+  function advance(plc: InMemoryPlc, timestamp: bigint, beltPosition: number) {
     plc.get<ST_VisuConveyor>(infeed.path).stState.nTimestamp = timestamp;
-    plc.get<ST_VisuConveyor>(infeed.path).stState.fEncoder = encoder;
+    plc.get<ST_VisuConveyor>(infeed.path).stState.fBeltPosition = beltPosition;
     plc.get<ST_VisuDelta>(robot.path).stState.nTimestamp = timestamp;
   }
 
@@ -296,7 +367,7 @@ describe("gateway state snapshots", () => {
       type: "conveyor",
       id: 10,
       timestamp: (T0 + 20_000_000n).toString(),
-      encoder: 110,
+      beltPosition: 110,
       products: [],
     });
   });
@@ -309,9 +380,10 @@ describe("gateway state snapshots", () => {
       nId: 7,
       bValid: true,
       stLatchPose: { fX: 150, fY: 210, fZ: 800, fRz: 15 },
-      fLatchEncoder: 40,
+      fLatchBeltPosition: 40,
       eState: E_VisuProductState.PICKED,
       nRobotId: 20,
+      nMoverId: 3,
       nProductType: 1,
     };
     state.aProducts[1] = { ...state.aProducts[0], nId: 8, bValid: false };
@@ -325,12 +397,56 @@ describe("gateway state snapshots", () => {
         {
           id: 7,
           latchPose: { x: 150, y: 210, z: 800, rz: 15 },
-          latchEncoder: 40,
+          latchBeltPosition: 40,
           state: "picked",
           robotId: 20,
+          moverId: 3,
           productType: 1,
         },
         { id: 9, state: "placed" },
+      ],
+    });
+  });
+
+  it("publishes an XTS gantry's Z position and its valid movers", async () => {
+    const t = setup([infeed, gantry]);
+    const s = t.plc.get<ST_VisuXtsGantry>(gantry.path).stState;
+    s.fZ = -120;
+    s.nMoverCount = 3;
+    s.aMovers[0] = { nId: 1, bValid: true, fPosition: 250, fX: 80, fC: 45, bGripperActive: true };
+    s.aMovers[1] = { nId: 2, bValid: false, fPosition: 500, fX: 0, fC: 0, bGripperActive: false };
+    s.aMovers[2] = { nId: 3, bValid: true, fPosition: 900, fX: -20, fC: -90, bGripperActive: false };
+    // Beyond nMoverCount: ignored even if marked valid.
+    s.aMovers[3] = { nId: 4, bValid: true, fPosition: 1200, fX: 0, fC: 0, bGripperActive: false };
+    await t.gateway.cycle();
+
+    expect(t.states()[0]!.components).toContainEqual({
+      type: "xtsGantry",
+      id: 30,
+      timestamp: "0",
+      z: -120,
+      movers: [
+        { id: 1, position: 250, x: 80, c: 45, gripperActive: true },
+        { id: 3, position: 900, x: -20, c: -90, gripperActive: false },
+      ],
+    });
+  });
+
+  it("publishes an XTS loop's valid movers", async () => {
+    const t = setup([infeed, loop]);
+    const s = t.plc.get<ST_VisuXtsLoop>(loop.path).stState;
+    s.nMoverCount = 2;
+    s.aMovers[0] = { nId: 11, bValid: true, fPosition: 120 };
+    s.aMovers[1] = { nId: 12, bValid: true, fPosition: 2600 };
+    await t.gateway.cycle();
+
+    expect(t.states()[0]!.components).toContainEqual({
+      type: "xtsLoop",
+      id: 40,
+      timestamp: "0",
+      movers: [
+        { id: 11, position: 120 },
+        { id: 12, position: 2600 },
       ],
     });
   });

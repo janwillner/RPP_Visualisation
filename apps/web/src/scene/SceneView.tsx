@@ -1,15 +1,26 @@
-import { Grid, Html, OrbitControls } from "@react-three/drei";
+import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import * as THREE from "three";
 import type { GatewayStore } from "../connection";
-import type { ProductDisplay, SceneDelta, SceneModel, SceneProduct, Transform, Vec3 } from "./scene-model";
-import { buildScene, mcsToRenderer, rendererToMcs } from "./scene-model";
+import type {
+  ProductDisplay,
+  SceneDelta,
+  SceneGantry,
+  SceneLoop,
+  SceneModel,
+  SceneOrigin,
+  SceneProduct,
+  SnapPoint,
+  Transform,
+  Vec3,
+} from "./scene-model";
+import { availableSnapPoints, buildScene } from "./scene-model";
 import type { ConfigMessage, ProductState } from "@rpp/protocol";
 
 export interface Layers {
-  workAreas: boolean;
-  windows: boolean;
+  workingAreas: boolean;
+  zones: boolean;
   tcpMarkers: boolean;
 }
 
@@ -21,15 +32,15 @@ export type Selection =
 
 export type CameraPreset = "top" | "front" | "iso";
 
-/** A point in the scene under the pointer, in MCS millimetres, with what was hit. */
-export interface McsHit {
-  point: Vec3;
-  label: string;
-}
-
-/** A measuring point placed with Shift+click. */
-export interface McsPin extends McsHit {
+/** A measuring point: a snap point frozen at the moment it was clicked. */
+export interface MeasurePoint {
   id: number;
+  label: string;
+  /** MCS, mm. */
+  mcs: Vec3;
+  /** Renderer position, metres. */
+  position: Vec3;
+  local: SnapPoint["local"];
 }
 
 export interface SceneViewProps {
@@ -42,14 +53,31 @@ export interface SceneViewProps {
   cameraRequest: { preset: CameraPreset; seq: number };
   /** Receives the scene model every frame, e.g. for the inspector. */
   modelRef: MutableRefObject<SceneModel | undefined>;
-  /** Called on every pointer move with the MCS point under the pointer (undefined when leaving the scene). */
-  onPointerMcs: (hit: McsHit | undefined) => void;
-  /** Shift+click places a measuring point. */
-  onPin: (hit: McsHit) => void;
-  pins: McsPin[];
+  /** Measure mode: origins and snap points are shown, a click on a snap point measures instead of selecting. */
+  measureMode: boolean;
+  /** Called with the snap point under the pointer when it is clicked in measure mode. */
+  onMeasure: (point: SnapPoint) => void;
+  measurePoints: MeasurePoint[];
 }
 
-const EMPTY: SceneModel = { conveyors: [], products: [], deltas: [], workAreas: [], windows: [], warnings: [] };
+const EMPTY: SceneModel = {
+  conveyors: [],
+  products: [],
+  deltas: [],
+  workingAreas: [],
+  zones: [],
+  gantries: [],
+  gantryAreas: [],
+  loops: [],
+  snapPoints: [],
+  origins: [],
+  warnings: [],
+};
+
+/** Snap radius on screen, CSS pixels. */
+const SNAP_RADIUS_PX = 12;
+/** Pointer travel below which a press counts as a click rather than a camera drag, CSS pixels. */
+const CLICK_TOLERANCE_PX = 4;
 
 export const PRODUCT_COLORS: Record<ProductState, string> = {
   detected: "#8fa8c8",
@@ -71,17 +99,6 @@ const UP = new THREE.Vector3(0, 1, 0);
 
 /** Objects that should never be picked (transparent volumes, markers). */
 const noRaycast = () => null;
-
-/** Label of the nearest object (or ancestor) that carries one in userData. */
-function labelOf(object: THREE.Object3D | null): string {
-  for (let o = object; o; o = o.parent) if (typeof o.userData.label === "string") return o.userData.label;
-  return "";
-}
-
-/** Formats an MCS point as "X / Y / Z" in mm. */
-export function formatMcs(p: Vec3): string {
-  return p.map((v) => v.toFixed(1)).join(" / ");
-}
 
 /** Orient a unit-height cylinder mesh between two points. */
 function placeBetween(mesh: THREE.Object3D | null, a: Vec3 | undefined, b: Vec3 | undefined): void {
@@ -106,36 +123,18 @@ function signature(m: SceneModel): string {
     m.conveyors.map((c) => `${c.id}:${c.length}:${c.width}`).join(","),
     m.products.map((p) => `${p.key}:${p.state}`).join(","),
     m.deltas.map((d) => d.id + ":" + d.baseRadius + ":" + d.effectorRadius).join(","),
-    m.windows.map((w) => `${w.robotId}:${w.conveyorId}:${w.kind}`).join(","),
+    m.zones.map((w) => `${w.robotId}:${w.conveyorId}:${w.kind}`).join(","),
+    m.snapPoints.filter((p) => !p.moving).map((p) => p.key).join(","),
+    m.gantries.map((g) => `${g.id}:${g.moduleCount}:${g.moduleLength}:${g.movers.map((x) => x.id).join("/")}`).join(","),
+    m.gantryAreas.map((a) => `${a.robotId}:${a.size.join("/")}`).join(","),
+    m.loops.map((l) => `${l.id}:${l.straightLength}:${l.curveRadius}:${l.movers.map((x) => x.id).join("/")}`).join(","),
   ].join("|");
 }
 
 function SceneContent(props: SceneViewProps) {
-  const { store, config, layers, selection, onSelect, modelRef, onPointerMcs, onPin, pins } = props;
-  const hoverMarker = useRef<THREE.Mesh>(null);
-
-  const hitFrom = (e: ThreeEvent<PointerEvent | MouseEvent>): McsHit => ({
-    point: rendererToMcs([e.point.x, e.point.y, e.point.z]),
-    label: labelOf(e.object),
-  });
-  const onMove = (e: ThreeEvent<PointerEvent>) => {
-    // Only the nearest intersection counts.
-    e.stopPropagation();
-    onPointerMcs(hitFrom(e));
-    if (hoverMarker.current) {
-      hoverMarker.current.visible = true;
-      hoverMarker.current.position.copy(e.point);
-    }
-  };
-  const onLeave = () => {
-    onPointerMcs(undefined);
-    if (hoverMarker.current) hoverMarker.current.visible = false;
-  };
-  const onRootClick = (e: ThreeEvent<MouseEvent>) => {
-    if (!e.shiftKey) return;
-    e.stopPropagation();
-    onPin(hitFrom(e));
-  };
+  const { store, config, layers, selection, modelRef, measureMode, onMeasure, measurePoints } = props;
+  // In measure mode a click measures; selecting works only through the component tree.
+  const onSelect = measureMode ? () => {} : props.onSelect;
   const latest = useRef<SceneModel>(EMPTY);
   const [structure, setStructure] = useState<SceneModel>(EMPTY);
   const sig = useRef("");
@@ -163,33 +162,15 @@ function SceneContent(props: SceneViewProps) {
   return (
     <>
       <McsAxes />
-      <mesh ref={hoverMarker} raycast={noRaycast} visible={false}>
-        <sphereGeometry args={[0.008, 12, 12]} />
-        <meshBasicMaterial color="#ffffff" depthTest={false} transparent />
-      </mesh>
-      {pins.map((p) => (
-        <group key={p.id} position={mcsToRenderer(p.point)}>
-          <mesh raycast={noRaycast}>
-            <sphereGeometry args={[0.012, 12, 12]} />
-            <meshBasicMaterial color={SELECT_COLOR} depthTest={false} transparent />
-          </mesh>
-          <Html className="pin-label" zIndexRange={[20, 10]} style={{ pointerEvents: "none" }}>
-            #{p.id} {formatMcs(p.point)}
-          </Html>
-        </group>
-      ))}
-      <group onPointerMove={onMove} onPointerOut={onLeave} onClick={onRootClick}>
-      {/* Floor at MCS Z = 0: catches the pointer where nothing else is hit. */}
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        userData={{ label: "Floor (Z = 0)" }}
-        onClick={(e) => {
-          if (!e.shiftKey) onSelect(undefined);
-        }}
-      >
-        <planeGeometry args={[200, 200]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
+      <MeasurePoints points={measurePoints} />
+      {measureMode && (
+        <MeasureLayer
+          latest={latest}
+          structure={structure}
+          layers={layers}
+          onMeasure={onMeasure}
+        />
+      )}
       <Grid
         args={[20, 20]}
         cellSize={0.1}
@@ -205,7 +186,6 @@ function SceneContent(props: SceneViewProps) {
             position={[c.length / 2, -0.025, 0]}
             userData={{ label: c.name }}
             onClick={(e) => {
-              if (e.shiftKey) return;
               e.stopPropagation();
               onSelect({ kind: "component", id: c.id });
             }}
@@ -242,8 +222,28 @@ function SceneContent(props: SceneViewProps) {
           onSelect={onSelect}
         />
       ))}
-      {layers.workAreas &&
-        structure.workAreas.map((w) => (
+      {structure.gantries.map((g) => (
+        <GantryMesh key={g.id} gantry={g} latest={latest} selected={isSelected(g.id)} onSelect={onSelect} />
+      ))}
+      {structure.loops.map((l) => (
+        <LoopMesh key={l.id} loop={l} latest={latest} selected={isSelected(l.id)} onSelect={onSelect} />
+      ))}
+      {layers.workingAreas &&
+        structure.gantryAreas.map((a) => (
+          <mesh key={`box:${a.robotId}`} ref={(o) => applyTransform(o, a.transform)} raycast={noRaycast}>
+            {/* Renderer local axes: MCS X -> x, MCS Z -> y, MCS Y -> −z. */}
+            <boxGeometry args={[a.size[0], a.size[2], a.size[1]]} />
+            <meshBasicMaterial
+              color={isSelected(a.robotId) ? SELECT_COLOR : "#4fc3f7"}
+              transparent
+              opacity={0.12}
+              side={THREE.DoubleSide}
+              depthWrite={false}
+            />
+          </mesh>
+        ))}
+      {layers.workingAreas &&
+        structure.workingAreas.map((w) => (
           <group key={w.robotId} ref={(o) => applyTransform(o, w.transform)}>
             <mesh position={[0, (w.zMin + w.zMax) / 2, 0]} raycast={noRaycast}>
               <cylinderGeometry args={[w.radius, w.radius, w.zMax - w.zMin, 48, 1, true]} />
@@ -263,10 +263,10 @@ function SceneContent(props: SceneViewProps) {
             )}
           </group>
         ))}
-      {layers.windows &&
-        structure.windows.map((w, i) => (
+      {layers.zones &&
+        structure.zones.map((w, i) => (
           <group key={`${w.robotId}:${i}`} ref={(o) => applyTransform(o, w.transform)}>
-            <mesh position={[0, 0.003, 0]} userData={{ label: `${w.kind === "pick" ? "Pick" : "Place"} window (robot #${w.robotId})` }}>
+            <mesh position={[0, 0.003, 0]} userData={{ label: `${w.kind === "pick" ? "Pick" : "Place"} zone (robot #${w.robotId})` }}>
               <boxGeometry args={[w.length, 0.004, w.width]} />
               <meshBasicMaterial
                 color={w.kind === "pick" ? "#66bb6a" : "#42a5f5"}
@@ -277,7 +277,6 @@ function SceneContent(props: SceneViewProps) {
             </mesh>
           </group>
         ))}
-      </group>
       <CameraRig request={props.cameraRequest} structure={structure} />
     </>
   );
@@ -302,7 +301,6 @@ function ProductMesh(props: {
       }}
       userData={{ label: `Product #${product.productId} (${product.display})` }}
       onClick={(e: ThreeEvent<MouseEvent>) => {
-        if (e.shiftKey) return;
         e.stopPropagation();
         onSelect({ kind: "product", conveyorId: product.conveyorId, productId: product.productId });
       }}
@@ -461,7 +459,6 @@ function DeltaMesh(props: {
 
   const highlight = selected ? SELECT_COLOR : undefined;
   const select = (e: ThreeEvent<MouseEvent>) => {
-    if (e.shiftKey) return;
     e.stopPropagation();
     onSelect({ kind: "component", id });
   };
@@ -530,6 +527,385 @@ function DeltaMesh(props: {
         <octahedronGeometry args={[0.018]} />
         <meshBasicMaterial color="#ffee58" wireframe depthTest={false} transparent />
       </mesh>
+    </group>
+  );
+}
+
+/** Measuring points with their numbers, joined in order by a line. */
+function MeasurePoints({ points }: { points: MeasurePoint[] }) {
+  return (
+    <>
+      {points.length > 1 && (
+        <Line points={points.map((p) => p.position)} color={SELECT_COLOR} lineWidth={1.5} depthTest={false} transparent />
+      )}
+      {points.map((p) => (
+        <group key={p.id} position={p.position}>
+          <mesh raycast={noRaycast} renderOrder={10}>
+            <sphereGeometry args={[0.012, 12, 12]} />
+            <meshBasicMaterial color={SELECT_COLOR} depthTest={false} transparent />
+          </mesh>
+          <Html className="pin-label" zIndexRange={[20, 10]} style={{ pointerEvents: "none" }}>
+            #{p.id}
+          </Html>
+        </group>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Measure mode overlay: component origins, the static snap points as dots, and the snap point nearest to the
+ * pointer (within SNAP_RADIUS_PX on screen, also when occluded) highlighted with its name. A click without camera
+ * drag measures the highlighted point.
+ */
+function MeasureLayer(props: {
+  latest: MutableRefObject<SceneModel>;
+  structure: SceneModel;
+  layers: Layers;
+  onMeasure: (point: SnapPoint) => void;
+}) {
+  const { latest, structure, layers, onMeasure } = props;
+  const { camera, gl } = useThree();
+  const pointer = useRef<{ x: number; y: number } | null>(null);
+  const hovered = useRef<SnapPoint | null>(null);
+  const marker = useRef<THREE.Group>(null);
+  const [label, setLabel] = useState<string | null>(null);
+  const onMeasureRef = useRef(onMeasure);
+  onMeasureRef.current = onMeasure;
+
+  useEffect(() => {
+    const el = gl.domElement;
+    let down: { x: number; y: number } | null = null;
+    const position = (e: PointerEvent) => {
+      const r = el.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    const onMove = (e: PointerEvent) => (pointer.current = position(e));
+    const onLeave = () => (pointer.current = null);
+    const onDown = (e: PointerEvent) => (down = e.button === 0 ? position(e) : null);
+    const onUp = (e: PointerEvent) => {
+      const p = position(e);
+      const start = down;
+      down = null;
+      if (!start || Math.hypot(p.x - start.x, p.y - start.y) > CLICK_TOLERANCE_PX) return;
+      if (hovered.current) onMeasureRef.current(hovered.current);
+    };
+    el.style.cursor = "crosshair";
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerleave", onLeave);
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointerup", onUp);
+    return () => {
+      el.style.cursor = "";
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerleave", onLeave);
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointerup", onUp);
+    };
+  }, [gl]);
+
+  useFrame(() => {
+    // Re-evaluated every frame: moving snap points pass under a still pointer.
+    const p = pointer.current;
+    let best: { point: SnapPoint; px: number; depth: number } | null = null;
+    if (p) {
+      const width = gl.domElement.clientWidth;
+      const height = gl.domElement.clientHeight;
+      const v = new THREE.Vector3();
+      for (const point of availableSnapPoints(latest.current.snapPoints, layers)) {
+        v.set(...point.position).project(camera);
+        if (v.z < -1 || v.z > 1) continue;
+        const px = Math.hypot(((v.x + 1) / 2) * width - p.x, ((1 - v.y) / 2) * height - p.y);
+        if (px > SNAP_RADIUS_PX) continue;
+        const depth = camera.position.distanceTo(new THREE.Vector3(...point.position));
+        // Nearest on screen; on a tie the one nearer to the camera.
+        if (!best || px < best.px - 0.5 || (Math.abs(px - best.px) <= 0.5 && depth < best.depth)) {
+          best = { point, px, depth };
+        }
+      }
+    }
+    hovered.current = best?.point ?? null;
+    if (marker.current) {
+      marker.current.visible = best !== null;
+      if (best) marker.current.position.set(...best.point.position);
+    }
+    const next = best?.point.label ?? null;
+    if (next !== label) setLabel(next);
+  });
+
+  const dots = availableSnapPoints(structure.snapPoints, layers).filter((p) => !p.moving);
+  return (
+    <>
+      {structure.origins.map((o) => (
+        <OriginTriad key={o.componentId} origin={o} />
+      ))}
+      {dots.map((p) => (
+        <mesh key={p.key} position={p.position} raycast={noRaycast} renderOrder={5}>
+          <sphereGeometry args={[0.006, 10, 10]} />
+          <meshBasicMaterial color="#ffffff" depthTest={false} transparent opacity={0.8} />
+        </mesh>
+      ))}
+      <group ref={marker} visible={false}>
+        <mesh raycast={noRaycast} renderOrder={11}>
+          <sphereGeometry args={[0.014, 14, 14]} />
+          <meshBasicMaterial color={SELECT_COLOR} depthTest={false} transparent opacity={0.9} />
+        </mesh>
+        {label && (
+          <Html className="snap-label" zIndexRange={[30, 20]} style={{ pointerEvents: "none" }}>
+            {label}
+          </Html>
+        )}
+      </group>
+    </>
+  );
+}
+
+/** 300 mm axis triad at a component's origin (X red, Y green, Z blue), labelled with its name. */
+function OriginTriad({ origin }: { origin: SceneOrigin }) {
+  const axes = useMemo(
+    () =>
+      // Local renderer axes: MCS local X -> +X, MCS local Y -> −Z, MCS local Z -> +Y.
+      (
+        [
+          [[1, 0, 0], "#ef5350"],
+          [[0, 0, -1], "#66bb6a"],
+          [[0, 1, 0], "#42a5f5"],
+        ] as const
+      ).map(([dir, color]) => {
+        const arrow = new THREE.ArrowHelper(new THREE.Vector3(...dir), new THREE.Vector3(), 0.3, color, 0.05, 0.025);
+        arrow.traverse((o) => {
+          o.renderOrder = 6;
+          const material = (o as THREE.Mesh).material as THREE.Material | undefined;
+          if (material) {
+            material.depthTest = false;
+            material.transparent = true;
+          }
+        });
+        return arrow;
+      }),
+    [],
+  );
+  return (
+    <group ref={(o) => applyTransform(o, origin.transform)}>
+      {axes.map((a, i) => (
+        <primitive key={i} object={a} />
+      ))}
+      <Html position={[0, -0.04, 0]} className="origin-label" zIndexRange={[10, 0]} style={{ pointerEvents: "none" }}>
+        {origin.name} origin
+      </Html>
+    </group>
+  );
+}
+
+const XTS_COLORS = {
+  beam: "#3a3f46",
+  module: "#1c1f23",
+  mover: "#c9ced3",
+  arm: "#26282b",
+  cup: "#2f7fd6",
+  cupActive: "#66bb6a",
+  track: "#3a3f46",
+  tool: "#ffb74d",
+};
+
+/**
+ * XTS gantry: a beam of track modules lifted by the common Z axis, movers with their X arm, gripper column and
+ * suction cup (green while the gripper is active, with a mark along the gripper's orientation).
+ */
+function GantryMesh(props: {
+  gantry: SceneGantry;
+  latest: MutableRefObject<SceneModel>;
+  selected: boolean;
+  onSelect: (s: Selection) => void;
+}) {
+  const { gantry, latest, selected, onSelect } = props;
+  const { id, name, trackLength, moduleLength, moduleCount, moverLength, moverWidth } = gantry;
+  const track = useRef<THREE.Group>(null);
+  const carriages = useRef<(THREE.Object3D | null)[]>([]);
+  const arms = useRef<(THREE.Mesh | null)[]>([]);
+  const columns = useRef<(THREE.Mesh | null)[]>([]);
+  const tips = useRef<(THREE.Group | null)[]>([]);
+  const cups = useRef<(THREE.MeshStandardMaterial | null)[]>([]);
+  const select = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation();
+    onSelect({ kind: "component", id });
+  };
+
+  useFrame(() => {
+    const g = latest.current.gantries.find((x) => x.id === id);
+    if (!g) return;
+    applyTransform(track.current, g.track);
+    gantry.movers.forEach((m, i) => {
+      const live = g.movers.find((x) => x.id === m.id);
+      const carriage = carriages.current[i];
+      if (carriage) {
+        carriage.visible = Boolean(live);
+        if (live) {
+          carriage.position.set(...live.carriage);
+          carriage.quaternion.set(...g.track.quaternion);
+        }
+      }
+      placeBetween(arms.current[i] ?? null, live?.carriage, live?.armEnd);
+      placeBetween(columns.current[i] ?? null, live?.armEnd, live?.tip.position);
+      const tip = tips.current[i];
+      if (tip) {
+        tip.visible = Boolean(live);
+        if (live) applyTransform(tip, live.tip);
+      }
+      cups.current[i]?.color.set(live?.gripperActive ? XTS_COLORS.cupActive : XTS_COLORS.cup);
+    });
+  });
+
+  return (
+    <group userData={{ label: name }}>
+      <group ref={track}>
+        {/* Beam above the movers along the track (MCS local +Y is renderer local −Z). */}
+        <mesh position={[0, 0.06, -trackLength / 2]} onClick={select}>
+          <boxGeometry args={[moverWidth + 0.04, 0.12, trackLength]} />
+          <meshStandardMaterial color={selected ? "#5c6b3a" : XTS_COLORS.beam} metalness={0.4} roughness={0.5} />
+        </mesh>
+        {Array.from({ length: moduleCount + 1 }, (_, k) => (
+          <mesh key={k} position={[0, 0.06, -k * moduleLength]} raycast={noRaycast}>
+            <boxGeometry args={[moverWidth + 0.05, 0.125, 0.006]} />
+            <meshStandardMaterial color={XTS_COLORS.module} />
+          </mesh>
+        ))}
+        <Html position={[0, 0.16, 0]} className="label" zIndexRange={[10, 0]}>
+          {name}
+        </Html>
+      </group>
+      {gantry.movers.map((m, i) => (
+        <group key={m.id}>
+          <group ref={(o) => (carriages.current[i] = o)}>
+            <mesh position={[0, -0.02, 0]} onClick={select}>
+              <boxGeometry args={[moverWidth, 0.04, moverLength]} />
+              <meshStandardMaterial color={selected ? SELECT_COLOR : XTS_COLORS.mover} metalness={0.4} roughness={0.4} />
+            </mesh>
+            <Html position={[0, -0.05, 0]} className="label" zIndexRange={[10, 0]}>
+              {m.id}
+            </Html>
+          </group>
+          <mesh ref={(o) => (arms.current[i] = o)} onClick={select}>
+            <cylinderGeometry args={[0.012, 0.012, 1, 12]} />
+            <meshStandardMaterial color={XTS_COLORS.arm} roughness={0.5} />
+          </mesh>
+          <mesh ref={(o) => (columns.current[i] = o)} onClick={select}>
+            <cylinderGeometry args={[0.018, 0.018, 1, 16]} />
+            <meshStandardMaterial color={XTS_COLORS.arm} roughness={0.5} />
+          </mesh>
+          <group ref={(o) => (tips.current[i] = o)}>
+            <mesh position={[0, 0.006, 0]} raycast={noRaycast}>
+              <cylinderGeometry args={[0.022, 0.016, 0.012, 20]} />
+              <meshStandardMaterial ref={(mat) => (cups.current[i] = mat)} color={XTS_COLORS.cup} />
+            </mesh>
+            {/* Orientation mark along the gripper's local +X (C). */}
+            <mesh position={[0.02, 0.013, 0]} raycast={noRaycast}>
+              <boxGeometry args={[0.02, 0.003, 0.004]} />
+              <meshBasicMaterial color="#ffffff" />
+            </mesh>
+          </group>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+/** Stadium-shaped band of an XTS loop in its local X-Z plane (renderer x-y), centred on the track line. */
+function loopBandGeometry(length: number, radius: number, halfWidth: number, depth: number): THREE.ExtrudeGeometry {
+  const path = (offset: number, shape: THREE.Path, reverse: boolean) => {
+    const r = radius + offset;
+    if (!reverse) {
+      shape.moveTo(0, radius - r);
+      shape.lineTo(length, radius - r);
+      shape.absarc(length, radius, r, -Math.PI / 2, Math.PI / 2, false);
+      shape.lineTo(0, radius + r);
+      shape.absarc(0, radius, r, Math.PI / 2, (3 * Math.PI) / 2, false);
+    } else {
+      shape.moveTo(0, radius - r);
+      shape.absarc(0, radius, r, (3 * Math.PI) / 2, Math.PI / 2, true);
+      shape.lineTo(length, radius + r);
+      shape.absarc(length, radius, r, Math.PI / 2, -Math.PI / 2, true);
+      shape.lineTo(0, radius - r);
+    }
+  };
+  const outer = new THREE.Shape();
+  path(halfWidth, outer, false);
+  const inner = new THREE.Path();
+  path(-halfWidth, inner, true);
+  outer.holes.push(inner);
+  const geometry = new THREE.ExtrudeGeometry(outer, { depth, bevelEnabled: false, curveSegments: 32 });
+  geometry.translate(0, 0, -depth / 2);
+  return geometry;
+}
+
+/** XTS loop: the oval track, movers turning with the tangent, and each mover's tool point. */
+function LoopMesh(props: {
+  loop: SceneLoop;
+  latest: MutableRefObject<SceneModel>;
+  selected: boolean;
+  onSelect: (s: Selection) => void;
+}) {
+  const { loop, latest, selected, onSelect } = props;
+  const { id, name, straightLength, curveRadius, moverLength, moverWidth } = loop;
+  const base = useRef<THREE.Group>(null);
+  const movers = useRef<(THREE.Group | null)[]>([]);
+  const tools = useRef<(THREE.Mesh | null)[]>([]);
+  const band = useMemo(
+    () => loopBandGeometry(straightLength, curveRadius, 0.02, moverWidth),
+    [straightLength, curveRadius, moverWidth],
+  );
+  const select = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation();
+    onSelect({ kind: "component", id });
+  };
+
+  useFrame(() => {
+    const l = latest.current.loops.find((x) => x.id === id);
+    if (!l) return;
+    applyTransform(base.current, l.base);
+    loop.movers.forEach((m, i) => {
+      const live = l.movers.find((x) => x.id === m.id);
+      const mover = movers.current[i];
+      const tool = tools.current[i];
+      if (mover) {
+        mover.visible = Boolean(live);
+        if (live) applyTransform(mover, live.transform);
+      }
+      if (tool) {
+        tool.visible = Boolean(live);
+        if (live) tool.position.set(...live.tool);
+      }
+    });
+  });
+
+  return (
+    <group userData={{ label: name }}>
+      <group ref={base}>
+        <mesh geometry={band} onClick={select}>
+          <meshStandardMaterial color={selected ? "#5c6b3a" : XTS_COLORS.track} metalness={0.4} roughness={0.5} />
+        </mesh>
+        <Html position={[straightLength / 2, curveRadius, 0]} className="label" zIndexRange={[10, 0]}>
+          {name}
+        </Html>
+      </group>
+      {loop.movers.map((m, i) => (
+        <group key={m.id}>
+          <group ref={(o) => (movers.current[i] = o)}>
+            {/* Outwards is the mover's local −Y (MCS −Z). */}
+            <mesh position={[0, -0.03, 0]} onClick={select}>
+              <boxGeometry args={[moverLength, 0.04, moverWidth]} />
+              <meshStandardMaterial color={selected ? SELECT_COLOR : XTS_COLORS.mover} metalness={0.4} roughness={0.4} />
+            </mesh>
+            <Html position={[0, -0.07, moverWidth / 2]} className="label" zIndexRange={[10, 0]}>
+              {m.id}
+            </Html>
+          </group>
+          <mesh ref={(o) => (tools.current[i] = o)} raycast={noRaycast}>
+            <sphereGeometry args={[0.008, 10, 10]} />
+            <meshBasicMaterial color={XTS_COLORS.tool} />
+          </mesh>
+        </group>
+      ))}
     </group>
   );
 }
@@ -606,7 +982,9 @@ export function SceneView(props: SceneViewProps) {
   return (
     <Canvas
       camera={{ position: [4, 3, 4], fov: 45, near: 0.01, far: 200 }}
-      onPointerMissed={() => props.onSelect(undefined)}
+      onPointerMissed={() => {
+        if (!props.measureMode) props.onSelect(undefined);
+      }}
     >
       <color attach="background" args={["#1d2128"]} />
       <ambientLight intensity={0.6} />
