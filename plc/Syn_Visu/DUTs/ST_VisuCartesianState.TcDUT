@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuCartesianState" Id="{3a3e1534-5861-4f26-8208-f4cbfa684132}">
+    <Declaration><![CDATA[TYPE ST_VisuCartesianState :
+STRUCT
+	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (set by FB_VisuCartesian)
+	fX : LREAL; // mm, actual value
+	fY : LREAL; // mm, actual value
+	fZ : LREAL; // mm, actual value
+	fC : LREAL; // degrees, about local +Z; 0 = gripper along local +X, positive counter-clockwise from above
+	fA : LREAL; // degrees, tilt about the gripper's own (C-turned) X axis; 0 = pointing straight down
+	bGripperActive : BOOL;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

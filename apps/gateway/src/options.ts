@@ -1,5 +1,6 @@
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { MANIFEST_PATH } from "./plc-contract";
 
 const drivers = ["sim", "ads", "ads-tcp"] as const;
 export type Driver = (typeof drivers)[number];
@@ -13,6 +14,8 @@ export interface GatewayOptions {
   localAmsNetId?: string;
   cycleMs: number;
   configRecheckMs: number;
+  /** Symbol path of the application's manifest. */
+  manifestPath: string;
   port: number;
   host?: string;
   /** AdsBridge.exe (packaged) or AdsBridge.dll (run through `dotnet`). */
@@ -32,7 +35,7 @@ export interface OptionsEnvironment {
 
 export class OptionsError extends Error {}
 
-const stringKeys = ["driver", "amsNetId", "routerAddress", "localAmsNetId", "host"] as const;
+const stringKeys = ["driver", "amsNetId", "routerAddress", "localAmsNetId", "host", "manifestPath"] as const;
 /** String settings holding paths; relative ones resolve against the config file's folder or the working directory. */
 const pathKeys = ["adsBridge", "staticDir"] as const;
 const numberKeys = ["adsPort", "routerPort", "cycleMs", "configRecheckMs", "port"] as const;
@@ -81,6 +84,7 @@ export function resolveGatewayOptions(argv: readonly string[], env: OptionsEnvir
     ...(settings.localAmsNetId !== undefined ? { localAmsNetId: settings.localAmsNetId } : {}),
     cycleMs: settings.cycleMs ?? 20,
     configRecheckMs: settings.configRecheckMs ?? 1000,
+    manifestPath: settings.manifestPath ?? MANIFEST_PATH,
     port: settings.port ?? 8080,
     ...(settings.host !== undefined ? { host: settings.host } : {}),
     adsBridge: settings.adsBridge ?? defaultBridge(env),

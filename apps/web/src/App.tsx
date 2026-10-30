@@ -322,6 +322,20 @@ function Inspector(props: {
           <MoverTable head={["Id", "s"]} rows={state.movers.map((m) => [m.id, m.position.toFixed(1)])} />
         </>
       )}
+      {state?.type === "cartesian" && (
+        <>
+          <h3>Axes</h3>
+          <MoverTable
+            head={["X", "Y", "Z", "C", "A", "Gripper"]}
+            rows={[
+              [
+                ...[state.x, state.y, state.z, state.c, state.a].map((v) => v.toFixed(1)),
+                state.gripperActive ? "on" : "off",
+              ],
+            ]}
+          />
+        </>
+      )}
       <h3>Config</h3>
       <Json value={component} />
       <h3>State</h3>

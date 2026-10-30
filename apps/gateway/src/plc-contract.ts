@@ -6,6 +6,7 @@
  */
 
 /** Fixed symbol where discovery starts. */
+/** Default symbol path of the manifest; overridable per gateway (`manifestPath`) when the application names its GVL differently. */
 export const MANIFEST_PATH = "GVL_Visu.stManifest";
 
 /** Expected PLC data type names, checked against the symbol table during discovery. */
@@ -15,10 +16,11 @@ export const PLC_TYPES = {
   delta: "ST_VisuDelta",
   xtsGantry: "ST_VisuXtsGantry",
   xtsLoop: "ST_VisuXtsLoop",
+  cartesian: "ST_VisuCartesian",
 } as const;
 
 /** E_VisuComponentType */
-export const E_VisuComponentType = { NONE: 0, CONVEYOR: 1, DELTA: 2, XTS_GANTRY: 3, XTS_LOOP: 4 } as const;
+export const E_VisuComponentType = { NONE: 0, CONVEYOR: 1, DELTA: 2, XTS_GANTRY: 3, XTS_LOOP: 4, CARTESIAN: 5 } as const;
 
 /** E_VisuProductState */
 export const E_VisuProductState = { DETECTED: 0, ASSIGNED: 1, PICKED: 2, REJECTED: 3, PLACED: 4 } as const;
@@ -201,6 +203,39 @@ export interface ST_VisuXtsLoopState {
 export interface ST_VisuXtsLoop {
   stConfig: ST_VisuXtsLoopConfig;
   stState: ST_VisuXtsLoopState;
+}
+
+export interface ST_VisuCartesianConfig {
+  stPose: ST_VisuPose;
+  fXMin: number;
+  fXMax: number;
+  fYMin: number;
+  fYMax: number;
+  fZMin: number;
+  fZMax: number;
+  fCMin: number;
+  fCMax: number;
+  fAMin: number;
+  fAMax: number;
+  fToolLength: number;
+  fRailHeight: number;
+  nZoneCount: number;
+  aZones: ST_VisuZone[];
+}
+
+export interface ST_VisuCartesianState {
+  nTimestamp: bigint;
+  fX: number;
+  fY: number;
+  fZ: number;
+  fC: number;
+  fA: number;
+  bGripperActive: boolean;
+}
+
+export interface ST_VisuCartesian {
+  stConfig: ST_VisuCartesianConfig;
+  stState: ST_VisuCartesianState;
 }
 
 export function enumValue(value: PlcEnum): number {

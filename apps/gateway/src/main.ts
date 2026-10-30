@@ -39,6 +39,7 @@ if (options.help) {
   --local-ams-net-id <id>    ads-tcp only: local AmsNetId when connecting through a remote router
   --cycle-ms <ms>            Acquisition cycle (default: 20)
   --config-recheck-ms <ms>   Re-read the full config at this interval to catch live changes (default: 1000, 0 = off)
+  --manifest-path <symbol>   Symbol path of the application's manifest (default: GVL_Visu.stManifest)
   --port <port>              HTTP + WebSocket port (default: 8080)
   --host <addr>              Bind address (default: all interfaces)
   --static-dir <dir>         Built web app to serve (default: web/ next to the packaged gateway, else apps/web/dist)`);
@@ -73,7 +74,12 @@ if (options.driver === "ads") {
 }
 
 const sourceId = options.driver === "sim" ? "sim" : `ads:${options.amsNetId}:${options.adsPort}`;
-const gateway = createGateway({ plc, sourceId, configRecheckMs: options.configRecheckMs });
+const gateway = createGateway({
+  plc,
+  sourceId,
+  configRecheckMs: options.configRecheckMs,
+  manifestPath: options.manifestPath,
+});
 
 const server = await startServer({
   gateway,

@@ -1,4 +1,6 @@
 import type {
+  CartesianConfig,
+  CartesianState,
   ComponentConfig,
   ConveyorConfig,
   ConveyorState,
@@ -19,6 +21,8 @@ import {
   E_VisuZoneKind,
   enumValue,
   type PlcEnum,
+  type ST_VisuCartesianConfig,
+  type ST_VisuCartesianState,
   type ST_VisuConveyorConfig,
   type ST_VisuConveyorState,
   type ST_VisuDeltaConfig,
@@ -158,6 +162,41 @@ export function mapXtsLoopState(id: number, s: ST_VisuXtsLoopState): XtsLoopStat
     movers: take(s.aMovers, s.nMoverCount)
       .filter((m) => m.bValid)
       .map((m) => ({ id: m.nId, position: m.fPosition })),
+  };
+}
+
+export function mapCartesianConfig(identity: ComponentIdentity, c: ST_VisuCartesianConfig): CartesianConfig {
+  return {
+    type: "cartesian",
+    ...identity,
+    pose: mapPose(c.stPose),
+    xMin: c.fXMin,
+    xMax: c.fXMax,
+    yMin: c.fYMin,
+    yMax: c.fYMax,
+    zMin: c.fZMin,
+    zMax: c.fZMax,
+    cMin: c.fCMin,
+    cMax: c.fCMax,
+    aMin: c.fAMin,
+    aMax: c.fAMax,
+    toolLength: c.fToolLength,
+    railHeight: c.fRailHeight,
+    zones: mapZones(c.aZones, c.nZoneCount),
+  };
+}
+
+export function mapCartesianState(id: number, s: ST_VisuCartesianState): CartesianState {
+  return {
+    type: "cartesian",
+    id,
+    timestamp: BigInt(s.nTimestamp).toString(),
+    x: s.fX,
+    y: s.fY,
+    z: s.fZ,
+    c: s.fC,
+    a: s.fA,
+    gripperActive: s.bGripperActive,
   };
 }
 

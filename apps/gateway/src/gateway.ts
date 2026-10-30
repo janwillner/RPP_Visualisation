@@ -8,6 +8,8 @@ import {
   type GatewayStatus,
 } from "@rpp/protocol";
 import {
+  mapCartesianConfig,
+  mapCartesianState,
   mapConveyorConfig,
   mapConveyorState,
   mapDeltaConfig,
@@ -23,6 +25,8 @@ import {
   MANIFEST_PATH,
   PLC_TYPES,
   enumValue,
+  type ST_VisuCartesianConfig,
+  type ST_VisuCartesianState,
   type ST_VisuConveyorConfig,
   type ST_VisuConveyorState,
   type ST_VisuDeltaConfig,
@@ -44,6 +48,8 @@ export interface GatewayOptions {
    * configs changed live in the PLC show up even without a config version bump. Default 1000 ms; 0 disables.
    */
   configRecheckMs?: number;
+  /** Symbol path of the application's manifest. Default `GVL_Visu.stManifest`. */
+  manifestPath?: string;
   /** Clock in ms (injectable for tests). */
   now?: () => number;
 }
@@ -64,6 +70,7 @@ const COMPONENT_KINDS: Record<number, ComponentKind> = {
   [E_VisuComponentType.DELTA]: "delta",
   [E_VisuComponentType.XTS_GANTRY]: "xtsGantry",
   [E_VisuComponentType.XTS_LOOP]: "xtsLoop",
+  [E_VisuComponentType.CARTESIAN]: "cartesian",
 };
 
 /** Mapping of each component type's PLC structures to the neutral model. */
@@ -89,6 +96,10 @@ const MAPPERS: {
     config: (i, raw) => mapXtsLoopConfig(i, raw as ST_VisuXtsLoopConfig),
     state: (id, raw) => mapXtsLoopState(id, raw as ST_VisuXtsLoopState),
   },
+  cartesian: {
+    config: (i, raw) => mapCartesianConfig(i, raw as ST_VisuCartesianConfig),
+    state: (id, raw) => mapCartesianState(id, raw as ST_VisuCartesianState),
+  },
 };
 
 /** A discovered component whose state is read every cycle. */
@@ -106,8 +117,11 @@ export function createGateway({
   plc,
   sourceId,
   configRecheckMs = 1000,
+  manifestPath = MANIFEST_PATH,
   now = () => performance.now(),
 }: GatewayOptions): Gateway {
+  const configVersionPath = `${manifestPath}.nConfigVersion`;
+  const protocolVersionPath = `${manifestPath}.nProtocolVersion`;
   const listeners = new Set<GatewayListener>();
   let discovery: Discovery | undefined;
   let status: GatewayStatus = { plcConnected: false };
@@ -120,7 +134,7 @@ export function createGateway({
   };
 
   async function discover(): Promise<Discovery> {
-    const manifest = (await plc.read(MANIFEST_PATH)) as ST_VisuManifest;
+    const manifest = (await plc.read(manifestPath)) as ST_VisuManifest;
     const errors: DiscoveryError[] = [];
     const active: ActiveComponent[] = [];
     const result = (): Discovery => ({
@@ -136,7 +150,7 @@ export function createGateway({
 
     if (manifest.nProtocolVersion !== PROTOCOL_VERSION) {
       errors.push({
-        path: MANIFEST_PATH,
+        path: manifestPath,
         message: `PLC reports protocol version ${manifest.nProtocolVersion}, but this gateway expects ${PROTOCOL_VERSION}. Update the Syn_Visu library or the gateway.`,
       });
       return result();
@@ -189,8 +203,8 @@ export function createGateway({
    */
   async function publishSnapshot(current: Discovery): Promise<boolean> {
     const [protocolVersion, configVersion, ...raws] = await plc.sumRead([
-      PROTOCOL_VERSION_PATH,
-      CONFIG_VERSION_PATH,
+      protocolVersionPath,
+      configVersionPath,
       ...current.active.map((a) => a.statePath),
     ]);
     if (protocolVersion !== current.config.protocolVersion || configVersion !== current.config.configVersion) {
@@ -259,9 +273,6 @@ export function createGateway({
     emit({ kind: "status", status });
   }
 }
-
-const CONFIG_VERSION_PATH = `${MANIFEST_PATH}.nConfigVersion`;
-const PROTOCOL_VERSION_PATH = `${MANIFEST_PATH}.nProtocolVersion`;
 
 /** Library types may be reported with their namespace, e.g. `Syn_Visu.ST_VisuDelta`. */
 function isExpectedType(actual: string | undefined, expected: string): boolean {

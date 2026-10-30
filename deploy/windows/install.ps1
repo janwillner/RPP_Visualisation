@@ -113,6 +113,7 @@ if (-not (Test-Path $targetConfig)) {
         port            = $Port
         cycleMs         = 20
         configRecheckMs = 1000
+        manifestPath    = 'GVL_Visu.stManifest'
     }
     Write-Utf8NoBom $targetConfig ($config | ConvertTo-Json)
 }

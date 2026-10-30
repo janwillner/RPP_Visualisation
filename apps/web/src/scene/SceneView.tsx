@@ -5,6 +5,7 @@ import * as THREE from "three";
 import type { GatewayStore } from "../connection";
 import type {
   ProductDisplay,
+  SceneCartesian,
   SceneDelta,
   SceneGantry,
   SceneLoop,
@@ -67,8 +68,9 @@ const EMPTY: SceneModel = {
   workingAreas: [],
   zones: [],
   gantries: [],
-  gantryAreas: [],
+  boxAreas: [],
   loops: [],
+  cartesians: [],
   snapPoints: [],
   origins: [],
   warnings: [],
@@ -126,8 +128,9 @@ function signature(m: SceneModel): string {
     m.zones.map((w) => `${w.robotId}:${w.conveyorId}:${w.kind}`).join(","),
     m.snapPoints.filter((p) => !p.moving).map((p) => p.key).join(","),
     m.gantries.map((g) => `${g.id}:${g.moduleCount}:${g.moduleLength}:${g.movers.map((x) => x.id).join("/")}`).join(","),
-    m.gantryAreas.map((a) => `${a.robotId}:${a.size.join("/")}`).join(","),
+    m.boxAreas.map((a) => `${a.robotId}:${a.size.join("/")}`).join(","),
     m.loops.map((l) => `${l.id}:${l.straightLength}:${l.curveRadius}:${l.movers.map((x) => x.id).join("/")}`).join(","),
+    m.cartesians.map((c) => `${c.id}:${c.parts.map((p) => p.size.join("/")).join("/")}:${c.tcp ? 1 : 0}`).join(","),
   ].join("|");
 }
 
@@ -228,8 +231,11 @@ function SceneContent(props: SceneViewProps) {
       {structure.loops.map((l) => (
         <LoopMesh key={l.id} loop={l} latest={latest} selected={isSelected(l.id)} onSelect={onSelect} />
       ))}
+      {structure.cartesians.map((c) => (
+        <CartesianMesh key={c.id} robot={c} latest={latest} selected={isSelected(c.id)} onSelect={onSelect} />
+      ))}
       {layers.workingAreas &&
-        structure.gantryAreas.map((a) => (
+        structure.boxAreas.map((a) => (
           <mesh key={`box:${a.robotId}`} ref={(o) => applyTransform(o, a.transform)} raycast={noRaycast}>
             {/* Renderer local axes: MCS X -> x, MCS Z -> y, MCS Y -> −z. */}
             <boxGeometry args={[a.size[0], a.size[2], a.size[1]]} />
@@ -906,6 +912,80 @@ function LoopMesh(props: {
           </mesh>
         </group>
       ))}
+    </group>
+  );
+}
+
+const CARTESIAN_COLORS: Record<SceneCartesian["parts"][number]["key"], string> = {
+  "rail left": "#3a3f46",
+  "rail right": "#3a3f46",
+  bridge: "#5d6570",
+  carriage: "#c9ced3",
+  column: "#8a939e",
+  head: "#26282b",
+};
+
+/**
+ * Cartesian robot: rails, bridge, carriage, column and gripper head as boxes, and a suction cup at the TCP (green
+ * while the gripper is active, with a mark along the gripper's orientation).
+ */
+function CartesianMesh(props: {
+  robot: SceneCartesian;
+  latest: MutableRefObject<SceneModel>;
+  selected: boolean;
+  onSelect: (s: Selection) => void;
+}) {
+  const { robot, latest, selected, onSelect } = props;
+  const { id, name } = robot;
+  const parts = useRef<(THREE.Mesh | null)[]>([]);
+  const tcp = useRef<THREE.Group>(null);
+  const cup = useRef<THREE.MeshStandardMaterial>(null);
+  const select = (e: ThreeEvent<MouseEvent>) => {
+    e.stopPropagation();
+    onSelect({ kind: "component", id });
+  };
+
+  useFrame(() => {
+    const live = latest.current.cartesians.find((x) => x.id === id);
+    if (!live) return;
+    live.parts.forEach((p, i) => applyTransform(parts.current[i] ?? null, p.transform));
+    if (tcp.current) {
+      tcp.current.visible = Boolean(live.tcp);
+      if (live.tcp) applyTransform(tcp.current, live.tcp);
+    }
+    cup.current?.color.set(live.gripperActive ? XTS_COLORS.cupActive : XTS_COLORS.cup);
+  });
+
+  // Labelled at a rail, which does not move.
+  const rail = robot.parts.find((p) => p.key === "rail left");
+  return (
+    <group userData={{ label: name }}>
+      {robot.parts.map((p, i) => (
+        <mesh key={p.key} ref={(o) => (parts.current[i] = o)} onClick={select}>
+          {/* Renderer local axes: MCS X -> x, MCS Z -> y, MCS Y -> −z. */}
+          <boxGeometry args={[p.size[0], p.size[2], p.size[1]]} />
+          <meshStandardMaterial
+            color={selected ? (p.key === "carriage" ? SELECT_COLOR : "#5c6b3a") : CARTESIAN_COLORS[p.key]}
+            metalness={0.4}
+            roughness={0.5}
+          />
+        </mesh>
+      ))}
+      {rail && (
+        <Html position={rail.transform.position} className="label" zIndexRange={[10, 0]}>
+          {name}
+        </Html>
+      )}
+      <group ref={tcp}>
+        <mesh position={[0, 0.006, 0]} raycast={noRaycast}>
+          <cylinderGeometry args={[0.03, 0.022, 0.012, 20]} />
+          <meshStandardMaterial ref={cup} color={XTS_COLORS.cup} />
+        </mesh>
+        <mesh position={[0.03, 0.013, 0]} raycast={noRaycast}>
+          <boxGeometry args={[0.03, 0.003, 0.005]} />
+          <meshBasicMaterial color="#ffffff" />
+        </mesh>
+      </group>
     </group>
   );
 }

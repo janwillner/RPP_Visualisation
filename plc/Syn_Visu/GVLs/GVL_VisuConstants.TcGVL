@@ -7,8 +7,9 @@ VAR_GLOBAL CONSTANT
 	   reports a different value. Bump together with PROTOCOL_VERSION in the gateway.
 	   2: the Delta reports only its TCP; the visualisation derives the arm posture.
 	   3: work area renamed to working area, windows to zones.
-	   4: XTS gantry and XTS loop, product nMoverId, fEncoder renamed to fBeltPosition. *)
-	nProtocolVersion : UINT := 4;
+	   4: XTS gantry and XTS loop, product nMoverId, fEncoder renamed to fBeltPosition.
+	   5: Cartesian robot. *)
+	nProtocolVersion : UINT := 5;
 	fDegToRad : LREAL := 0.017453292519943295; // pi / 180
 END_VAR]]></Declaration>
   </GVL>

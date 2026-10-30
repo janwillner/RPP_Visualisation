@@ -10,7 +10,8 @@ TYPE E_VisuComponentType :
 	CONVEYOR := 1,
 	DELTA := 2,
 	XTS_GANTRY := 3,
-	XTS_LOOP := 4
+	XTS_LOOP := 4,
+	CARTESIAN := 5
 ) UINT;
 END_TYPE]]></Declaration>
   </DUT>

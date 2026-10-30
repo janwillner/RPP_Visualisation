@@ -15,15 +15,16 @@ Without a PLC: `--driver sim` (built-in simulator, same contract).
 ## Done
 
 - MVP from issue #1: protocol package, gateway (discovery, sum-read snapshots, version checks, reconnect), simulator, React Three Fiber debug UI.
-- PLC library `Syn_Visu` (`plc/Syn_Visu`), contract in `docs/plc-contract.md`, **protocol version 4** (3: work area → working area, windows → zones; 4: XTS kinematics, `nMoverId`, `fEncoder` → `fBeltPosition`).
-- XTS gantry (IDH) and XTS loop (Fxx), issue #3: contract, `FB_VisuXtsGantry` / `FB_VisuXtsLoop`, gateway, scene model, drawing, measure-mode snap points, mover table in the inspector; simulator and PLC demo extended with a spacing belt, a tray belt, an Fxx and an IDH.
+- PLC library `Syn_Visu` (`plc/Syn_Visu`), contract in `docs/plc-contract.md`, **protocol version 5** (3: work area → working area, windows → zones; 4: XTS kinematics, `nMoverId`, `fEncoder` → `fBeltPosition`; 5: Cartesian robot).
+- XTS gantry (IDH) and XTS loop (Fxx), issue #3: contract, `FB_VisuXtsGantry` / `FB_VisuXtsLoop`, gateway, scene model, drawing, measure-mode snap points, mover table in the inspector.
+- Cartesian robot, issue #4: contract, `FB_VisuCartesian`, gateway, scene model (rails, bridge, carriage, column, gripper head, TCP volume), measure-mode snap points, axis table in the inspector.
 - ADS access through `apps/ads-bridge` (.NET, Beckhoff `TwinCAT.Ads` 7.0.389), because the pure TCP client `ads-client` is rejected by the 4026 user-mode runtime's router (no AMS TCP loopback, no route). `ads-client` remains as `--driver ads-tcp`.
 - Delta reports only its TCP; the web derives the arms by inverse kinematics (was: axis angles in protocol version 1).
 - Delta drawn like a real robot: base plate, motors, upper arms, parallelogram lower arms, effector with TCP axis triad.
 - Measure mode (issue #2, key M): component origin triads, snap points at characteristic points (belt corners, zone corners, Delta base/shoulders/TCP, working area, product corners), frozen measuring points with MCS and local coordinates, distance chain and CSV copy. Replaced the pointer readout and Shift+click points.
 - Product colour legend appears only in a popup while a product is selected.
 - Gateway re-runs discovery every second (`--config-recheck-ms`), so configs changed live in the PLC appear without bumping `nConfigVersion`.
-- Demo line in the PLC project (`P_VisuDemo`): two infeeds, one outfeed, three Deltas in a row.
+- Demo in the PLC project (`P_VisuDemo`) and the gateway simulator: four independent applications side by side, all conveying along +X from X = 0: Delta (two infeeds, one outfeed, three Deltas in a row; Y = 0..1000), Fxx (irregular infeed evened out onto its outfeed; Y = 2500) and IDH (four movers picking in batches from its infeed onto a tray belt; Y = 4100..4850) and Cartesian (picks from its infeed, turns by C = −90°, tilts by A while lowering, places onto its outfeed; Y = 6500..7300).
 - PLC API: `FB_VisuConveyor` and `FB_VisuDelta` (base `FB_VisuComponent`) with methods replace the helper functions; library version 2.0.0. The ADS contract is unchanged.
 
 ## Decisions changed during implementation

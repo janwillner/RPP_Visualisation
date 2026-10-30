@@ -40,7 +40,8 @@ The configuration lives in `C:\ProgramData\RPP_Visualisation\config.json`:
   "adsPort": 851,
   "port": 8080,
   "cycleMs": 20,
-  "configRecheckMs": 1000
+  "configRecheckMs": 1000,
+  "manifestPath": "GVL_Visu.stManifest"
 }
 ```
 
@@ -52,6 +53,7 @@ The configuration lives in `C:\ProgramData\RPP_Visualisation\config.json`:
 | `port` | HTTP and WebSocket port of the page. |
 | `cycleMs` | Acquisition cycle in milliseconds. |
 | `configRecheckMs` | How often the full configuration is re-read to catch live changes (0 = off). |
+| `manifestPath` | Symbol path of the manifest in the PLC. Change it only if the PLC application declares the manifest in a GVL with another name. |
 
 The file may also contain any other gateway option in camelCase; `node.exe gateway.mjs --help` lists them all. Unknown keys and wrong types stop the service with a message in the log.
 

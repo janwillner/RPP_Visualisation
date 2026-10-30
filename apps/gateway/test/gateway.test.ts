@@ -9,11 +9,12 @@ import {
 } from "@rpp/protocol";
 import { createGateway } from "../src/gateway";
 import { InMemoryPlc } from "../src/in-memory-plc";
-import { conveyor, defineMachine, delta, xtsGantry, xtsLoop, type MachineComponent } from "../src/plc-builders";
+import { cartesian, conveyor, defineMachine, delta, xtsGantry, xtsLoop, type MachineComponent } from "../src/plc-builders";
 import {
   E_VisuProductState,
   E_VisuZoneKind,
   MANIFEST_PATH,
+  type ST_VisuCartesian,
   type ST_VisuConveyor,
   type ST_VisuDelta,
   type ST_VisuManifest,
@@ -97,6 +98,17 @@ const loop: MachineComponent = {
   }),
 };
 
+const portal: MachineComponent = {
+  id: 50,
+  name: "Cartesian",
+  path: "MAIN.fbCartesian.stVisu",
+  kind: "cartesian",
+  value: cartesian({
+    pose: { fX: 6000, fY: 100, fZ: 700, fRz: 90 },
+    zones: [{ nConveyorId: 10, fStart: 100, fEnd: 900, eKind: E_VisuZoneKind.PICK }],
+  }),
+};
+
 describe("gateway discovery", () => {
   it("publishes the configured conveyors and deltas as a config message", async () => {
     const t = setup([infeed, robot]);
@@ -177,6 +189,34 @@ describe("gateway discovery", () => {
     ]);
   });
 
+  it("publishes a Cartesian robot with its strokes, tool length, rail height and zones", async () => {
+    const t = setup([infeed, portal]);
+    await t.gateway.cycle();
+
+    const [config] = t.configs();
+    expect(config!.errors).toEqual([]);
+    expect(config!.components[1]).toEqual({
+      type: "cartesian",
+      id: 50,
+      sourceId: "plc1",
+      name: "Cartesian",
+      pose: { x: 6000, y: 100, z: 700, rx: 0, ry: 0, rz: 90 },
+      xMin: 0,
+      xMax: 1200,
+      yMin: 0,
+      yMax: 1000,
+      zMin: -600,
+      zMax: 0,
+      cMin: -180,
+      cMax: 180,
+      aMin: -30,
+      aMax: 30,
+      toolLength: 150,
+      railHeight: 1200,
+      zones: [{ conveyorId: 10, start: 100, end: 900, kind: "pick" }],
+    });
+  });
+
   it("refuses a PLC with a different protocol version and publishes no component data", async () => {
     const t = setup([infeed, robot], { protocolVersion: 99 });
     await t.gateway.cycle();
@@ -228,6 +268,20 @@ describe("gateway discovery", () => {
     const [config] = t.configs();
     expect(config!.errors).toEqual([]);
     expect(config!.components.map((c) => c.id)).toEqual([10, 20]);
+  });
+
+  it("discovers through a manifest at a configured symbol path", async () => {
+    const plc = new InMemoryPlc();
+    defineMachine(plc, [infeed], { manifestPath: "GVL_RppVisu.stManifest" });
+    const gateway = createGateway({ plc, sourceId: "plc1", manifestPath: "GVL_RppVisu.stManifest" });
+    const messages: GatewayMessage[] = [];
+    gateway.subscribe((m) => messages.push(m));
+
+    await gateway.cycle();
+
+    const config = messages.find((m): m is ConfigMessage => m.kind === "config");
+    expect(config?.components.map((c) => c.name)).toEqual(["Infeed"]);
+    expect(messages.some((m) => m.kind === "state")).toBe(true);
   });
 
   it("reports a manifest entry whose symbol path does not exist", async () => {
@@ -448,6 +502,25 @@ describe("gateway state snapshots", () => {
         { id: 11, position: 120 },
         { id: 12, position: 2600 },
       ],
+    });
+  });
+
+  it("publishes a Cartesian robot's axis values and gripper", async () => {
+    const t = setup([infeed, portal]);
+    const s = t.plc.get<ST_VisuCartesian>(portal.path).stState;
+    Object.assign(s, { fX: 600, fY: 250, fZ: -400, fC: 90, fA: 20, bGripperActive: true });
+    await t.gateway.cycle();
+
+    expect(t.states()[0]!.components).toContainEqual({
+      type: "cartesian",
+      id: 50,
+      timestamp: "0",
+      x: 600,
+      y: 250,
+      z: -400,
+      c: 90,
+      a: 20,
+      gripperActive: true,
     });
   });
 

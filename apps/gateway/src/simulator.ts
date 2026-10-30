@@ -1,9 +1,10 @@
 import type { Vec3 } from "@rpp/protocol";
 import { InMemoryPlc } from "./in-memory-plc";
-import { MAX_PRODUCTS, conveyor, defineMachine, delta, emptyProduct, xtsGantry, xtsLoop } from "./plc-builders";
+import { MAX_PRODUCTS, cartesian, conveyor, defineMachine, delta, emptyProduct, xtsGantry, xtsLoop } from "./plc-builders";
 import {
   E_VisuProductState,
   E_VisuZoneKind,
+  type ST_VisuCartesian,
   type ST_VisuConveyor,
   type ST_VisuDelta,
   type ST_VisuProduct,
@@ -12,12 +13,15 @@ import {
 } from "./plc-contract";
 
 /**
- * Sample machine behind the same contract as a real PLC:
- * - a Delta picks from the infeed and places onto the outfeed;
- * - an XTS loop (Fxx) takes the products over at the end of the outfeed and puts them onto the spacing belt with
- *   a new spacing;
- * - an XTS gantry (IDH) with four movers picks them from the spacing belt in batches of four and places them onto
- *   the tray belt.
+ * Sample machine behind the same contract as a real PLC: four independent applications side by side, each line
+ * starting at X = 0 and conveying along +X.
+ * - Delta (Y = 0..900): a Delta picks from the infeed and places onto the outfeed.
+ * - Fxx (Y = 2500): products arrive irregularly on the Fxx infeed; an XTS loop puts them onto the Fxx outfeed with an
+ *   even spacing.
+ * - IDH (Y = 4100..4850): an XTS gantry with four movers picks from the IDH infeed in batches of up to four and
+ *   places onto the tray belt.
+ * - Cartesian (Y = 6500..7300): a Cartesian robot picks from the Cartesian infeed, turns each product by C = −90°,
+ *   tilts it by A while lowering and places it onto the Cartesian outfeed.
  * It is an in-memory PLC whose values change on every `step`, so it runs through real discovery.
  */
 export interface Simulator {
@@ -29,8 +33,12 @@ export interface Simulator {
 const BELT_Z = 800;
 const INFEED = { id: 1, path: "MAIN.stInfeed", x: 0, y: 0, length: 3000, speed: 150 };
 const OUTFEED = { id: 2, path: "MAIN.stOutfeed", x: 0, y: 900, length: 3000, speed: 100 };
-const SPACING = { id: 3, path: "MAIN.stSpacingBelt", x: 3600, y: 900, length: 3000, speed: 400 };
-const TRAY = { id: 4, path: "MAIN.stTrayBelt", x: 4500, y: 500, length: 2000, speed: 80 };
+const FXX_INFEED = { id: 3, path: "MAIN.stFxxInfeed", x: 0, y: 2500, length: 2000, speed: 150 };
+const FXX_OUTFEED = { id: 4, path: "MAIN.stFxxOutfeed", x: 2400, y: 2500, length: 3000, speed: 300 };
+const IDH_INFEED = { id: 5, path: "MAIN.stIdhInfeed", x: 0, y: 4500, length: 4000, speed: 200 };
+const TRAY = { id: 6, path: "MAIN.stTrayBelt", x: 1300, y: 4100, length: 2000, speed: 80 };
+const CART_INFEED = { id: 7, path: "MAIN.stCartesianInfeed", x: 0, y: 6500, length: 3000, speed: 150 };
+const CART_OUTFEED = { id: 8, path: "MAIN.stCartesianOutfeed", x: 0, y: 7300, length: 3000, speed: 150 };
 const ROBOT = { id: 10, path: "MAIN.stDelta1", x: 1500, y: 450, z: 1900 };
 const GEOMETRY = { baseRadius: 200, effectorRadius: 50, upperArmLength: 400, lowerArmLength: 950 };
 const PRODUCT = { type: 1, length: 120, width: 80, height: 40 };
@@ -42,18 +50,18 @@ const HOVER = 120; // mm above the product top
 /** Products are removed from the register this far beyond the belt end, so "missed" stays visible briefly. */
 const REMOVE_BEYOND_END = 300;
 
-/** XTS loop above the outfeed's end and the spacing belt's start; tool points at the product tops. */
+/** XTS loop above the Fxx infeed and outfeed; tool points at the product tops. */
 const LOOP = {
   id: 20,
   path: "MAIN.fbFxx.stVisu",
-  x: 2200,
+  x: 1000,
   straight: 2400,
   radius: 250,
   toolOffset: 120,
   movers: 12,
   moverLength: 100,
   slot: 130,
-  /** Track positions: products are gripped here and handed over here (loop x 4200 = spacing belt x 600). */
+  /** Track positions: products are gripped here and handed over here (loop x 3000 = Fxx outfeed x 600). */
   grip: 300,
   release: 600,
   place: 2000,
@@ -63,14 +71,14 @@ const LOOP = {
 const LOOP_PERIMETER = 2 * LOOP.straight + 2 * Math.PI * LOOP.radius;
 
 /**
- * XTS gantry turned by −90°: its track (local +Y) runs along MCS +X above the spacing belt, its X axes (local +X)
- * reach towards MCS −Y, over the spacing belt at X = 200 and over the tray belt at X = 600.
+ * XTS gantry turned by −90°: its track (local +Y) runs along MCS +X above the IDH infeed, its X axes (local +X)
+ * reach towards MCS −Y, over the IDH infeed at X = 200 and over the tray belt at X = 600.
  */
 const GANTRY = {
   id: 30,
   path: "MAIN.fbIdh.stVisu",
-  x: 4700,
-  y: 1250,
+  x: 1500,
+  y: 4850,
   z: BELT_Z + PRODUCT.height + 400 + 100,
   modules: 6,
   moduleLength: 250,
@@ -86,6 +94,33 @@ const GANTRY = {
   trackSpeed: 1500,
   wait: [100, 300, 500, 700],
 };
+
+/**
+ * Cartesian robot turned by −90°: its X axis (local +X) reaches across the belts towards MCS −Y, over the outfeed at
+ * X = 100 and over the infeed at X = 900; its Y axis (local +Y) runs along MCS +X from X = 1000.
+ */
+const CART = {
+  id: 40,
+  path: "MAIN.fbCartesian.stVisu",
+  x: 1000,
+  y: CART_OUTFEED.y + 100,
+  /** Pick height Z = −550 puts the TCP (A = 0) on the product top. */
+  z: BELT_Z + PRODUCT.height + 550 + 150,
+  xOutfeed: 100,
+  xInfeed: 900,
+  yHome: 200,
+  yPlace: 500,
+  zPick: -550,
+  zTravel: -200,
+  tilt: 20,
+  turn: -90,
+  xySpeed: 1500,
+  zSpeed: 800,
+  cSpeed: 180,
+  aSpeed: 60,
+  spawnIntervalMs: 2500,
+};
+type CartPhase = "idle" | "descend" | "lift" | "transfer" | "lower" | "straighten" | "release" | "rise";
 
 type RobotPhase = "idle" | "approach" | "descend" | "lift" | "transfer" | "lower" | "release";
 type LoopMode = "queue" | "track" | "deliver" | "return";
@@ -137,7 +172,9 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   defineMachine(plc, [
     { id: INFEED.id, name: "Infeed", path: INFEED.path, kind: "conveyor", value: belt(INFEED) },
     { id: OUTFEED.id, name: "Outfeed", path: OUTFEED.path, kind: "conveyor", value: belt(OUTFEED) },
-    { id: SPACING.id, name: "Spacing belt", path: SPACING.path, kind: "conveyor", value: belt(SPACING) },
+    { id: FXX_INFEED.id, name: "Fxx infeed", path: FXX_INFEED.path, kind: "conveyor", value: belt(FXX_INFEED) },
+    { id: FXX_OUTFEED.id, name: "Fxx outfeed", path: FXX_OUTFEED.path, kind: "conveyor", value: belt(FXX_OUTFEED) },
+    { id: IDH_INFEED.id, name: "IDH infeed", path: IDH_INFEED.path, kind: "conveyor", value: belt(IDH_INFEED) },
     { id: TRAY.id, name: "Tray belt", path: TRAY.path, kind: "conveyor", value: belt(TRAY) },
     {
       id: ROBOT.id,
@@ -160,20 +197,20 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       path: LOOP.path,
       kind: "xtsLoop",
       value: xtsLoop({
-        pose: { fX: LOOP.x, fY: OUTFEED.y, fZ: BELT_Z + PRODUCT.height + LOOP.toolOffset },
+        pose: { fX: LOOP.x, fY: FXX_INFEED.y, fZ: BELT_Z + PRODUCT.height + LOOP.toolOffset },
         straightLength: LOOP.straight,
         curveRadius: LOOP.radius,
         zones: [
           {
-            nConveyorId: OUTFEED.id,
-            fStart: LOOP.x - OUTFEED.x,
-            fEnd: LOOP.x - OUTFEED.x + LOOP.release,
+            nConveyorId: FXX_INFEED.id,
+            fStart: LOOP.x - FXX_INFEED.x,
+            fEnd: LOOP.x - FXX_INFEED.x + LOOP.release,
             eKind: E_VisuZoneKind.PICK,
           },
           {
-            nConveyorId: SPACING.id,
-            fStart: LOOP.x + LOOP.place - SPACING.x - 300,
-            fEnd: LOOP.x + LOOP.place - SPACING.x + 100,
+            nConveyorId: FXX_OUTFEED.id,
+            fStart: LOOP.x + LOOP.place - FXX_OUTFEED.x - 300,
+            fEnd: LOOP.x + LOOP.place - FXX_OUTFEED.x + 100,
             eKind: E_VisuZoneKind.PLACE,
           },
         ],
@@ -190,20 +227,50 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         moduleLength: GANTRY.moduleLength,
         zones: [
           {
-            nConveyorId: SPACING.id,
-            fStart: GANTRY.x - SPACING.x,
-            fEnd: GANTRY.x - SPACING.x + GANTRY.modules * GANTRY.moduleLength,
+            nConveyorId: IDH_INFEED.id,
+            fStart: GANTRY.x - IDH_INFEED.x,
+            fEnd: GANTRY.x - IDH_INFEED.x + GANTRY.modules * GANTRY.moduleLength,
             eKind: E_VisuZoneKind.PICK,
           },
-          { nConveyorId: TRAY.id, fStart: 200, fEnd: 1700, eKind: E_VisuZoneKind.PLACE },
+          {
+            nConveyorId: TRAY.id,
+            fStart: GANTRY.x - TRAY.x,
+            fEnd: GANTRY.x - TRAY.x + GANTRY.modules * GANTRY.moduleLength,
+            eKind: E_VisuZoneKind.PLACE,
+          },
+        ],
+      }),
+    },
+    { id: CART_INFEED.id, name: "Cartesian infeed", path: CART_INFEED.path, kind: "conveyor", value: belt(CART_INFEED) },
+    { id: CART_OUTFEED.id, name: "Cartesian outfeed", path: CART_OUTFEED.path, kind: "conveyor", value: belt(CART_OUTFEED) },
+    {
+      id: CART.id,
+      name: "Cartesian",
+      path: CART.path,
+      kind: "cartesian",
+      value: cartesian({
+        pose: { fX: CART.x, fY: CART.y, fZ: CART.z, fRz: -90 },
+        zones: [
+          { nConveyorId: CART_INFEED.id, fStart: CART.x, fEnd: CART.x + 1000, eKind: E_VisuZoneKind.PICK },
+          {
+            nConveyorId: CART_OUTFEED.id,
+            fStart: CART.x + CART.yPlace - 200,
+            fEnd: CART.x + CART.yPlace + 200,
+            eKind: E_VisuZoneKind.PLACE,
+          },
         ],
       }),
     },
   ]);
   const infeed = plc.get<ST_VisuConveyor>(INFEED.path);
   const outfeed = plc.get<ST_VisuConveyor>(OUTFEED.path);
-  const spacing = plc.get<ST_VisuConveyor>(SPACING.path);
+  const fxxInfeed = plc.get<ST_VisuConveyor>(FXX_INFEED.path);
+  const fxxOutfeed = plc.get<ST_VisuConveyor>(FXX_OUTFEED.path);
+  const idhInfeed = plc.get<ST_VisuConveyor>(IDH_INFEED.path);
   const tray = plc.get<ST_VisuConveyor>(TRAY.path);
+  const cartInfeed = plc.get<ST_VisuConveyor>(CART_INFEED.path);
+  const cartOutfeed = plc.get<ST_VisuConveyor>(CART_OUTFEED.path);
+  const cart = plc.get<ST_VisuCartesian>(CART.path);
   const robot = plc.get<ST_VisuDelta>(ROBOT.path);
   robot.stConfig.stWorkingArea = { fRadius: 700, fZMin: -1300, fZMax: -700, fConeHeight: 200, fConeBottomRadius: 400 };
   const loop = plc.get<ST_VisuXtsLoop>(LOOP.path);
@@ -224,10 +291,19 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   let now = BigInt(Date.UTC(2026, 0, 1) - Date.UTC(2000, 0, 1)) * 1_000_000n;
   let nextId = 1;
   let sinceSpawn = SPAWN_INTERVAL_MS;
+  let sinceFxxSpawn = 0;
+  let fxxSpawnInterval = 600;
+  let sinceIdhSpawn = 0;
+  let idhSpawnInterval = 800;
   const infeedProducts: TrackedProduct[] = [];
   const outfeedProducts: TrackedProduct[] = [];
-  const spacingProducts: TrackedProduct[] = [];
+  const fxxInfeedProducts: TrackedProduct[] = [];
+  const fxxOutfeedProducts: TrackedProduct[] = [];
+  const idhInfeedProducts: TrackedProduct[] = [];
   const trayProducts: TrackedProduct[] = [];
+  const cartInfeedProducts: TrackedProduct[] = [];
+  const cartOutfeedProducts: TrackedProduct[] = [];
+  let sinceCartSpawn = 0;
 
   const home: Vec3 = [ROBOT.x, ROBOT.y, ROBOT.z - 900];
   let tcp: Vec3 = [...home];
@@ -251,6 +327,10 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     c: 0,
     gripper: false,
   }));
+
+  const axes = { x: CART.xInfeed, y: CART.yHome, z: CART.zTravel, c: 0, a: 0, gripper: false };
+  let cartPhase: CartPhase = "idle";
+  let cartTarget: TrackedProduct | undefined;
 
   /** Current MCS position of a tracked product's bottom centre on a belt along MCS +X. */
   function productPosition(p: TrackedProduct, beltPosition: number): Vec3 {
@@ -344,11 +424,12 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   }
 
   /**
-   * XTS loop: the queue head takes over the next product arriving under the start of the lower straight, follows it,
-   * grips it, carries it faster to the spacing belt and releases it there; the mover then runs round to the queue.
+   * XTS loop: the queue head takes over the next product arriving on the Fxx infeed under the start of the lower
+   * straight, follows it, grips it, carries it faster to the Fxx outfeed and releases it there; the mover then runs
+   * round to the queue.
    */
   function stepLoop(dtS: number): void {
-    const outfeedX = (p: TrackedProduct) => productPosition(p, outfeed.stState.fBeltPosition)[0] - LOOP.x;
+    const outfeedX = (p: TrackedProduct) => productPosition(p, fxxInfeed.stState.fBeltPosition)[0] - LOOP.x;
     const queued = loopMovers.filter((m) => m.mode === "queue").sort((a, b) => b.s - a.s);
     queued.forEach((m, rank) => {
       m.s = Math.min(m.s + LOOP.returnSpeed * dtS, LOOP_PERIMETER - rank * LOOP.slot);
@@ -357,7 +438,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     if (head && head.s >= LOOP_PERIMETER - 1) {
       // Movers cannot overlap: the next product must be at least one slot behind the last mover following one.
       const lastTracked = Math.min(...loopMovers.filter((m) => m.mode === "track").map((m) => m.s), Infinity);
-      const next = outfeedProducts.find(
+      const next = fxxInfeedProducts.find(
         (p) =>
           p.eState === E_VisuProductState.DETECTED &&
           outfeedX(p) >= 0 &&
@@ -384,7 +465,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
           m.s = Math.min(m.s + LOOP.deliverSpeed * dtS, LOOP.place);
           if (m.s >= LOOP.place) {
             m.product!.eState = E_VisuProductState.PLACED;
-            latch(spacingProducts, spacing, LOOP.x + m.s, SPACING.y, m.product!.stLatchPose.fRz);
+            latch(fxxOutfeedProducts, fxxOutfeed, LOOP.x + m.s, FXX_OUTFEED.y, m.product!.stLatchPose.fRz);
             m.product = undefined;
             m.mode = "return";
           }
@@ -400,12 +481,12 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   }
 
   /**
-   * XTS gantry: the movers follow up to four products on the spacing belt (the most downstream mover takes the
+   * XTS gantry: the movers follow up to four products on the IDH infeed (the most downstream mover takes the
    * first product), then the Z axis lowers all grippers together, the X axes carry the products over the tray belt,
    * they are put down together and the movers return to their waiting positions.
    */
   function stepGantry(dtS: number): void {
-    const trackPos = (p: TrackedProduct) => productPosition(p, spacing.stState.fBeltPosition)[0] - GANTRY.x;
+    const trackPos = (p: TrackedProduct) => productPosition(p, idhInfeed.stState.fBeltPosition)[0] - GANTRY.x;
     const trackEnd = GANTRY.modules * GANTRY.moduleLength;
     const byPosition = [...gantryMovers].sort((a, b) => b.position - a.position);
     const follow = () => {
@@ -424,7 +505,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       case "collect": {
         for (const m of byPosition) {
           if (m.product) continue;
-          const next = spacingProducts
+          const next = idhInfeedProducts
             .filter((p) => p.eState === E_VisuProductState.DETECTED && trackPos(p) < m.position && trackPos(p) > -500)
             .sort((a, b) => trackPos(b) - trackPos(a))[0];
           if (!next) break;
@@ -506,9 +587,91 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     }
   }
 
+  /**
+   * Cartesian robot: follows a product on the Cartesian infeed in Y with the gripper turned onto it (C), picks it,
+   * carries it across to the outfeed while turning it by a further −90°, tilts it by A while lowering, straightens it
+   * and places it.
+   */
+  function stepCartesian(dtS: number): void {
+    // Robot Y of a product on the infeed: its MCS x relative to the robot origin.
+    const productY = (p: TrackedProduct) => productPosition(p, cartInfeed.stState.fBeltPosition)[0] - CART.x;
+    const move = (goal: Partial<Record<"x" | "y" | "z" | "c" | "a", number>>) => {
+      const speeds = { x: CART.xySpeed, y: CART.xySpeed, z: CART.zSpeed, c: CART.cSpeed, a: CART.aSpeed };
+      let done = true;
+      for (const k of ["x", "y", "z", "c", "a"] as const) {
+        const g = goal[k];
+        if (g === undefined) continue;
+        axes[k] = approach(axes[k], g, speeds[k] * dtS);
+        done &&= axes[k] === g;
+      }
+      return done;
+    };
+    // The gripper's +X in the MCS is pose rz (−90°) + C; it is turned onto the product's orientation.
+    const pickC = (p: TrackedProduct) => p.stLatchPose.fRz + 90;
+    switch (cartPhase) {
+      case "idle": {
+        cartTarget = cartInfeedProducts.find(
+          (p) => p.eState === E_VisuProductState.DETECTED && productY(p) >= 100 && productY(p) <= 600,
+        );
+        if (cartTarget) {
+          cartTarget.eState = E_VisuProductState.ASSIGNED;
+          cartTarget.nRobotId = CART.id;
+          cartPhase = "descend";
+        } else {
+          move({ x: CART.xInfeed, y: CART.yHome, z: CART.zTravel, c: 0, a: 0 });
+        }
+        break;
+      }
+      case "descend": {
+        const y = productY(cartTarget!);
+        if (y > 1000) {
+          // Out of reach: give up, it will be missed.
+          cartTarget!.eState = E_VisuProductState.DETECTED;
+          cartTarget!.nRobotId = 0;
+          cartTarget = undefined;
+          cartPhase = "rise";
+          break;
+        }
+        // Lowers only once above the product with the gripper turned onto it.
+        const above = move({ x: CART.xInfeed, y, c: pickC(cartTarget!) });
+        if (above && move({ z: CART.zPick })) {
+          cartTarget!.eState = E_VisuProductState.PICKED;
+          axes.gripper = true;
+          cartPhase = "lift";
+        }
+        break;
+      }
+      case "lift":
+        if (move({ z: CART.zTravel })) cartPhase = "transfer";
+        break;
+      case "transfer":
+        if (move({ x: CART.xOutfeed, y: CART.yPlace, c: pickC(cartTarget!) + CART.turn })) cartPhase = "lower";
+        break;
+      case "lower":
+        if (move({ z: CART.zPick, a: CART.tilt })) cartPhase = "straighten";
+        break;
+      case "straighten":
+        if (move({ a: 0 })) cartPhase = "release";
+        break;
+      case "release": {
+        cartTarget!.eState = E_VisuProductState.PLACED;
+        // Turned by −90°: the TCP (A = 0) is at MCS x = origin + Y, y = origin − X; the product keeps the gripper turn.
+        latch(cartOutfeedProducts, cartOutfeed, CART.x + axes.y, CART.y - axes.x, -90 + axes.c);
+        cartTarget = undefined;
+        axes.gripper = false;
+        cartPhase = "rise";
+        break;
+      }
+      case "rise":
+        if (move({ z: CART.zTravel })) cartPhase = "idle";
+        break;
+    }
+  }
+
   /** Products in the hands of a loop or gantry mover stay in the register wherever they are. */
   const inUse = (p: TrackedProduct) =>
     p === target ||
+    p === cartTarget ||
     loopMovers.some((m) => m.product === p) ||
     gantryMovers.some((m) => m.product === p);
 
@@ -553,6 +716,15 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       };
     });
     gantry.stState.nTimestamp = now;
+    Object.assign(cart.stState, {
+      nTimestamp: now,
+      fX: axes.x,
+      fY: axes.y,
+      fZ: axes.z,
+      fC: axes.c,
+      fA: axes.a,
+      bGripperActive: axes.gripper,
+    });
   }
 
   return {
@@ -562,22 +734,50 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       now += BigInt(Math.round(dtMs * 1_000_000));
       infeed.stState.fBeltPosition += INFEED.speed * dtS;
       outfeed.stState.fBeltPosition += OUTFEED.speed * dtS;
-      spacing.stState.fBeltPosition += SPACING.speed * dtS;
+      fxxInfeed.stState.fBeltPosition += FXX_INFEED.speed * dtS;
+      fxxOutfeed.stState.fBeltPosition += FXX_OUTFEED.speed * dtS;
+      idhInfeed.stState.fBeltPosition += IDH_INFEED.speed * dtS;
       tray.stState.fBeltPosition += TRAY.speed * dtS;
+      cartInfeed.stState.fBeltPosition += CART_INFEED.speed * dtS;
+      cartOutfeed.stState.fBeltPosition += CART_OUTFEED.speed * dtS;
 
       sinceSpawn += dtMs;
       if (sinceSpawn >= SPAWN_INTERVAL_MS) {
         sinceSpawn = 0;
         latch(infeedProducts, infeed, INFEED.x + 100, INFEED.y + (random() - 0.5) * 240, (random() - 0.5) * 60);
       }
+      // Irregular gaps on the Fxx infeed: the loop evens them out.
+      sinceFxxSpawn += dtMs;
+      if (sinceFxxSpawn >= fxxSpawnInterval) {
+        sinceFxxSpawn = 0;
+        fxxSpawnInterval = 400 + random() * 1200;
+        latch(fxxInfeedProducts, fxxInfeed, FXX_INFEED.x + 100, FXX_INFEED.y, 0);
+      }
+      sinceIdhSpawn += dtMs;
+      if (sinceIdhSpawn >= idhSpawnInterval) {
+        sinceIdhSpawn = 0;
+        idhSpawnInterval = 600 + random() * 600;
+        latch(idhInfeedProducts, idhInfeed, IDH_INFEED.x + 100, IDH_INFEED.y, (random() - 0.5) * 60);
+      }
+
+      sinceCartSpawn += dtMs;
+      if (sinceCartSpawn >= CART.spawnIntervalMs) {
+        sinceCartSpawn = 0;
+        latch(cartInfeedProducts, cartInfeed, CART_INFEED.x + 100, CART_INFEED.y, (random() - 0.5) * 60);
+      }
 
       stepRobot(dtS);
+      stepCartesian(dtS);
       stepLoop(dtS);
       stepGantry(dtS);
       writeRegister(infeed, infeedProducts, INFEED.x, INFEED.length);
       writeRegister(outfeed, outfeedProducts, OUTFEED.x, OUTFEED.length);
-      writeRegister(spacing, spacingProducts, SPACING.x, SPACING.length);
+      writeRegister(fxxInfeed, fxxInfeedProducts, FXX_INFEED.x, FXX_INFEED.length);
+      writeRegister(fxxOutfeed, fxxOutfeedProducts, FXX_OUTFEED.x, FXX_OUTFEED.length);
+      writeRegister(idhInfeed, idhInfeedProducts, IDH_INFEED.x, IDH_INFEED.length);
       writeRegister(tray, trayProducts, TRAY.x, TRAY.length);
+      writeRegister(cartInfeed, cartInfeedProducts, CART_INFEED.x, CART_INFEED.length);
+      writeRegister(cartOutfeed, cartOutfeedProducts, CART_OUTFEED.x, CART_OUTFEED.length);
       writeRobot();
       writeXts();
     },

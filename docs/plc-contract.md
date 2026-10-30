@@ -1,4 +1,4 @@
-# PLC contract (library `Syn_Visu`, protocol version 4)
+# PLC contract (library `Syn_Visu`, protocol version 5)
 
 This is the PLC side of the contract the gateway reads. It is implemented by the TwinCAT library project in
 `plc/Syn_Visu` (solution `plc/ProductConfigurator.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
@@ -25,11 +25,20 @@ and the gateway maps it to the neutral model in `packages/protocol`. Change all 
   local X-Z plane with the upper straight at +2R. Mover positions run from there in the conveying direction over the far
   curve and back along the upper straight (0..2L + 2πR). The curves are drawn as semicircles. A mover's tool point lies
   `fToolOffset` outwards from the track.
+- Cartesian robot: two fixed rails along local +Y with their top at `fRailHeight`, a bridge travelling in Y on them, a
+  carriage on the bridge travelling in X, a vertical column (Z) and a gripper head. Local frame: origin at axis
+  X = Y = 0, Z up; the flange is at (X, Y, Z). TCP = flange + Rz(C) · Rx(A) · (0, 0, −`fToolLength`): C turns about
+  local +Z (C = 0 along local +X, positive counter-clockwise from above), A tilts about the gripper's own, C-turned X
+  axis (A = 0 points straight down). Only actual values are reported. The parts are drawn with fixed sizes derived
+  from the strokes; the working-area box is the TCP volume with A = 0.
 - A product in state PICKED with `nRobotId` = an XTS gantry or loop and `nMoverId` = one of its movers is drawn at that
-  mover's gripper / tool point; with `nMoverId` = 0 it hangs at a Delta's TCP.
+  mover's gripper / tool point; with `nMoverId` = 0 it hangs at a Delta's or Cartesian robot's TCP, turned (and for a
+  Cartesian robot tilted) with it. When placing, set the product's latch `fRz` to the gripper's MCS orientation (for a
+  Cartesian robot: pose `fRz` + C) so it stays turned on the belt.
 - Protocol version 2 removed the Delta axis positions (`aAxisPositions`) and axis calibration (`aAxes`) of version 1.
 - Protocol version 3 renamed `stWorkArea` to `stWorkingArea` and the windows (`nWindowCount`, `aWindows`, `ST_VisuWindow`, `E_VisuWindowKind`) to zones (`nZoneCount`, `aZones`, `ST_VisuZone`, `E_VisuZoneKind`).
 - Protocol version 4 added the XTS gantry and XTS loop and the product's `nMoverId`, and renamed `fEncoder` to `fBeltPosition` and `fLatchEncoder` to `fLatchBeltPosition`.
+- Protocol version 5 added the Cartesian robot.
 
 ## What the library contains
 
@@ -42,12 +51,14 @@ the FBs fill them, so application code does not write them directly.
 | `FB_VisuDelta` | One Delta robot (methods below) |
 | `FB_VisuXtsGantry` | One XTS gantry, e.g. IDH (methods below) |
 | `FB_VisuXtsLoop` | One XTS loop, e.g. Fxx (methods below) |
+| `FB_VisuCartesian` | One Cartesian robot (methods below) |
 | `FB_VisuComponent` | Abstract base of all: `Register`, `Id`, config version and DC timestamps |
 | `ST_VisuManifest`, `ST_VisuManifestEntry`, `E_VisuComponentType` | Discovery: which components exist and where |
 | `ST_VisuConveyor` (`stConfig` / `stState`), `ST_VisuProduct`, `ST_VisuProductType`, `E_VisuProductState` | Conveyor contract structure (`FB_VisuConveyor.stVisu`) |
 | `ST_VisuDelta` (`stConfig`: geometry, working area, zones / `stState`: actual and setpoint TCP), `ST_VisuWorkingArea`, `ST_VisuZone`, `E_VisuZoneKind` | Delta contract structure (`FB_VisuDelta.stVisu`) |
 | `ST_VisuXtsGantry` (`stConfig`: track, strokes, gripper offsets, mover size, zones / `stState`: Z and movers), `ST_VisuGantryMover` | XTS gantry contract structure (`FB_VisuXtsGantry.stVisu`) |
 | `ST_VisuXtsLoop` (`stConfig`: straight length, curve radius, tool offset, mover size, zones / `stState`: movers), `ST_VisuLoopMover` | XTS loop contract structure (`FB_VisuXtsLoop.stVisu`) |
+| `ST_VisuCartesian` (`stConfig`: X/Y/Z/C/A strokes, tool length, rail height, zones / `stState`: X, Y, Z, C, A, gripper) | Cartesian robot contract structure (`FB_VisuCartesian.stVisu`) |
 | `ST_VisuPose`, `ST_VisuPlanarPose` | MCS poses |
 | `GVL_VisuConstants` | `nProtocolVersion` (contract version; `ST_VisuManifest` initialises to it), `fDegToRad` |
 | `GVL_VisuParam` | Array sizes: `nMaxManifestEntries` (32), `nMaxProducts` (128), `nMaxProductTypes` (8), `nMaxZones` (8), `nMaxMovers` (40) |
@@ -111,10 +122,19 @@ and return TRUE in that case.
 | `SetMover(nIndex, nId, fPosition)` | One mover's position along the loop |
 | `Perimeter()` | Loop length as the visualisation computes it, mm |
 
+`FB_VisuCartesian`:
+
+| Method | Purpose |
+| --- | --- |
+| `Configure(stPose, fXMin, fXMax, fYMin, fYMax, fZMin, fZMax, fCMin, fCMax, fAMin, fAMax, fToolLength, fRailHeight)` | Pose, strokes, tool length, rail height |
+| `SetZone(...)`, `ClearZones()` | As for the Delta |
+| `SetAxes(fX, fY, fZ, fC := 0, fA := 0, bGripperActive := FALSE)` | Actual axis values, gripper and state timestamp; call once per cycle |
+
 ## Using it in an application
 
 The manifest is **declared by the application**, not the library (ADR-0003). That keeps the ADS symbol path the gateway
-reads fixed at `GVL_Visu.stManifest`, whatever namespace the library gets. Component instances can live anywhere; the
+reads independent of the library's namespace. The gateway expects `GVL_Visu.stManifest`; an application that declares
+the manifest elsewhere sets the gateway option `manifestPath` to that symbol path. Component instances can live anywhere; the
 symbol path of their `stVisu` goes into the manifest.
 
 ```st
@@ -148,14 +168,14 @@ fbDelta1.SetZone(nConveyorId := fbInfeed.Id(), eKind := Syn_Visu.E_VisuZoneKind.
 fbDelta1.SetTcp(stActualTcp := stTcp, stSetpointTcp := stTcpSetpoint);
 ```
 
-`P_VisuDemo` in the library project is a complete example, including an XTS loop and an XTS gantry.
+`P_VisuDemo` in the library project is a complete example, including an XTS loop, an XTS gantry and a Cartesian robot.
 
 ## Discovery
 
 The gateway reads `GVL_Visu.stManifest` and refuses to continue when `nProtocolVersion` differs from its own; it keeps
 watching the version and recovers as soon as it matches. For each
 of the first `nCount` entries it checks that the symbol at `sPath` has the data type `ST_VisuConveyor`, `ST_VisuDelta`,
-`ST_VisuXtsGantry` or `ST_VisuXtsLoop` according to `eType`. Names qualified with the library namespace, such as `Syn_Visu.ST_VisuDelta`, are accepted too.
+`ST_VisuXtsGantry`, `ST_VisuXtsLoop` or `ST_VisuCartesian` according to `eType`. Names qualified with the library namespace, such as `Syn_Visu.ST_VisuDelta`, are accepted too.
 It then reads `<sPath>.stConfig` once. Every cycle it sum-reads `GVL_Visu.stManifest.nProtocolVersion`,
 `GVL_Visu.stManifest.nConfigVersion` and all `<sPath>.stState`, and rediscovers when either version changes.
 
@@ -163,7 +183,7 @@ It then reads `<sPath>.stConfig` once. Every cycle it sum-reads `GVL_Visu.stMani
 
 | Enum | Values |
 | --- | --- |
-| `E_VisuComponentType` (UINT) | `NONE` 0, `CONVEYOR` 1, `DELTA` 2, `XTS_GANTRY` 3, `XTS_LOOP` 4 |
+| `E_VisuComponentType` (UINT) | `NONE` 0, `CONVEYOR` 1, `DELTA` 2, `XTS_GANTRY` 3, `XTS_LOOP` 4, `CARTESIAN` 5 |
 | `E_VisuProductState` (UINT) | `DETECTED` 0, `ASSIGNED` 1, `PICKED` 2, `REJECTED` 3, `PLACED` 4 |
 | `E_VisuZoneKind` (UINT) | `PICK` 1, `PLACE` 2 |
 

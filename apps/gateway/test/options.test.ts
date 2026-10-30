@@ -28,6 +28,16 @@ describe("resolveGatewayOptions", () => {
     expect(options).toMatchObject({ driver: "ads", adsPort: 852, port: 9000, cycleMs: 50, amsNetId: "127.0.0.1.1.1" });
   });
 
+  it("reads the manifest symbol path from the config file and defaults to GVL_Visu.stManifest", () => {
+    const configured = resolveGatewayOptions(
+      ["--config", "/data/config.json"],
+      env({ "/data/config.json": JSON.stringify({ manifestPath: "GVL_RppVisu.stManifest" }) }),
+    );
+
+    expect(configured.manifestPath).toBe("GVL_RppVisu.stManifest");
+    expect(resolveGatewayOptions([], env()).manifestPath).toBe("GVL_Visu.stManifest");
+  });
+
   it("accepts a config file saved with a byte order mark, as Notepad and PowerShell 5.1 write it", () => {
     const options = resolveGatewayOptions(
       ["--config", "/data/config.json"],

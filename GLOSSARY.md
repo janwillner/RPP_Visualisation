@@ -13,7 +13,7 @@ Position and orientation of something in the MCS.
 _Avoid_: location, placement
 
 **Component**:
-One visualised part of a machine that the PLC registers: a conveyor, a Delta robot, an XTS gantry or an XTS loop.
+One visualised part of a machine that the PLC registers: a conveyor, a Delta robot, an XTS gantry, an XTS loop or a Cartesian robot.
 _Avoid_: unit, device, module
 
 **Manifest**:
@@ -70,6 +70,26 @@ _Avoid_: IDH (when meaning the kinematics), linear XTS
 **XTS loop**:
 A closed XTS track of two straights joined by two curves on which movers circulate, take products over, change their spacing and hand them on. Example: Fxx.
 _Avoid_: Fxx (when meaning the kinematics), oval, carousel
+
+**Cartesian robot**:
+A robot with linear X, Y and Z axes on two fixed rails and a gripper head that turns about C and tilts about A.
+_Avoid_: portal, gantry (that is always the XTS gantry), linear robot
+
+**Bridge**:
+The beam of a Cartesian robot that spans its rails and travels along them in Y.
+_Avoid_: portal beam, crossbar
+
+**Carriage**:
+The slide of a Cartesian robot that travels along the bridge in X and carries the column.
+_Avoid_: trolley, slide
+
+**Column**:
+The vertical Z axis of a Cartesian robot; the gripper head sits at its lower end.
+_Avoid_: quill, Z arm
+
+**Gripper head**:
+The end of a Cartesian robot's column that turns about C and tilts about A, carrying the gripper.
+_Avoid_: wrist, tool head
 
 **Mover**:
 A carriage driven along an XTS track.

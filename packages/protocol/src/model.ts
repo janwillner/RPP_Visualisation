@@ -9,7 +9,7 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 /** Full 6-DOF pose. Rotation order: R = Rz(rz) · Ry(ry) · Rx(rx). */
 export const PoseSchema = z.object({
@@ -144,11 +144,42 @@ export const XtsLoopConfigSchema = z.object({
 });
 export type XtsLoopConfig = z.infer<typeof XtsLoopConfigSchema>;
 
+/**
+ * Cartesian robot: two fixed rails along local +Y at railHeight, a bridge travelling in Y, a carriage on it travelling
+ * in X, a vertical column (Z) and a gripper head turning about C and tilting about A.
+ * Local frame: origin at axis X = Y = 0, Z up; the flange is at (X, Y, Z).
+ * TCP = flange + Rz(C) · Rx(A) · (0, 0, −toolLength).
+ */
+export const CartesianConfigSchema = z.object({
+  type: z.literal("cartesian"),
+  id: z.number().int(),
+  sourceId: z.string(),
+  name: z.string(),
+  pose: PoseSchema,
+  xMin: z.number(),
+  xMax: z.number(),
+  yMin: z.number(),
+  yMax: z.number(),
+  zMin: z.number(),
+  zMax: z.number(),
+  cMin: z.number(),
+  cMax: z.number(),
+  aMin: z.number(),
+  aMax: z.number(),
+  /** Distance from the flange (A pivot) to the TCP. */
+  toolLength: z.number(),
+  /** Height of the rails and the bridge above the local origin. */
+  railHeight: z.number(),
+  zones: z.array(ZoneSchema),
+});
+export type CartesianConfig = z.infer<typeof CartesianConfigSchema>;
+
 export const ComponentConfigSchema = z.discriminatedUnion("type", [
   ConveyorConfigSchema,
   DeltaConfigSchema,
   XtsGantryConfigSchema,
   XtsLoopConfigSchema,
+  CartesianConfigSchema,
 ]);
 export type ComponentConfig = z.infer<typeof ComponentConfigSchema>;
 
@@ -230,11 +261,26 @@ export const XtsLoopStateSchema = z.object({
 });
 export type XtsLoopState = z.infer<typeof XtsLoopStateSchema>;
 
+export const CartesianStateSchema = z.object({
+  type: z.literal("cartesian"),
+  id: z.number().int(),
+  timestamp: TimestampSchema,
+  /** Actual axis values in the local frame; C and A in degrees. */
+  x: z.number(),
+  y: z.number(),
+  z: z.number(),
+  c: z.number(),
+  a: z.number(),
+  gripperActive: z.boolean(),
+});
+export type CartesianState = z.infer<typeof CartesianStateSchema>;
+
 export const ComponentStateSchema = z.discriminatedUnion("type", [
   ConveyorStateSchema,
   DeltaStateSchema,
   XtsGantryStateSchema,
   XtsLoopStateSchema,
+  CartesianStateSchema,
 ]);
 export type ComponentState = z.infer<typeof ComponentStateSchema>;
 

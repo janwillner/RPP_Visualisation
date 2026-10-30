@@ -19,6 +19,11 @@ describe("simulator", () => {
     const config = messages.find((m): m is ConfigMessage => m.kind === "config")!;
     expect(config.errors).toEqual([]);
     expect(config.components.map((c) => c.type).sort()).toEqual([
+      "cartesian",
+      "conveyor",
+      "conveyor",
+      "conveyor",
+      "conveyor",
       "conveyor",
       "conveyor",
       "conveyor",
@@ -33,7 +38,7 @@ describe("simulator", () => {
     const products = states.flatMap((s) => s.components.flatMap((c) => (c.type === "conveyor" ? c.products : [])));
     expect(new Set(products.map((p) => p.state))).toEqual(new Set(["detected", "assigned", "picked", "placed"]));
 
-    // The loop and the gantry carry products on their movers and hand them on downstream.
+    // The loop and the gantry carry products on their movers and hand them on to their own outfeeds.
     const byId = new Map(config.components.map((c) => [c.id, c.type]));
     const carriedBy = new Set(products.filter((p) => p.state === "picked" && p.moverId > 0).map((p) => byId.get(p.robotId)));
     expect(carriedBy).toEqual(new Set(["xtsLoop", "xtsGantry"]));
@@ -43,8 +48,16 @@ describe("simulator", () => {
       const c = last.find((x) => x.id === id);
       return c?.type === "conveyor" ? c.products.length : 0;
     };
-    expect(productsOn("Spacing belt")).toBeGreaterThan(0);
+    expect(productsOn("Fxx outfeed")).toBeGreaterThan(0);
     expect(productsOn("Tray belt")).toBeGreaterThan(0);
+    expect(productsOn("Cartesian outfeed")).toBeGreaterThan(0);
+
+    // The Cartesian robot carries products at its TCP (no mover), tilting A while it places them.
+    const cartesianId = config.components.find((c) => c.type === "cartesian")!.id;
+    expect(products.some((p) => p.state === "picked" && p.robotId === cartesianId && p.moverId === 0)).toBe(true);
+    const cartesianStates = states.flatMap((s) => s.components.filter((c) => c.type === "cartesian"));
+    expect(Math.max(...cartesianStates.map((c) => (c.type === "cartesian" ? c.a : 0)))).toBeCloseTo(20);
+    expect(cartesianStates.some((c) => c.type === "cartesian" && c.gripperActive)).toBe(true);
 
     // Movers of a track never overlap.
     for (const s of states) {
@@ -56,5 +69,5 @@ describe("simulator", () => {
         for (let i = 1; i < positions.length; i++) expect(positions[i]! - positions[i - 1]!).toBeGreaterThanOrEqual(155);
       }
     }
-  });
+  }, 30_000);
 });

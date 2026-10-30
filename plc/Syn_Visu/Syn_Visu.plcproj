@@ -38,6 +38,15 @@
     <Compile Include="DUTs\E_VisuZoneKind.TcDUT">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="DUTs\ST_VisuCartesian.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_VisuCartesianConfig.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_VisuCartesianState.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="DUTs\ST_VisuConveyor.TcDUT">
       <SubType>Code</SubType>
     </Compile>
@@ -114,6 +123,9 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="PlcTask.TcTTO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\FB_VisuCartesian.TcPOU">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\FB_VisuComponent.TcPOU">

@@ -5,6 +5,8 @@ import {
   E_VisuZoneKind,
   MANIFEST_PATH,
   PLC_TYPES,
+  type ST_VisuCartesian,
+  type ST_VisuCartesianState,
   type ST_VisuConveyor,
   type ST_VisuDelta,
   type ST_VisuManifest,
@@ -187,26 +189,68 @@ export function xtsLoop(spec: XtsLoopSpec = {}): ST_VisuXtsLoop {
   };
 }
 
+export interface CartesianSpec {
+  pose?: Partial<ST_VisuPose>;
+  zones?: ST_VisuZone[];
+  state?: Partial<Omit<ST_VisuCartesianState, "nTimestamp">>;
+  timestamp?: bigint;
+}
+
+export function cartesian(spec: CartesianSpec = {}): ST_VisuCartesian {
+  const zones = spec.zones ?? [];
+  return {
+    stConfig: {
+      stPose: pose(spec.pose),
+      fXMin: 0,
+      fXMax: 1200,
+      fYMin: 0,
+      fYMax: 1000,
+      fZMin: -600,
+      fZMax: 0,
+      fCMin: -180,
+      fCMax: 180,
+      fAMin: -30,
+      fAMax: 30,
+      fToolLength: 150,
+      fRailHeight: 1200,
+      nZoneCount: zones.length,
+      aZones: padded(zones, MAX_ZONES, emptyZone),
+    },
+    stState: {
+      nTimestamp: spec.timestamp ?? 0n,
+      fX: 0,
+      fY: 0,
+      fZ: 0,
+      fC: 0,
+      fA: 0,
+      bGripperActive: false,
+      ...spec.state,
+    },
+  };
+}
+
 type Entry<K extends keyof typeof PLC_TYPES, V> = { id: number; name: string; path: string; kind: K; value: V };
 
 export type MachineComponent =
   | Entry<"conveyor", ST_VisuConveyor>
   | Entry<"delta", ST_VisuDelta>
   | Entry<"xtsGantry", ST_VisuXtsGantry>
-  | Entry<"xtsLoop", ST_VisuXtsLoop>;
+  | Entry<"xtsLoop", ST_VisuXtsLoop>
+  | Entry<"cartesian", ST_VisuCartesian>;
 
 const MANIFEST_TYPES: Record<MachineComponent["kind"], number> = {
   conveyor: E_VisuComponentType.CONVEYOR,
   delta: E_VisuComponentType.DELTA,
   xtsGantry: E_VisuComponentType.XTS_GANTRY,
   xtsLoop: E_VisuComponentType.XTS_LOOP,
+  cartesian: E_VisuComponentType.CARTESIAN,
 };
 
 /** Registers a manifest and its components in an in-memory PLC. */
 export function defineMachine(
   plc: InMemoryPlc,
   components: MachineComponent[],
-  options: { protocolVersion?: number; configVersion?: number } = {},
+  options: { protocolVersion?: number; configVersion?: number; manifestPath?: string } = {},
 ): void {
   const entries: ST_VisuManifestEntry[] = components.map((c) => ({
     nId: c.id,
@@ -220,6 +264,6 @@ export function defineMachine(
     nCount: entries.length,
     aEntries: padded(entries, MAX_MANIFEST_ENTRIES, () => ({ nId: 0, eType: 0, sName: "", sPath: "" })),
   };
-  plc.define(MANIFEST_PATH, PLC_TYPES.manifest, manifest);
+  plc.define(options.manifestPath ?? MANIFEST_PATH, PLC_TYPES.manifest, manifest);
   for (const c of components) plc.define(c.path, PLC_TYPES[c.kind], c.value);
 }

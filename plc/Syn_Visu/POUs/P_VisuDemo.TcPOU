@@ -1,35 +1,51 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="P_VisuDemo" Id="{80f62ef6-fe0a-4224-b62e-c1a555afff51}" SpecialFunc="None">
-    <Declaration><![CDATA[(* DEMO ONLY: a simulated sample line using FB_VisuConveyor and FB_VisuDelta, for testing the gateway over ADS.
-   Two infeed conveyors (Y = 0 and Y = 1000) and an outfeed conveyor between them (Y = 500), with three Delta
-   robots one after another along the line (X = 1500, 2500, 3500) above the outfeed. Each robot picks from
-   either infeed and places onto the outfeed. Some products are deliberately missed.
-   Downstream an XTS loop (Fxx) takes the products over at the end of the outfeed and puts them onto the spacing
-   belt with a new spacing; an XTS gantry (IDH) with four movers picks them from there in batches and places them
-   onto the tray belt.
+  <POU Name="P_VisuDemo" Id="{c8778453-997a-4bcf-b7e6-ce4948e69c29}" SpecialFunc="None">
+    <Declaration><![CDATA[(* DEMO ONLY: three independent sample applications side by side, for testing the gateway over ADS. All lines start
+   at X = 0 and convey along +X.
+   - Delta application (Y = 0..1000): two infeed conveyors (Y = 0 and Y = 1000) and an outfeed between them
+     (Y = 500), three Delta robots one after another (X = 1500, 2500, 3500) picking from either infeed and placing
+     onto the outfeed. Some products are deliberately missed.
+   - Fxx application (Y = 2500): products arrive irregularly on the Fxx infeed; an XTS loop takes them over and puts
+     them onto the Fxx outfeed with an even spacing.
+   - IDH application (Y = 4100..4850): an XTS gantry with four movers picks products from the IDH infeed in batches
+     and places them onto the tray belt.
+   - Cartesian application (Y = 6500..7300): a Cartesian robot picks products from the Cartesian infeed, turns them
+     by C = -90 deg, tilts them by A while lowering and places them onto the Cartesian outfeed.
    Remove together with GVL_Visu before releasing the library. *)
 PROGRAM P_VisuDemo
 VAR
+	// Delta application
 	fbInfeed1 : FB_VisuConveyor;
 	fbInfeed2 : FB_VisuConveyor;
 	fbOutfeed : FB_VisuConveyor;
 	fbDelta1 : FB_VisuDelta;
 	fbDelta2 : FB_VisuDelta;
 	fbDelta3 : FB_VisuDelta;
-	fbSpacing : FB_VisuConveyor;
-	fbTray : FB_VisuConveyor;
+	// Fxx application
+	fbFxxInfeed : FB_VisuConveyor;
+	fbFxxOutfeed : FB_VisuConveyor;
 	fbFxx : FB_VisuXtsLoop;
+	// IDH application
+	fbIdhInfeed : FB_VisuConveyor;
+	fbIdhTray : FB_VisuConveyor;
 	fbIdh : FB_VisuXtsGantry;
+	// Cartesian application
+	fbCartInfeed : FB_VisuConveyor;
+	fbCartOutfeed : FB_VisuConveyor;
+	fbCartesian : FB_VisuCartesian;
 
 	nTaskIndex : DINT;
 	fDt : LREAL; // s
 	nNextId : UDINT := 1;
 	nSeed : UDINT := 12345;
-	aBeltPosition : ARRAY[0..4] OF LREAL; // mm: infeed 1, infeed 2, outfeed, spacing belt, tray belt
-	aSinceSpawn : ARRAY[0..1] OF LREAL := [0, 0.3];
+	// mm: infeed 1, infeed 2, outfeed, Fxx infeed, Fxx outfeed, IDH infeed, tray belt, Cartesian infeed and outfeed
+	aBeltPosition : ARRAY[0..8] OF LREAL;
+	// s since the last product per spawning belt: infeed 1, infeed 2, Fxx infeed, IDH infeed, Cartesian infeed
+	aSinceSpawn : ARRAY[0..4] OF LREAL := [0, 0.3, 0, 0, 0];
+	aSpawnInterval : ARRAY[0..4] OF LREAL := [0.6, 0.6, 0.6, 0.8, 2.5];
 
-	// Per robot
+	// Per Delta robot
 	aPhase : ARRAY[0..2] OF INT;
 	aTargetId : ARRAY[0..2] OF UDINT;
 	aTargetBelt : ARRAY[0..2] OF INT;
@@ -54,12 +70,14 @@ VAR
 	fY : LREAL;
 	fTopZ : LREAL;
 	fTargetRz : LREAL;
+	fLength : LREAL;
+	fRandom : LREAL;
 
 	// XTS loop (Fxx): unwrapped track position per mover; queued movers wait just before the perimeter (= 0).
 	bLoopInitialised : BOOL;
 	aLoopS : ARRAY[0..11] OF LREAL;
 	aLoopMode : ARRAY[0..11] OF INT;
-	aLoopProduct : ARRAY[0..11] OF UDINT; // product id on the outfeed
+	aLoopProduct : ARRAY[0..11] OF UDINT; // product id on the Fxx infeed
 
 	// XTS gantry (IDH)
 	nGantryPhase : INT;
@@ -69,14 +87,29 @@ VAR
 	aGantryX : ARRAY[0..3] OF LREAL := [200, 200, 200, 200];
 	aGantryC : ARRAY[0..3] OF LREAL;
 	aGantryGrip : ARRAY[0..3] OF BOOL;
-	aGantryProduct : ARRAY[0..3] OF UDINT; // product id on the spacing belt
+	aGantryProduct : ARRAY[0..3] OF UDINT; // product id on the IDH infeed
 	stXtsPose : ST_VisuPose;
-	fLength : LREAL;
+
+	// Cartesian robot: axis actual values, start above the infeed
+	nCartPhase : INT;
+	fCartX : LREAL := 900;
+	fCartY : LREAL := 200;
+	fCartZ : LREAL := -200;
+	fCartC : LREAL;
+	fCartA : LREAL;
+	fCartPickC : LREAL; // C that turns the gripper onto the current product
+	bCartGrip : BOOL;
+	nCartProduct : UDINT; // product id on the Cartesian infeed
+	stCartPose : ST_VisuPose;
 END_VAR
 VAR CONSTANT
 	cBeltZ : LREAL := 800;
-	cBeltLength : LREAL := 5000;
 	cBeltWidth : LREAL := 400;
+	cProductHeight : LREAL := 40;
+	cRemoveBeyondEnd : LREAL := 300;
+
+	// Delta application
+	cBeltLength : LREAL := 5000;
 	cInfeedSpeed : LREAL := 150; // mm/s
 	cOutfeedSpeed : LREAL := 120; // mm/s
 	cInfeed1Y : LREAL := 0;
@@ -86,15 +119,11 @@ VAR CONSTANT
 	cRobotPitch : LREAL := 1000; // distance between robots along X
 	cRobotY : LREAL := 500;
 	cRobotZ : LREAL := 1900;
-	cProductHeight : LREAL := 40;
 	cTcpSpeed : LREAL := 2500; // mm/s
 	cHover : LREAL := 120;
 	cPickHalfZone : LREAL := 400;
 	cPlaceHalfZone : LREAL := 300;
-	cSpawnInterval : LREAL := 0.6; // s per infeed
-	cRemoveBeyondEnd : LREAL := 300;
 	cLead : LREAL := 7.5; // mm the robot leads the moving product
-
 	cPhaseIdle : INT := 0;
 	cPhaseApproach : INT := 1;
 	cPhaseDescend : INT := 2;
@@ -103,21 +132,22 @@ VAR CONSTANT
 	cPhaseLower : INT := 5;
 	cPhaseRelease : INT := 6;
 
-	cSpacingX : LREAL := 5800;
-	cSpacingSpeed : LREAL := 300; // mm/s
-	cTrayX : LREAL := 6700;
-	cTrayY : LREAL := 100;
-	cTraySpeed : LREAL := 80; // mm/s
-
-	cLoopX : LREAL := 4400; // start of the lower straight above the outfeed
+	// Fxx application
+	cFxxY : LREAL := 2500;
+	cFxxInfeedLength : LREAL := 2000;
+	cFxxInfeedSpeed : LREAL := 150; // mm/s
+	cFxxOutfeedX : LREAL := 2400;
+	cFxxOutfeedLength : LREAL := 3000;
+	cFxxOutfeedSpeed : LREAL := 300; // mm/s
+	cLoopX : LREAL := 1000; // start of the lower straight above the Fxx infeed
 	cLoopStraight : LREAL := 2400;
 	cLoopRadius : LREAL := 250;
 	cLoopToolOffset : LREAL := 120;
 	cLoopMovers : INT := 12;
 	cLoopSlot : LREAL := 130; // queue spacing
 	cLoopGrip : LREAL := 300; // track position where the product is gripped
-	cLoopRelease : LREAL := 600; // track position where the mover stops following the outfeed
-	cLoopPlace : LREAL := 2000; // track position of the hand-over to the spacing belt
+	cLoopRelease : LREAL := 600; // track position where the mover stops following the infeed
+	cLoopPlace : LREAL := 2000; // track position of the hand-over to the Fxx outfeed
 	cLoopDeliverSpeed : LREAL := 700; // mm/s
 	cLoopReturnSpeed : LREAL := 900; // mm/s
 	cLoopQueue : INT := 0;
@@ -125,9 +155,17 @@ VAR CONSTANT
 	cLoopDeliver : INT := 2;
 	cLoopReturn : INT := 3;
 
-	// Gantry turned by -90 deg: track along MCS +X, X axes towards MCS -Y (spacing belt at X = 200, tray belt at 600).
-	cGantryX : LREAL := 6900;
-	cGantryY : LREAL := 850;
+	// IDH application. Gantry turned by -90 deg: track along MCS +X, X axes towards MCS -Y
+	// (IDH infeed under X = 200, tray belt under X = 600).
+	cIdhInfeedY : LREAL := 4500;
+	cIdhInfeedLength : LREAL := 4000;
+	cIdhInfeedSpeed : LREAL := 200; // mm/s
+	cTrayX : LREAL := 1300;
+	cTrayY : LREAL := 4100;
+	cTrayLength : LREAL := 2000;
+	cTraySpeed : LREAL := 80; // mm/s
+	cGantryX : LREAL := 1500;
+	cGantryY : LREAL := 4850;
 	cGantryZ : LREAL := 1340;
 	cGantryModules : UINT := 6;
 	cGantryModuleLength : LREAL := 250;
@@ -148,6 +186,38 @@ VAR CONSTANT
 	cGantryPlaceDown : INT := 4;
 	cGantryPlaceUp : INT := 5;
 	cGantryReturn : INT := 6;
+
+	// Cartesian application. Robot turned by -90 deg: X axis across the belts towards MCS -Y (outfeed under X = 100,
+	// infeed under X = 900), Y axis along MCS +X from X = 1000.
+	cCartInfeedY : LREAL := 6500;
+	cCartOutfeedY : LREAL := 7300;
+	cCartBeltLength : LREAL := 3000;
+	cCartBeltSpeed : LREAL := 150; // mm/s
+	cCartX : LREAL := 1000;
+	cCartY : LREAL := 7400;
+	cCartZ : LREAL := 1540; // Z = -550 puts the TCP (A = 0) on the product top
+	cCartToolLength : LREAL := 150;
+	cCartRailHeight : LREAL := 1200;
+	cCartXOutfeed : LREAL := 100;
+	cCartXInfeed : LREAL := 900;
+	cCartYHome : LREAL := 200;
+	cCartYPlace : LREAL := 500;
+	cCartZPick : LREAL := -550;
+	cCartZTravel : LREAL := -200;
+	cCartTilt : LREAL := 20; // degrees of A while lowering
+	cCartTurn : LREAL := -90; // degrees of C between pick and place
+	cCartXySpeed : LREAL := 1500; // mm/s
+	cCartZSpeed : LREAL := 800; // mm/s
+	cCartCSpeed : LREAL := 180; // deg/s
+	cCartASpeed : LREAL := 60; // deg/s
+	cCartIdle : INT := 0;
+	cCartDescend : INT := 1;
+	cCartLift : INT := 2;
+	cCartTransfer : INT := 3;
+	cCartLower : INT := 4;
+	cCartStraighten : INT := 5;
+	cCartRelease : INT := 6;
+	cCartRise : INT := 7;
 END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[nTaskIndex := Tc2_System.GETCURTASKINDEXEX();
@@ -158,34 +228,97 @@ ELSE
 END_IF
 fStep := cTcpSpeed * fDt;
 
-// ----- Registration and configuration (idempotent, every cycle) -----
+// ----- Registration (idempotent, every cycle) -----
 fbInfeed1.Register(stManifest := GVL_Visu.stManifest, nId := 1, sName := 'Infeed 1', sPath := 'P_VisuDemo.fbInfeed1.stVisu');
 fbInfeed2.Register(stManifest := GVL_Visu.stManifest, nId := 2, sName := 'Infeed 2', sPath := 'P_VisuDemo.fbInfeed2.stVisu');
 fbOutfeed.Register(stManifest := GVL_Visu.stManifest, nId := 3, sName := 'Outfeed', sPath := 'P_VisuDemo.fbOutfeed.stVisu');
 fbDelta1.Register(stManifest := GVL_Visu.stManifest, nId := 10, sName := 'Delta 1', sPath := 'P_VisuDemo.fbDelta1.stVisu');
 fbDelta2.Register(stManifest := GVL_Visu.stManifest, nId := 11, sName := 'Delta 2', sPath := 'P_VisuDemo.fbDelta2.stVisu');
 fbDelta3.Register(stManifest := GVL_Visu.stManifest, nId := 12, sName := 'Delta 3', sPath := 'P_VisuDemo.fbDelta3.stVisu');
-fbSpacing.Register(stManifest := GVL_Visu.stManifest, nId := 4, sName := 'Spacing belt', sPath := 'P_VisuDemo.fbSpacing.stVisu');
-fbTray.Register(stManifest := GVL_Visu.stManifest, nId := 5, sName := 'Tray belt', sPath := 'P_VisuDemo.fbTray.stVisu');
+fbFxxInfeed.Register(stManifest := GVL_Visu.stManifest, nId := 4, sName := 'Fxx infeed', sPath := 'P_VisuDemo.fbFxxInfeed.stVisu');
+fbFxxOutfeed.Register(stManifest := GVL_Visu.stManifest, nId := 5, sName := 'Fxx outfeed', sPath := 'P_VisuDemo.fbFxxOutfeed.stVisu');
 fbFxx.Register(stManifest := GVL_Visu.stManifest, nId := 20, sName := 'Fxx', sPath := 'P_VisuDemo.fbFxx.stVisu');
+fbIdhInfeed.Register(stManifest := GVL_Visu.stManifest, nId := 6, sName := 'IDH infeed', sPath := 'P_VisuDemo.fbIdhInfeed.stVisu');
+fbIdhTray.Register(stManifest := GVL_Visu.stManifest, nId := 7, sName := 'Tray belt', sPath := 'P_VisuDemo.fbIdhTray.stVisu');
 fbIdh.Register(stManifest := GVL_Visu.stManifest, nId := 30, sName := 'IDH', sPath := 'P_VisuDemo.fbIdh.stVisu');
+fbCartInfeed.Register(stManifest := GVL_Visu.stManifest, nId := 8, sName := 'Cartesian infeed', sPath := 'P_VisuDemo.fbCartInfeed.stVisu');
+fbCartOutfeed.Register(stManifest := GVL_Visu.stManifest, nId := 9, sName := 'Cartesian outfeed', sPath := 'P_VisuDemo.fbCartOutfeed.stVisu');
+fbCartesian.Register(stManifest := GVL_Visu.stManifest, nId := 40, sName := 'Cartesian', sPath := 'P_VisuDemo.fbCartesian.stVisu');
 
+// ----- Conveyors (configuration idempotent, every cycle) -----
 stBeltPose.fZ := cBeltZ;
-FOR nBelt := 0 TO 4 DO
+FOR nBelt := 0 TO 8 DO
 	stBeltPose.fX := 0;
 	fLength := cBeltLength;
 	CASE nBelt OF
 		0: refBelt REF= fbInfeed1; stBeltPose.fY := cInfeed1Y;
 		1: refBelt REF= fbInfeed2; stBeltPose.fY := cInfeed2Y;
-		3: refBelt REF= fbSpacing; stBeltPose.fX := cSpacingX; stBeltPose.fY := cOutfeedY; fLength := 3000;
-		4: refBelt REF= fbTray; stBeltPose.fX := cTrayX; stBeltPose.fY := cTrayY; fLength := 2000;
+		2: refBelt REF= fbOutfeed; stBeltPose.fY := cOutfeedY;
+		3: refBelt REF= fbFxxInfeed; stBeltPose.fY := cFxxY; fLength := cFxxInfeedLength;
+		4: refBelt REF= fbFxxOutfeed; stBeltPose.fX := cFxxOutfeedX; stBeltPose.fY := cFxxY; fLength := cFxxOutfeedLength;
+		5: refBelt REF= fbIdhInfeed; stBeltPose.fY := cIdhInfeedY; fLength := cIdhInfeedLength;
+		6: refBelt REF= fbIdhTray; stBeltPose.fX := cTrayX; stBeltPose.fY := cTrayY; fLength := cTrayLength;
+		7: refBelt REF= fbCartInfeed; stBeltPose.fY := cCartInfeedY; fLength := cCartBeltLength;
 	ELSE
-		refBelt REF= fbOutfeed; stBeltPose.fY := cOutfeedY;
+		refBelt REF= fbCartOutfeed; stBeltPose.fY := cCartOutfeedY; fLength := cCartBeltLength;
 	END_CASE
 	refBelt.Configure(stPose := stBeltPose, fLength := fLength, fWidth := cBeltWidth);
 	refBelt.SetProductType(nId := 1, fLength := 120, fWidth := 80, fHeight := cProductHeight);
 END_FOR
 
+aBeltPosition[0] := aBeltPosition[0] + cInfeedSpeed * fDt;
+aBeltPosition[1] := aBeltPosition[1] + cInfeedSpeed * fDt;
+aBeltPosition[2] := aBeltPosition[2] + cOutfeedSpeed * fDt;
+aBeltPosition[3] := aBeltPosition[3] + cFxxInfeedSpeed * fDt;
+aBeltPosition[4] := aBeltPosition[4] + cFxxOutfeedSpeed * fDt;
+aBeltPosition[5] := aBeltPosition[5] + cIdhInfeedSpeed * fDt;
+aBeltPosition[6] := aBeltPosition[6] + cTraySpeed * fDt;
+aBeltPosition[7] := aBeltPosition[7] + cCartBeltSpeed * fDt;
+aBeltPosition[8] := aBeltPosition[8] + cCartBeltSpeed * fDt;
+fbInfeed1.SetBeltPosition(aBeltPosition[0]);
+fbInfeed2.SetBeltPosition(aBeltPosition[1]);
+fbOutfeed.SetBeltPosition(aBeltPosition[2]);
+fbFxxInfeed.SetBeltPosition(aBeltPosition[3]);
+fbFxxOutfeed.SetBeltPosition(aBeltPosition[4]);
+fbIdhInfeed.SetBeltPosition(aBeltPosition[5]);
+fbIdhTray.SetBeltPosition(aBeltPosition[6]);
+fbCartInfeed.SetBeltPosition(aBeltPosition[7]);
+fbCartOutfeed.SetBeltPosition(aBeltPosition[8]);
+
+// ----- Product infeed: infeed 1 and 2 (Delta), Fxx infeed (irregular), IDH infeed, Cartesian infeed -----
+FOR nBelt := 0 TO 4 DO
+	aSinceSpawn[nBelt] := aSinceSpawn[nBelt] + fDt;
+	IF aSinceSpawn[nBelt] >= aSpawnInterval[nBelt] THEN
+		aSinceSpawn[nBelt] := 0;
+		nSeed := nSeed * 1103515245 + 12345;
+		fRandom := UDINT_TO_LREAL(nSeed MOD 1000) / 1000.0; // 0..1
+		stLatchPose.fX := 100;
+		stLatchPose.fZ := cBeltZ;
+		stLatchPose.fRz := (UDINT_TO_LREAL((nSeed / 1000) MOD 1000) / 1000.0 - 0.5) * 60.0;
+		CASE nBelt OF
+			0: refBelt REF= fbInfeed1; stLatchPose.fY := cInfeed1Y + (fRandom - 0.5) * 160.0;
+			1: refBelt REF= fbInfeed2; stLatchPose.fY := cInfeed2Y + (fRandom - 0.5) * 160.0;
+			2:
+				// Irregular gaps: the Fxx evens them out.
+				refBelt REF= fbFxxInfeed;
+				stLatchPose.fY := cFxxY;
+				stLatchPose.fRz := 0;
+				aSpawnInterval[2] := 0.4 + fRandom * 1.2;
+			3:
+				refBelt REF= fbIdhInfeed;
+				stLatchPose.fY := cIdhInfeedY;
+				aSpawnInterval[3] := 0.6 + fRandom * 0.6;
+		ELSE
+			refBelt REF= fbCartInfeed;
+			stLatchPose.fY := cCartInfeedY;
+		END_CASE
+		IF refBelt.LatchProduct(nId := nNextId, stLatchPose := stLatchPose, nProductType := 1) THEN
+			nNextId := nNextId + 1;
+		END_IF
+	END_IF
+END_FOR
+
+// ===== Delta application =====
 FOR nRobot := 0 TO 2 DO
 	CASE nRobot OF
 		0: refRobot REF= fbDelta1;
@@ -212,73 +345,6 @@ FOR nRobot := 0 TO 2 DO
 		aTcp[nRobot].fZ := cRobotZ - 900;
 		aTcpInitialised[nRobot] := TRUE;
 	END_IF
-END_FOR
-
-// ----- Conveyors and product infeed -----
-aBeltPosition[0] := aBeltPosition[0] + cInfeedSpeed * fDt;
-aBeltPosition[1] := aBeltPosition[1] + cInfeedSpeed * fDt;
-aBeltPosition[2] := aBeltPosition[2] + cOutfeedSpeed * fDt;
-aBeltPosition[3] := aBeltPosition[3] + cSpacingSpeed * fDt;
-aBeltPosition[4] := aBeltPosition[4] + cTraySpeed * fDt;
-fbInfeed1.SetBeltPosition(aBeltPosition[0]);
-fbInfeed2.SetBeltPosition(aBeltPosition[1]);
-fbOutfeed.SetBeltPosition(aBeltPosition[2]);
-fbSpacing.SetBeltPosition(aBeltPosition[3]);
-fbTray.SetBeltPosition(aBeltPosition[4]);
-
-// ----- XTS loop and gantry (configuration idempotent, every cycle) -----
-stXtsPose.fX := cLoopX;
-stXtsPose.fY := cOutfeedY;
-stXtsPose.fZ := cBeltZ + cProductHeight + cLoopToolOffset;
-stXtsPose.fRz := 0;
-fbFxx.Configure(stPose := stXtsPose, fStraightLength := cLoopStraight, fCurveRadius := cLoopRadius,
-	fToolOffset := cLoopToolOffset, fMoverLength := 100, fMoverWidth := 60);
-fbFxx.SetZone(nConveyorId := fbOutfeed.Id(), eKind := E_VisuZoneKind.PICK, fStart := cLoopX, fEnd := cLoopX + cLoopRelease);
-fbFxx.SetZone(nConveyorId := fbSpacing.Id(), eKind := E_VisuZoneKind.PLACE,
-	fStart := cLoopX + cLoopPlace - cSpacingX - 300, fEnd := cLoopX + cLoopPlace - cSpacingX + 100);
-
-stXtsPose.fX := cGantryX;
-stXtsPose.fY := cGantryY;
-stXtsPose.fZ := cGantryZ;
-stXtsPose.fRz := -90;
-fbIdh.Configure(stPose := stXtsPose, nModuleCount := cGantryModules, fModuleLength := cGantryModuleLength,
-	fXMin := 0, fXMax := 700, fZMin := cGantryZDown, fZMax := 0, fCMin := -180, fCMax := 180,
-	fToolOffsetX := cGantryToolX, fToolOffsetZ := cGantryToolZ, fMoverLength := cGantryMoverLength, fMoverWidth := 80);
-fbIdh.SetZone(nConveyorId := fbSpacing.Id(), eKind := E_VisuZoneKind.PICK,
-	fStart := cGantryX - cSpacingX, fEnd := cGantryX - cSpacingX + UINT_TO_LREAL(cGantryModules) * cGantryModuleLength);
-fbIdh.SetZone(nConveyorId := fbTray.Id(), eKind := E_VisuZoneKind.PLACE, fStart := 200, fEnd := 1700);
-
-FOR nBelt := 0 TO 1 DO
-	IF nBelt = 0 THEN
-		refBelt REF= fbInfeed1;
-		stLatchPose.fY := cInfeed1Y;
-	ELSE
-		refBelt REF= fbInfeed2;
-		stLatchPose.fY := cInfeed2Y;
-	END_IF
-	aSinceSpawn[nBelt] := aSinceSpawn[nBelt] + fDt;
-	IF aSinceSpawn[nBelt] >= cSpawnInterval THEN
-		aSinceSpawn[nBelt] := 0;
-		nSeed := nSeed * 1103515245 + 12345;
-		stLatchPose.fX := 100;
-		stLatchPose.fY := stLatchPose.fY + (UDINT_TO_LREAL(nSeed MOD 1000) / 1000.0 - 0.5) * 160.0;
-		stLatchPose.fZ := cBeltZ;
-		stLatchPose.fRz := (UDINT_TO_LREAL((nSeed / 1000) MOD 1000) / 1000.0 - 0.5) * 60.0;
-		IF refBelt.LatchProduct(nId := nNextId, stLatchPose := stLatchPose, nProductType := 1) THEN
-			nNextId := nNextId + 1;
-		END_IF
-	END_IF
-END_FOR
-
-// ----- Robots -----
-FOR nRobot := 0 TO 2 DO
-	CASE nRobot OF
-		0: refRobot REF= fbDelta1;
-		1: refRobot REF= fbDelta2;
-	ELSE
-		refRobot REF= fbDelta3;
-	END_CASE
-	fBaseX := cRobot1X + INT_TO_LREAL(nRobot) * cRobotPitch;
 
 	// Follow the current target by its id (register indices shift when entries are removed).
 	bFound := FALSE;
@@ -386,15 +452,56 @@ FOR nRobot := 0 TO 2 DO
 	refRobot.SetTcp(stActualTcp := aTcp[nRobot], stSetpointTcp := stSetpointTcp);
 END_FOR
 
+// ===== Fxx application =====
+stXtsPose.fX := cLoopX;
+stXtsPose.fY := cFxxY;
+stXtsPose.fZ := cBeltZ + cProductHeight + cLoopToolOffset;
+stXtsPose.fRz := 0;
+fbFxx.Configure(stPose := stXtsPose, fStraightLength := cLoopStraight, fCurveRadius := cLoopRadius,
+	fToolOffset := cLoopToolOffset, fMoverLength := 100, fMoverWidth := 60);
+fbFxx.SetZone(nConveyorId := fbFxxInfeed.Id(), eKind := E_VisuZoneKind.PICK, fStart := cLoopX, fEnd := cLoopX + cLoopRelease);
+fbFxx.SetZone(nConveyorId := fbFxxOutfeed.Id(), eKind := E_VisuZoneKind.PLACE,
+	fStart := cLoopX + cLoopPlace - cFxxOutfeedX - 300, fEnd := cLoopX + cLoopPlace - cFxxOutfeedX + 100);
+StepLoop();
+
+// ===== IDH application =====
+stXtsPose.fX := cGantryX;
+stXtsPose.fY := cGantryY;
+stXtsPose.fZ := cGantryZ;
+stXtsPose.fRz := -90;
+fbIdh.Configure(stPose := stXtsPose, nModuleCount := cGantryModules, fModuleLength := cGantryModuleLength,
+	fXMin := 0, fXMax := 700, fZMin := cGantryZDown, fZMax := 0, fCMin := -180, fCMax := 180,
+	fToolOffsetX := cGantryToolX, fToolOffsetZ := cGantryToolZ, fMoverLength := cGantryMoverLength, fMoverWidth := 80);
+fbIdh.SetZone(nConveyorId := fbIdhInfeed.Id(), eKind := E_VisuZoneKind.PICK,
+	fStart := cGantryX, fEnd := cGantryX + UINT_TO_LREAL(cGantryModules) * cGantryModuleLength);
+fbIdh.SetZone(nConveyorId := fbIdhTray.Id(), eKind := E_VisuZoneKind.PLACE,
+	fStart := cGantryX - cTrayX, fEnd := cGantryX - cTrayX + UINT_TO_LREAL(cGantryModules) * cGantryModuleLength);
+StepGantry();
+
+// ===== Cartesian application =====
+stCartPose.fX := cCartX;
+stCartPose.fY := cCartY;
+stCartPose.fZ := cCartZ;
+stCartPose.fRz := -90;
+fbCartesian.Configure(stPose := stCartPose, fXMin := 0, fXMax := 1200, fYMin := 0, fYMax := 1000, fZMin := -600,
+	fZMax := 0, fCMin := -180, fCMax := 180, fAMin := -30, fAMax := 30, fToolLength := cCartToolLength,
+	fRailHeight := cCartRailHeight);
+fbCartesian.SetZone(nConveyorId := fbCartInfeed.Id(), eKind := E_VisuZoneKind.PICK, fStart := cCartX, fEnd := cCartX + 1000);
+fbCartesian.SetZone(nConveyorId := fbCartOutfeed.Id(), eKind := E_VisuZoneKind.PLACE,
+	fStart := cCartX + cCartYPlace - 200, fEnd := cCartX + cCartYPlace + 200);
+StepCartesian();
+fbCartesian.SetAxes(fX := fCartX, fY := fCartY, fZ := fCartZ, fC := fCartC, fA := fCartA, bGripperActive := bCartGrip);
+
 // Drop register entries some distance beyond the belt end, so "missed" stays visible briefly.
 fbInfeed1.RemoveProductsBeyond(cBeltLength + cRemoveBeyondEnd);
 fbInfeed2.RemoveProductsBeyond(cBeltLength + cRemoveBeyondEnd);
 fbOutfeed.RemoveProductsBeyond(cBeltLength + cRemoveBeyondEnd);
-
-StepLoop();
-StepGantry();
-fbSpacing.RemoveProductsBeyond(3000 + cRemoveBeyondEnd);
-fbTray.RemoveProductsBeyond(2000 + cRemoveBeyondEnd);]]></ST>
+fbFxxInfeed.RemoveProductsBeyond(cFxxInfeedLength + cRemoveBeyondEnd);
+fbFxxOutfeed.RemoveProductsBeyond(cFxxOutfeedLength + cRemoveBeyondEnd);
+fbIdhInfeed.RemoveProductsBeyond(cIdhInfeedLength + cRemoveBeyondEnd);
+fbIdhTray.RemoveProductsBeyond(cTrayLength + cRemoveBeyondEnd);
+fbCartInfeed.RemoveProductsBeyond(cCartBeltLength + cRemoveBeyondEnd);
+fbCartOutfeed.RemoveProductsBeyond(cCartBeltLength + cRemoveBeyondEnd);]]></ST>
     </Implementation>
     <Method Name="Approach" Id="{ebbc9ace-a9c3-4434-b429-07ee4dff0379}">
       <Declaration><![CDATA[(* Moves fValue towards fGoal by at most fStep. *)
@@ -412,6 +519,26 @@ ELSIF fGoal > fValue THEN
 ELSE
 	Approach := fValue - fStep;
 END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="CartMove" Id="{848ad8d7-a5b5-4d63-9d7d-99d44a91f0fb}">
+      <Declaration><![CDATA[(* Moves the Cartesian robot's axes one cycle towards the goal, each with its own speed. TRUE once all are there. *)
+METHOD PRIVATE CartMove : BOOL
+VAR_INPUT
+	fX : LREAL; // mm
+	fY : LREAL; // mm
+	fZ : LREAL; // mm
+	fC : LREAL; // degrees
+	fA : LREAL; // degrees
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[fCartX := Approach(fCartX, fX, cCartXySpeed * fDt);
+fCartY := Approach(fCartY, fY, cCartXySpeed * fDt);
+fCartZ := Approach(fCartZ, fZ, cCartZSpeed * fDt);
+fCartC := Approach(fCartC, fC, cCartCSpeed * fDt);
+fCartA := Approach(fCartA, fA, cCartASpeed * fDt);
+// Approach lands exactly on the goal, so equality is safe.
+CartMove := fCartX = fX AND fCartY = fY AND fCartZ = fZ AND fCartC = fC AND fCartA = fA;]]></ST>
       </Implementation>
     </Method>
     <Method Name="GantryFollow" Id="{ea3c75c7-57c5-486f-bc56-23859182665d}">
@@ -435,7 +562,7 @@ END_VAR]]></Declaration>
 	END_IF
 	fGoal := aGantryWait[nI];
 	IF aGantryProduct[nI] <> 0 THEN
-		IF SpacingTrackPos(nId := aGantryProduct[nI], fTrackPos => fPos, fRz => fRz) THEN
+		IF IdhTrackPos(nId := aGantryProduct[nI], fTrackPos => fPos, fRz => fRz) THEN
 			fGoal := MAX(fPos, aGantryWait[nI]);
 			aGantryC[nI] := Approach(aGantryC[nI], fRz, 180.0 * fDt);
 		END_IF
@@ -443,6 +570,32 @@ END_VAR]]></Declaration>
 	aGantryPos[nI] := MIN(Approach(aGantryPos[nI], fGoal, cGantryTrackSpeed * fDt), fLimit);
 END_FOR
 GantryFollow := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="IdhTrackPos" Id="{6245175d-30d3-417f-a534-a1a99c9bb94c}">
+      <Declaration><![CDATA[(* Position of a product on the IDH infeed along the gantry track (MCS x - gantry x) and its rotation.
+   FALSE if the product is no longer in the register. *)
+METHOD PRIVATE IdhTrackPos : BOOL
+VAR_INPUT
+	nId : UDINT;
+END_VAR
+VAR_OUTPUT
+	fTrackPos : LREAL;
+	fRz : LREAL;
+END_VAR
+VAR
+	nIndex : INT;
+	stProduct : ST_VisuProduct;
+	stPose : ST_VisuPlanarPose;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[nIndex := fbIdhInfeed.FindProduct(nId);
+IdhTrackPos := nIndex >= 0;
+IF IdhTrackPos THEN
+	fbIdhInfeed.GetProduct(nIndex := INT_TO_UINT(nIndex), stProduct => stProduct, stPose => stPose);
+	fTrackPos := stPose.fX - cGantryX;
+	fRz := stPose.fRz;
+END_IF]]></ST>
       </Implementation>
     </Method>
     <Method Name="MoveToward" Id="{85976e89-5ede-4f08-92ae-262b9a901175}">
@@ -481,34 +634,116 @@ ELSE
 END_IF]]></ST>
       </Implementation>
     </Method>
-    <Method Name="SpacingTrackPos" Id="{6245175d-30d3-417f-a534-a1a99c9bb94c}">
-      <Declaration><![CDATA[(* Position of a product on the spacing belt along the gantry track (MCS x - gantry x) and its rotation.
-   FALSE if the product is no longer in the register. *)
-METHOD PRIVATE SpacingTrackPos : BOOL
-VAR_INPUT
-	nId : UDINT;
-END_VAR
-VAR_OUTPUT
-	fTrackPos : LREAL;
-	fRz : LREAL;
-END_VAR
+    <Method Name="StepCartesian" Id="{da82223f-d7e9-42bc-8475-3c614e528319}">
+      <Declaration><![CDATA[(* Cartesian robot: follows a product on the Cartesian infeed in Y with the gripper turned onto it (C), picks it,
+   carries it across to the outfeed while turning it by a further -90 deg, tilts it by A while lowering, straightens
+   it and places it. *)
+METHOD PRIVATE StepCartesian : BOOL
 VAR
-	nIndex : INT;
-	stProduct : ST_VisuProduct;
-	stPose : ST_VisuPlanarPose;
+	nFound : INT;
+	nScan : UINT;
+	bHave : BOOL;
+	fProductY : LREAL; // robot Y of the current product: its MCS x relative to the robot origin
+	stCartProduct : ST_VisuProduct;
+	stCartProductPose : ST_VisuPlanarPose;
+	stPlacePose : ST_VisuPlanarPose;
 END_VAR]]></Declaration>
       <Implementation>
-        <ST><![CDATA[nIndex := fbSpacing.FindProduct(nId);
-SpacingTrackPos := nIndex >= 0;
-IF SpacingTrackPos THEN
-	fbSpacing.GetProduct(nIndex := INT_TO_UINT(nIndex), stProduct => stProduct, stPose => stPose);
-	fTrackPos := stPose.fX - cGantryX;
-	fRz := stPose.fRz;
-END_IF]]></ST>
+        <ST><![CDATA[bHave := FALSE;
+IF nCartProduct <> 0 THEN
+	nFound := fbCartInfeed.FindProduct(nCartProduct);
+	IF nFound >= 0 THEN
+		bHave := fbCartInfeed.GetProduct(nIndex := INT_TO_UINT(nFound), stProduct => stCartProduct,
+			stPose => stCartProductPose);
+		fProductY := stCartProductPose.fX - cCartX;
+	END_IF
+END_IF
+
+CASE nCartPhase OF
+	cCartIdle:
+		nScan := 0;
+		WHILE nCartProduct = 0 AND nScan < fbCartInfeed.ProductCount() DO
+			fbCartInfeed.GetProduct(nIndex := nScan, stProduct => stCartProduct, stPose => stCartProductPose);
+			IF stCartProduct.eState = E_VisuProductState.DETECTED
+				AND stCartProductPose.fX - cCartX >= 100
+				AND stCartProductPose.fX - cCartX <= 600
+			THEN
+				fbCartInfeed.SetProductState(nId := stCartProduct.nId, eState := E_VisuProductState.ASSIGNED,
+					nRobotId := fbCartesian.Id());
+				nCartProduct := stCartProduct.nId;
+				// The gripper's +X in the MCS is pose rz (-90 deg) + C.
+				fCartPickC := stCartProductPose.fRz + 90;
+				nCartPhase := cCartDescend;
+			END_IF
+			nScan := nScan + 1;
+		END_WHILE
+		IF nCartProduct = 0 THEN
+			CartMove(cCartXInfeed, cCartYHome, cCartZTravel, 0, 0);
+		END_IF
+
+	cCartDescend:
+		IF NOT bHave THEN
+			nCartProduct := 0;
+			nCartPhase := cCartRise;
+		ELSIF fProductY > 1000 THEN
+			// Out of reach: hand it back, it will be missed.
+			fbCartInfeed.SetProductState(nId := nCartProduct, eState := E_VisuProductState.DETECTED, nRobotId := 0);
+			nCartProduct := 0;
+			nCartPhase := cCartRise;
+		ELSIF CartMove(cCartXInfeed, fProductY, fCartZ, fCartPickC, 0) THEN
+			// Lowers only once above the product with the gripper turned onto it.
+			IF CartMove(cCartXInfeed, fProductY, cCartZPick, fCartPickC, 0) THEN
+				fbCartInfeed.SetProductState(nId := nCartProduct, eState := E_VisuProductState.PICKED,
+					nRobotId := fbCartesian.Id());
+				bCartGrip := TRUE;
+				nCartPhase := cCartLift;
+			END_IF
+		END_IF
+
+	cCartLift:
+		IF CartMove(fCartX, fCartY, cCartZTravel, fCartC, fCartA) THEN
+			nCartPhase := cCartTransfer;
+		END_IF
+
+	cCartTransfer:
+		IF CartMove(cCartXOutfeed, cCartYPlace, cCartZTravel, fCartPickC + cCartTurn, 0) THEN
+			nCartPhase := cCartLower;
+		END_IF
+
+	cCartLower:
+		IF CartMove(fCartX, fCartY, cCartZPick, fCartC, cCartTilt) THEN
+			nCartPhase := cCartStraighten;
+		END_IF
+
+	cCartStraighten:
+		IF CartMove(fCartX, fCartY, fCartZ, fCartC, 0) THEN
+			nCartPhase := cCartRelease;
+		END_IF
+
+	cCartRelease:
+		fbCartInfeed.SetProductState(nId := nCartProduct, eState := E_VisuProductState.PLACED, nRobotId := fbCartesian.Id());
+		// Turned by -90 deg: the TCP (A = 0) is at MCS x = origin + Y, y = origin - X; the product keeps the turn.
+		stPlacePose.fX := cCartX + fCartY;
+		stPlacePose.fY := cCartY - fCartX;
+		stPlacePose.fZ := cBeltZ;
+		stPlacePose.fRz := -90 + fCartC;
+		IF fbCartOutfeed.LatchProduct(nId := nNextId, stLatchPose := stPlacePose, nProductType := 1) THEN
+			nNextId := nNextId + 1;
+		END_IF
+		nCartProduct := 0;
+		bCartGrip := FALSE;
+		nCartPhase := cCartRise;
+
+	cCartRise:
+		IF CartMove(fCartX, fCartY, cCartZTravel, fCartC, fCartA) THEN
+			nCartPhase := cCartIdle;
+		END_IF
+END_CASE
+StepCartesian := TRUE;]]></ST>
       </Implementation>
     </Method>
     <Method Name="StepGantry" Id="{43536277-3647-4a27-bf4d-77f0e172794e}">
-      <Declaration><![CDATA[(* XTS gantry: the movers follow up to four products on the spacing belt (the most downstream mover takes the first
+      <Declaration><![CDATA[(* XTS gantry: the movers follow up to four products on the IDH infeed (the most downstream mover takes the first
    product), then the Z axis lowers all grippers together, the X axes carry the products over the tray belt, they are
    put down together and the movers return to their waiting positions. *)
 METHOD PRIVATE StepGantry : BOOL
@@ -536,8 +771,8 @@ END_VAR]]></Declaration>
 			IF aGantryProduct[nI] = 0 THEN
 				nBest := 0;
 				fBest := -1.0E9;
-				FOR nIndex := 1 TO fbSpacing.ProductCount() DO
-					fbSpacing.GetProduct(nIndex := nIndex - 1, stProduct => stProduct, stPose => stPose);
+				FOR nIndex := 1 TO fbIdhInfeed.ProductCount() DO
+					fbIdhInfeed.GetProduct(nIndex := nIndex - 1, stProduct => stProduct, stPose => stPose);
 					fPos := stPose.fX - cGantryX;
 					IF stProduct.eState = E_VisuProductState.DETECTED AND fPos < aGantryPos[nI] AND fPos > -500 AND fPos > fBest THEN
 						nBest := stProduct.nId;
@@ -547,7 +782,7 @@ END_VAR]]></Declaration>
 				IF nBest = 0 THEN
 					EXIT;
 				END_IF
-				fbSpacing.SetProductState(nId := nBest, eState := E_VisuProductState.ASSIGNED,
+				fbIdhInfeed.SetProductState(nId := nBest, eState := E_VisuProductState.ASSIGNED,
 					nRobotId := fbIdh.Id(), nMoverId := INT_TO_UDINT(nI + 1));
 				aGantryProduct[nI] := nBest;
 			END_IF
@@ -561,7 +796,7 @@ END_VAR]]></Declaration>
 			aSynced[nI] := FALSE;
 			IF aGantryProduct[nI] <> 0 THEN
 				nAssigned := nAssigned + 1;
-				aSynced[nI] := SpacingTrackPos(nId := aGantryProduct[nI], fTrackPos => fPos, fRz => fRz)
+				aSynced[nI] := IdhTrackPos(nId := aGantryProduct[nI], fTrackPos => fPos, fRz => fRz)
 					AND ABS(aGantryPos[nI] - fPos) < 2;
 				bAllSynced := bAllSynced AND aSynced[nI];
 				bAnySynced := bAnySynced OR aSynced[nI];
@@ -573,7 +808,7 @@ END_VAR]]></Declaration>
 			// Movers not yet above their product give it back.
 			FOR nI := 0 TO 3 DO
 				IF aGantryProduct[nI] <> 0 AND NOT aSynced[nI] THEN
-					fbSpacing.SetProductState(nId := aGantryProduct[nI], eState := E_VisuProductState.DETECTED, nRobotId := 0);
+					fbIdhInfeed.SetProductState(nId := aGantryProduct[nI], eState := E_VisuProductState.DETECTED, nRobotId := 0);
 					aGantryProduct[nI] := 0;
 				END_IF
 			END_FOR
@@ -587,7 +822,7 @@ END_VAR]]></Declaration>
 			FOR nI := 0 TO 3 DO
 				IF aGantryProduct[nI] <> 0 THEN
 					aGantryGrip[nI] := TRUE;
-					fbSpacing.SetProductState(nId := aGantryProduct[nI], eState := E_VisuProductState.PICKED,
+					fbIdhInfeed.SetProductState(nId := aGantryProduct[nI], eState := E_VisuProductState.PICKED,
 						nRobotId := fbIdh.Id(), nMoverId := INT_TO_UDINT(nI + 1));
 				END_IF
 			END_FOR
@@ -616,14 +851,14 @@ END_VAR]]></Declaration>
 		IF fGantryZ = cGantryZDown THEN
 			FOR nI := 0 TO 3 DO
 				IF aGantryProduct[nI] <> 0 THEN
-					fbSpacing.SetProductState(nId := aGantryProduct[nI], eState := E_VisuProductState.PLACED,
+					fbIdhInfeed.SetProductState(nId := aGantryProduct[nI], eState := E_VisuProductState.PLACED,
 						nRobotId := fbIdh.Id(), nMoverId := 0);
 					// Turned by -90 deg: gripper at MCS x = track start + position, y = pose y - (X + tool offset).
 					stLatch.fX := cGantryX + aGantryPos[nI];
 					stLatch.fY := cGantryY - (aGantryX[nI] + cGantryToolX);
 					stLatch.fZ := cBeltZ;
 					stLatch.fRz := 0;
-					IF fbTray.LatchProduct(nId := nNextId, stLatchPose := stLatch, nProductType := 1) THEN
+					IF fbIdhTray.LatchProduct(nId := nNextId, stLatchPose := stLatch, nProductType := 1) THEN
 						nNextId := nNextId + 1;
 					END_IF
 					aGantryProduct[nI] := 0;
@@ -661,8 +896,9 @@ StepGantry := TRUE;]]></ST>
       </Implementation>
     </Method>
     <Method Name="StepLoop" Id="{f13038a5-5f5f-4b2c-a25d-620802b872b6}">
-      <Declaration><![CDATA[(* XTS loop: the queue head takes over the next product arriving under the start of the lower straight, follows it,
-   grips it, carries it faster to the spacing belt and releases it there; the mover then runs round to the queue. *)
+      <Declaration><![CDATA[(* XTS loop: the queue head takes over the next product arriving on the Fxx infeed under the start of the lower
+   straight, follows it, grips it, carries it faster to the Fxx outfeed and releases it there; the mover then runs
+   round to the queue. *)
 METHOD PRIVATE StepLoop : BOOL
 VAR
 	fPerimeter : LREAL;
@@ -722,11 +958,11 @@ FOR nI := 0 TO cLoopMovers - 1 DO
 END_FOR
 IF bHeadReady THEN
 	nIndex := 0;
-	WHILE aLoopMode[nHead] = cLoopQueue AND nIndex < fbOutfeed.ProductCount() DO
-		fbOutfeed.GetProduct(nIndex := nIndex, stProduct => stProduct, stPose => stPose);
+	WHILE aLoopMode[nHead] = cLoopQueue AND nIndex < fbFxxInfeed.ProductCount() DO
+		fbFxxInfeed.GetProduct(nIndex := nIndex, stProduct => stProduct, stPose => stPose);
 		fX := stPose.fX - cLoopX;
 		IF stProduct.eState = E_VisuProductState.DETECTED AND fX >= 0 AND fX < cLoopGrip AND fMinTrack - fX >= cLoopSlot THEN
-			fbOutfeed.SetProductState(nId := stProduct.nId, eState := E_VisuProductState.ASSIGNED,
+			fbFxxInfeed.SetProductState(nId := stProduct.nId, eState := E_VisuProductState.ASSIGNED,
 				nRobotId := fbFxx.Id(), nMoverId := INT_TO_UDINT(nHead + 1));
 			aLoopProduct[nHead] := stProduct.nId;
 			aLoopMode[nHead] := cLoopTrack;
@@ -739,15 +975,15 @@ fbFxx.SetMoverCount(INT_TO_UINT(cLoopMovers));
 FOR nI := 0 TO cLoopMovers - 1 DO
 	CASE aLoopMode[nI] OF
 		cLoopTrack:
-			nIdx := fbOutfeed.FindProduct(aLoopProduct[nI]);
+			nIdx := fbFxxInfeed.FindProduct(aLoopProduct[nI]);
 			IF nIdx < 0 THEN
 				aLoopProduct[nI] := 0;
 				aLoopMode[nI] := cLoopReturn;
 			ELSE
-				fbOutfeed.GetProduct(nIndex := INT_TO_UINT(nIdx), stProduct => stProduct, stPose => stPose);
+				fbFxxInfeed.GetProduct(nIndex := INT_TO_UINT(nIdx), stProduct => stProduct, stPose => stPose);
 				aLoopS[nI] := stPose.fX - cLoopX;
 				IF aLoopS[nI] >= cLoopGrip AND stProduct.eState = E_VisuProductState.ASSIGNED THEN
-					fbOutfeed.SetProductState(nId := stProduct.nId, eState := E_VisuProductState.PICKED,
+					fbFxxInfeed.SetProductState(nId := stProduct.nId, eState := E_VisuProductState.PICKED,
 						nRobotId := fbFxx.Id(), nMoverId := INT_TO_UDINT(nI + 1));
 				END_IF
 				IF aLoopS[nI] >= cLoopRelease THEN
@@ -759,18 +995,18 @@ FOR nI := 0 TO cLoopMovers - 1 DO
 			aLoopS[nI] := MIN(aLoopS[nI] + cLoopDeliverSpeed * fDt, cLoopPlace);
 			IF aLoopS[nI] >= cLoopPlace THEN
 				fRz := 0;
-				nIdx := fbOutfeed.FindProduct(aLoopProduct[nI]);
+				nIdx := fbFxxInfeed.FindProduct(aLoopProduct[nI]);
 				IF nIdx >= 0 THEN
-					fbOutfeed.GetProduct(nIndex := INT_TO_UINT(nIdx), stProduct => stProduct, stPose => stPose);
+					fbFxxInfeed.GetProduct(nIndex := INT_TO_UINT(nIdx), stProduct => stProduct, stPose => stPose);
 					fRz := stProduct.stLatchPose.fRz;
-					fbOutfeed.SetProductState(nId := stProduct.nId, eState := E_VisuProductState.PLACED,
+					fbFxxInfeed.SetProductState(nId := stProduct.nId, eState := E_VisuProductState.PLACED,
 						nRobotId := fbFxx.Id(), nMoverId := 0);
 				END_IF
 				stLatch.fX := cLoopX + aLoopS[nI];
-				stLatch.fY := cOutfeedY;
+				stLatch.fY := cFxxY;
 				stLatch.fZ := cBeltZ;
 				stLatch.fRz := fRz;
-				IF fbSpacing.LatchProduct(nId := nNextId, stLatchPose := stLatch, nProductType := 1) THEN
+				IF fbFxxOutfeed.LatchProduct(nId := nNextId, stLatchPose := stLatch, nProductType := 1) THEN
 					nNextId := nNextId + 1;
 				END_IF
 				aLoopProduct[nI] := 0;

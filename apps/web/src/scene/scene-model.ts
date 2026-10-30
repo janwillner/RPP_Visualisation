@@ -1,6 +1,8 @@
 import {
   deltaForward,
   deltaInverse,
+  type CartesianConfig,
+  type CartesianState,
   type ComponentState,
   type ConfigMessage,
   type ConveyorConfig,
@@ -24,6 +26,8 @@ import {
   child,
   frameFromPose,
   fromRenderer,
+  mul,
+  rotX,
   rotY,
   rotZ,
   toLocal,
@@ -154,7 +158,7 @@ export interface SceneGantry {
   movers: SceneGantryMover[];
 }
 
-/** An axis-aligned box in a component's frame, e.g. the reachable volume of an XTS gantry. */
+/** An axis-aligned box in a component's frame, e.g. the reachable volume of an XTS gantry or a Cartesian robot. */
 export interface SceneBoxArea {
   robotId: number;
   /** Box centre. */
@@ -181,6 +185,29 @@ export interface SceneLoop {
   moverLength: number;
   moverWidth: number;
   movers: SceneLoopMover[];
+}
+
+/** A solid box part of a component. */
+export interface SceneBox {
+  key: string;
+  /** Box centre. */
+  transform: Transform;
+  /** Extent along the local MCS X, Y and Z axes, metres. */
+  size: Vec3;
+}
+
+export type CartesianPartKey = "rail left" | "rail right" | "bridge" | "carriage" | "column" | "head";
+
+export interface SceneCartesian {
+  id: number;
+  name: string;
+  /** Rails (static), bridge, carriage, column and gripper head (moving with the axes). */
+  parts: (SceneBox & { key: CartesianPartKey })[];
+  /** TCP frame, turned by C and tilted by A; local +X is the gripper's orientation. Null before the first state. */
+  tcp: Transform | null;
+  gripperActive: boolean;
+  /** Actual axis values as reported; null before the first state. */
+  axes: { x: number; y: number; z: number; c: number; a: number } | null;
 }
 
 /** Which layer toggle a snap point belongs to; "structure" is always shown. */
@@ -216,8 +243,9 @@ export interface SceneModel {
   workingAreas: SceneWorkingArea[];
   zones: SceneZone[];
   gantries: SceneGantry[];
-  gantryAreas: SceneBoxArea[];
+  boxAreas: SceneBoxArea[];
   loops: SceneLoop[];
+  cartesians: SceneCartesian[];
   snapPoints: SnapPoint[];
   origins: SceneOrigin[];
   /** Inconsistencies in the configuration, e.g. a zone referencing an unknown conveyor. */
@@ -239,8 +267,9 @@ export function buildScene(
   const products: SceneProduct[] = [];
   const deltas: SceneDelta[] = [];
   const gantries: SceneGantry[] = [];
-  const gantryAreas: SceneBoxArea[] = [];
+  const boxAreas: SceneBoxArea[] = [];
   const loops: SceneLoop[] = [];
+  const cartesians: SceneCartesian[] = [];
   /**
    * Where a picked product hangs, keyed "robotId:moverId" (mover 0 for a Delta): an MCS frame whose origin
    * touches the product's top, whose rotation orients the product and whose local −Z points to the product.
@@ -283,7 +312,7 @@ export function buildScene(
     if (c.type === "xtsGantry") {
       const built = buildGantry(c, state?.type === "xtsGantry" ? state : undefined);
       gantries.push(built.gantry);
-      gantryAreas.push(built.area);
+      boxAreas.push(built.area);
       snapPoints.push(...built.snapPoints);
       for (const [moverId, frame] of built.carriers) carriers.set(`${c.id}:${moverId}`, frame);
       addZones(c);
@@ -294,6 +323,15 @@ export function buildScene(
       loops.push(built.loop);
       snapPoints.push(...built.snapPoints);
       for (const [moverId, frame] of built.carriers) carriers.set(`${c.id}:${moverId}`, frame);
+      addZones(c);
+      continue;
+    }
+    if (c.type === "cartesian") {
+      const built = buildCartesian(c, state?.type === "cartesian" ? state : undefined);
+      cartesians.push(built.cartesian);
+      boxAreas.push(built.area);
+      snapPoints.push(...built.snapPoints);
+      if (built.carrier) carriers.set(`${c.id}:0`, built.carrier);
       addZones(c);
       continue;
     }
@@ -348,7 +386,7 @@ export function buildScene(
     ...conveyors.map((c) => ({ componentId: c.id, name: c.name, transform: c.transform })),
     ...deltas.map((d) => ({ componentId: d.id, name: d.name, transform: d.base })),
     ...(config?.components ?? [])
-      .filter((c) => c.type === "xtsGantry" || c.type === "xtsLoop")
+      .filter((c) => c.type === "xtsGantry" || c.type === "xtsLoop" || c.type === "cartesian")
       .map((c) => ({ componentId: c.id, name: c.name, transform: toRendererTransform(frameFromPose(c.pose)) })),
   ];
   return {
@@ -358,8 +396,9 @@ export function buildScene(
     workingAreas,
     zones,
     gantries,
-    gantryAreas,
+    boxAreas,
     loops,
+    cartesians,
     snapPoints,
     origins,
     warnings,
@@ -569,6 +608,16 @@ function interpolate(a: ComponentState, b: ComponentState, f: number, perimeter:
       }),
     };
   }
+  if (a.type === "cartesian" && b.type === "cartesian") {
+    return {
+      ...a,
+      x: lerp(a.x, b.x, f),
+      y: lerp(a.y, b.y, f),
+      z: lerp(a.z, b.z, f),
+      c: lerpAngle(a.c, b.c, f),
+      a: lerpAngle(a.a, b.a, f),
+    };
+  }
   if (a.type === "conveyor" && b.type === "conveyor") return { ...a, beltPosition: lerp(a.beltPosition, b.beltPosition, f) };
   if (a.type === "delta" && b.type === "delta") {
     return {
@@ -766,5 +815,98 @@ function buildLoop(c: XtsLoopConfig, state: XtsLoopState | undefined) {
     } satisfies SceneLoop,
     snapPoints,
     carriers,
+  };
+}
+
+/** Fixed part dimensions of a Cartesian robot drawing, mm; everything else follows from the strokes. */
+const CARTESIAN = {
+  margin: 120,
+  rail: 80,
+  bridgeWidth: 140,
+  bridgeHeight: 100,
+  carriage: [220, 220, 160] as Vec3,
+  column: 90,
+  head: [120, 70] as const,
+};
+
+/**
+ * Cartesian robot: rails along local +Y with their top at railHeight, the bridge on top of them at Y, the carriage
+ * on the bridge at X, the column ending at the flange (X, Y, Z) and the gripper head turned by C and tilted by A.
+ */
+function buildCartesian(c: CartesianConfig, state: CartesianState | undefined) {
+  const frame = frameFromPose(c.pose);
+  const owner = snapOwner(c, frame);
+  const d = CARTESIAN;
+  const axes = state ? { x: state.x, y: state.y, z: state.z, c: state.c, a: state.a } : null;
+  const { x, y, z } = axes ?? { x: c.xMin, y: c.yMin, z: c.zMax };
+  const railX: [string, number][] = [
+    ["left", c.xMin - d.margin],
+    ["right", c.xMax + d.margin],
+  ];
+  const railStart = c.yMin - d.margin - d.bridgeWidth / 2;
+  const railEnd = c.yMax + d.margin + d.bridgeWidth / 2;
+  const bridgeZ = c.railHeight + d.bridgeHeight / 2;
+  const columnLength = c.railHeight + d.bridgeHeight - c.zMin;
+  const head = child(frame, [x, y, z], mul(rotZ(axes?.c ?? 0), rotX(axes?.a ?? 0)));
+  const tcp = child(head, [0, 0, -c.toolLength]);
+  const box = (key: CartesianPartKey, at: Frame, size: Vec3) => ({
+    key,
+    transform: toRendererTransform(at),
+    size: size.map((v) => v * MM) as Vec3,
+  });
+  const parts = [
+    ...railX.map(([side, rx]) =>
+      box(`rail ${side}` as CartesianPartKey, child(frame, [rx, (railStart + railEnd) / 2, c.railHeight - d.rail / 2]), [
+        d.rail,
+        railEnd - railStart,
+        d.rail,
+      ]),
+    ),
+    box("bridge", child(frame, [(c.xMin + c.xMax) / 2, y, bridgeZ]), [
+      c.xMax - c.xMin + 2 * d.margin + d.rail,
+      d.bridgeWidth,
+      d.bridgeHeight,
+    ]),
+    box("carriage", child(frame, [x, y, bridgeZ]), d.carriage),
+    box("column", child(frame, [x, y, z + columnLength / 2]), [d.column, d.column, columnLength]),
+    box("head", child(head, [0, 0, -c.toolLength / 2]), [d.head[0], d.head[1], c.toolLength]),
+  ];
+
+  const snapPoints: SnapPoint[] = [owner.at(`${c.name} · origin`, [0, 0, 0])];
+  for (const [side, rx] of railX) {
+    snapPoints.push(owner.at(`${c.name} · rail ${side}, start`, [rx, railStart, c.railHeight]));
+    snapPoints.push(owner.at(`${c.name} · rail ${side}, end`, [rx, railEnd, c.railHeight]));
+  }
+  // Reachable TCP volume with the gripper pointing straight down (A = 0).
+  const zLow = c.zMin - c.toolLength;
+  const zHigh = c.zMax - c.toolLength;
+  for (const [zName, zc] of [["bottom", zLow], ["top", zHigh]] as const) {
+    for (const [yName, yc] of [["start", c.yMin], ["end", c.yMax]] as const) {
+      for (const [xName, xc] of [["X min", c.xMin], ["X max", c.xMax]] as const) {
+        snapPoints.push(owner.at(`${c.name} stroke space · ${zName}, ${yName}, ${xName}`, [xc, yc, zc], "workingAreas"));
+      }
+    }
+  }
+  if (state) {
+    snapPoints.push(owner.atMcs(`${c.name} · flange`, head.origin, "structure", true));
+    snapPoints.push(owner.atMcs(`${c.name} · TCP`, tcp.origin, "structure", true));
+  }
+  return {
+    cartesian: {
+      id: c.id,
+      name: c.name,
+      parts,
+      tcp: state ? toRendererTransform(tcp) : null,
+      gripperActive: state?.gripperActive ?? false,
+      axes,
+    } satisfies SceneCartesian,
+    area: {
+      robotId: c.id,
+      transform: toRendererTransform(child(frame, [(c.xMin + c.xMax) / 2, (c.yMin + c.yMax) / 2, (zLow + zHigh) / 2])),
+      size: [(c.xMax - c.xMin) * MM, (c.yMax - c.yMin) * MM, (zHigh - zLow) * MM],
+    } satisfies SceneBoxArea,
+    snapPoints,
+    /** A carried product hangs at the TCP, turned and tilted with the gripper. */
+    carrier: state ? tcp : undefined,
   };
 }

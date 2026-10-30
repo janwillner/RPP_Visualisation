@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type {
+  CartesianConfig,
+  CartesianState,
   ConfigMessage,
   ConveyorConfig,
   DeltaConfig,
@@ -499,7 +501,7 @@ describe("scene model: XTS gantry", () => {
   });
 
   it("draws the reachable gripper volume as a box in the working-area layer", () => {
-    const [area] = scene.gantryAreas;
+    const [area] = scene.boxAreas;
     expect(area!.robotId).toBe(30);
     // X 100..450, Y 0..3000, Z −600..−400 in the gantry frame.
     closeTo(area!.transform.position, [1.5, 1, 0.225]);
@@ -538,6 +540,119 @@ describe("scene model: XTS gantry", () => {
       0,
     );
     expect(zoned.zones).toEqual([expect.objectContaining({ robotId: 30, conveyorId: 1, kind: "pick" })]);
+  });
+});
+
+function cartesianConfig(overrides: Partial<CartesianConfig> = {}): CartesianConfig {
+  return {
+    type: "cartesian",
+    id: 50,
+    sourceId: "plc1",
+    name: "Cartesian",
+    pose: { x: 6000, y: 0, z: 2000, rx: 0, ry: 0, rz: 0 },
+    xMin: 0,
+    xMax: 1200,
+    yMin: 0,
+    yMax: 1000,
+    zMin: -600,
+    zMax: 0,
+    cMin: -180,
+    cMax: 180,
+    aMin: -30,
+    aMax: 30,
+    toolLength: 150,
+    railHeight: 1200,
+    zones: [],
+    ...overrides,
+  };
+}
+
+function cartesianState(overrides: Partial<CartesianState> = {}): CartesianState {
+  return { type: "cartesian", id: 50, timestamp: "0", x: 600, y: 250, z: -400, c: 90, a: 20, gripperActive: true, ...overrides };
+}
+
+const SIN20 = Math.sin((20 * Math.PI) / 180);
+const COS20 = Math.cos((20 * Math.PI) / 180);
+// Flange at MCS (6600, 250, 1600); the tool (0, 0, −150) tilted by A = 20° about X, then turned by C = 90° about Z.
+const CARTESIAN_TCP: Vec3 = [6600 - 150 * SIN20, 250, 1600 - 150 * COS20];
+
+describe("scene model: Cartesian robot", () => {
+  const scene = buildScene(config(cartesianConfig()), [snapshot(0, [cartesianState()])], 0);
+  const [robot] = scene.cartesians;
+  const part = (key: string) => robot!.parts.find((p) => p.key === key)!;
+
+  it("places the TCP at the flange plus the tool length, turned by C and tilted by A", () => {
+    expect(robot).toMatchObject({ id: 50, name: "Cartesian", gripperActive: true });
+    expect(robot!.axes).toEqual({ x: 600, y: 250, z: -400, c: 90, a: 20 });
+    closeTo(rendererToMcs(robot!.tcp!.position), CARTESIAN_TCP, 4);
+    // The gripper's +X (C = 90°) points along MCS +Y.
+    closeTo(rotate(robot!.tcp!.quaternion, [1, 0, 0]), [0, 0, -1]);
+  });
+
+  it("moves the bridge with Y, the carriage with X and Y, and ends the column at the flange", () => {
+    // Bridge on top of the rails (top at 1200 above the origin), spanning the X stroke plus margins and rails.
+    closeTo(rendererToMcs(part("bridge").transform.position), [6600, 250, 3250], 4);
+    closeTo(part("bridge").size, [1.52, 0.14, 0.1]);
+    closeTo(rendererToMcs(part("carriage").transform.position), [6600, 250, 3250], 4);
+    // Column 1200 + 100 + 600 long, bottom at the flange Z = −400.
+    closeTo(part("column").size, [0.09, 0.09, 1.9]);
+    closeTo(rendererToMcs(part("column").transform.position), [6600, 250, 1600 + 950], 4);
+    // Rails outside the X stroke, along Y beyond the stroke by margin and half the bridge.
+    closeTo(rendererToMcs(part("rail left").transform.position), [5880, 500, 3160], 4);
+    closeTo(part("rail right").size, [0.08, 1.38, 0.08]);
+  });
+
+  it("draws the reachable TCP volume (A = 0) as a box in the working-area layer", () => {
+    const [area] = scene.boxAreas;
+    expect(area!.robotId).toBe(50);
+    // X 0..1200, Y 0..1000, Z −750..−150 in the robot frame.
+    closeTo(rendererToMcs(area!.transform.position), [6600, 500, 1550], 4);
+    closeTo(area!.size, [1.2, 1, 0.6]);
+  });
+
+  it("hangs a picked product at the TCP, turned and tilted with the gripper", () => {
+    const picked = product({ state: "picked", robotId: 50, moverId: 0 });
+    const products = buildScene(
+      config(conveyorConfig(), cartesianConfig()),
+      [snapshot(0, [conveyorState(0, [picked]), cartesianState()])],
+      0,
+    ).products;
+    const carried = products.find((p) => p.display === "atTcp")!;
+    // 40 mm product: its centre lies 20 mm below the TCP along the tilted tool axis.
+    closeTo(rendererToMcs(carried.transform.position), [CARTESIAN_TCP[0] - 20 * SIN20, 250, CARTESIAN_TCP[2] - 20 * COS20], 4);
+  });
+
+  it("offers origin, rail ends, stroke-space corners, flange and TCP as snap points", () => {
+    const byLabel = new Map(scene.snapPoints.map((p) => [p.label, p]));
+    closeTo(byLabel.get("Cartesian · origin")!.mcs, [6000, 0, 2000]);
+    closeTo(byLabel.get("Cartesian · rail right, end")!.mcs, [7320, 1190, 3200]);
+    const corner = byLabel.get("Cartesian stroke space · bottom, start, X min")!;
+    closeTo(corner.mcs, [6000, 0, 1250]);
+    expect(corner.layer).toBe("workingAreas");
+    closeTo(byLabel.get("Cartesian · flange")!.mcs, [6600, 250, 1600]);
+    const tcp = byLabel.get("Cartesian · TCP")!;
+    closeTo(tcp.mcs, CARTESIAN_TCP, 4);
+    closeTo(tcp.local.point, [CARTESIAN_TCP[0] - 6000, 250, CARTESIAN_TCP[2] - 2000], 4);
+    expect(tcp.moving).toBe(true);
+    expect(scene.origins.map((o) => o.name)).toContain("Cartesian");
+  });
+
+  it("interpolates the axes, C and A along the shorter way", () => {
+    const mid = buildScene(
+      config(cartesianConfig()),
+      [snapshot(0, [cartesianState({ x: 0, c: 170, a: -10 })]), snapshot(20, [cartesianState({ x: 100, c: -170, a: 10 })])],
+      10,
+    ).cartesians[0]!;
+    expect(mid.axes!.x).toBeCloseTo(50);
+    expect(Math.abs(mid.axes!.c)).toBeCloseTo(180);
+    expect(mid.axes!.a).toBeCloseTo(0);
+  });
+
+  it("draws the robot without TCP before the first state", () => {
+    const [idle] = buildScene(config(cartesianConfig()), [], 0).cartesians;
+    expect(idle!.tcp).toBeNull();
+    expect(idle!.axes).toBeNull();
+    expect(idle!.parts.map((p) => p.key)).toEqual(["rail left", "rail right", "bridge", "carriage", "column", "head"]);
   });
 });
 
