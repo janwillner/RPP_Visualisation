@@ -3,12 +3,21 @@ import { createInterface } from "node:readline";
 import { SymbolNotFoundError, type SymbolAccess } from "./symbol-access";
 
 export interface AdsBridgeOptions {
-  /** Path to the built AdsBridge.dll (apps/ads-bridge). */
+  /** The self-contained AdsBridge.exe (packaged) or the built AdsBridge.dll (apps/ads-bridge, run through `dotnet`). */
   bridgePath: string;
   targetAmsNetId: string;
   targetAdsPort: number;
-  /** Command used to run the bridge; defaults to `dotnet`. */
+  /** Command used to run a bridge dll; defaults to `dotnet`. */
   dotnet?: string;
+}
+
+/** The command line that starts the bridge: an exe runs directly, a dll through `dotnet`. */
+export function bridgeLaunch(options: AdsBridgeOptions): { command: string; args: string[] } {
+  const { bridgePath, targetAmsNetId, targetAdsPort, dotnet = "dotnet" } = options;
+  const target = ["--ams-net-id", targetAmsNetId, "--ads-port", String(targetAdsPort)];
+  return bridgePath.toLowerCase().endsWith(".exe")
+    ? { command: bridgePath, args: target }
+    : { command: dotnet, args: [bridgePath, ...target] };
 }
 
 interface Response {
@@ -62,8 +71,8 @@ export class AdsBridgeSymbolAccess implements SymbolAccess {
 
   private ensureChild(): ChildProcessWithoutNullStreams {
     if (this.child && this.child.exitCode === null) return this.child;
-    const { bridgePath, targetAmsNetId, targetAdsPort, dotnet = "dotnet" } = this.options;
-    const child = spawn(dotnet, [bridgePath, "--ams-net-id", targetAmsNetId, "--ads-port", String(targetAdsPort)], {
+    const { command, args } = bridgeLaunch(this.options);
+    const child = spawn(command, args, {
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
@@ -85,7 +94,7 @@ export class AdsBridgeSymbolAccess implements SymbolAccess {
       this.pending.clear();
       if (this.child === child) this.child = undefined;
     };
-    child.on("error", (e) => fail(`ADS bridge could not start (${dotnet} ${bridgePath}): ${e.message}`));
+    child.on("error", (e) => fail(`ADS bridge could not start (${[command, ...args].join(" ")}): ${e.message}`));
     child.on("exit", (code) => fail(`ADS bridge exited with code ${code}${stderr ? `: ${stderr.trim()}` : ""}`));
     this.child = child;
     return child;

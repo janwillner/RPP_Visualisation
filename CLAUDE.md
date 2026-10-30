@@ -16,7 +16,8 @@ pnpm monorepo (pnpm 12 via corepack; prefix with `corepack` if `pnpm` is not on 
 - `pnpm dev:gateway`: gateway with the simulator on :8080
 - `pnpm dev:web`: Vite dev server that proxies `/ws` to the gateway (override with `GATEWAY_URL`)
 - `pnpm build`: builds `apps/web/dist`. `pnpm build:bridge`: builds the .NET ADS bridge (`apps/ads-bridge`, needs the .NET 9 SDK).
-- `pnpm start -- --driver ads --ams-net-id <id>` serves the built app plus the WebSocket on one port (`--help` lists the options).
+- `pnpm start -- --driver ads --ams-net-id <id>` serves the built app plus the WebSocket on one port (`--help` lists the options; `--config <file>` reads them from JSON, flags win).
+- `pnpm package`: builds the self-contained Windows package for IPCs, `dist/rpp-visualisation-<version>-win-x64.zip` (Windows, .NET SDK). Deployment: `docs/deployment.md`, ADR 0004; install scripts in `deploy/windows/`.
 
 ## Architecture
 
@@ -26,7 +27,7 @@ A read-only web visualisation of packaging machines. It configures itself from w
 - `apps/gateway`: Node + TypeScript, run with tsx.
   - `createGateway` does discovery (manifest at `GVL_Visu.stManifest` → protocol version check → type check per entry → read `stConfig`) and cyclic sum-reads of every `stState` together with `nConfigVersion`. It emits `status` / `config` / `state` messages.
   - **Seam:** `SymbolAccess` (read / typeOf / sumRead). Adapters:
-    - `AdsBridgeSymbolAccess` (`--driver ads`, default for real PLCs): spawns `apps/ads-bridge`, a small C# process using Beckhoff's official `TwinCAT.Ads` library. It talks to the local AMS router like any TwinCAT app, so no route or AMS TCP loopback is needed. One JSON request/response per line on stdin/stdout; the bridge converts raw PLC memory to JSON from the type information (64-bit integers as strings).
+    - `AdsBridgeSymbolAccess` (`--driver ads`, default for real PLCs): spawns `apps/ads-bridge` (the self-contained `AdsBridge.exe` when packaged, else the dll through `dotnet`; see `bridgeLaunch`), a small C# process using Beckhoff's official `TwinCAT.Ads` library. It talks to the local AMS router like any TwinCAT app, so no route or AMS TCP loopback is needed. One JSON request/response per line on stdin/stdout; the bridge converts raw PLC memory to JSON from the type information (64-bit integers as strings).
     - `AdsSymbolAccess` (`--driver ads-tcp`): pure TCP client (`ads-client`). Needs a static route or AMS TCP loopback, which the TwinCAT 4026 user-mode runtime does not provide out of the box.
     - `InMemoryPlc`: tests and the simulator.
   - The simulator is just an `InMemoryPlc` preset that changes values on every `step`, so it runs through real discovery.
@@ -35,7 +36,7 @@ A read-only web visualisation of packaging machines. It configures itself from w
   - **Seam:** `buildScene(config, snapshots, renderTime)` in `src/scene/scene-model.ts` is pure. It does interpolation by `tRel`, latch + belt product positions, the product display lifecycle (normal / atTcp / placeholder / missed), Delta arms from the TCP (inverse kinematics), XTS gantry and loop movers (loop curves as semicircles) and products carried by movers, zones and working areas, the measure-mode snap points and component origins, and MCS → renderer conversion (`(x, y, z)mm → (x, z, −y)m`).
   - `SceneView.tsx` only draws the model and updates transforms per frame via refs. React re-renders only when the set of objects changes.
   - `connection.ts` buffers snapshots and renders `RENDER_DELAY_MS` behind the newest one.
-- Tests live only at the two seams: gateway tests drive an `InMemoryPlc` and assert on emitted messages; web tests call `buildScene`. Rendering is not tested.
+- Tests live only at the seams: gateway tests drive an `InMemoryPlc` and assert on emitted messages; web tests call `buildScene`. Two small gateway seams for deployment are tested too: `resolveGatewayOptions` (flags, config file, default paths packaged vs. repo) and `bridgeLaunch` (exe vs. dll). Rendering is not tested; the package is checked by a smoke run.
 
 ## Agent skills
 

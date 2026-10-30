@@ -9,5 +9,6 @@ The gateway reads the PLC through `apps/ads-bridge`, a small .NET process using 
 
 ## Consequences
 
+- ADR 0004 removes the separate .NET installation: the bridge ships as a self-contained exe.
 - `ads-client` stays available as `--driver ads-tcp` for reading a PLC from another computer that has a route anyway.
 - The bridge converts raw PLC memory to JSON from the symbol's type information; 64-bit integers are sent as decimal strings.

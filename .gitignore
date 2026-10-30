@@ -18,3 +18,6 @@ plc/**/.vs/
 # .NET ADS bridge build output
 apps/ads-bridge/bin/
 apps/ads-bridge/obj/
+
+# Packaging download cache
+.cache/

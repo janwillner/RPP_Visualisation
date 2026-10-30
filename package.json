@@ -1,5 +1,6 @@
 {
   "name": "rpp-visualisation",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.16.1",
@@ -11,9 +12,11 @@
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:bridge": "dotnet build apps/ads-bridge -c Release"
+    "build:bridge": "dotnet build apps/ads-bridge -c Release",
+    "package": "node scripts/package.mjs"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   }
