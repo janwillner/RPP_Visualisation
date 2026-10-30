@@ -1,0 +1,171 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="FB_VisuDelta" Id="{e1281368-944b-4e78-bd44-ba383f275f6e}" SpecialFunc="None">
+    <Declaration><![CDATA[(* One visualised Delta robot. Typical cycle:
+     fbDelta.Register(GVL_Visu.stManifest, 10, 'Delta 1', 'MAIN.fbDelta.stVisu');
+     fbDelta.Configure(stBasePose, fBaseRadius := 200, fEffectorRadius := 50,
+         fUpperArmLength := 400, fLowerArmLength := 1000, bHasRotationAxis := TRUE);
+     fbDelta.SetWorkingArea(fRadius := 750, fZMin := -1300, fZMax := -700, fConeHeight := 200, fConeBottomRadius := 450);
+     fbDelta.SetZone(nConveyorId := 1, eKind := E_VisuZoneKind.PICK, fStart := 1100, fEnd := 1900);
+     fbDelta.SetTcp(stActualTcp, stSetpointTcp);
+   Only the TCP is reported; the visualisation derives the arms from it. The config methods may be called
+   every cycle; the config version only changes when a value does.
+   The gateway reads stVisu at the path given to Register. *)
+FUNCTION_BLOCK FB_VisuDelta EXTENDS FB_VisuComponent
+VAR
+	stVisu : ST_VisuDelta; // contract structure read by the gateway; do not write directly
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="ApplyConfig" Id="{6730ad9a-4c2b-4aa9-bcb3-90fb8552c0db}">
+      <Declaration><![CDATA[(* Takes over stNew and increments the config version if it differs from the current config. TRUE if changed. *)
+METHOD PRIVATE ApplyConfig : BOOL
+VAR_IN_OUT
+	stNew : ST_VisuDeltaConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[ApplyConfig := Tc2_System.MEMCMP(ADR(stNew), ADR(stVisu.stConfig), SIZEOF(stNew)) <> 0;
+IF ApplyConfig THEN
+	stVisu.stConfig := stNew;
+	NotifyConfigChanged();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="BasePose" Id="{abe82513-8091-43ea-abd0-ff41998cb632}">
+      <Declaration><![CDATA[(* Base pose last set by Configure, MCS. *)
+METHOD BasePose : ST_VisuPose]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[BasePose := stVisu.stConfig.stPose;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ClearZones" Id="{6ff1225f-1d85-4f13-8940-d18523272309}">
+      <Declaration><![CDATA[(* Removes all pick and place zones. TRUE if there were any. *)
+METHOD ClearZones : BOOL
+VAR
+	stNew : ST_VisuDeltaConfig;
+	stEmpty : ST_VisuZone;
+	nIndex : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[stNew := stVisu.stConfig;
+FOR nIndex := 0 TO GVL_VisuParam.nMaxZones - 1 DO
+	stNew.aZones[nIndex] := stEmpty;
+END_FOR
+stNew.nZoneCount := 0;
+ClearZones := ApplyConfig(stNew);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ComponentType" Id="{f964395e-f23a-461d-9fef-fcb546485570}">
+      <Declaration><![CDATA[METHOD PROTECTED ComponentType : E_VisuComponentType]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[ComponentType := E_VisuComponentType.DELTA;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="Configure" Id="{a7d33ff7-a72b-41ce-8527-1ba3c323ca37}">
+      <Declaration><![CDATA[(* Sets base pose and geometry. Arm 1 lies along the base's local +X; arms 2 and 3 follow
+   counter-clockwise (seen from above) at 120 deg each. TRUE if anything changed. *)
+METHOD Configure : BOOL
+VAR_INPUT
+	stPose : ST_VisuPose; // MCS, base centre
+	fBaseRadius : LREAL; // mm, base centre to shoulder joint
+	fEffectorRadius : LREAL; // mm, effector centre to lower-arm joint
+	fUpperArmLength : LREAL; // mm
+	fLowerArmLength : LREAL; // mm
+	bHasRotationAxis : BOOL; // 4th axis: the effector is drawn rotated by the TCP's fRz
+END_VAR
+VAR
+	stNew : ST_VisuDeltaConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[stNew := stVisu.stConfig;
+stNew.stPose := stPose;
+stNew.fBaseRadius := fBaseRadius;
+stNew.fEffectorRadius := fEffectorRadius;
+stNew.fUpperArmLength := fUpperArmLength;
+stNew.fLowerArmLength := fLowerArmLength;
+stNew.bHasRotationAxis := bHasRotationAxis;
+Configure := ApplyConfig(stNew);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetTcp" Id="{9bcdd9c9-b2e8-4d5b-b773-17645ba273ae}">
+      <Declaration><![CDATA[(* Reports the robot's TCP. Call once per cycle; it also stamps the state with the cycle's DC time. *)
+METHOD SetTcp : BOOL
+VAR_INPUT
+	stActualTcp : ST_VisuPlanarPose; // MCS, effector centre
+	stSetpointTcp : ST_VisuPlanarPose; // MCS
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[stVisu.stState.stActualTcp := stActualTcp;
+stVisu.stState.stSetpointTcp := stSetpointTcp;
+stVisu.stState.nTimestamp := DcTime();
+SetTcp := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetWorkingArea" Id="{bb5cfbaf-3153-41b4-a318-c3314c8b16f5}">
+      <Declaration><![CDATA[(* Sets the working area: a vertical cylinder in the robot frame with an optional cone below. TRUE if changed. *)
+METHOD SetWorkingArea : BOOL
+VAR_INPUT
+	fRadius : LREAL; // mm
+	fZMin : LREAL; // mm relative to the base (below the base: negative)
+	fZMax : LREAL; // mm relative to the base
+	fConeHeight : LREAL; // mm below fZMin; 0 = no cone
+	fConeBottomRadius : LREAL; // mm
+END_VAR
+VAR
+	stNew : ST_VisuDeltaConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[stNew := stVisu.stConfig;
+stNew.stWorkingArea.fRadius := fRadius;
+stNew.stWorkingArea.fZMin := fZMin;
+stNew.stWorkingArea.fZMax := fZMax;
+stNew.stWorkingArea.fConeHeight := fConeHeight;
+stNew.stWorkingArea.fConeBottomRadius := fConeBottomRadius;
+SetWorkingArea := ApplyConfig(stNew);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetZone" Id="{21fefdd8-a630-49c2-81dd-caaaf10ffbac}">
+      <Declaration><![CDATA[(* Adds a pick or place zone, or updates the one for the same conveyor and kind.
+   FALSE for nConveyorId = 0 or a full list. *)
+METHOD SetZone : BOOL
+VAR_INPUT
+	nConveyorId : UDINT; // manifest id of the conveyor
+	eKind : E_VisuZoneKind;
+	fStart : LREAL; // mm along the conveyor from its start (belt coordinates, not MCS)
+	fEnd : LREAL; // mm along the conveyor from its start
+END_VAR
+VAR
+	stNew : ST_VisuDeltaConfig;
+	nIndex : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[SetZone := FALSE;
+IF nConveyorId = 0 THEN
+	RETURN;
+END_IF
+stNew := stVisu.stConfig;
+nIndex := 0;
+// ST evaluates both operands of AND: test the index before reading the array.
+WHILE nIndex < stNew.nZoneCount DO
+	IF stNew.aZones[nIndex].nConveyorId = nConveyorId AND stNew.aZones[nIndex].eKind = eKind THEN
+		EXIT;
+	END_IF
+	nIndex := nIndex + 1;
+END_WHILE
+IF nIndex >= GVL_VisuParam.nMaxZones THEN
+	RETURN;
+END_IF
+IF nIndex = stNew.nZoneCount THEN
+	stNew.nZoneCount := stNew.nZoneCount + 1;
+END_IF
+stNew.aZones[nIndex].nConveyorId := nConveyorId;
+stNew.aZones[nIndex].eKind := eKind;
+stNew.aZones[nIndex].fStart := fStart;
+stNew.aZones[nIndex].fEnd := fEnd;
+ApplyConfig(stNew);
+SetZone := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

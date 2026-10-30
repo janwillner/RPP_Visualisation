@@ -8,7 +8,9 @@ TYPE E_VisuComponentType :
 	(* Values are part of the gateway contract: append, never renumber. *)
 	NONE := 0,
 	CONVEYOR := 1,
-	DELTA := 2
+	DELTA := 2,
+	XTS_GANTRY := 3,
+	XTS_LOOP := 4
 ) UINT;
 END_TYPE]]></Declaration>
   </DUT>

@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuXtsGantryConfig" Id="{c8acad2a-492e-4cce-85fd-045c31f861e2}">
+    <Declaration><![CDATA[TYPE ST_VisuXtsGantryConfig :
+STRUCT
+	(* Straight XTS track of equal modules, carried by a common Z axis; every mover carries an X axis with a
+	   rotating (C) gripper. Local frame: origin at the track start on top of the movers with Z = 0; the track runs
+	   along local +Y, the X axes along local +X, the Z axis along local +Z (up). *)
+	stPose : ST_VisuPose; // MCS
+	nModuleCount : UINT; // track modules in a row
+	fModuleLength : LREAL; // mm, length of one module
+	fXMin : LREAL; // mm, X stroke
+	fXMax : LREAL; // mm
+	fZMin : LREAL; // mm, Z stroke
+	fZMax : LREAL; // mm
+	fCMin : LREAL; // degrees, C range
+	fCMax : LREAL; // degrees
+	fToolOffsetX : LREAL; // mm, gripper tip ahead of the X axis zero along local +X
+	fToolOffsetZ : LREAL; // mm, gripper tip relative to the mover top (below: negative)
+	fMoverLength : LREAL; // mm, along the track
+	fMoverWidth : LREAL; // mm
+	nZoneCount : UINT;
+	aZones : ARRAY[0..GVL_VisuParam.nMaxZones - 1] OF ST_VisuZone; // pick and place zones
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

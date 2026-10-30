@@ -12,9 +12,9 @@ STRUCT
 	fUpperArmLength : LREAL; // mm
 	fLowerArmLength : LREAL; // mm
 	bHasRotationAxis : BOOL; // 4th axis: the effector is drawn rotated by the TCP's fRz
-	stWorkArea : ST_VisuWorkArea;
-	nWindowCount : UINT;
-	aWindows : ARRAY[0..GVL_VisuParam.nMaxWindows - 1] OF ST_VisuWindow;
+	stWorkingArea : ST_VisuWorkingArea;
+	nZoneCount : UINT;
+	aZones : ARRAY[0..GVL_VisuParam.nMaxZones - 1] OF ST_VisuZone; // pick and place zones
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

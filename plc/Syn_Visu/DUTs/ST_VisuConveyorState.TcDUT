@@ -3,8 +3,8 @@
   <DUT Name="ST_VisuConveyorState" Id="{8bcd356f-4d63-47a7-a327-a94cf9a0ff2e}">
     <Declaration><![CDATA[TYPE ST_VisuConveyorState :
 STRUCT
-	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (see F_VisuDcTime)
-	fEncoder : LREAL; // continuous belt surface position, mm, no modulo (see FB_VisuContinuousEncoder)
+	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (set by FB_VisuConveyor)
+	fBeltPosition : LREAL; // continuous belt surface position, mm, no modulo (see FB_VisuConveyor.SetModuloBeltPosition)
 	nProductCount : UINT; // entries [0..nProductCount-1] are evaluated
 	aProducts : ARRAY[0..GVL_VisuParam.nMaxProducts - 1] OF ST_VisuProduct;
 END_STRUCT

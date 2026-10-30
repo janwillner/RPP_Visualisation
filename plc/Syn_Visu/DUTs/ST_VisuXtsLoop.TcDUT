@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuXtsLoop" Id="{b772884f-7335-4b6f-9d5e-b7296aeff97a}">
+    <Declaration><![CDATA[TYPE ST_VisuXtsLoop :
+STRUCT
+	(* One visualised XTS loop (e.g. Fxx). Register the instance's symbol path in the manifest with
+	   eType := E_VisuComponentType.XTS_LOOP. *)
+	stConfig : ST_VisuXtsLoopConfig; // read at discovery and after nConfigVersion changes
+	stState : ST_VisuXtsLoopState; // read every gateway cycle
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

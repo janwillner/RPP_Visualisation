@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuXtsLoopState" Id="{4b93e942-c04d-4fb0-b5d8-af292e3f82d4}">
+    <Declaration><![CDATA[TYPE ST_VisuXtsLoopState :
+STRUCT
+	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (set by FB_VisuXtsLoop)
+	nMoverCount : UINT; // entries [0..nMoverCount-1] are evaluated
+	aMovers : ARRAY[0..GVL_VisuParam.nMaxMovers - 1] OF ST_VisuLoopMover;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuLoopMover" Id="{8151884f-2382-4790-8709-2c76349c6e2f}">
+    <Declaration><![CDATA[TYPE ST_VisuLoopMover :
+STRUCT
+	nId : UDINT; // unique within the loop, > 0; referenced by a carried product's nMoverId
+	bValid : BOOL; // invalid entries are not shown
+	fPosition : LREAL; // mm along the loop from the start of the lower straight, in the conveying direction
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

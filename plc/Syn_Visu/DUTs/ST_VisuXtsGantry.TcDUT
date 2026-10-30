@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuXtsGantry" Id="{4b6fcae5-7e81-4610-9da1-6ce7c703ab41}">
+    <Declaration><![CDATA[TYPE ST_VisuXtsGantry :
+STRUCT
+	(* One visualised XTS gantry (e.g. IDH). Register the instance's symbol path in the manifest with
+	   eType := E_VisuComponentType.XTS_GANTRY. *)
+	stConfig : ST_VisuXtsGantryConfig; // read at discovery and after nConfigVersion changes
+	stState : ST_VisuXtsGantryState; // read every gateway cycle
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -7,7 +7,8 @@ VAR_GLOBAL CONSTANT
 	nMaxManifestEntries : UINT := 32;
 	nMaxProducts : UINT := 128;
 	nMaxProductTypes : UINT := 8;
-	nMaxWindows : UINT := 8;
+	nMaxZones : UINT := 8;
+	nMaxMovers : UINT := 40; // per XTS gantry or loop
 END_VAR]]></Declaration>
   </GVL>
 </TcPlcObject>

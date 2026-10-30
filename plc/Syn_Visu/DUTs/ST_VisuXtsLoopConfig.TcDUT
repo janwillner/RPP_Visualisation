@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuXtsLoopConfig" Id="{2c040c9d-8608-4a3d-a9ac-0693e5ee6642}">
+    <Declaration><![CDATA[TYPE ST_VisuXtsLoopConfig :
+STRUCT
+	(* Closed XTS loop: two straights joined by two 180 deg curves (drawn as semicircles), standing in the local X-Z
+	   plane. Local frame: origin at the start of the lower straight, which runs along local +X in the conveying
+	   direction; the upper straight lies at +2 * fCurveRadius in Z. *)
+	stPose : ST_VisuPose; // MCS
+	fStraightLength : LREAL; // mm
+	fCurveRadius : LREAL; // mm
+	fToolOffset : LREAL; // mm, tool point of a mover outwards from the track
+	fMoverLength : LREAL; // mm, along the track
+	fMoverWidth : LREAL; // mm
+	nZoneCount : UINT;
+	aZones : ARRAY[0..GVL_VisuParam.nMaxZones - 1] OF ST_VisuZone; // pick and place zones
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

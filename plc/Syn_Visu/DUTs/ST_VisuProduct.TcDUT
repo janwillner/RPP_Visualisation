@@ -6,9 +6,10 @@ STRUCT
 	nId : UDINT;
 	bValid : BOOL; // invalid entries are not shown
 	stLatchPose : ST_VisuPlanarPose; // MCS, bottom centre of the product at latch time
-	fLatchEncoder : LREAL; // conveyor fEncoder at latch time, mm
+	fLatchBeltPosition : LREAL; // conveyor fBeltPosition at latch time, mm
 	eState : E_VisuProductState;
 	nRobotId : UDINT; // manifest id of the assigned robot, 0 = none
+	nMoverId : UDINT; // mover of an XTS gantry or loop carrying the product, 0 = none
 	nProductType : UDINT; // id in the conveyor's aProductTypes
 END_STRUCT
 END_TYPE]]></Declaration>

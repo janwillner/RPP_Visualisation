@@ -3,7 +3,7 @@
   <DUT Name="ST_VisuDeltaState" Id="{b9749b2c-cc76-421c-8b8d-a8b13fe1247b}">
     <Declaration><![CDATA[TYPE ST_VisuDeltaState :
 STRUCT
-	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (see F_VisuDcTime)
+	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (set by FB_VisuDelta.SetTcp)
 	stActualTcp : ST_VisuPlanarPose; // MCS, effector centre; the visualisation derives the arms from it
 	stSetpointTcp : ST_VisuPlanarPose; // MCS
 END_STRUCT
