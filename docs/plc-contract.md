@@ -1,4 +1,4 @@
-# PLC contract (library `Syn_Visu`, protocol version 2)
+# PLC contract (library `Syn_Visu`, protocol version 4)
 
 This is the PLC side of the contract the gateway reads. It is implemented by the TwinCAT library project in
 `plc/Syn_Visu` (solution `plc/ProductConfigurator.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
@@ -9,36 +9,113 @@ and the gateway maps it to the neutral model in `packages/protocol`. Change all 
 
 - MCS: mm and degrees, right-handed, Z up, X in product flow direction.
 - Pose rotation order: R = Rz(fRz) · Ry(fRy) · Rx(fRx).
-- `nTimestamp`: distributed-clock time in ns since 2000-01-01 (`F_VisuDcTime()`) of the cycle that wrote the state.
-- Cross-references (`nRobotId`, `nConveyorId`) use manifest `nId` values, never symbol paths.
-- `fEncoder` is a continuous position in mm (no modulo). Use `FB_VisuContinuousEncoder` for modulo axes.
+- `nTimestamp`: distributed-clock time in ns since 2000-01-01 of the cycle that wrote the state. The component FBs set it.
+- Cross-references (`nRobotId`, `nConveyorId`) use manifest `nId` values, never symbol paths; `nMoverId` uses the mover ids an XTS gantry or loop reports.
+- `fBeltPosition` is a continuous position in mm (no modulo). For modulo axes use `FB_VisuConveyor.SetModuloBeltPosition`.
 - Product latch pose = bottom centre of the product on the belt surface when it was latched.
 - Delta: the PLC reports only the **TCP** (effector centre) in the MCS. The visualisation derives the arm posture by
   inverse kinematics from the configured geometry: arm 1 lies along the base's local +X, arms 2 and 3 follow
   counter-clockwise (seen from above) at 120°; 0° = upper arm horizontal, positive = downward. With
   `bHasRotationAxis` the effector is drawn rotated by the TCP's `fRz`.
+- XTS gantry (e.g. IDH): local frame at the track start on top of the movers with Z = 0; the track runs along local +Y,
+  each mover's X axis along local +X, the common Z axis along local +Z. Gripper TCP of a mover in the local frame:
+  (X + `fToolOffsetX`, position, Z + `fToolOffsetZ`), turned about local +Z by C (C = 0 along local +X, positive
+  counter-clockwise from above). Only actual values are reported.
+- XTS loop (e.g. Fxx): local frame at the start of the lower straight, which runs along local +X; the loop stands in the
+  local X-Z plane with the upper straight at +2R. Mover positions run from there in the conveying direction over the far
+  curve and back along the upper straight (0..2L + 2πR). The curves are drawn as semicircles. A mover's tool point lies
+  `fToolOffset` outwards from the track.
+- A product in state PICKED with `nRobotId` = an XTS gantry or loop and `nMoverId` = one of its movers is drawn at that
+  mover's gripper / tool point; with `nMoverId` = 0 it hangs at a Delta's TCP.
 - Protocol version 2 removed the Delta axis positions (`aAxisPositions`) and axis calibration (`aAxes`) of version 1.
+- Protocol version 3 renamed `stWorkArea` to `stWorkingArea` and the windows (`nWindowCount`, `aWindows`, `ST_VisuWindow`, `E_VisuWindowKind`) to zones (`nZoneCount`, `aZones`, `ST_VisuZone`, `E_VisuZoneKind`).
+- Protocol version 4 added the XTS gantry and XTS loop and the product's `nMoverId`, and renamed `fEncoder` to `fBeltPosition` and `fLatchEncoder` to `fLatchBeltPosition`.
 
 ## What the library contains
 
+Applications use the component function blocks. The structures underneath are the contract the gateway reads;
+the FBs fill them, so application code does not write them directly.
+
 | Object | Purpose |
 | --- | --- |
+| `FB_VisuConveyor` | One conveyor with its product register (methods below) |
+| `FB_VisuDelta` | One Delta robot (methods below) |
+| `FB_VisuXtsGantry` | One XTS gantry, e.g. IDH (methods below) |
+| `FB_VisuXtsLoop` | One XTS loop, e.g. Fxx (methods below) |
+| `FB_VisuComponent` | Abstract base of all: `Register`, `Id`, config version and DC timestamps |
 | `ST_VisuManifest`, `ST_VisuManifestEntry`, `E_VisuComponentType` | Discovery: which components exist and where |
-| `ST_VisuConveyor` (`stConfig` / `stState`), `ST_VisuProduct`, `ST_VisuProductType`, `E_VisuProductState` | Conveyor with product register |
-| `ST_VisuDelta` (`stConfig`: geometry, work area, windows / `stState`: actual and setpoint TCP), `ST_VisuWorkArea`, `ST_VisuWindow`, `E_VisuWindowKind` | Delta robot, work area, pick/place windows |
+| `ST_VisuConveyor` (`stConfig` / `stState`), `ST_VisuProduct`, `ST_VisuProductType`, `E_VisuProductState` | Conveyor contract structure (`FB_VisuConveyor.stVisu`) |
+| `ST_VisuDelta` (`stConfig`: geometry, working area, zones / `stState`: actual and setpoint TCP), `ST_VisuWorkingArea`, `ST_VisuZone`, `E_VisuZoneKind` | Delta contract structure (`FB_VisuDelta.stVisu`) |
+| `ST_VisuXtsGantry` (`stConfig`: track, strokes, gripper offsets, mover size, zones / `stState`: Z and movers), `ST_VisuGantryMover` | XTS gantry contract structure (`FB_VisuXtsGantry.stVisu`) |
+| `ST_VisuXtsLoop` (`stConfig`: straight length, curve radius, tool offset, mover size, zones / `stState`: movers), `ST_VisuLoopMover` | XTS loop contract structure (`FB_VisuXtsLoop.stVisu`) |
 | `ST_VisuPose`, `ST_VisuPlanarPose` | MCS poses |
-| `GVL_VisuConstants.nProtocolVersion` | Contract version; `ST_VisuManifest` initialises to it |
-| `GVL_VisuParam` | Array sizes: `nMaxManifestEntries` (32), `nMaxProducts` (128), `nMaxProductTypes` (8), `nMaxWindows` (8) |
-| `F_VisuAddComponent` | Registers a component in the manifest and bumps `nConfigVersion`; idempotent, safe to call every cycle. Also keeps `nProtocolVersion` at the running library's version (survives online changes) |
-| `F_VisuDcTime` | DC time of the current task cycle, for `nTimestamp` |
-| `FB_VisuContinuousEncoder` | Modulo axis position → continuous `fEncoder` |
-| `F_GetVersionSyn_Visu` | Library version at runtime |
+| `GVL_VisuConstants` | `nProtocolVersion` (contract version; `ST_VisuManifest` initialises to it), `fDegToRad` |
+| `GVL_VisuParam` | Array sizes: `nMaxManifestEntries` (32), `nMaxProducts` (128), `nMaxProductTypes` (8), `nMaxZones` (8), `nMaxMovers` (40) |
+| `F_GetVersionSyn_Visu` | Library version at runtime (2.0.0) |
+
+### Methods
+
+All component FBs:
+
+| Method | Purpose |
+| --- | --- |
+| `Register(stManifest, nId, sName, sPath)` | Adds the component to the manifest (bumps `nConfigVersion` when new). `sPath` is the symbol path of the instance's `stVisu`. Idempotent: call it every cycle, which also keeps `nProtocolVersion` current and the manifest reference valid after an online change |
+| `Id()` | Manifest id given to `Register`, 0 before |
+
+All configuration methods may be called every cycle: they bump `nConfigVersion` only when a value actually changes,
+and return TRUE in that case.
+
+`FB_VisuConveyor`:
+
+| Method | Purpose |
+| --- | --- |
+| `Configure(stPose, fLength, fWidth)` | Pose of the belt start and size |
+| `SetProductType(nId, fLength, fWidth, fHeight)` | Adds or updates a product type |
+| `SetBeltPosition(fPosition)` | Belt position (continuous, mm) and state timestamp; call once per cycle |
+| `SetModuloBeltPosition(fModuloPosition, fModuloPeriod, bReset)` | Same for a modulo axis; unwraps to a continuous position |
+| `LatchProduct(nId, stLatchPose, nProductType)` | Adds a detected product at the current belt position (or at `fLatchBeltPosition` with `bUseLatchBeltPosition`) |
+| `SetProductState(nId, eState, nRobotId, nMoverId := 0)` | Changes state, assigned robot and carrying mover |
+| `RemoveProduct(nId)` | Removes one product |
+| `RemoveProductsBeyond(fBeltX)` | Drops invalid entries and products beyond `fBeltX` mm along the belt; keeps ASSIGNED and PICKED ones |
+| `ProductCount()`, `GetProduct(nIndex, stProduct =>, stPose =>)`, `FindProduct(nId)` | Read the register; `stPose` is the product's current MCS pose |
+| `BeltPosition()` | Belt position last set |
+
+`FB_VisuDelta`:
+
+| Method | Purpose |
+| --- | --- |
+| `Configure(stPose, fBaseRadius, fEffectorRadius, fUpperArmLength, fLowerArmLength, bHasRotationAxis)` | Base pose and geometry |
+| `SetWorkingArea(fRadius, fZMin, fZMax, fConeHeight, fConeBottomRadius)` | Working area |
+| `SetZone(nConveyorId, eKind, fStart, fEnd)` | Adds or updates the pick or place zone for a conveyor |
+| `ClearZones()` | Removes all zones |
+| `SetTcp(stActualTcp, stSetpointTcp)` | Reports the TCP and the state timestamp; call once per cycle |
+| `BasePose()` | Base pose last configured |
+
+`FB_VisuXtsGantry`:
+
+| Method | Purpose |
+| --- | --- |
+| `Configure(stPose, nModuleCount, fModuleLength, fXMin, fXMax, fZMin, fZMax, fCMin, fCMax, fToolOffsetX, fToolOffsetZ, fMoverLength, fMoverWidth)` | Pose, track, strokes, gripper offsets, mover size |
+| `SetZone(...)`, `ClearZones()` | As for the Delta |
+| `SetZPosition(fZ)` | Common Z axis and state timestamp; call once per cycle |
+| `SetMoverCount(nCount)` | Number of mover entries evaluated; entries beyond are invalidated |
+| `SetMover(nIndex, nId, fPosition, fX, fC, bGripperActive)` | One mover's actual values |
+
+`FB_VisuXtsLoop`:
+
+| Method | Purpose |
+| --- | --- |
+| `Configure(stPose, fStraightLength, fCurveRadius, fToolOffset, fMoverLength, fMoverWidth)` | Pose, track geometry, tool offset, mover size |
+| `SetZone(...)`, `ClearZones()` | As for the Delta |
+| `SetMoverCount(nCount)` | Number of mover entries evaluated; entries beyond are invalidated |
+| `SetMover(nIndex, nId, fPosition)` | One mover's position along the loop |
+| `Perimeter()` | Loop length as the visualisation computes it, mm |
 
 ## Using it in an application
 
-The manifest is **declared by the application**, not the library. That keeps the ADS symbol path the gateway reads
-fixed at `GVL_Visu.stManifest`, whatever namespace the library gets. Component instances can live anywhere; their
-symbol path goes into the manifest.
+The manifest is **declared by the application**, not the library (ADR-0003). That keeps the ADS symbol path the gateway
+reads fixed at `GVL_Visu.stManifest`, whatever namespace the library gets. Component instances can live anywhere; the
+symbol path of their `stVisu` goes into the manifest.
 
 ```st
 {attribute 'qualified_only'}
@@ -51,31 +128,34 @@ END_VAR
 ```st
 PROGRAM MAIN
 VAR
-    stInfeed    : Syn_Visu.ST_VisuConveyor;
-    stDelta1    : Syn_Visu.ST_VisuDelta;
-    fbInfeedEnc : Syn_Visu.FB_VisuContinuousEncoder;
-    nNow        : ULINT;
+    fbInfeed : Syn_Visu.FB_VisuConveyor;
+    fbDelta1 : Syn_Visu.FB_VisuDelta;
 END_VAR
 
-Syn_Visu.F_VisuAddComponent(stManifest := GVL_Visu.stManifest, nId := 1,
-    eType := Syn_Visu.E_VisuComponentType.CONVEYOR, sName := 'Infeed', sPath := 'MAIN.stInfeed');
-Syn_Visu.F_VisuAddComponent(stManifest := GVL_Visu.stManifest, nId := 10,
-    eType := Syn_Visu.E_VisuComponentType.DELTA, sName := 'Delta 1', sPath := 'MAIN.stDelta1');
+fbInfeed.Register(stManifest := GVL_Visu.stManifest, nId := 1, sName := 'Infeed', sPath := 'MAIN.fbInfeed.stVisu');
+fbDelta1.Register(stManifest := GVL_Visu.stManifest, nId := 10, sName := 'Delta 1', sPath := 'MAIN.fbDelta1.stVisu');
 
-nNow := Syn_Visu.F_VisuDcTime();
-fbInfeedEnc(fModuloPosition := <axis modulo position>, fModuloPeriod := <modulo period>);
-stInfeed.stState.nTimestamp := nNow;
-stInfeed.stState.fEncoder := fbInfeedEnc.fPosition;
-// ... fill stConfig once, the product register and stDelta1.stState every cycle.
-// After changing any stConfig at runtime: GVL_Visu.stManifest.nConfigVersion := GVL_Visu.stManifest.nConfigVersion + 1;
+fbInfeed.Configure(stPose := stInfeedPose, fLength := 5000, fWidth := 400);
+fbInfeed.SetProductType(nId := 1, fLength := 120, fWidth := 80, fHeight := 40);
+fbInfeed.SetModuloBeltPosition(fModuloPosition := <axis modulo position>, fModuloPeriod := <modulo period>, bReset := FALSE);
+IF bLatched THEN
+    fbInfeed.LatchProduct(nId := nNextId, stLatchPose := stLatchPose, nProductType := 1);
+END_IF
+
+fbDelta1.Configure(stPose := stDeltaBase, fBaseRadius := 200, fEffectorRadius := 50,
+    fUpperArmLength := 400, fLowerArmLength := 1000, bHasRotationAxis := TRUE);
+fbDelta1.SetZone(nConveyorId := fbInfeed.Id(), eKind := Syn_Visu.E_VisuZoneKind.PICK, fStart := 1100, fEnd := 1900);
+fbDelta1.SetTcp(stActualTcp := stTcp, stSetpointTcp := stTcpSetpoint);
 ```
+
+`P_VisuDemo` in the library project is a complete example, including an XTS loop and an XTS gantry.
 
 ## Discovery
 
 The gateway reads `GVL_Visu.stManifest` and refuses to continue when `nProtocolVersion` differs from its own; it keeps
 watching the version and recovers as soon as it matches. For each
-of the first `nCount` entries it checks that the symbol at `sPath` has the data type `ST_VisuConveyor` or `ST_VisuDelta`
-according to `eType`. Names qualified with the library namespace, such as `Syn_Visu.ST_VisuDelta`, are accepted too.
+of the first `nCount` entries it checks that the symbol at `sPath` has the data type `ST_VisuConveyor`, `ST_VisuDelta`,
+`ST_VisuXtsGantry` or `ST_VisuXtsLoop` according to `eType`. Names qualified with the library namespace, such as `Syn_Visu.ST_VisuDelta`, are accepted too.
 It then reads `<sPath>.stConfig` once. Every cycle it sum-reads `GVL_Visu.stManifest.nProtocolVersion`,
 `GVL_Visu.stManifest.nConfigVersion` and all `<sPath>.stState`, and rediscovers when either version changes.
 
@@ -83,8 +163,8 @@ It then reads `<sPath>.stConfig` once. Every cycle it sum-reads `GVL_Visu.stMani
 
 | Enum | Values |
 | --- | --- |
-| `E_VisuComponentType` (UINT) | `NONE` 0, `CONVEYOR` 1, `DELTA` 2 |
+| `E_VisuComponentType` (UINT) | `NONE` 0, `CONVEYOR` 1, `DELTA` 2, `XTS_GANTRY` 3, `XTS_LOOP` 4 |
 | `E_VisuProductState` (UINT) | `DETECTED` 0, `ASSIGNED` 1, `PICKED` 2, `REJECTED` 3, `PLACED` 4 |
-| `E_VisuWindowKind` (UINT) | `PICK` 1, `PLACE` 2 |
+| `E_VisuZoneKind` (UINT) | `PICK` 1, `PLACE` 2 |
 
 Values are part of the contract: append, never renumber.
