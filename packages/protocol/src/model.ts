@@ -9,7 +9,7 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 7;
 
 /** Full 6-DOF pose. Rotation order: R = Rz(rz) · Ry(ry) · Rx(rx). */
 export const PoseSchema = z.object({
@@ -22,7 +22,32 @@ export const PoseSchema = z.object({
 });
 export type Pose = z.infer<typeof PoseSchema>;
 
-/** Position plus rotation about Z, used for TCPs and product latch poses. */
+/** A point in the MCS, e.g. a Delta's TCP. */
+export const PositionSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  z: z.number(),
+});
+export type Position = z.infer<typeof PositionSchema>;
+
+/**
+ * One finger of a gripper: always a cylinder. Its frame's origin is the centre of its top face; it extends along its
+ * local −Z, and its grip point (where a carried product's top touches) is the centre of its bottom face.
+ */
+export const FingerSchema = z.object({
+  diameter: z.number(),
+  height: z.number(),
+});
+export type Finger = z.infer<typeof FingerSchema>;
+
+/** Live pose of a finger's frame, absolute in the MCS, and whether it grips. */
+export const FingerStateSchema = z.object({
+  pose: PoseSchema,
+  active: z.boolean(),
+});
+export type FingerState = z.infer<typeof FingerStateSchema>;
+
+/** Position plus rotation about Z, used for product latch poses. */
 export const PlanarPoseSchema = z.object({
   x: z.number(),
   y: z.number(),
@@ -66,6 +91,20 @@ export const WorkingAreaSchema = z.object({
 });
 export type WorkingArea = z.infer<typeof WorkingAreaSchema>;
 
+/**
+ * Axis-aligned box in the robot's frame (relative to the base centre, turned with the robot's pose) that further
+ * restricts the working area, e.g. so that neighbouring robots cannot collide.
+ */
+export const LimitAreaSchema = z.object({
+  xMin: z.number(),
+  xMax: z.number(),
+  yMin: z.number(),
+  yMax: z.number(),
+  zMin: z.number(),
+  zMax: z.number(),
+});
+export type LimitArea = z.infer<typeof LimitAreaSchema>;
+
 export const ZoneKindSchema = z.enum(["pick", "place"]);
 export type ZoneKind = z.infer<typeof ZoneKindSchema>;
 
@@ -75,6 +114,11 @@ export const ZoneSchema = z.object({
   start: z.number(),
   end: z.number(),
   kind: ZoneKindSchema,
+  /**
+   * Distance in mm before `end`, against the conveying direction: the robot may allocate products in the zone only
+   * up to `end − allocationOffset`. 0 means no allocation limit.
+   */
+  allocationOffset: z.number(),
 });
 export type Zone = z.infer<typeof ZoneSchema>;
 
@@ -89,15 +133,17 @@ export const DeltaConfigSchema = z.object({
   effectorRadius: z.number(),
   upperArmLength: z.number(),
   lowerArmLength: z.number(),
-  /** When true, the effector is drawn rotated by the TCP's rz (4th axis). */
-  hasRotationAxis: z.boolean(),
   workingArea: WorkingAreaSchema,
+  /** Null when the robot has no limit area. */
+  limitArea: LimitAreaSchema.nullable(),
   zones: z.array(ZoneSchema),
+  /** Gripper fingers; empty when the robot has no gripper definition. */
+  fingers: z.array(FingerSchema),
 });
 export type DeltaConfig = z.infer<typeof DeltaConfigSchema>;
 
 /**
- * Straight XTS track carried by a common Z axis; every mover carries an X axis with a rotating (C) gripper.
+ * Straight XTS track carried by a common Z axis; every mover carries an X axis with a gripper flange at its end.
  * Local frame: origin at the track start on top of the movers with Z = 0; track along +Y, X axes along +X, Z up.
  */
 export const XtsGantryConfigSchema = z.object({
@@ -113,14 +159,14 @@ export const XtsGantryConfigSchema = z.object({
   xMax: z.number(),
   zMin: z.number(),
   zMax: z.number(),
-  cMin: z.number(),
-  cMax: z.number(),
-  /** Gripper tip relative to the mover at X = 0: ahead along +X, and below the mover top (negative). */
+  /** Gripper flange relative to the mover at X = 0: ahead along +X, and below the mover top (negative). */
   toolOffsetX: z.number(),
   toolOffsetZ: z.number(),
   moverLength: z.number(),
   moverWidth: z.number(),
   zones: z.array(ZoneSchema),
+  /** Gripper fingers of every mover; empty when there is no gripper definition. */
+  fingers: z.array(FingerSchema),
 });
 export type XtsGantryConfig = z.infer<typeof XtsGantryConfigSchema>;
 
@@ -136,19 +182,20 @@ export const XtsLoopConfigSchema = z.object({
   pose: PoseSchema,
   straightLength: z.number(),
   curveRadius: z.number(),
-  /** Distance of a mover's tool point from the track, outwards. */
+  /** Distance of a mover's gripper flange (tool point) from the track, outwards. */
   toolOffset: z.number(),
   moverLength: z.number(),
   moverWidth: z.number(),
   zones: z.array(ZoneSchema),
+  /** Gripper fingers of every mover; empty when there is no gripper definition. */
+  fingers: z.array(FingerSchema),
 });
 export type XtsLoopConfig = z.infer<typeof XtsLoopConfigSchema>;
 
 /**
  * Cartesian robot: two fixed rails along local +Y at railHeight, a bridge travelling in Y, a carriage on it travelling
- * in X, a vertical column (Z) and a gripper head turning about C and tilting about A.
+ * in X and a vertical column (Z) ending at the gripper flange.
  * Local frame: origin at axis X = Y = 0, Z up; the flange is at (X, Y, Z).
- * TCP = flange + Rz(C) · Rx(A) · (0, 0, −toolLength).
  */
 export const CartesianConfigSchema = z.object({
   type: z.literal("cartesian"),
@@ -162,15 +209,11 @@ export const CartesianConfigSchema = z.object({
   yMax: z.number(),
   zMin: z.number(),
   zMax: z.number(),
-  cMin: z.number(),
-  cMax: z.number(),
-  aMin: z.number(),
-  aMax: z.number(),
-  /** Distance from the flange (A pivot) to the TCP. */
-  toolLength: z.number(),
   /** Height of the rails and the bridge above the local origin. */
   railHeight: z.number(),
   zones: z.array(ZoneSchema),
+  /** Gripper fingers; empty when the robot has no gripper definition. */
+  fingers: z.array(FingerSchema),
 });
 export type CartesianConfig = z.infer<typeof CartesianConfigSchema>;
 
@@ -197,6 +240,8 @@ export const ProductSchema = z.object({
   robotId: z.number().int(),
   /** Mover of an XTS gantry or loop that carries the product; 0 = none. */
   moverId: z.number().int(),
+  /** Gripper finger (1-based) the product hangs from while picked; 0 = the gripper flange. */
+  fingerId: z.number().int(),
   productType: z.number().int(),
 });
 export type Product = z.infer<typeof ProductSchema>;
@@ -216,9 +261,11 @@ export const DeltaStateSchema = z.object({
   type: z.literal("delta"),
   id: z.number().int(),
   timestamp: TimestampSchema,
-  /** Actual TCP (effector centre) in the MCS; the arms are derived from it by inverse kinematics. */
-  actualTcp: PlanarPoseSchema,
-  setpointTcp: PlanarPoseSchema,
+  /** Actual TCP (effector centre, the gripper flange) in the MCS; the arms are derived from it by inverse kinematics. */
+  actualTcp: PositionSchema,
+  setpointTcp: PositionSchema,
+  /** One per configured finger. */
+  fingers: z.array(FingerStateSchema),
 });
 export type DeltaState = z.infer<typeof DeltaStateSchema>;
 
@@ -228,9 +275,10 @@ export const GantryMoverSchema = z.object({
   position: z.number(),
   /** X axis on the mover. */
   x: z.number(),
-  /** Gripper rotation about local +Z, degrees; 0 = along local +X. */
-  c: z.number(),
+  /** Used only when no fingers are configured. */
   gripperActive: z.boolean(),
+  /** One per configured finger. */
+  fingers: z.array(FingerStateSchema),
 });
 export type GantryMover = z.infer<typeof GantryMoverSchema>;
 
@@ -249,6 +297,8 @@ export const LoopMoverSchema = z.object({
   id: z.number().int(),
   /** Along the loop from the start of the lower straight, in the conveying direction. */
   position: z.number(),
+  /** One per configured finger. */
+  fingers: z.array(FingerStateSchema),
 });
 export type LoopMover = z.infer<typeof LoopMoverSchema>;
 
@@ -265,13 +315,14 @@ export const CartesianStateSchema = z.object({
   type: z.literal("cartesian"),
   id: z.number().int(),
   timestamp: TimestampSchema,
-  /** Actual axis values in the local frame; C and A in degrees. */
+  /** Actual axis values in the local frame: the gripper flange. */
   x: z.number(),
   y: z.number(),
   z: z.number(),
-  c: z.number(),
-  a: z.number(),
+  /** Used only when no fingers are configured. */
   gripperActive: z.boolean(),
+  /** One per configured finger. */
+  fingers: z.array(FingerStateSchema),
 });
 export type CartesianState = z.infer<typeof CartesianStateSchema>;
 

@@ -9,7 +9,16 @@ import {
 } from "@rpp/protocol";
 import { createGateway } from "../src/gateway";
 import { InMemoryPlc } from "../src/in-memory-plc";
-import { cartesian, conveyor, defineMachine, delta, xtsGantry, xtsLoop, type MachineComponent } from "../src/plc-builders";
+import {
+  cartesian,
+  conveyor,
+  defineMachine,
+  delta,
+  fingerStates,
+  xtsGantry,
+  xtsLoop,
+  type MachineComponent,
+} from "../src/plc-builders";
 import {
   E_VisuProductState,
   E_VisuZoneKind,
@@ -139,11 +148,36 @@ describe("gateway discovery", () => {
         effectorRadius: 50,
         upperArmLength: 350,
         lowerArmLength: 800,
-        hasRotationAxis: false,
         workingArea: { radius: 600, zMin: -1100, zMax: -600, coneHeight: 0, coneBottomRadius: 0 },
-        zones: [{ conveyorId: 10, start: 1200, end: 1800, kind: "pick" }],
+        limitArea: null,
+        zones: [{ conveyorId: 10, start: 1200, end: 1800, kind: "pick", allocationOffset: 0 }],
+        fingers: [],
       },
     ]);
+  });
+
+  it("publishes a Delta's limit area and the zones' allocation offsets", async () => {
+    const limited: MachineComponent = {
+      ...robot,
+      value: delta({
+        limitArea: { fXMin: -500, fXMax: 500, fYMin: -700, fYMax: 700, fZMin: -1400, fZMax: -600 },
+        zones: [
+          { nConveyorId: 10, fStart: 1200, fEnd: 1800, eKind: E_VisuZoneKind.PICK, fAllocationOffset: 250 },
+          { nConveyorId: 10, fStart: 2000, fEnd: 2400, eKind: E_VisuZoneKind.PLACE },
+        ],
+      }),
+    };
+    const t = setup([infeed, limited]);
+    await t.gateway.cycle();
+
+    const config = t.configs()[0]!.components.find((c) => c.type === "delta");
+    expect(config).toMatchObject({
+      limitArea: { xMin: -500, xMax: 500, yMin: -700, yMax: 700, zMin: -1400, zMax: -600 },
+      zones: [
+        { conveyorId: 10, start: 1200, end: 1800, kind: "pick", allocationOffset: 250 },
+        { conveyorId: 10, start: 2000, end: 2400, kind: "place", allocationOffset: 0 },
+      ],
+    });
   });
 
   it("publishes XTS gantries and loops with their geometry and zones", async () => {
@@ -165,13 +199,12 @@ describe("gateway discovery", () => {
         xMax: 300,
         zMin: -200,
         zMax: 0,
-        cMin: -180,
-        cMax: 180,
         toolOffsetX: 150,
         toolOffsetZ: -400,
         moverLength: 155,
         moverWidth: 80,
-        zones: [{ conveyorId: 10, start: 0, end: 800, kind: "pick" }],
+        zones: [{ conveyorId: 10, start: 0, end: 800, kind: "pick", allocationOffset: 0 }],
+        fingers: [],
       },
       {
         type: "xtsLoop",
@@ -184,12 +217,13 @@ describe("gateway discovery", () => {
         toolOffset: 120,
         moverLength: 100,
         moverWidth: 60,
-        zones: [{ conveyorId: 10, start: 2500, end: 2900, kind: "place" }],
+        zones: [{ conveyorId: 10, start: 2500, end: 2900, kind: "place", allocationOffset: 0 }],
+        fingers: [],
       },
     ]);
   });
 
-  it("publishes a Cartesian robot with its strokes, tool length, rail height and zones", async () => {
+  it("publishes a Cartesian robot with its strokes, rail height and zones", async () => {
     const t = setup([infeed, portal]);
     await t.gateway.cycle();
 
@@ -207,13 +241,9 @@ describe("gateway discovery", () => {
       yMax: 1000,
       zMin: -600,
       zMax: 0,
-      cMin: -180,
-      cMax: 180,
-      aMin: -30,
-      aMax: 30,
-      toolLength: 150,
       railHeight: 1200,
-      zones: [{ conveyorId: 10, start: 100, end: 900, kind: "pick" }],
+      zones: [{ conveyorId: 10, start: 100, end: 900, kind: "pick", allocationOffset: 0 }],
+      fingers: [],
     });
   });
 
@@ -438,6 +468,7 @@ describe("gateway state snapshots", () => {
       eState: E_VisuProductState.PICKED,
       nRobotId: 20,
       nMoverId: 3,
+      nFingerId: 2,
       nProductType: 1,
     };
     state.aProducts[1] = { ...state.aProducts[0], nId: 8, bValid: false };
@@ -455,6 +486,7 @@ describe("gateway state snapshots", () => {
           state: "picked",
           robotId: 20,
           moverId: 3,
+          fingerId: 2,
           productType: 1,
         },
         { id: 9, state: "placed" },
@@ -467,11 +499,19 @@ describe("gateway state snapshots", () => {
     const s = t.plc.get<ST_VisuXtsGantry>(gantry.path).stState;
     s.fZ = -120;
     s.nMoverCount = 3;
-    s.aMovers[0] = { nId: 1, bValid: true, fPosition: 250, fX: 80, fC: 45, bGripperActive: true };
-    s.aMovers[1] = { nId: 2, bValid: false, fPosition: 500, fX: 0, fC: 0, bGripperActive: false };
-    s.aMovers[2] = { nId: 3, bValid: true, fPosition: 900, fX: -20, fC: -90, bGripperActive: false };
+    const mover = (nId: number, bValid: boolean, fPosition: number, fX: number, bGripperActive: boolean) => ({
+      nId,
+      bValid,
+      fPosition,
+      fX,
+      bGripperActive,
+      aFingerStates: fingerStates(),
+    });
+    s.aMovers[0] = mover(1, true, 250, 80, true);
+    s.aMovers[1] = mover(2, false, 500, 0, false);
+    s.aMovers[2] = mover(3, true, 900, -20, false);
     // Beyond nMoverCount: ignored even if marked valid.
-    s.aMovers[3] = { nId: 4, bValid: true, fPosition: 1200, fX: 0, fC: 0, bGripperActive: false };
+    s.aMovers[3] = mover(4, true, 1200, 0, false);
     await t.gateway.cycle();
 
     expect(t.states()[0]!.components).toContainEqual({
@@ -480,8 +520,8 @@ describe("gateway state snapshots", () => {
       timestamp: "0",
       z: -120,
       movers: [
-        { id: 1, position: 250, x: 80, c: 45, gripperActive: true },
-        { id: 3, position: 900, x: -20, c: -90, gripperActive: false },
+        { id: 1, position: 250, x: 80, gripperActive: true, fingers: [] },
+        { id: 3, position: 900, x: -20, gripperActive: false, fingers: [] },
       ],
     });
   });
@@ -490,8 +530,8 @@ describe("gateway state snapshots", () => {
     const t = setup([infeed, loop]);
     const s = t.plc.get<ST_VisuXtsLoop>(loop.path).stState;
     s.nMoverCount = 2;
-    s.aMovers[0] = { nId: 11, bValid: true, fPosition: 120 };
-    s.aMovers[1] = { nId: 12, bValid: true, fPosition: 2600 };
+    s.aMovers[0] = { nId: 11, bValid: true, fPosition: 120, aFingerStates: fingerStates() };
+    s.aMovers[1] = { nId: 12, bValid: true, fPosition: 2600, aFingerStates: fingerStates() };
     await t.gateway.cycle();
 
     expect(t.states()[0]!.components).toContainEqual({
@@ -499,8 +539,8 @@ describe("gateway state snapshots", () => {
       id: 40,
       timestamp: "0",
       movers: [
-        { id: 11, position: 120 },
-        { id: 12, position: 2600 },
+        { id: 11, position: 120, fingers: [] },
+        { id: 12, position: 2600, fingers: [] },
       ],
     });
   });
@@ -508,7 +548,7 @@ describe("gateway state snapshots", () => {
   it("publishes a Cartesian robot's axis values and gripper", async () => {
     const t = setup([infeed, portal]);
     const s = t.plc.get<ST_VisuCartesian>(portal.path).stState;
-    Object.assign(s, { fX: 600, fY: 250, fZ: -400, fC: 90, fA: 20, bGripperActive: true });
+    Object.assign(s, { fX: 600, fY: 250, fZ: -400, bGripperActive: true });
     await t.gateway.cycle();
 
     expect(t.states()[0]!.components).toContainEqual({
@@ -518,25 +558,62 @@ describe("gateway state snapshots", () => {
       x: 600,
       y: 250,
       z: -400,
-      c: 90,
-      a: 20,
       gripperActive: true,
+      fingers: [],
     });
+  });
+
+  it("publishes the configured fingers and one live state per configured finger, per mover", async () => {
+    const withFingers: MachineComponent = {
+      ...gantry,
+      value: xtsGantry({
+        fingers: [
+          { fDiameter: 40, fHeight: 50 },
+          { fDiameter: 20, fHeight: 120 },
+        ],
+        movers: [
+          {
+            nId: 1,
+            fPosition: 250,
+            aFingerStates: fingerStates([
+              { stPose: { fX: 1, fY: 2, fZ: 3, fRx: 10, fRy: 0, fRz: 90 }, bActive: true },
+              { stPose: { fX: 4, fY: 5, fZ: 6, fRx: 0, fRy: 0, fRz: 0 }, bActive: false },
+              // Beyond nFingerCount: ignored.
+              { stPose: { fX: 7, fY: 8, fZ: 9, fRx: 0, fRy: 0, fRz: 0 }, bActive: true },
+            ]),
+          },
+        ],
+      }),
+    };
+    const t = setup([infeed, withFingers]);
+    await t.gateway.cycle();
+
+    const config = t.configs()[0]!.components.find((c) => c.type === "xtsGantry");
+    expect(config?.fingers).toEqual([
+      { diameter: 40, height: 50 },
+      { diameter: 20, height: 120 },
+    ]);
+    const state = t.states()[0]!.components.find((c) => c.type === "xtsGantry");
+    expect(state?.type === "xtsGantry" && state.movers[0]!.fingers).toEqual([
+      { pose: { x: 1, y: 2, z: 3, rx: 10, ry: 0, rz: 90 }, active: true },
+      { pose: { x: 4, y: 5, z: 6, rx: 0, ry: 0, rz: 0 }, active: false },
+    ]);
   });
 
   it("publishes the delta's actual and setpoint TCP", async () => {
     const t = setup([infeed, robot]);
     const s = t.plc.get<ST_VisuDelta>(robot.path).stState;
-    s.stActualTcp = { fX: 1, fY: 2, fZ: -900, fRz: 45 };
-    s.stSetpointTcp = { fX: 3, fY: 4, fZ: -905, fRz: 46 };
+    s.stActualTcp = { fX: 1, fY: 2, fZ: -900 };
+    s.stSetpointTcp = { fX: 3, fY: 4, fZ: -905 };
     await t.gateway.cycle();
 
     expect(t.states()[0]!.components).toContainEqual({
       type: "delta",
       id: 20,
       timestamp: "0",
-      actualTcp: { x: 1, y: 2, z: -900, rz: 45 },
-      setpointTcp: { x: 3, y: 4, z: -905, rz: 46 },
+      actualTcp: { x: 1, y: 2, z: -900 },
+      setpointTcp: { x: 3, y: 4, z: -905 },
+      fingers: [],
     });
   });
 });

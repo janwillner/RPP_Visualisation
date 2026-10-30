@@ -177,11 +177,33 @@ h3 {
   padding: 0;
 }
 
-.tree button {
-  width: 100%;
-  text-align: left;
+.tree li {
+  display: flex;
+  gap: 4px;
   margin-bottom: 4px;
+}
+
+.tree button {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
   background: transparent;
+}
+
+.tree button.visibility {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+}
+
+.tree li.hidden button:not(.visibility) {
+  opacity: 0.45;
+}
+
+.tree li.hidden button.visibility {
+  color: var(--muted);
 }
 
 .tree button.selected {

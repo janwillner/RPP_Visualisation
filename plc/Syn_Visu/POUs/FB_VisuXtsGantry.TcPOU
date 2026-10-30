@@ -1,17 +1,17 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="FB_VisuXtsGantry" Id="{cbc5d7d5-f717-41a5-b5eb-7240d64592ae}" SpecialFunc="None">
+  <POU Name="FB_VisuXtsGantry" Id="{a3d27911-6461-4585-af1b-6d57300a835f}" SpecialFunc="None">
     <Declaration><![CDATA[(* One visualised XTS gantry (e.g. IDH): a straight XTS track on a common Z axis, each mover with an X axis and a
-   rotating gripper. Typical cycle:
+   gripper flange at its end. Typical cycle:
      fbIdh.Register(GVL_Visu.stManifest, 30, 'IDH', 'MAIN.fbIdh.stVisu');
      fbIdh.Configure(stPose, nModuleCount := 6, fModuleLength := 250, fXMin := 0, fXMax := 700, fZMin := -100,
-         fZMax := 0, fCMin := -180, fCMax := 180, fToolOffsetX := 150, fToolOffsetZ := -400,
-         fMoverLength := 155, fMoverWidth := 80);
+         fZMax := 0, fToolOffsetX := 150, fToolOffsetZ := -350, fMoverLength := 155, fMoverWidth := 80);
+     fbIdh.SetFinger(nFinger := 1, fDiameter := 40, fHeight := 50);
      fbIdh.SetZone(nConveyorId := 3, eKind := E_VisuZoneKind.PICK, fStart := 1100, fEnd := 2600);
      fbIdh.SetZPosition(fZAxisActual);
      fbIdh.SetMoverCount(4);
-     fbIdh.SetMover(nIndex := 0, nId := 1, fPosition := ..., fX := ..., fC := ..., bGripperActive := ...);
-   Only actual values are reported. The config methods may be called every cycle; the config version only changes
+     fbIdh.SetMover(nIndex := 0, nId := 1, fPosition := ..., fX := ..., aFingerStates := aMover1Fingers);
+   Only actual values are reported; tool rotations (e.g. C) show only through the finger poses, absolute in the MCS. The config methods may be called every cycle; the config version only changes
    when a value does. The gateway reads stVisu at the path given to Register. *)
 FUNCTION_BLOCK FB_VisuXtsGantry EXTENDS FB_VisuComponent
 VAR
@@ -32,6 +32,23 @@ IF ApplyConfig THEN
 	stVisu.stConfig := stNew;
 	NotifyConfigChanged();
 END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ClearFingers" Id="{7f4df7a1-2362-4afd-aa23-424ede0dc906}">
+      <Declaration><![CDATA[(* Removes the gripper definition. TRUE if there was one. *)
+METHOD ClearFingers : BOOL
+VAR
+	stNew : ST_VisuXtsGantryConfig;
+	stEmpty : ST_VisuFinger;
+	nIndex : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[stNew := stVisu.stConfig;
+FOR nIndex := 0 TO GVL_VisuParam.nMaxFingers - 1 DO
+	stNew.aFingers[nIndex] := stEmpty;
+END_FOR
+stNew.nFingerCount := 0;
+ClearFingers := ApplyConfig(stNew);]]></ST>
       </Implementation>
     </Method>
     <Method Name="ClearZones" Id="{d03ce110-4fb5-45e1-b7c2-06b816354a86}">
@@ -68,10 +85,8 @@ VAR_INPUT
 	fXMax : LREAL; // mm
 	fZMin : LREAL; // mm
 	fZMax : LREAL; // mm
-	fCMin : LREAL; // degrees
-	fCMax : LREAL; // degrees
-	fToolOffsetX : LREAL; // mm, gripper tip ahead of the X axis zero
-	fToolOffsetZ : LREAL; // mm, gripper tip relative to the mover top (below: negative)
+	fToolOffsetX : LREAL; // mm, gripper flange ahead of the X axis zero
+	fToolOffsetZ : LREAL; // mm, gripper flange relative to the mover top (below: negative)
 	fMoverLength : LREAL; // mm, along the track
 	fMoverWidth : LREAL; // mm
 END_VAR
@@ -87,13 +102,36 @@ stNew.fXMin := fXMin;
 stNew.fXMax := fXMax;
 stNew.fZMin := fZMin;
 stNew.fZMax := fZMax;
-stNew.fCMin := fCMin;
-stNew.fCMax := fCMax;
 stNew.fToolOffsetX := fToolOffsetX;
 stNew.fToolOffsetZ := fToolOffsetZ;
 stNew.fMoverLength := fMoverLength;
 stNew.fMoverWidth := fMoverWidth;
 Configure := ApplyConfig(stNew);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetFinger" Id="{24f90d8b-fe9f-449c-b1b3-77e833cb2592}">
+      <Declaration><![CDATA[(* Defines finger nFinger (1-based) of every mover's gripper: a cylinder hanging from the finger's pose along its
+   local -Z. The finger count grows to nFinger. FALSE outside 1..GVL_VisuParam.nMaxFingers. *)
+METHOD SetFinger : BOOL
+VAR_INPUT
+	nFinger : UINT; // 1-based, as a product's nFingerId
+	fDiameter : LREAL; // mm
+	fHeight : LREAL; // mm, along the finger's local -Z
+END_VAR
+VAR
+	stNew : ST_VisuXtsGantryConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[SetFinger := FALSE;
+IF nFinger = 0 OR nFinger > GVL_VisuParam.nMaxFingers THEN
+	RETURN;
+END_IF
+stNew := stVisu.stConfig;
+stNew.aFingers[nFinger - 1].fDiameter := fDiameter;
+stNew.aFingers[nFinger - 1].fHeight := fHeight;
+stNew.nFingerCount := MAX(stNew.nFingerCount, nFinger);
+ApplyConfig(stNew);
+SetFinger := TRUE;]]></ST>
       </Implementation>
     </Method>
     <Method Name="SetMover" Id="{836cee3d-a740-493b-ba48-ab27074bc414}">
@@ -105,8 +143,9 @@ VAR_INPUT
 	nId : UDINT; // unique within the gantry, > 0
 	fPosition : LREAL; // mm along the track
 	fX : LREAL; // mm, X axis
-	fC : LREAL; // degrees, gripper rotation; 0 = along local +X
-	bGripperActive : BOOL;
+	bGripperActive : BOOL; // used only when no fingers are configured
+	// Finger poses absolute in the MCS and grip states, index 0 = finger 1; entries beyond the finger count are ignored.
+	aFingerStates : ARRAY[0..GVL_VisuParam.nMaxFingers - 1] OF ST_VisuFingerState;
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[SetMover := nIndex < stVisu.stState.nMoverCount;
@@ -115,8 +154,8 @@ IF SetMover THEN
 	stVisu.stState.aMovers[nIndex].bValid := TRUE;
 	stVisu.stState.aMovers[nIndex].fPosition := fPosition;
 	stVisu.stState.aMovers[nIndex].fX := fX;
-	stVisu.stState.aMovers[nIndex].fC := fC;
 	stVisu.stState.aMovers[nIndex].bGripperActive := bGripperActive;
+	stVisu.stState.aMovers[nIndex].aFingerStates := aFingerStates;
 	stVisu.stState.nTimestamp := DcTime();
 END_IF]]></ST>
       </Implementation>
@@ -148,6 +187,7 @@ VAR_INPUT
 	eKind : E_VisuZoneKind;
 	fStart : LREAL; // mm along the conveyor from its start (belt coordinates, not MCS)
 	fEnd : LREAL; // mm along the conveyor from its start
+	fAllocationOffset : LREAL := 0; // mm before fEnd up to which products may be allocated; 0 = no limit
 END_VAR
 VAR
 	stNew : ST_VisuXtsGantryConfig;
@@ -177,6 +217,7 @@ stNew.aZones[nIndex].nConveyorId := nConveyorId;
 stNew.aZones[nIndex].eKind := eKind;
 stNew.aZones[nIndex].fStart := fStart;
 stNew.aZones[nIndex].fEnd := fEnd;
+stNew.aZones[nIndex].fAllocationOffset := fAllocationOffset;
 ApplyConfig(stNew);
 SetZone := TRUE;]]></ST>
       </Implementation>

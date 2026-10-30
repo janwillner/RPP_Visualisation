@@ -7,6 +7,9 @@ STRUCT
 	fStart : LREAL; // mm along the conveyor's local X (belt coordinates, not MCS)
 	fEnd : LREAL; // mm along the conveyor's local X
 	eKind : E_VisuZoneKind;
+	(* mm before fEnd, against the conveying direction: the robot may allocate products in the zone only up to
+	   fEnd - fAllocationOffset, so it does not move out of the zone while approaching. 0 = no allocation limit. *)
+	fAllocationOffset : LREAL;
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

@@ -52,12 +52,23 @@ describe("simulator", () => {
     expect(productsOn("Tray belt")).toBeGreaterThan(0);
     expect(productsOn("Cartesian outfeed")).toBeGreaterThan(0);
 
-    // The Cartesian robot carries products at its TCP (no mover), tilting A while it places them.
+    // The Cartesian robot carries products at its cup (finger 1, no mover), tilting the gripper while it places them.
     const cartesianId = config.components.find((c) => c.type === "cartesian")!.id;
-    expect(products.some((p) => p.state === "picked" && p.robotId === cartesianId && p.moverId === 0)).toBe(true);
+    expect(
+      products.some((p) => p.state === "picked" && p.robotId === cartesianId && p.moverId === 0 && p.fingerId === 1),
+    ).toBe(true);
     const cartesianStates = states.flatMap((s) => s.components.filter((c) => c.type === "cartesian"));
-    expect(Math.max(...cartesianStates.map((c) => (c.type === "cartesian" ? c.a : 0)))).toBeCloseTo(20);
-    expect(cartesianStates.some((c) => c.type === "cartesian" && c.gripperActive)).toBe(true);
+    const cupTilt = cartesianStates.map((c) => (c.type === "cartesian" ? c.fingers[0]!.pose.rx : 0));
+    expect(Math.max(...cupTilt)).toBeCloseTo(20);
+    expect(cartesianStates.some((c) => c.type === "cartesian" && c.fingers.every((f) => f.active))).toBe(true);
+    // Every robot reports one state per configured finger.
+    for (const c of config.components) {
+      if (c.type === "conveyor") continue;
+      const state = last.find((x) => x.id === c.id)!;
+      const reported =
+        state.type === "delta" || state.type === "cartesian" ? [state.fingers] : "movers" in state ? state.movers.map((m) => m.fingers) : [];
+      for (const fingers of reported) expect(fingers).toHaveLength(c.fingers.length);
+    }
 
     // Movers of a track never overlap.
     for (const s of states) {

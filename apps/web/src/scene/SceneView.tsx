@@ -5,13 +5,17 @@ import * as THREE from "three";
 import type { GatewayStore } from "../connection";
 import type {
   ProductDisplay,
+  SceneAllocation,
+  SceneBoxArea,
   SceneCartesian,
   SceneDelta,
+  SceneFinger,
   SceneGantry,
   SceneLoop,
   SceneModel,
   SceneOrigin,
   SceneProduct,
+  SceneZone,
   SnapPoint,
   Transform,
   Vec3,
@@ -21,6 +25,7 @@ import type { ConfigMessage, ProductState } from "@rpp/protocol";
 
 export interface Layers {
   workingAreas: boolean;
+  limitAreas: boolean;
   zones: boolean;
   tcpMarkers: boolean;
 }
@@ -59,6 +64,8 @@ export interface SceneViewProps {
   /** Called with the snap point under the pointer when it is clicked in measure mode. */
   onMeasure: (point: SnapPoint) => void;
   measurePoints: MeasurePoint[];
+  /** Manifest ids of components hidden by the user. */
+  hidden: ReadonlySet<number>;
 }
 
 const EMPTY: SceneModel = {
@@ -69,8 +76,10 @@ const EMPTY: SceneModel = {
   zones: [],
   gantries: [],
   boxAreas: [],
+  limitAreas: [],
   loops: [],
   cartesians: [],
+  fingers: [],
   snapPoints: [],
   origins: [],
   warnings: [],
@@ -90,6 +99,9 @@ export const PRODUCT_COLORS: Record<ProductState, string> = {
 };
 export const MISSED_COLOR = "#e53935";
 const SELECT_COLOR = "#ffd54f";
+/** Belt surface: dark blue, so it stands out from the near-black background and the light products. */
+const CONVEYOR_COLOR = "#1f4e9c";
+const CONVEYOR_SELECTED_COLOR = "#3d78d8";
 
 function applyTransform(object: THREE.Object3D | null, t: Transform | undefined): void {
   if (!object || !t) return;
@@ -129,13 +141,16 @@ function signature(m: SceneModel): string {
     m.snapPoints.filter((p) => !p.moving).map((p) => p.key).join(","),
     m.gantries.map((g) => `${g.id}:${g.moduleCount}:${g.moduleLength}:${g.movers.map((x) => x.id).join("/")}`).join(","),
     m.boxAreas.map((a) => `${a.robotId}:${a.size.join("/")}`).join(","),
+    m.limitAreas.map((a) => `${a.robotId}:${a.size.join("/")}`).join(","),
+    m.zones.map((w) => (w.allocation ? w.allocation.length : 0)).join(","),
     m.loops.map((l) => `${l.id}:${l.straightLength}:${l.curveRadius}:${l.movers.map((x) => x.id).join("/")}`).join(","),
-    m.cartesians.map((c) => `${c.id}:${c.parts.map((p) => p.size.join("/")).join("/")}:${c.tcp ? 1 : 0}`).join(","),
+    m.cartesians.map((c) => `${c.id}:${c.parts.map((p) => p.size.join("/")).join("/")}:${c.flange ? 1 : 0}`).join(","),
+    m.fingers.map((f) => `${f.key}:${f.diameter}:${f.height}`).join(","),
   ].join("|");
 }
 
 function SceneContent(props: SceneViewProps) {
-  const { store, config, layers, selection, modelRef, measureMode, onMeasure, measurePoints } = props;
+  const { store, config, layers, selection, modelRef, measureMode, onMeasure, measurePoints, hidden } = props;
   // In measure mode a click measures; selecting works only through the component tree.
   const onSelect = measureMode ? () => {} : props.onSelect;
   const latest = useRef<SceneModel>(EMPTY);
@@ -145,10 +160,10 @@ function SceneContent(props: SceneViewProps) {
   // A new config can change geometry without changing ids: force a structural update.
   useEffect(() => {
     sig.current = "";
-  }, [config]);
+  }, [config, hidden]);
 
   useFrame(() => {
-    const model = buildScene(config, store.snapshots, store.renderTime());
+    const model = buildScene(config, store.snapshots, store.renderTime(), hidden);
     latest.current = model;
     productIndex.current = new Map(model.products.map((p) => [p.key, p]));
     modelRef.current = model;
@@ -194,7 +209,7 @@ function SceneContent(props: SceneViewProps) {
             }}
           >
             <boxGeometry args={[c.length, 0.05, c.width]} />
-            <meshStandardMaterial color={isSelected(c.id) ? "#5c6b3a" : "#454c57"} />
+            <meshStandardMaterial color={isSelected(c.id) ? CONVEYOR_SELECTED_COLOR : CONVEYOR_COLOR} />
           </mesh>
           {/* Conveying direction */}
           <mesh position={[c.length + 0.06, 0, 0]} rotation={[0, 0, -Math.PI / 2]} raycast={noRaycast}>
@@ -234,6 +249,9 @@ function SceneContent(props: SceneViewProps) {
       {structure.cartesians.map((c) => (
         <CartesianMesh key={c.id} robot={c} latest={latest} selected={isSelected(c.id)} onSelect={onSelect} />
       ))}
+      {structure.fingers.map((f) => (
+        <FingerMesh key={f.key} finger={f} latest={latest} selected={isSelected(f.robotId)} onSelect={onSelect} />
+      ))}
       {layers.workingAreas &&
         structure.boxAreas.map((a) => (
           <mesh key={`box:${a.robotId}`} ref={(o) => applyTransform(o, a.transform)} raycast={noRaycast}>
@@ -247,6 +265,10 @@ function SceneContent(props: SceneViewProps) {
               depthWrite={false}
             />
           </mesh>
+        ))}
+      {layers.limitAreas &&
+        structure.limitAreas.map((a) => (
+          <LimitAreaMesh key={`limit:${a.robotId}`} area={a} selected={isSelected(a.robotId)} />
         ))}
       {layers.workingAreas &&
         structure.workingAreas.map((w) => (
@@ -281,9 +303,108 @@ function SceneContent(props: SceneViewProps) {
                 depthWrite={false}
               />
             </mesh>
+            {w.allocation && (
+              <AllocationMesh
+                allocation={w.allocation}
+                zone={w}
+                color={w.kind === "pick" ? "#2e7d32" : "#1565c0"}
+                selected={isSelected(w.robotId)}
+              />
+            )}
           </group>
         ))}
       <CameraRig request={props.cameraRequest} structure={structure} />
+    </>
+  );
+}
+
+const LIMIT_AREA_COLOR = "#ff9800";
+
+/** Limit area: translucent box with solid edges, so it stays distinguishable from the working area. */
+function LimitAreaMesh({ area, selected }: { area: SceneBoxArea; selected: boolean }) {
+  // Renderer local axes: MCS X -> x, MCS Z -> y, MCS Y -> −z.
+  const edges = useMemo(
+    () => new THREE.EdgesGeometry(new THREE.BoxGeometry(area.size[0], area.size[2], area.size[1])),
+    [area.size[0], area.size[1], area.size[2]],
+  );
+  const color = selected ? SELECT_COLOR : LIMIT_AREA_COLOR;
+  return (
+    <group ref={(o) => applyTransform(o, area.transform)}>
+      <mesh raycast={noRaycast}>
+        <boxGeometry args={[area.size[0], area.size[2], area.size[1]]} />
+        <meshBasicMaterial color={color} transparent opacity={0.06} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>
+      <lineSegments geometry={edges} raycast={noRaycast}>
+        <lineBasicMaterial color={color} />
+      </lineSegments>
+    </group>
+  );
+}
+
+/**
+ * Allocation area inside a zone, drawn in the zone's frame: a denser strip from the zone start to the allocation
+ * limit and a bar across the belt at the limit.
+ */
+function AllocationMesh(props: { allocation: SceneAllocation; zone: SceneZone; color: string; selected: boolean }) {
+  const { allocation, zone, color, selected } = props;
+  return (
+    <>
+      <mesh position={[allocation.centre, 0.006, 0]} raycast={noRaycast}>
+        <boxGeometry args={[allocation.length, 0.004, zone.width]} />
+        <meshBasicMaterial color={color} transparent opacity={selected ? 0.6 : 0.35} depthWrite={false} />
+      </mesh>
+      <mesh position={[allocation.limit, 0.008, 0]} raycast={noRaycast}>
+        <boxGeometry args={[0.012, 0.006, zone.width]} />
+        <meshBasicMaterial color={color} />
+      </mesh>
+    </>
+  );
+}
+
+const FINGER_COLORS = { active: "#3cb371", idle: "#8a939e", rod: "#5d6570" };
+
+/**
+ * One gripper finger: a cylinder hanging from its top centre (green while it grips), and a thin rod from the gripper
+ * flange to its top so it is clear which gripper it belongs to.
+ */
+function FingerMesh(props: {
+  finger: SceneFinger;
+  latest: MutableRefObject<SceneModel>;
+  selected: boolean;
+  onSelect: (s: Selection) => void;
+}) {
+  const { finger, latest, selected, onSelect } = props;
+  const body = useRef<THREE.Group>(null);
+  const rod = useRef<THREE.Mesh>(null);
+  const material = useRef<THREE.MeshStandardMaterial>(null);
+  useFrame(() => {
+    const live = latest.current.fingers.find((f) => f.key === finger.key);
+    if (body.current) {
+      body.current.visible = Boolean(live);
+      if (live) applyTransform(body.current, live.transform);
+    }
+    placeBetween(rod.current, live?.flange, live?.transform.position);
+    material.current?.color.set(selected ? SELECT_COLOR : live?.active ? FINGER_COLORS.active : FINGER_COLORS.idle);
+  });
+  return (
+    <>
+      <group ref={body} userData={{ label: `Finger ${finger.index}` }}>
+        {/* Renderer local −Y is the finger's MCS local −Z. */}
+        <mesh
+          position={[0, -finger.height / 2, 0]}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect({ kind: "component", id: finger.robotId });
+          }}
+        >
+          <cylinderGeometry args={[finger.diameter / 2, finger.diameter / 2, finger.height, 20]} />
+          <meshStandardMaterial ref={material} color={FINGER_COLORS.idle} metalness={0.3} roughness={0.5} />
+        </mesh>
+      </group>
+      <mesh ref={rod} raycast={noRaycast}>
+        <cylinderGeometry args={[0.004, 0.004, 1, 8]} />
+        <meshStandardMaterial color={FINGER_COLORS.rod} />
+      </mesh>
     </>
   );
 }
@@ -804,11 +925,6 @@ function GantryMesh(props: {
               <cylinderGeometry args={[0.022, 0.016, 0.012, 20]} />
               <meshStandardMaterial ref={(mat) => (cups.current[i] = mat)} color={XTS_COLORS.cup} />
             </mesh>
-            {/* Orientation mark along the gripper's local +X (C). */}
-            <mesh position={[0.02, 0.013, 0]} raycast={noRaycast}>
-              <boxGeometry args={[0.02, 0.003, 0.004]} />
-              <meshBasicMaterial color="#ffffff" />
-            </mesh>
           </group>
         </group>
       ))}
@@ -922,12 +1038,11 @@ const CARTESIAN_COLORS: Record<SceneCartesian["parts"][number]["key"], string> =
   bridge: "#5d6570",
   carriage: "#c9ced3",
   column: "#8a939e",
-  head: "#26282b",
 };
 
 /**
- * Cartesian robot: rails, bridge, carriage, column and gripper head as boxes, and a suction cup at the TCP (green
- * while the gripper is active, with a mark along the gripper's orientation).
+ * Cartesian robot: rails, bridge, carriage and column as boxes, and a flange plate at the column's lower end (green
+ * while the gripper is active and no fingers are configured).
  */
 function CartesianMesh(props: {
   robot: SceneCartesian;
@@ -938,7 +1053,7 @@ function CartesianMesh(props: {
   const { robot, latest, selected, onSelect } = props;
   const { id, name } = robot;
   const parts = useRef<(THREE.Mesh | null)[]>([]);
-  const tcp = useRef<THREE.Group>(null);
+  const flange = useRef<THREE.Group>(null);
   const cup = useRef<THREE.MeshStandardMaterial>(null);
   const select = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
@@ -949,9 +1064,9 @@ function CartesianMesh(props: {
     const live = latest.current.cartesians.find((x) => x.id === id);
     if (!live) return;
     live.parts.forEach((p, i) => applyTransform(parts.current[i] ?? null, p.transform));
-    if (tcp.current) {
-      tcp.current.visible = Boolean(live.tcp);
-      if (live.tcp) applyTransform(tcp.current, live.tcp);
+    if (flange.current) {
+      flange.current.visible = Boolean(live.flange);
+      if (live.flange) applyTransform(flange.current, live.flange);
     }
     cup.current?.color.set(live.gripperActive ? XTS_COLORS.cupActive : XTS_COLORS.cup);
   });
@@ -976,14 +1091,10 @@ function CartesianMesh(props: {
           {name}
         </Html>
       )}
-      <group ref={tcp}>
-        <mesh position={[0, 0.006, 0]} raycast={noRaycast}>
-          <cylinderGeometry args={[0.03, 0.022, 0.012, 20]} />
+      <group ref={flange}>
+        <mesh position={[0, -0.006, 0]} raycast={noRaycast}>
+          <cylinderGeometry args={[0.05, 0.05, 0.012, 24]} />
           <meshStandardMaterial ref={cup} color={XTS_COLORS.cup} />
-        </mesh>
-        <mesh position={[0.03, 0.013, 0]} raycast={noRaycast}>
-          <boxGeometry args={[0.03, 0.003, 0.005]} />
-          <meshBasicMaterial color="#ffffff" />
         </mesh>
       </group>
     </group>

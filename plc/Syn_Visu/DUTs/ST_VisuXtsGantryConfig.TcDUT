@@ -4,7 +4,7 @@
     <Declaration><![CDATA[TYPE ST_VisuXtsGantryConfig :
 STRUCT
 	(* Straight XTS track of equal modules, carried by a common Z axis; every mover carries an X axis with a
-	   rotating (C) gripper. Local frame: origin at the track start on top of the movers with Z = 0; the track runs
+	   gripper flange at its end. Local frame: origin at the track start on top of the movers with Z = 0; the track runs
 	   along local +Y, the X axes along local +X, the Z axis along local +Z (up). *)
 	stPose : ST_VisuPose; // MCS
 	nModuleCount : UINT; // track modules in a row
@@ -13,14 +13,14 @@ STRUCT
 	fXMax : LREAL; // mm
 	fZMin : LREAL; // mm, Z stroke
 	fZMax : LREAL; // mm
-	fCMin : LREAL; // degrees, C range
-	fCMax : LREAL; // degrees
-	fToolOffsetX : LREAL; // mm, gripper tip ahead of the X axis zero along local +X
-	fToolOffsetZ : LREAL; // mm, gripper tip relative to the mover top (below: negative)
+	fToolOffsetX : LREAL; // mm, gripper flange ahead of the X axis zero along local +X
+	fToolOffsetZ : LREAL; // mm, gripper flange relative to the mover top (below: negative)
 	fMoverLength : LREAL; // mm, along the track
 	fMoverWidth : LREAL; // mm
 	nZoneCount : UINT;
 	aZones : ARRAY[0..GVL_VisuParam.nMaxZones - 1] OF ST_VisuZone; // pick and place zones
+	nFingerCount : UINT; // fingers of every mover's gripper, 0 = no gripper definition
+	aFingers : ARRAY[0..GVL_VisuParam.nMaxFingers - 1] OF ST_VisuFinger;
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

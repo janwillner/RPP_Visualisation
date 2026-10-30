@@ -1,14 +1,15 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="FB_VisuXtsLoop" Id="{cf61fa8f-94a3-41d7-a3df-57398db0ff2a}" SpecialFunc="None">
+  <POU Name="FB_VisuXtsLoop" Id="{d2d895ba-a7ef-4a75-9fe6-ef3a14e18045}" SpecialFunc="None">
     <Declaration><![CDATA[(* One visualised XTS loop (e.g. Fxx): movers circulating on a closed track of two straights and two 180 deg curves.
    Typical cycle:
      fbFxx.Register(GVL_Visu.stManifest, 20, 'Fxx', 'MAIN.fbFxx.stVisu');
      fbFxx.Configure(stPose, fStraightLength := 2400, fCurveRadius := 250, fToolOffset := 120,
          fMoverLength := 100, fMoverWidth := 60);
+     fbFxx.SetFinger(nFinger := 1, fDiameter := 40, fHeight := 50);
      fbFxx.SetZone(nConveyorId := 2, eKind := E_VisuZoneKind.PICK, fStart := 2200, fEnd := 2800);
      fbFxx.SetMoverCount(12);
-     fbFxx.SetMover(nIndex := 0, nId := 1, fPosition := ...);
+     fbFxx.SetMover(nIndex := 0, nId := 1, fPosition := ..., aFingerStates := aMover1Fingers);
    Positions run along the loop from the start of the lower straight in the conveying direction (0..Perimeter()).
    The config methods may be called every cycle; the config version only changes when a value does.
    The gateway reads stVisu at the path given to Register. *)
@@ -31,6 +32,23 @@ IF ApplyConfig THEN
 	stVisu.stConfig := stNew;
 	NotifyConfigChanged();
 END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ClearFingers" Id="{b940028e-9e2d-46cd-bb0f-3671a6488167}">
+      <Declaration><![CDATA[(* Removes the gripper definition. TRUE if there was one. *)
+METHOD ClearFingers : BOOL
+VAR
+	stNew : ST_VisuXtsLoopConfig;
+	stEmpty : ST_VisuFinger;
+	nIndex : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[stNew := stVisu.stConfig;
+FOR nIndex := 0 TO GVL_VisuParam.nMaxFingers - 1 DO
+	stNew.aFingers[nIndex] := stEmpty;
+END_FOR
+stNew.nFingerCount := 0;
+ClearFingers := ApplyConfig(stNew);]]></ST>
       </Implementation>
     </Method>
     <Method Name="ClearZones" Id="{e4de1b0e-501d-40c8-8730-86fc423ce419}">
@@ -88,6 +106,31 @@ METHOD Perimeter : LREAL]]></Declaration>
         <ST><![CDATA[Perimeter := 2.0 * stVisu.stConfig.fStraightLength + 2.0 * 3.141592653589793 * stVisu.stConfig.fCurveRadius;]]></ST>
       </Implementation>
     </Method>
+    <Method Name="SetFinger" Id="{4bf0f4d8-2abb-4e38-9a43-96f3d9b9d9da}">
+      <Declaration><![CDATA[(* Defines finger nFinger (1-based) of every mover's gripper: a cylinder hanging from the finger's pose along its
+   local -Z. The finger count grows to nFinger. FALSE outside 1..GVL_VisuParam.nMaxFingers. *)
+METHOD SetFinger : BOOL
+VAR_INPUT
+	nFinger : UINT; // 1-based, as a product's nFingerId
+	fDiameter : LREAL; // mm
+	fHeight : LREAL; // mm, along the finger's local -Z
+END_VAR
+VAR
+	stNew : ST_VisuXtsLoopConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[SetFinger := FALSE;
+IF nFinger = 0 OR nFinger > GVL_VisuParam.nMaxFingers THEN
+	RETURN;
+END_IF
+stNew := stVisu.stConfig;
+stNew.aFingers[nFinger - 1].fDiameter := fDiameter;
+stNew.aFingers[nFinger - 1].fHeight := fHeight;
+stNew.nFingerCount := MAX(stNew.nFingerCount, nFinger);
+ApplyConfig(stNew);
+SetFinger := TRUE;]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="SetMover" Id="{ef974285-e6df-4745-8924-8568b5647a44}">
       <Declaration><![CDATA[(* Reports one mover at entry nIndex and marks it valid. Call once per cycle per mover.
    FALSE if nIndex is outside the mover count set by SetMoverCount. *)
@@ -96,6 +139,8 @@ VAR_INPUT
 	nIndex : UINT; // 0..SetMoverCount - 1
 	nId : UDINT; // unique within the loop, > 0
 	fPosition : LREAL; // mm along the loop from the start of the lower straight (0..Perimeter())
+	// Finger poses absolute in the MCS and grip states, index 0 = finger 1; entries beyond the finger count are ignored.
+	aFingerStates : ARRAY[0..GVL_VisuParam.nMaxFingers - 1] OF ST_VisuFingerState;
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[SetMover := nIndex < stVisu.stState.nMoverCount;
@@ -103,6 +148,7 @@ IF SetMover THEN
 	stVisu.stState.aMovers[nIndex].nId := nId;
 	stVisu.stState.aMovers[nIndex].bValid := TRUE;
 	stVisu.stState.aMovers[nIndex].fPosition := fPosition;
+	stVisu.stState.aMovers[nIndex].aFingerStates := aFingerStates;
 	stVisu.stState.nTimestamp := DcTime();
 END_IF]]></ST>
       </Implementation>
@@ -134,6 +180,7 @@ VAR_INPUT
 	eKind : E_VisuZoneKind;
 	fStart : LREAL; // mm along the conveyor from its start (belt coordinates, not MCS)
 	fEnd : LREAL; // mm along the conveyor from its start
+	fAllocationOffset : LREAL := 0; // mm before fEnd up to which products may be allocated; 0 = no limit
 END_VAR
 VAR
 	stNew : ST_VisuXtsLoopConfig;
@@ -163,6 +210,7 @@ stNew.aZones[nIndex].nConveyorId := nConveyorId;
 stNew.aZones[nIndex].eKind := eKind;
 stNew.aZones[nIndex].fStart := fStart;
 stNew.aZones[nIndex].fEnd := fEnd;
+stNew.aZones[nIndex].fAllocationOffset := fAllocationOffset;
 ApplyConfig(stNew);
 SetZone := TRUE;]]></ST>
       </Implementation>

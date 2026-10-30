@@ -11,10 +11,12 @@ STRUCT
 	fEffectorRadius : LREAL; // mm, effector centre to lower-arm joint
 	fUpperArmLength : LREAL; // mm
 	fLowerArmLength : LREAL; // mm
-	bHasRotationAxis : BOOL; // 4th axis: the effector is drawn rotated by the TCP's fRz
 	stWorkingArea : ST_VisuWorkingArea;
+	stLimitArea : ST_VisuLimitArea; // optional box that further restricts the working area
 	nZoneCount : UINT;
 	aZones : ARRAY[0..GVL_VisuParam.nMaxZones - 1] OF ST_VisuZone; // pick and place zones
+	nFingerCount : UINT; // 0 = no gripper definition
+	aFingers : ARRAY[0..GVL_VisuParam.nMaxFingers - 1] OF ST_VisuFinger;
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

@@ -29,8 +29,20 @@ export function App() {
     return () => store.stop();
   }, [store]);
   const gateway = useGateway(store);
-  const [layers, setLayers] = useState<Layers>({ workingAreas: true, zones: true, tcpMarkers: true });
+  const [layers, setLayers] = useState<Layers>({
+    workingAreas: true,
+    limitAreas: true,
+    zones: true,
+    tcpMarkers: true,
+  });
   const [selection, setSelection] = useState<Selection>();
+  const [hidden, setHidden] = useState<ReadonlySet<number>>(() => new Set());
+  const toggleHidden = (id: number) =>
+    setHidden((h) => {
+      const next = new Set(h);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
   const [cameraRequest, setCameraRequest] = useState<{ preset: CameraPreset; seq: number }>({ preset: "iso", seq: 0 });
   const modelRef = useRef<SceneModel | undefined>(undefined);
   const [measureMode, setMeasureMode] = useState(false);
@@ -78,6 +90,7 @@ export function App() {
         <div className="group">
           <span className="muted">Layers</span>
           <Toggle label="Working areas" on={layers.workingAreas} onClick={() => toggle("workingAreas")} />
+          <Toggle label="Limit areas" on={layers.limitAreas} onClick={() => toggle("limitAreas")} />
           <Toggle label="Zones" on={layers.zones} onClick={() => toggle("zones")} />
           <Toggle label="TCP markers" on={layers.tcpMarkers} onClick={() => toggle("tcpMarkers")} />
         </div>
@@ -86,7 +99,13 @@ export function App() {
         </div>
       </header>
       <aside className="panel left">
-        <ComponentTree components={gateway.config?.components ?? []} selection={selection} onSelect={setSelection} />
+        <ComponentTree
+          components={gateway.config?.components ?? []}
+          selection={selection}
+          onSelect={setSelection}
+          hidden={hidden}
+          onToggleHidden={toggleHidden}
+        />
       </aside>
       <main className="viewport">
         <SceneView
@@ -100,6 +119,7 @@ export function App() {
           measureMode={measureMode}
           onMeasure={addMeasurePoint}
           measurePoints={measurePoints}
+          hidden={hidden}
         />
         {(measureMode || measurePoints.length > 0) && (
           <MeasureList measureMode={measureMode} points={measurePoints} onClear={clearMeasurePoints} />
@@ -233,15 +253,26 @@ function ComponentTree(props: {
   components: ComponentConfig[];
   selection: Selection;
   onSelect: (s: Selection) => void;
+  hidden: ReadonlySet<number>;
+  onToggleHidden: (id: number) => void;
 }) {
-  const { components, selection, onSelect } = props;
+  const { components, selection, onSelect, hidden, onToggleHidden } = props;
   return (
     <>
       <h2>Components</h2>
       {components.length === 0 && <p className="muted">No components discovered.</p>}
       <ul className="tree">
         {components.map((c) => (
-          <li key={c.id}>
+          <li key={c.id} className={hidden.has(c.id) ? "hidden" : ""}>
+            <button
+              className="visibility"
+              title={hidden.has(c.id) ? `Show ${c.name}` : `Hide ${c.name}`}
+              aria-label={hidden.has(c.id) ? `Show ${c.name}` : `Hide ${c.name}`}
+              aria-pressed={hidden.has(c.id)}
+              onClick={() => onToggleHidden(c.id)}
+            >
+              <EyeIcon open={!hidden.has(c.id)} />
+            </button>
             <button
               className={selection?.kind === "component" && selection.id === c.id ? "selected" : ""}
               onClick={() => onSelect({ kind: "component", id: c.id })}
@@ -252,6 +283,17 @@ function ComponentTree(props: {
         ))}
       </ul>
     </>
+  );
+}
+
+/** Eye (shown) or struck-through eye (hidden). */
+function EyeIcon({ open }: { open: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+      {!open && <line x1="3" y1="3" x2="21" y2="21" />}
+    </svg>
   );
 }
 
@@ -311,8 +353,8 @@ function Inspector(props: {
         <>
           <h3>Movers · Z {state.z.toFixed(1)}</h3>
           <MoverTable
-            head={["Id", "Position", "X", "C", "Gripper"]}
-            rows={state.movers.map((m) => [m.id, m.position.toFixed(1), m.x.toFixed(1), m.c.toFixed(1), m.gripperActive ? "on" : "off"])}
+            head={["Id", "Position", "X", "Gripper"]}
+            rows={state.movers.map((m) => [m.id, m.position.toFixed(1), m.x.toFixed(1), m.gripperActive ? "on" : "off"])}
           />
         </>
       )}
@@ -326,20 +368,40 @@ function Inspector(props: {
         <>
           <h3>Axes</h3>
           <MoverTable
-            head={["X", "Y", "Z", "C", "A", "Gripper"]}
-            rows={[
-              [
-                ...[state.x, state.y, state.z, state.c, state.a].map((v) => v.toFixed(1)),
-                state.gripperActive ? "on" : "off",
-              ],
-            ]}
+            head={["X", "Y", "Z", "Gripper"]}
+            rows={[[...[state.x, state.y, state.z].map((v) => v.toFixed(1)), state.gripperActive ? "on" : "off"]]}
           />
         </>
       )}
+      {state && "fingers" in (component ?? {}) && <FingerTable state={state} />}
       <h3>Config</h3>
       <Json value={component} />
       <h3>State</h3>
       <Json value={state} />
+    </>
+  );
+}
+
+/** Live finger poses (MCS) and grip state, per mover for XTS kinematics. */
+function FingerTable({ state }: { state: ComponentState }) {
+  const groups =
+    state.type === "xtsGantry" || state.type === "xtsLoop"
+      ? state.movers.map((m) => ({ moverId: m.id, fingers: m.fingers }))
+      : state.type === "delta" || state.type === "cartesian"
+        ? [{ moverId: 0, fingers: state.fingers }]
+        : [];
+  const rows = groups.flatMap((g) =>
+    g.fingers.map((f, i) => [
+      g.moverId ? `${g.moverId}.${i + 1}` : String(i + 1),
+      ...[f.pose.x, f.pose.y, f.pose.z, f.pose.rx, f.pose.ry, f.pose.rz].map((v) => v.toFixed(1)),
+      f.active ? "on" : "off",
+    ]),
+  );
+  if (rows.length === 0) return null;
+  return (
+    <>
+      <h3>Fingers</h3>
+      <MoverTable head={["Finger", "X", "Y", "Z", "Rx", "Ry", "Rz", "Grip"]} rows={rows} />
     </>
   );
 }

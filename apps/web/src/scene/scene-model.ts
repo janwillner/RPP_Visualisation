@@ -9,7 +9,10 @@ import {
   type ConveyorState,
   type DeltaConfig,
   type DeltaState,
-  type PlanarPose,
+  type Finger,
+  type FingerState,
+  type Pose,
+  type Position,
   type Product,
   type ProductState,
   type ProductType,
@@ -26,8 +29,6 @@ import {
   child,
   frameFromPose,
   fromRenderer,
-  mul,
-  rotX,
   rotY,
   rotZ,
   toLocal,
@@ -102,7 +103,7 @@ export interface SceneDelta {
 
   /** Lower-arm joints on the effector; empty when the TCP is not reachable. */
   effectorJoints: Vec3[];
-  /** Effector centre at the actual TCP, rotated by the TCP's rz when the robot has a rotation axis. */
+  /** Effector centre at the actual TCP (the gripper flange), turned with the base. */
   effector: Transform | null;
   /** False when the arms cannot reach the reported TCP (the effector is still drawn at the TCP). */
   reachable: boolean;
@@ -132,16 +133,31 @@ export interface SceneZone {
   transform: Transform;
   length: number;
   width: number;
+  /**
+   * Part of the zone in which the robot may still allocate products: from the zone start up to the allocation limit
+   * (`end − allocationOffset`). Null when the zone has no allocation limit.
+   */
+  allocation: SceneAllocation | null;
+}
+
+/** Allocation area of a zone along the zone's local +X, metres from the zone centre. */
+export interface SceneAllocation {
+  /** Centre of the allocation area. */
+  centre: number;
+  length: number;
+  /** Allocation limit, where the robot stops allocating products. */
+  limit: number;
 }
 
 export interface SceneGantryMover {
   id: number;
   /** Mover centre on the track. */
   carriage: Vec3;
-  /** End of the X arm, straight above the gripper tip. */
+  /** End of the X arm, straight above the gripper flange. */
   armEnd: Vec3;
-  /** Gripper tip (TCP), turned by C; local +X is the gripper's orientation, local +Y up. */
+  /** Gripper flange, turned with the gantry; local +Y up. */
   tip: Transform;
+  /** The mover's gripper flag; false when fingers are configured (they show their own state). */
   gripperActive: boolean;
 }
 
@@ -171,7 +187,7 @@ export interface SceneLoopMover {
   id: number;
   /** Mover on the track; local +X along the track tangent, local MCS −Z (renderer −Y) outwards. */
   transform: Transform;
-  /** Tool point, where a carried product hangs. */
+  /** Tool point (gripper flange), where a carried product without finger hangs. */
   tool: Vec3;
 }
 
@@ -196,22 +212,41 @@ export interface SceneBox {
   size: Vec3;
 }
 
-export type CartesianPartKey = "rail left" | "rail right" | "bridge" | "carriage" | "column" | "head";
+export type CartesianPartKey = "rail left" | "rail right" | "bridge" | "carriage" | "column";
 
 export interface SceneCartesian {
   id: number;
   name: string;
-  /** Rails (static), bridge, carriage, column and gripper head (moving with the axes). */
+  /** Rails (static), bridge, carriage and column (moving with the axes). */
   parts: (SceneBox & { key: CartesianPartKey })[];
-  /** TCP frame, turned by C and tilted by A; local +X is the gripper's orientation. Null before the first state. */
-  tcp: Transform | null;
+  /** Gripper flange at the column's lower end, turned with the robot. Null before the first state. */
+  flange: Transform | null;
+  /** The robot's gripper flag; false when fingers are configured (they show their own state). */
   gripperActive: boolean;
   /** Actual axis values as reported; null before the first state. */
-  axes: { x: number; y: number; z: number; c: number; a: number } | null;
+  axes: { x: number; y: number; z: number } | null;
+}
+
+/** One gripper finger: a cylinder hanging from its frame's origin (top centre) along its local −Z. */
+export interface SceneFinger {
+  /** `robotId:moverId:finger`, stable across frames. */
+  key: string;
+  robotId: number;
+  /** 0 for a robot without movers. */
+  moverId: number;
+  /** 1-based, as `fingerId` of a product. */
+  index: number;
+  /** Top centre; the cylinder extends along local renderer −Y (MCS local −Z). */
+  transform: Transform;
+  diameter: number;
+  height: number;
+  active: boolean;
+  /** The gripper flange the finger belongs to, for the connecting rod. */
+  flange: Vec3;
 }
 
 /** Which layer toggle a snap point belongs to; "structure" is always shown. */
-export type SnapLayer = "structure" | "zones" | "workingAreas";
+export type SnapLayer = "structure" | "zones" | "workingAreas" | "limitAreas";
 
 /** A characteristic point of a component that measure mode can snap to. */
 export interface SnapPoint {
@@ -244,8 +279,11 @@ export interface SceneModel {
   zones: SceneZone[];
   gantries: SceneGantry[];
   boxAreas: SceneBoxArea[];
+  /** Delta limit areas: boxes in the robot frame that further restrict the working area. */
+  limitAreas: SceneBoxArea[];
   loops: SceneLoop[];
   cartesians: SceneCartesian[];
+  fingers: SceneFinger[];
   snapPoints: SnapPoint[];
   origins: SceneOrigin[];
   /** Inconsistencies in the configuration, e.g. a zone referencing an unknown conveyor. */
@@ -255,10 +293,16 @@ export interface SceneModel {
 const MM = 1 / 1000;
 const DEFAULT_PRODUCT: ProductType = { id: 0, length: 100, width: 100, height: 100 };
 
+/**
+ * `hidden`: manifest ids of components the user has hidden. A hidden component contributes nothing to the scene:
+ * no geometry, zones, areas, snap points or origin; a hidden conveyor also hides its products and the zones on it.
+ * Products of a visible conveyor carried by a hidden robot are still drawn where it carries them.
+ */
 export function buildScene(
   config: ConfigMessage | undefined,
   snapshots: readonly StateMessage[],
   renderTime: number,
+  hidden: ReadonlySet<number> = new Set(),
 ): SceneModel {
   const perimeters = new Map<number, number>();
   for (const c of config?.components ?? []) if (c.type === "xtsLoop") perimeters.set(c.id, loopPerimeter(c));
@@ -268,11 +312,14 @@ export function buildScene(
   const deltas: SceneDelta[] = [];
   const gantries: SceneGantry[] = [];
   const boxAreas: SceneBoxArea[] = [];
+  const limitAreas: SceneBoxArea[] = [];
   const loops: SceneLoop[] = [];
   const cartesians: SceneCartesian[] = [];
+  const fingers: SceneFinger[] = [];
   /**
-   * Where a picked product hangs, keyed "robotId:moverId" (mover 0 for a Delta): an MCS frame whose origin
-   * touches the product's top, whose rotation orients the product and whose local −Z points to the product.
+   * Where a picked product hangs, keyed "robotId:moverId" for the gripper flange (mover 0 for a robot without movers)
+   * and "robotId:moverId:finger" for a finger's grip point: an MCS frame whose origin touches the product's top, whose
+   * rotation orients the product and whose local −Z points to the product.
    */
   const carriers = new Map<string, Frame>();
 
@@ -283,26 +330,73 @@ export function buildScene(
   const conveyorConfigs = new Map<number, ConveyorConfig>();
   for (const c of config?.components ?? []) if (c.type === "conveyor") conveyorConfigs.set(c.id, c);
 
+  /** Fingers of one robot's grippers (one per mover), their grip points as carriers and snap points. */
+  const addGripper = (
+    robot: { id: number; name: string; pose: Pose; fingers: Finger[] },
+    grippers: { moverId: number; flange: Frame; states: FingerState[] }[],
+  ) => {
+    const owner = snapOwner(robot, frameFromPose(robot.pose));
+    for (const g of grippers) {
+      robot.fingers.forEach((f, i) => {
+        const state = g.states[i];
+        if (!state) return;
+        const index = i + 1;
+        const frame = frameFromPose(state.pose);
+        const grip = child(frame, [0, 0, -f.height]);
+        carriers.set(`${robot.id}:${g.moverId}:${index}`, grip);
+        fingers.push({
+          key: `${robot.id}:${g.moverId}:${index}`,
+          robotId: robot.id,
+          moverId: g.moverId,
+          index,
+          transform: toRendererTransform(frame),
+          diameter: f.diameter * MM,
+          height: f.height * MM,
+          active: state.active,
+          flange: toRenderer(g.flange.origin),
+        });
+        const name = g.moverId ? `${robot.name} · mover ${g.moverId} finger ${index}` : `${robot.name} · finger ${index}`;
+        snapPoints.push(owner.atMcs(`${name} grip point`, grip.origin, "structure", true));
+      });
+    }
+  };
+
   const addZones = (c: { id: number; name: string; zones: Zone[] }) => {
+    if (hidden.has(c.id)) return;
     for (const win of c.zones) {
       const belt = conveyorConfigs.get(win.conveyorId);
       if (!belt) {
         warnings.push(`${c.name}: ${win.kind} zone references unknown conveyor ${win.conveyorId}`);
         continue;
       }
+      if (hidden.has(belt.id)) continue;
+      const beltFrame = frameFromPose(belt.pose);
+      const limit = allocationLimit(win);
+      const zoneCentre = (win.start + win.end) / 2;
       zones.push({
         robotId: c.id,
         conveyorId: belt.id,
         kind: win.kind,
-        transform: toRendererTransform(child(frameFromPose(belt.pose), [(win.start + win.end) / 2, 0, 0])),
+        transform: toRendererTransform(child(beltFrame, [zoneCentre, 0, 0])),
         length: Math.abs(win.end - win.start) * MM,
         width: belt.width * MM,
+        allocation:
+          limit === undefined
+            ? null
+            : {
+                centre: ((win.start + limit) / 2 - zoneCentre) * MM,
+                length: Math.abs(limit - win.start) * MM,
+                limit: (limit - zoneCentre) * MM,
+              },
       });
-      const owner = snapOwner(belt, frameFromPose(belt.pose));
+      const owner = snapOwner(belt, beltFrame);
       const name = `${c.name} ${win.kind} zone on ${belt.name}`;
       for (const [side, y] of sides(belt.width)) {
         snapPoints.push(owner.at(`${name} · start, ${side}`, [win.start, y, 0], "zones"));
         snapPoints.push(owner.at(`${name} · end, ${side}`, [win.end, y, 0], "zones"));
+        if (limit !== undefined) {
+          snapPoints.push(owner.at(`${name} · allocation limit, ${side}`, [limit, y, 0], "zones"));
+        }
       }
     }
   };
@@ -315,6 +409,7 @@ export function buildScene(
       boxAreas.push(built.area);
       snapPoints.push(...built.snapPoints);
       for (const [moverId, frame] of built.carriers) carriers.set(`${c.id}:${moverId}`, frame);
+      addGripper(c, built.grippers);
       addZones(c);
       continue;
     }
@@ -323,6 +418,7 @@ export function buildScene(
       loops.push(built.loop);
       snapPoints.push(...built.snapPoints);
       for (const [moverId, frame] of built.carriers) carriers.set(`${c.id}:${moverId}`, frame);
+      addGripper(c, built.grippers);
       addZones(c);
       continue;
     }
@@ -332,6 +428,7 @@ export function buildScene(
       boxAreas.push(built.area);
       snapPoints.push(...built.snapPoints);
       if (built.carrier) carriers.set(`${c.id}:0`, built.carrier);
+      addGripper(c, built.grippers);
       addZones(c);
       continue;
     }
@@ -339,8 +436,10 @@ export function buildScene(
     const deltaState = state?.type === "delta" ? state : undefined;
     deltas.push(buildDelta(c, deltaState));
     if (deltaState) {
-      const tcp = deltaState.actualTcp;
-      carriers.set(`${c.id}:0`, { rotation: rotZ(tcp.rz), origin: planarToMcs(tcp) });
+      // The flange is the effector centre, turned with the base.
+      const flange: Frame = { rotation: frameFromPose(c.pose).rotation, origin: positionToMcs(deltaState.actualTcp) };
+      carriers.set(`${c.id}:0`, flange);
+      addGripper(c, [{ moverId: 0, flange, states: deltaState.fingers }]);
     }
     snapPoints.push(...deltaSnapPoints(c, deltaState));
 
@@ -354,6 +453,16 @@ export function buildScene(
       coneHeight: w.coneHeight * MM,
       coneBottomRadius: w.coneBottomRadius * MM,
     });
+    if (c.limitArea) {
+      const a = c.limitArea;
+      limitAreas.push({
+        robotId: c.id,
+        transform: toRendererTransform(
+          child(frameFromPose(c.pose), [(a.xMin + a.xMax) / 2, (a.yMin + a.yMax) / 2, (a.zMin + a.zMax) / 2]),
+        ),
+        size: [(a.xMax - a.xMin) * MM, (a.yMax - a.yMin) * MM, (a.zMax - a.zMin) * MM],
+      });
+    }
     addZones(c);
   }
 
@@ -377,7 +486,7 @@ export function buildScene(
     snapPoints.push(owner.at(`${c.name} · end centre`, [c.length, 0, 0]));
     const state = states.get(c.id);
     if (state?.type === "conveyor") {
-      const shown = conveyorProducts(c, frame, state, carriers);
+      const shown = conveyorProducts(c, frame, state, carriers, (message) => warnings.push(message));
       products.push(...shown);
       for (const p of shown) snapPoints.push(...productSnapPoints(p, owner));
     }
@@ -389,20 +498,35 @@ export function buildScene(
       .filter((c) => c.type === "xtsGantry" || c.type === "xtsLoop" || c.type === "cartesian")
       .map((c) => ({ componentId: c.id, name: c.name, transform: toRendererTransform(frameFromPose(c.pose)) })),
   ];
+  // Hidden components are built too (a hidden robot still carries products of a visible conveyor), then dropped.
+  const shown = (id: number) => !hidden.has(id);
   return {
-    conveyors,
-    products,
-    deltas,
-    workingAreas,
+    conveyors: conveyors.filter((c) => shown(c.id)),
+    products: products.filter((p) => shown(p.conveyorId)),
+    deltas: deltas.filter((d) => shown(d.id)),
+    workingAreas: workingAreas.filter((a) => shown(a.robotId)),
     zones,
-    gantries,
-    boxAreas,
-    loops,
-    cartesians,
-    snapPoints,
-    origins,
+    gantries: gantries.filter((g) => shown(g.id)),
+    boxAreas: boxAreas.filter((a) => shown(a.robotId)),
+    limitAreas: limitAreas.filter((a) => shown(a.robotId)),
+    loops: loops.filter((l) => shown(l.id)),
+    cartesians: cartesians.filter((c) => shown(c.id)),
+    fingers: fingers.filter((f) => shown(f.robotId)),
+    snapPoints: snapPoints.filter((p) => shown(p.local.componentId)),
+    origins: origins.filter((o) => shown(o.componentId)),
     warnings,
   };
+}
+
+/**
+ * Belt coordinate of a zone's allocation limit: `allocationOffset` before the zone end, against the conveying
+ * direction, never beyond the zone start. Undefined when the zone has no allocation limit.
+ */
+function allocationLimit(zone: Zone): number | undefined {
+  if (!(zone.allocationOffset > 0)) return undefined;
+  const direction = zone.end >= zone.start ? 1 : -1;
+  const length = Math.abs(zone.end - zone.start);
+  return zone.end - direction * Math.min(zone.allocationOffset, length);
 }
 
 /** Left (local +Y) and right edge of a belt of the given width. */
@@ -450,7 +574,17 @@ function deltaSnapPoints(c: DeltaConfig, state: DeltaState | undefined): SnapPoi
   if (w.coneHeight > 0) {
     points.push(owner.at(`${c.name} working area · cone bottom`, [0, 0, w.zMin - w.coneHeight], "workingAreas"));
   }
-  if (state) points.push(owner.atMcs(`${c.name} · TCP`, planarToMcs(state.actualTcp), "structure", true));
+  const a = c.limitArea;
+  if (a) {
+    for (const [zName, zc] of [["bottom", a.zMin], ["top", a.zMax]] as const) {
+      for (const [yName, yc] of [["Y min", a.yMin], ["Y max", a.yMax]] as const) {
+        for (const [xName, xc] of [["X min", a.xMin], ["X max", a.xMax]] as const) {
+          points.push(owner.at(`${c.name} limit area · ${zName}, ${yName}, ${xName}`, [xc, yc, zc], "limitAreas"));
+        }
+      }
+    }
+  }
+  if (state) points.push(owner.atMcs(`${c.name} · TCP`, positionToMcs(state.actualTcp), "structure", true));
   return points;
 }
 
@@ -475,7 +609,7 @@ function productSnapPoints(p: SceneProduct, owner: SnapOwner): SnapPoint[] {
 /** Snap points whose layer is currently shown. */
 export function availableSnapPoints(
   points: readonly SnapPoint[],
-  layers: { zones: boolean; workingAreas: boolean },
+  layers: { zones: boolean; workingAreas: boolean; limitAreas: boolean },
 ): SnapPoint[] {
   return points.filter((p) => p.layer === "structure" || layers[p.layer]);
 }
@@ -504,7 +638,7 @@ export function pointsCsv(points: readonly { id: number; label: string; mcs: Vec
   return ["#;label;x;y;z;distance", ...rows].join("\n");
 }
 
-function planarToMcs(p: PlanarPose): Vec3 {
+function positionToMcs(p: Position): Vec3 {
   return [p.x, p.y, p.z];
 }
 
@@ -515,11 +649,9 @@ function planarToMcs(p: PlanarPose): Vec3 {
 function buildDelta(c: DeltaConfig, state: DeltaState | undefined): SceneDelta {
   const frame = frameFromPose(c.pose);
   const world = (local: Vec3) => toRenderer(toMcs(frame, local));
-  const localTcp = state ? toLocal(frame, planarToMcs(state.actualTcp)) : undefined;
+  const localTcp = state ? toLocal(frame, positionToMcs(state.actualTcp)) : undefined;
   const angles = localTcp ? deltaInverse(c, localTcp) : [0, 0, 0];
   const posture = deltaForward(c, (angles ?? [0, 0, 0]) as [number, number, number]);
-  // The TCP's rz is absolute in the MCS; the effector rotates about the base's Z axis.
-  const effectorRotation = c.hasRotationAxis && state ? state.actualTcp.rz - c.pose.rz : 0;
   const effectorCentre = localTcp ?? posture.effector;
   return {
     id: c.id,
@@ -530,10 +662,10 @@ function buildDelta(c: DeltaConfig, state: DeltaState | undefined): SceneDelta {
     shoulders: posture.shoulders.map(world),
     elbows: angles ? posture.elbows.map(world) : [],
     effectorJoints: angles ? posture.effectorJoints.map(world) : [],
-    effector: effectorCentre ? toRendererTransform(child(frame, effectorCentre, rotZ(effectorRotation))) : null,
+    effector: effectorCentre ? toRendererTransform(child(frame, effectorCentre)) : null,
     reachable: angles !== null,
-    actualTcp: state ? toRenderer(planarToMcs(state.actualTcp)) : null,
-    setpointTcp: state ? toRenderer(planarToMcs(state.setpointTcp)) : null,
+    actualTcp: state ? toRenderer(positionToMcs(state.actualTcp)) : null,
+    setpointTcp: state ? toRenderer(positionToMcs(state.setpointTcp)) : null,
     angles: angles ?? [],
   };
 }
@@ -593,7 +725,7 @@ function interpolate(a: ComponentState, b: ComponentState, f: number, perimeter:
       movers: a.movers.map((m) => {
         const n = next.get(m.id);
         return n
-          ? { ...m, position: lerp(m.position, n.position, f), x: lerp(m.x, n.x, f), c: lerpAngle(m.c, n.c, f) }
+          ? { ...m, position: lerp(m.position, n.position, f), x: lerp(m.x, n.x, f), fingers: lerpFingers(m.fingers, n.fingers, f) }
           : m;
       }),
     };
@@ -604,7 +736,9 @@ function interpolate(a: ComponentState, b: ComponentState, f: number, perimeter:
       ...a,
       movers: a.movers.map((m) => {
         const n = next.get(m.id);
-        return n ? { ...m, position: lerpWrapped(m.position, n.position, f, perimeter) } : m;
+        return n
+          ? { ...m, position: lerpWrapped(m.position, n.position, f, perimeter), fingers: lerpFingers(m.fingers, n.fingers, f) }
+          : m;
       }),
     };
   }
@@ -614,23 +748,43 @@ function interpolate(a: ComponentState, b: ComponentState, f: number, perimeter:
       x: lerp(a.x, b.x, f),
       y: lerp(a.y, b.y, f),
       z: lerp(a.z, b.z, f),
-      c: lerpAngle(a.c, b.c, f),
-      a: lerpAngle(a.a, b.a, f),
+      fingers: lerpFingers(a.fingers, b.fingers, f),
     };
   }
   if (a.type === "conveyor" && b.type === "conveyor") return { ...a, beltPosition: lerp(a.beltPosition, b.beltPosition, f) };
   if (a.type === "delta" && b.type === "delta") {
     return {
       ...a,
-      actualTcp: lerpPlanar(a.actualTcp, b.actualTcp, f),
-      setpointTcp: lerpPlanar(a.setpointTcp, b.setpointTcp, f),
+      actualTcp: lerpPosition(a.actualTcp, b.actualTcp, f),
+      setpointTcp: lerpPosition(a.setpointTcp, b.setpointTcp, f),
+      fingers: lerpFingers(a.fingers, b.fingers, f),
     };
   }
   return a;
 }
 
-function lerpPlanar(a: PlanarPose, b: PlanarPose, f: number): PlanarPose {
-  return { x: lerp(a.x, b.x, f), y: lerp(a.y, b.y, f), z: lerp(a.z, b.z, f), rz: lerpAngle(a.rz, b.rz, f) };
+function lerpPosition(a: Position, b: Position, f: number): Position {
+  return { x: lerp(a.x, b.x, f), y: lerp(a.y, b.y, f), z: lerp(a.z, b.z, f) };
+}
+
+/** Positions linearly, each angle along the shorter way. */
+function lerpPose(a: Pose, b: Pose, f: number): Pose {
+  return {
+    x: lerp(a.x, b.x, f),
+    y: lerp(a.y, b.y, f),
+    z: lerp(a.z, b.z, f),
+    rx: lerpAngle(a.rx, b.rx, f),
+    ry: lerpAngle(a.ry, b.ry, f),
+    rz: lerpAngle(a.rz, b.rz, f),
+  };
+}
+
+/** Finger states by index; the active flag is discrete and taken from the earlier snapshot. */
+function lerpFingers(a: FingerState[], b: FingerState[], f: number): FingerState[] {
+  return a.map((s, i) => {
+    const n = b[i];
+    return n ? { ...s, pose: lerpPose(s.pose, n.pose, f) } : s;
+  });
 }
 
 /**
@@ -643,6 +797,7 @@ function conveyorProducts(
   frame: Frame,
   state: ConveyorState,
   carriers: ReadonlyMap<string, Frame>,
+  warn: (message: string) => void,
 ): SceneProduct[] {
   const direction = apply(frame.rotation, [1, 0, 0]);
   const result: SceneProduct[] = [];
@@ -677,7 +832,16 @@ function conveyorProducts(
 
     if (p.state === "picked" || p.state === "placed") {
       if (!beyondEnd) result.push(onBelt("placeholder"));
-      const carrier = p.state === "picked" ? carriers.get(`${p.robotId}:${p.moverId}`) : undefined;
+      let carrier: Frame | undefined;
+      if (p.state === "picked") {
+        const flange = carriers.get(`${p.robotId}:${p.moverId}`);
+        carrier = p.fingerId > 0 ? carriers.get(`${p.robotId}:${p.moverId}:${p.fingerId}`) : flange;
+        if (!carrier && flange) {
+          // An unknown finger: hang it at the flange so it stays visible.
+          warn(`${c.name}: product #${p.id} hangs from finger ${p.fingerId}, which robot #${p.robotId} does not have`);
+          carrier = flange;
+        }
+      }
       if (carrier) {
         // Hanging from the carrier: the product's top touches the carrier origin.
         result.push(shown("atTcp", { rotation: carrier.rotation, origin: toMcs(carrier, [0, 0, -type.height]) }));
@@ -706,6 +870,7 @@ function buildGantry(c: XtsGantryConfig, state: XtsGantryState | undefined) {
   const trackLength = c.moduleCount * c.moduleLength;
   const owner = snapOwner(c, frame);
   const carriers = new Map<number, Frame>();
+  const grippers: { moverId: number; flange: Frame; states: FingerState[] }[] = [];
   const snapPoints: SnapPoint[] = [
     owner.at(`${c.name} · track start`, [0, 0, z], "structure", true),
     ...Array.from({ length: Math.max(0, c.moduleCount - 1) }, (_, i) =>
@@ -715,15 +880,16 @@ function buildGantry(c: XtsGantryConfig, state: XtsGantryState | undefined) {
   ];
   const movers = (state?.movers ?? []).map((m): SceneGantryMover => {
     const toolX = m.x + c.toolOffsetX;
-    const tip = child(frame, [toolX, m.position, z + c.toolOffsetZ], rotZ(m.c));
+    const tip = child(frame, [toolX, m.position, z + c.toolOffsetZ]);
     carriers.set(m.id, tip);
-    snapPoints.push(owner.atMcs(`${c.name} · mover ${m.id} gripper`, tip.origin, "structure", true));
+    grippers.push({ moverId: m.id, flange: tip, states: m.fingers });
+    snapPoints.push(owner.atMcs(`${c.name} · mover ${m.id} flange`, tip.origin, "structure", true));
     return {
       id: m.id,
       carriage: toRenderer(toMcs(frame, [0, m.position, z])),
       armEnd: toRenderer(toMcs(frame, [toolX, m.position, z])),
       tip: toRendererTransform(tip),
-      gripperActive: m.gripperActive,
+      gripperActive: c.fingers.length === 0 && m.gripperActive,
     };
   });
   const centre: Vec3 = [
@@ -750,6 +916,7 @@ function buildGantry(c: XtsGantryConfig, state: XtsGantryState | undefined) {
     } satisfies SceneBoxArea,
     snapPoints,
     carriers,
+    grippers,
   };
 }
 
@@ -784,6 +951,7 @@ function buildLoop(c: XtsLoopConfig, state: XtsLoopState | undefined) {
   const L = c.straightLength;
   const R = c.curveRadius;
   const carriers = new Map<number, Frame>();
+  const grippers: { moverId: number; flange: Frame; states: FingerState[] }[] = [];
   const snapPoints: SnapPoint[] = [
     owner.at(`${c.name} · lower straight, start`, [0, 0, 0]),
     owner.at(`${c.name} · lower straight, end`, [L, 0, 0]),
@@ -799,6 +967,7 @@ function buildLoop(c: XtsLoopConfig, state: XtsLoopState | undefined) {
     const mover = child(frame, point, rotY(angle));
     const tool = child(mover, [0, 0, -c.toolOffset]);
     carriers.set(m.id, tool);
+    grippers.push({ moverId: m.id, flange: tool, states: m.fingers });
     snapPoints.push(owner.atMcs(`${c.name} · mover ${m.id} tool`, tool.origin, "structure", true));
     return { id: m.id, transform: toRendererTransform(mover), tool: toRenderer(tool.origin) };
   });
@@ -815,6 +984,7 @@ function buildLoop(c: XtsLoopConfig, state: XtsLoopState | undefined) {
     } satisfies SceneLoop,
     snapPoints,
     carriers,
+    grippers,
   };
 }
 
@@ -826,18 +996,17 @@ const CARTESIAN = {
   bridgeHeight: 100,
   carriage: [220, 220, 160] as Vec3,
   column: 90,
-  head: [120, 70] as const,
 };
 
 /**
  * Cartesian robot: rails along local +Y with their top at railHeight, the bridge on top of them at Y, the carriage
- * on the bridge at X, the column ending at the flange (X, Y, Z) and the gripper head turned by C and tilted by A.
+ * on the bridge at X and the column ending at the gripper flange (X, Y, Z).
  */
 function buildCartesian(c: CartesianConfig, state: CartesianState | undefined) {
   const frame = frameFromPose(c.pose);
   const owner = snapOwner(c, frame);
   const d = CARTESIAN;
-  const axes = state ? { x: state.x, y: state.y, z: state.z, c: state.c, a: state.a } : null;
+  const axes = state ? { x: state.x, y: state.y, z: state.z } : null;
   const { x, y, z } = axes ?? { x: c.xMin, y: c.yMin, z: c.zMax };
   const railX: [string, number][] = [
     ["left", c.xMin - d.margin],
@@ -847,8 +1016,7 @@ function buildCartesian(c: CartesianConfig, state: CartesianState | undefined) {
   const railEnd = c.yMax + d.margin + d.bridgeWidth / 2;
   const bridgeZ = c.railHeight + d.bridgeHeight / 2;
   const columnLength = c.railHeight + d.bridgeHeight - c.zMin;
-  const head = child(frame, [x, y, z], mul(rotZ(axes?.c ?? 0), rotX(axes?.a ?? 0)));
-  const tcp = child(head, [0, 0, -c.toolLength]);
+  const flange = child(frame, [x, y, z]);
   const box = (key: CartesianPartKey, at: Frame, size: Vec3) => ({
     key,
     transform: toRendererTransform(at),
@@ -869,7 +1037,6 @@ function buildCartesian(c: CartesianConfig, state: CartesianState | undefined) {
     ]),
     box("carriage", child(frame, [x, y, bridgeZ]), d.carriage),
     box("column", child(frame, [x, y, z + columnLength / 2]), [d.column, d.column, columnLength]),
-    box("head", child(head, [0, 0, -c.toolLength / 2]), [d.head[0], d.head[1], c.toolLength]),
   ];
 
   const snapPoints: SnapPoint[] = [owner.at(`${c.name} · origin`, [0, 0, 0])];
@@ -877,9 +1044,9 @@ function buildCartesian(c: CartesianConfig, state: CartesianState | undefined) {
     snapPoints.push(owner.at(`${c.name} · rail ${side}, start`, [rx, railStart, c.railHeight]));
     snapPoints.push(owner.at(`${c.name} · rail ${side}, end`, [rx, railEnd, c.railHeight]));
   }
-  // Reachable TCP volume with the gripper pointing straight down (A = 0).
-  const zLow = c.zMin - c.toolLength;
-  const zHigh = c.zMax - c.toolLength;
+  // Reachable flange volume.
+  const zLow = c.zMin;
+  const zHigh = c.zMax;
   for (const [zName, zc] of [["bottom", zLow], ["top", zHigh]] as const) {
     for (const [yName, yc] of [["start", c.yMin], ["end", c.yMax]] as const) {
       for (const [xName, xc] of [["X min", c.xMin], ["X max", c.xMax]] as const) {
@@ -887,17 +1054,14 @@ function buildCartesian(c: CartesianConfig, state: CartesianState | undefined) {
       }
     }
   }
-  if (state) {
-    snapPoints.push(owner.atMcs(`${c.name} · flange`, head.origin, "structure", true));
-    snapPoints.push(owner.atMcs(`${c.name} · TCP`, tcp.origin, "structure", true));
-  }
+  if (state) snapPoints.push(owner.atMcs(`${c.name} · flange`, flange.origin, "structure", true));
   return {
     cartesian: {
       id: c.id,
       name: c.name,
       parts,
-      tcp: state ? toRendererTransform(tcp) : null,
-      gripperActive: state?.gripperActive ?? false,
+      flange: state ? toRendererTransform(flange) : null,
+      gripperActive: c.fingers.length === 0 && (state?.gripperActive ?? false),
       axes,
     } satisfies SceneCartesian,
     area: {
@@ -906,7 +1070,8 @@ function buildCartesian(c: CartesianConfig, state: CartesianState | undefined) {
       size: [(c.xMax - c.xMin) * MM, (c.yMax - c.yMin) * MM, (zHigh - zLow) * MM],
     } satisfies SceneBoxArea,
     snapPoints,
-    /** A carried product hangs at the TCP, turned and tilted with the gripper. */
-    carrier: state ? tcp : undefined,
+    /** A carried product without finger hangs at the flange. */
+    carrier: state ? flange : undefined,
+    grippers: state ? [{ moverId: 0, flange, states: state.fingers }] : [],
   };
 }

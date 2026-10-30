@@ -1,11 +1,14 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="P_VisuDemo" Id="{c8778453-997a-4bcf-b7e6-ce4948e69c29}" SpecialFunc="None">
-    <Declaration><![CDATA[(* DEMO ONLY: three independent sample applications side by side, for testing the gateway over ADS. All lines start
+  <POU Name="P_VisuDemo" Id="{10dd4d27-b6e8-49f9-9cc0-967ca19b42d6}" SpecialFunc="None">
+    <Declaration><![CDATA[(* DEMO ONLY: four independent sample applications side by side, for testing the gateway over ADS. All lines start
    at X = 0 and convey along +X.
    - Delta application (Y = 0..1000): two infeed conveyors (Y = 0 and Y = 1000) and an outfeed between them
      (Y = 500), three Delta robots one after another (X = 1500, 2500, 3500) picking from either infeed and placing
-     onto the outfeed. Some products are deliberately missed.
+     onto the outfeed. Some products are deliberately missed. Each Delta has a different gripper:
+     Delta 1 two suction cups beside the flange that turn about Rz; it picks two products and places both at once.
+     Delta 2 one finger that turns about Rz and tilts about Rx while carrying.
+     Delta 3 five fingers around the flange that close when picking and open when placing.
    - Fxx application (Y = 2500): products arrive irregularly on the Fxx infeed; an XTS loop takes them over and puts
      them onto the Fxx outfeed with an even spacing.
    - IDH application (Y = 4100..4850): an XTS gantry with four movers picks products from the IDH infeed in batches
@@ -49,8 +52,20 @@ VAR
 	aPhase : ARRAY[0..2] OF INT;
 	aTargetId : ARRAY[0..2] OF UDINT;
 	aTargetBelt : ARRAY[0..2] OF INT;
-	aTcp : ARRAY[0..2] OF ST_VisuPlanarPose;
+	aTcp : ARRAY[0..2] OF ST_VisuPosition; // the gripper flange
 	aTcpInitialised : ARRAY[0..2] OF BOOL;
+	aToolRz : ARRAY[0..2] OF LREAL; // degrees, tool rotation about MCS Z (4th axis)
+	aHeld : ARRAY[0..2, 0..1] OF UDINT; // carried product ids per slot (Delta 1 carries two)
+	aHeldBelt : ARRAY[0..2, 0..1] OF INT; // infeed of each carried product: 0 = infeed 1, 1 = infeed 2
+	aHeldCount : ARRAY[0..2] OF INT;
+	fTiltRx : LREAL; // degrees, Delta 2: finger tilt about its X
+	fSpread : LREAL := 130; // mm, Delta 3: finger distance from the flange
+	nFinger : INT; // finger used for the current pick, 0 = the flange
+	nFingerCount : INT;
+	nSlot : INT;
+	fGripHeight : LREAL; // mm, flange above the grip point of the finger used
+	stGrip : ST_VisuPosition; // MCS offset flange -> grip point of the finger used
+	aMoverFingers : ARRAY[0..GVL_VisuParam.nMaxFingers - 1] OF ST_VisuFingerState; // XTS mover finger states
 
 	refBelt : REFERENCE TO FB_VisuConveyor;
 	refRobot : REFERENCE TO FB_VisuDelta;
@@ -59,7 +74,7 @@ VAR
 	stLatchPose : ST_VisuPlanarPose;
 	stProduct : ST_VisuProduct;
 	stProductPose : ST_VisuPlanarPose;
-	stSetpointTcp : ST_VisuPlanarPose;
+	stSetpointTcp : ST_VisuPosition;
 	bFound : BOOL;
 	nRobot : INT;
 	nBelt : INT;
@@ -98,6 +113,7 @@ VAR
 	fCartC : LREAL;
 	fCartA : LREAL;
 	fCartPickC : LREAL; // C that turns the gripper onto the current product
+	fCartJaw : LREAL := 120; // mm, jaw distance from the cup along the gripper's X
 	bCartGrip : BOOL;
 	nCartProduct : UDINT; // product id on the Cartesian infeed
 	stCartPose : ST_VisuPose;
@@ -123,7 +139,22 @@ VAR CONSTANT
 	cHover : LREAL := 120;
 	cPickHalfZone : LREAL := 400;
 	cPlaceHalfZone : LREAL := 300;
+	cAllocationOffset : LREAL := 300; // a robot allocates products only up to this distance before the pick zone end
 	cLead : LREAL := 7.5; // mm the robot leads the moving product
+	// Grippers. Suction cups (Delta 1, IDH and Fxx movers): the cup's grip point is where the products' tops touch.
+	cCupDiameter : LREAL := 40;
+	cCupHeight : LREAL := 50;
+	cPairOffset : LREAL := 70; // Delta 1: cups on either side of the flange along the tool's X
+	cTiltDiameter : LREAL := 30; // Delta 2
+	cTiltHeight : LREAL := 90;
+	cTiltAngle : LREAL := 25; // degrees about Rx while carrying
+	cTiltSpeed : LREAL := 60; // deg/s
+	cRingFingers : INT := 5; // Delta 3
+	cRingDiameter : LREAL := 16;
+	cRingHeight : LREAL := 40; // reaching down to the belt beside a carried product
+	cSpreadOpen : LREAL := 130;
+	cSpreadClosed : LREAL := 82; // around a 120 x 80 mm product in any orientation
+	cSpreadSpeed : LREAL := 200; // mm/s
 	cPhaseIdle : INT := 0;
 	cPhaseApproach : INT := 1;
 	cPhaseDescend : INT := 2;
@@ -195,8 +226,15 @@ VAR CONSTANT
 	cCartBeltSpeed : LREAL := 150; // mm/s
 	cCartX : LREAL := 1000;
 	cCartY : LREAL := 7400;
-	cCartZ : LREAL := 1540; // Z = -550 puts the TCP (A = 0) on the product top
-	cCartToolLength : LREAL := 150;
+	cCartZ : LREAL := 1540; // Z = -550 puts the cup's grip point (A = 0) on the product top
+	cCartToolLength : LREAL := 150; // flange to the cup's grip point
+	cCartCupHeight : LREAL := 40;
+	cCartJawDiameter : LREAL := 20;
+	cCartJawHeight : LREAL := 120;
+	cCartJawTop : LREAL := 60; // jaw tops below the flange
+	cCartJawOpen : LREAL := 120;
+	cCartJawClosed : LREAL := 70; // closed on a 120 mm product
+	cCartJawSpeed : LREAL := 300; // mm/s
 	cCartRailHeight : LREAL := 1200;
 	cCartXOutfeed : LREAL := 100;
 	cCartXInfeed : LREAL := 900;
@@ -331,12 +369,29 @@ FOR nRobot := 0 TO 2 DO
 	stBasePose.fY := cRobotY;
 	stBasePose.fZ := cRobotZ;
 	refRobot.Configure(stPose := stBasePose, fBaseRadius := 200, fEffectorRadius := 50,
-		fUpperArmLength := 400, fLowerArmLength := 1000, bHasRotationAxis := TRUE);
+		fUpperArmLength := 400, fLowerArmLength := 1000);
+	CASE nRobot OF
+		0:
+			nFingerCount := 2;
+			refRobot.SetFinger(nFinger := 1, fDiameter := cCupDiameter, fHeight := cCupHeight);
+			refRobot.SetFinger(nFinger := 2, fDiameter := cCupDiameter, fHeight := cCupHeight);
+		1:
+			nFingerCount := 1;
+			refRobot.SetFinger(nFinger := 1, fDiameter := cTiltDiameter, fHeight := cTiltHeight);
+	ELSE
+		nFingerCount := cRingFingers;
+		FOR nFinger := 1 TO cRingFingers DO
+			refRobot.SetFinger(nFinger := INT_TO_UINT(nFinger), fDiameter := cRingDiameter, fHeight := cRingHeight);
+		END_FOR
+	END_CASE
 	refRobot.SetWorkingArea(fRadius := 750, fZMin := -1300, fZMax := -700, fConeHeight := 200, fConeBottomRadius := 450);
+	// Neighbouring robots share the space between them: each one is limited to half the robot pitch.
+	refRobot.SetLimitArea(fXMin := -cRobotPitch / 2, fXMax := cRobotPitch / 2, fYMin := -750, fYMax := 750,
+		fZMin := -1500, fZMax := -700);
 	refRobot.SetZone(nConveyorId := fbInfeed1.Id(), eKind := E_VisuZoneKind.PICK,
-		fStart := fBaseX - cPickHalfZone, fEnd := fBaseX + cPickHalfZone);
+		fStart := fBaseX - cPickHalfZone, fEnd := fBaseX + cPickHalfZone, fAllocationOffset := cAllocationOffset);
 	refRobot.SetZone(nConveyorId := fbInfeed2.Id(), eKind := E_VisuZoneKind.PICK,
-		fStart := fBaseX - cPickHalfZone, fEnd := fBaseX + cPickHalfZone);
+		fStart := fBaseX - cPickHalfZone, fEnd := fBaseX + cPickHalfZone, fAllocationOffset := cAllocationOffset);
 	refRobot.SetZone(nConveyorId := fbOutfeed.Id(), eKind := E_VisuZoneKind.PLACE,
 		fStart := fBaseX - cPlaceHalfZone, fEnd := fBaseX + cPlaceHalfZone);
 	IF NOT aTcpInitialised[nRobot] THEN
@@ -359,7 +414,8 @@ FOR nRobot := 0 TO 2 DO
 				stProduct => stProduct, stPose => stProductPose);
 		END_IF
 	END_IF
-	IF aPhase[nRobot] <> cPhaseIdle AND NOT bFound THEN
+	// Only approaching and descending follow a target; carried products are tracked in aHeld.
+	IF (aPhase[nRobot] = cPhaseApproach OR aPhase[nRobot] = cPhaseDescend) AND NOT bFound THEN
 		aPhase[nRobot] := cPhaseIdle;
 		aTargetId[nRobot] := 0;
 	END_IF
@@ -369,6 +425,20 @@ FOR nRobot := 0 TO 2 DO
 		fTopZ := stProductPose.fZ + cProductHeight;
 		fTargetRz := stProductPose.fRz;
 	END_IF
+	// Finger used for the current pick: Delta 1 fills its cups one after the other, Delta 3 carries at the flange
+	// between its fingers.
+	CASE nRobot OF
+		0:
+			nFinger := MIN(aHeldCount[nRobot] + 1, 2);
+			fGripHeight := cCupHeight;
+		1:
+			nFinger := 1;
+			fGripHeight := cTiltHeight;
+	ELSE
+		nFinger := 0;
+		fGripHeight := 0;
+	END_CASE
+	stGrip := GripOffset(nRobot := nRobot, nFinger := nFinger);
 
 	CASE aPhase[nRobot] OF
 		cPhaseIdle:
@@ -378,12 +448,16 @@ FOR nRobot := 0 TO 2 DO
 				ELSE
 					refBelt REF= fbInfeed2;
 				END_IF
+				// Delta 1 serves infeed 1, Delta 2 infeed 2, Delta 3 takes what both leave.
 				nIndex := 0;
+				IF (nRobot = 0 AND nBelt = 1) OR (nRobot = 1 AND nBelt = 0) THEN
+					nIndex := refBelt.ProductCount();
+				END_IF
 				WHILE aTargetId[nRobot] = 0 AND nIndex < refBelt.ProductCount() DO
 					refBelt.GetProduct(nIndex := nIndex, stProduct => stProduct, stPose => stProductPose);
 					IF stProduct.eState = E_VisuProductState.DETECTED
 						AND stProductPose.fX >= fBaseX - cPickHalfZone
-						AND stProductPose.fX <= fBaseX + cPickHalfZone - 300
+						AND stProductPose.fX <= fBaseX + cPickHalfZone - cAllocationOffset
 					THEN
 						refBelt.SetProductState(nId := stProduct.nId, eState := E_VisuProductState.ASSIGNED, nRobotId := refRobot.Id());
 						aTargetId[nRobot] := stProduct.nId;
@@ -404,52 +478,109 @@ FOR nRobot := 0 TO 2 DO
 				aTargetId[nRobot] := 0;
 				aPhase[nRobot] := cPhaseIdle;
 			ELSE
-				aTcp[nRobot].fRz := aTcp[nRobot].fRz + (fTargetRz - aTcp[nRobot].fRz) * MIN(1.0, fDt * 10.0);
-				IF MoveToward(aTcp[nRobot], fX, fY, fTopZ + cHover, fStep) THEN
+				aToolRz[nRobot] := aToolRz[nRobot] + (fTargetRz - aToolRz[nRobot]) * MIN(1.0, fDt * 10.0);
+				IF MoveToward(aTcp[nRobot], fX - stGrip.fX, fY - stGrip.fY, fTopZ - stGrip.fZ + cHover, fStep) THEN
 					aPhase[nRobot] := cPhaseDescend;
 				END_IF
 			END_IF
 
 		cPhaseDescend:
-			IF MoveToward(aTcp[nRobot], fX, fY, fTopZ, fStep) THEN
-				refBelt.SetProductState(nId := aTargetId[nRobot], eState := E_VisuProductState.PICKED, nRobotId := refRobot.Id());
+			aToolRz[nRobot] := aToolRz[nRobot] + (fTargetRz - aToolRz[nRobot]) * MIN(1.0, fDt * 10.0);
+			// Delta 3 grips only once its fingers have closed around the product (both operands are evaluated).
+			IF MoveToward(aTcp[nRobot], fX - stGrip.fX, fY - stGrip.fY, fTopZ - stGrip.fZ, fStep)
+				AND (nRobot <> 2 OR fSpread = cSpreadClosed)
+			THEN
+				nSlot := aHeldCount[nRobot];
+				refBelt.SetProductState(nId := aTargetId[nRobot], eState := E_VisuProductState.PICKED,
+					nRobotId := refRobot.Id(), nFingerId := INT_TO_UDINT(nFinger));
+				aHeld[nRobot, nSlot] := aTargetId[nRobot];
+				aHeldBelt[nRobot, nSlot] := aTargetBelt[nRobot];
+				aHeldCount[nRobot] := nSlot + 1;
+				aTargetId[nRobot] := 0;
 				aPhase[nRobot] := cPhaseLift;
 			END_IF
 
 		cPhaseLift:
-			IF MoveToward(aTcp[nRobot], aTcp[nRobot].fX, aTcp[nRobot].fY, fTopZ + cHover, fStep) THEN
-				aPhase[nRobot] := cPhaseTransfer;
+			IF MoveToward(aTcp[nRobot], aTcp[nRobot].fX, aTcp[nRobot].fY, cBeltZ + cProductHeight + fGripHeight + cHover, fStep) THEN
+				// Delta 1 picks a second product before it places both.
+				IF nRobot = 0 AND aHeldCount[nRobot] < 2 THEN
+					aPhase[nRobot] := cPhaseIdle;
+				ELSE
+					aPhase[nRobot] := cPhaseTransfer;
+				END_IF
 			END_IF
 
 		cPhaseTransfer:
-			aTcp[nRobot].fRz := aTcp[nRobot].fRz * (1.0 - MIN(1.0, fDt * 5.0));
-			IF MoveToward(aTcp[nRobot], fBaseX, cOutfeedY, cBeltZ + cProductHeight + cHover, fStep) THEN
+			aToolRz[nRobot] := aToolRz[nRobot] * (1.0 - MIN(1.0, fDt * 5.0));
+			IF nRobot = 1 THEN
+				fTiltRx := Approach(fTiltRx, cTiltAngle, cTiltSpeed * fDt);
+			END_IF
+			IF MoveToward(aTcp[nRobot], fBaseX, cOutfeedY, cBeltZ + cProductHeight + fGripHeight + cHover, fStep) THEN
 				aPhase[nRobot] := cPhaseLower;
 			END_IF
 
 		cPhaseLower:
-			IF MoveToward(aTcp[nRobot], aTcp[nRobot].fX, aTcp[nRobot].fY, cBeltZ + cProductHeight, fStep) THEN
+			aToolRz[nRobot] := aToolRz[nRobot] * (1.0 - MIN(1.0, fDt * 5.0));
+			IF nRobot = 1 THEN
+				fTiltRx := Approach(fTiltRx, 0, cTiltSpeed * fDt);
+			END_IF
+			// Delta 2 puts the product down straight (both operands are evaluated).
+			IF MoveToward(aTcp[nRobot], aTcp[nRobot].fX, aTcp[nRobot].fY, cBeltZ + cProductHeight + fGripHeight, fStep)
+				AND (nRobot <> 1 OR fTiltRx = 0)
+			THEN
 				aPhase[nRobot] := cPhaseRelease;
 			END_IF
 
 		cPhaseRelease:
-			refBelt.SetProductState(nId := aTargetId[nRobot], eState := E_VisuProductState.PLACED, nRobotId := refRobot.Id());
-			stLatchPose.fX := aTcp[nRobot].fX;
-			stLatchPose.fY := aTcp[nRobot].fY;
-			stLatchPose.fZ := cBeltZ;
-			stLatchPose.fRz := aTcp[nRobot].fRz;
-			IF fbOutfeed.LatchProduct(nId := nNextId, stLatchPose := stLatchPose, nProductType := 1) THEN
-				nNextId := nNextId + 1;
-			END_IF
-			aTargetId[nRobot] := 0;
+			// Every carried product is put down where its finger (Delta 3: the flange) holds it.
+			FOR nSlot := 0 TO aHeldCount[nRobot] - 1 DO
+				IF aHeldBelt[nRobot, nSlot] = 0 THEN
+					refBelt REF= fbInfeed1;
+				ELSE
+					refBelt REF= fbInfeed2;
+				END_IF
+				refBelt.SetProductState(nId := aHeld[nRobot, nSlot], eState := E_VisuProductState.PLACED,
+					nRobotId := refRobot.Id());
+				IF nRobot = 2 THEN
+					nFinger := 0;
+				ELSE
+					nFinger := nSlot + 1;
+				END_IF
+				stGrip := GripOffset(nRobot := nRobot, nFinger := nFinger);
+				stLatchPose.fX := aTcp[nRobot].fX + stGrip.fX;
+				stLatchPose.fY := aTcp[nRobot].fY + stGrip.fY;
+				stLatchPose.fZ := cBeltZ;
+				// A product carried at a finger keeps the finger's turn; one at the flange is turned with the base.
+				stLatchPose.fRz := SEL(nRobot = 2, aToolRz[nRobot], 0);
+				IF fbOutfeed.LatchProduct(nId := nNextId, stLatchPose := stLatchPose, nProductType := 1) THEN
+					nNextId := nNextId + 1;
+				END_IF
+				aHeld[nRobot, nSlot] := 0;
+			END_FOR
+			aHeldCount[nRobot] := 0;
 			aPhase[nRobot] := cPhaseIdle;
 	END_CASE
 
-	// Only the TCP is reported; the visualisation derives the arms. A small offset shows the setpoint marker.
+	// Delta 3 closes its fingers while it descends onto a product and keeps them closed while it carries one.
+	IF nRobot = 2 THEN
+		IF aPhase[nRobot] = cPhaseDescend OR aHeldCount[nRobot] > 0 THEN
+			fSpread := Approach(fSpread, cSpreadClosed, cSpreadSpeed * fDt);
+		ELSE
+			fSpread := Approach(fSpread, cSpreadOpen, cSpreadSpeed * fDt);
+		END_IF
+	END_IF
+
+	// Only the TCP (the flange) is reported; the visualisation derives the arms. A small offset shows the setpoint
+	// marker. Tool rotations show only through the finger poses.
 	stSetpointTcp := aTcp[nRobot];
 	stSetpointTcp.fX := stSetpointTcp.fX + 2;
 	stSetpointTcp.fZ := stSetpointTcp.fZ - 1;
 	refRobot.SetTcp(stActualTcp := aTcp[nRobot], stSetpointTcp := stSetpointTcp);
+	FOR nFinger := 1 TO nFingerCount DO
+		// Delta 1: a cup grips while its slot holds a product; the others grip while anything is carried.
+		refRobot.SetFingerState(nFinger := INT_TO_UINT(nFinger), stPose := FingerPose(nRobot := nRobot, nFinger := nFinger),
+			bActive := aHeldCount[nRobot] >= SEL(nRobot = 0, 1, nFinger));
+	END_FOR
 END_FOR
 
 // ===== Fxx application =====
@@ -457,8 +588,10 @@ stXtsPose.fX := cLoopX;
 stXtsPose.fY := cFxxY;
 stXtsPose.fZ := cBeltZ + cProductHeight + cLoopToolOffset;
 stXtsPose.fRz := 0;
+// The flange sits one cup height closer to the track, so the cup's grip point is at the products' tops.
 fbFxx.Configure(stPose := stXtsPose, fStraightLength := cLoopStraight, fCurveRadius := cLoopRadius,
-	fToolOffset := cLoopToolOffset, fMoverLength := 100, fMoverWidth := 60);
+	fToolOffset := cLoopToolOffset - cCupHeight, fMoverLength := 100, fMoverWidth := 60);
+fbFxx.SetFinger(nFinger := 1, fDiameter := cCupDiameter, fHeight := cCupHeight);
 fbFxx.SetZone(nConveyorId := fbFxxInfeed.Id(), eKind := E_VisuZoneKind.PICK, fStart := cLoopX, fEnd := cLoopX + cLoopRelease);
 fbFxx.SetZone(nConveyorId := fbFxxOutfeed.Id(), eKind := E_VisuZoneKind.PLACE,
 	fStart := cLoopX + cLoopPlace - cFxxOutfeedX - 300, fEnd := cLoopX + cLoopPlace - cFxxOutfeedX + 100);
@@ -470,8 +603,10 @@ stXtsPose.fY := cGantryY;
 stXtsPose.fZ := cGantryZ;
 stXtsPose.fRz := -90;
 fbIdh.Configure(stPose := stXtsPose, nModuleCount := cGantryModules, fModuleLength := cGantryModuleLength,
-	fXMin := 0, fXMax := 700, fZMin := cGantryZDown, fZMax := 0, fCMin := -180, fCMax := 180,
-	fToolOffsetX := cGantryToolX, fToolOffsetZ := cGantryToolZ, fMoverLength := cGantryMoverLength, fMoverWidth := 80);
+	fXMin := 0, fXMax := 700, fZMin := cGantryZDown, fZMax := 0,
+	fToolOffsetX := cGantryToolX, fToolOffsetZ := cGantryToolZ + cCupHeight, fMoverLength := cGantryMoverLength,
+	fMoverWidth := 80);
+fbIdh.SetFinger(nFinger := 1, fDiameter := cCupDiameter, fHeight := cCupHeight);
 fbIdh.SetZone(nConveyorId := fbIdhInfeed.Id(), eKind := E_VisuZoneKind.PICK,
 	fStart := cGantryX, fEnd := cGantryX + UINT_TO_LREAL(cGantryModules) * cGantryModuleLength);
 fbIdh.SetZone(nConveyorId := fbIdhTray.Id(), eKind := E_VisuZoneKind.PLACE,
@@ -484,13 +619,24 @@ stCartPose.fY := cCartY;
 stCartPose.fZ := cCartZ;
 stCartPose.fRz := -90;
 fbCartesian.Configure(stPose := stCartPose, fXMin := 0, fXMax := 1200, fYMin := 0, fYMax := 1000, fZMin := -600,
-	fZMax := 0, fCMin := -180, fCMax := 180, fAMin := -30, fAMax := 30, fToolLength := cCartToolLength,
-	fRailHeight := cCartRailHeight);
+	fZMax := 0, fRailHeight := cCartRailHeight);
+// A cup in the middle carries the product, two jaws close beside it.
+fbCartesian.SetFinger(nFinger := 1, fDiameter := cCupDiameter, fHeight := cCartCupHeight);
+fbCartesian.SetFinger(nFinger := 2, fDiameter := cCartJawDiameter, fHeight := cCartJawHeight);
+fbCartesian.SetFinger(nFinger := 3, fDiameter := cCartJawDiameter, fHeight := cCartJawHeight);
 fbCartesian.SetZone(nConveyorId := fbCartInfeed.Id(), eKind := E_VisuZoneKind.PICK, fStart := cCartX, fEnd := cCartX + 1000);
 fbCartesian.SetZone(nConveyorId := fbCartOutfeed.Id(), eKind := E_VisuZoneKind.PLACE,
 	fStart := cCartX + cCartYPlace - 200, fEnd := cCartX + cCartYPlace + 200);
 StepCartesian();
-fbCartesian.SetAxes(fX := fCartX, fY := fCartY, fZ := fCartZ, fC := fCartC, fA := fCartA, bGripperActive := bCartGrip);
+fbCartesian.SetAxes(fX := fCartX, fY := fCartY, fZ := fCartZ, bGripperActive := bCartGrip);
+// C and A turn and tilt the gripper below the flange; they show only through the finger poses.
+fCartJaw := Approach(fCartJaw, SEL(bCartGrip, cCartJawOpen, cCartJawClosed), cCartJawSpeed * fDt);
+fbCartesian.SetFingerState(nFinger := 1, stPose := CartFinger(fOffsetX := 0, fOffsetZ := -(cCartToolLength - cCartCupHeight)),
+	bActive := bCartGrip);
+fbCartesian.SetFingerState(nFinger := 2, stPose := CartFinger(fOffsetX := fCartJaw, fOffsetZ := -cCartJawTop),
+	bActive := bCartGrip);
+fbCartesian.SetFingerState(nFinger := 3, stPose := CartFinger(fOffsetX := -fCartJaw, fOffsetZ := -cCartJawTop),
+	bActive := bCartGrip);
 
 // Drop register entries some distance beyond the belt end, so "missed" stays visible briefly.
 fbInfeed1.RemoveProductsBeyond(cBeltLength + cRemoveBeyondEnd);
@@ -521,6 +667,37 @@ ELSE
 END_IF]]></ST>
       </Implementation>
     </Method>
+    <Method Name="CartFinger" Id="{b0f09a27-df65-483e-b09b-84b38e469b09}">
+      <Declaration><![CDATA[(* Pose of a Cartesian gripper finger, absolute in the MCS: the finger sits at (fOffsetX, 0, fOffsetZ) in the gripper,
+   which is turned by C about Z and tilted by A about its own X below the flange. The robot is turned by -90 deg:
+   local (x, y, z) is MCS (cCartX + y, cCartY - x, cCartZ + z). *)
+METHOD PRIVATE CartFinger : ST_VisuPose
+VAR_INPUT
+	fOffsetX : LREAL; // mm, along the gripper's X
+	fOffsetZ : LREAL; // mm, below the flange: negative
+END_VAR
+VAR
+	fA : LREAL; // rad
+	fC : LREAL; // rad
+	fVx : LREAL; // mm, offset in the robot frame
+	fVy : LREAL;
+	fVz : LREAL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[fA := fCartA * GVL_VisuConstants.fDegToRad;
+fC := fCartC * GVL_VisuConstants.fDegToRad;
+// Rz(C) * Rx(A) * (x, 0, z)
+fVx := fOffsetX * COS(fC) + fOffsetZ * SIN(fA) * SIN(fC);
+fVy := fOffsetX * SIN(fC) - fOffsetZ * SIN(fA) * COS(fC);
+fVz := fOffsetZ * COS(fA);
+CartFinger.fX := cCartX + (fCartY + fVy);
+CartFinger.fY := cCartY - (fCartX + fVx);
+CartFinger.fZ := cCartZ + (fCartZ + fVz);
+CartFinger.fRx := fCartA;
+CartFinger.fRy := 0;
+CartFinger.fRz := -90 + fCartC;]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="CartMove" Id="{848ad8d7-a5b5-4d63-9d7d-99d44a91f0fb}">
       <Declaration><![CDATA[(* Moves the Cartesian robot's axes one cycle towards the goal, each with its own speed. TRUE once all are there. *)
 METHOD PRIVATE CartMove : BOOL
@@ -539,6 +716,44 @@ fCartC := Approach(fCartC, fC, cCartCSpeed * fDt);
 fCartA := Approach(fCartA, fA, cCartASpeed * fDt);
 // Approach lands exactly on the goal, so equality is safe.
 CartMove := fCartX = fX AND fCartY = fY AND fCartZ = fZ AND fCartC = fC AND fCartA = fA;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="FingerPose" Id="{0b7552e9-4750-4e29-aefd-8705a4d96f24}">
+      <Declaration><![CDATA[(* Pose of a Delta's finger frame (centre of its top face), absolute in the MCS, from the robot's TCP (the flange) and
+   its tool state:
+   - Delta 1: two cups on either side of the flange at cPairOffset along the tool's X, the tool turned by aToolRz.
+   - Delta 2: one finger at the flange, turned by aToolRz and tilted about its own X by fTiltRx.
+   - Delta 3: cRingFingers fingers on a circle of radius fSpread around the flange, each turned to face outwards. *)
+METHOD PRIVATE FingerPose : ST_VisuPose
+VAR_INPUT
+	nRobot : INT; // 0..2
+	nFinger : INT; // 1-based
+END_VAR
+VAR
+	fRz : LREAL; // degrees
+	fRadius : LREAL; // mm, finger distance from the flange
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[FingerPose.fX := aTcp[nRobot].fX;
+FingerPose.fY := aTcp[nRobot].fY;
+FingerPose.fZ := aTcp[nRobot].fZ;
+FingerPose.fRx := 0;
+FingerPose.fRy := 0;
+fRz := aToolRz[nRobot];
+fRadius := 0;
+CASE nRobot OF
+	0:
+		// Finger 1 along the tool's +X, finger 2 along its -X.
+		fRadius := SEL(nFinger = 1, -cPairOffset, cPairOffset);
+	1:
+		FingerPose.fRx := fTiltRx;
+	2:
+		fRz := aToolRz[nRobot] + 360.0 / INT_TO_LREAL(cRingFingers) * INT_TO_LREAL(nFinger - 1);
+		fRadius := fSpread;
+END_CASE
+FingerPose.fX := FingerPose.fX + fRadius * COS(fRz * GVL_VisuConstants.fDegToRad);
+FingerPose.fY := FingerPose.fY + fRadius * SIN(fRz * GVL_VisuConstants.fDegToRad);
+FingerPose.fRz := fRz;]]></ST>
       </Implementation>
     </Method>
     <Method Name="GantryFollow" Id="{ea3c75c7-57c5-486f-bc56-23859182665d}">
@@ -572,6 +787,39 @@ END_FOR
 GantryFollow := TRUE;]]></ST>
       </Implementation>
     </Method>
+    <Method Name="GripOffset" Id="{d9dc8fb8-d31e-47db-afc1-2c295eb4e131}">
+      <Declaration><![CDATA[(* MCS offset from a Delta's TCP (the flange) to the grip point of one of its fingers, the centre of the finger's
+   bottom face: where a carried product's top touches. nFinger = 0 is the flange itself. *)
+METHOD PRIVATE GripOffset : ST_VisuPosition
+VAR_INPUT
+	nRobot : INT; // 0..2
+	nFinger : INT; // 1-based, 0 = flange
+END_VAR
+VAR
+	stTop : ST_VisuPose;
+	fHeight : LREAL;
+	fRx : LREAL; // rad
+	fRz : LREAL; // rad
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF nFinger = 0 THEN
+	RETURN;
+END_IF
+CASE nRobot OF
+	0: fHeight := cCupHeight;
+	1: fHeight := cTiltHeight;
+ELSE
+	fHeight := cRingHeight;
+END_CASE
+stTop := FingerPose(nRobot := nRobot, nFinger := nFinger);
+fRx := stTop.fRx * GVL_VisuConstants.fDegToRad;
+fRz := stTop.fRz * GVL_VisuConstants.fDegToRad;
+// Rz(rz) * Rx(rx) * (0, 0, -height): the finger's local -Z in the MCS.
+GripOffset.fX := stTop.fX - aTcp[nRobot].fX - fHeight * SIN(fRx) * SIN(fRz);
+GripOffset.fY := stTop.fY - aTcp[nRobot].fY + fHeight * SIN(fRx) * COS(fRz);
+GripOffset.fZ := stTop.fZ - aTcp[nRobot].fZ - fHeight * COS(fRx);]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="IdhTrackPos" Id="{6245175d-30d3-417f-a534-a1a99c9bb94c}">
       <Declaration><![CDATA[(* Position of a product on the IDH infeed along the gantry track (MCS x - gantry x) and its rotation.
    FALSE if the product is no longer in the register. *)
@@ -598,11 +846,57 @@ IF IdhTrackPos THEN
 END_IF]]></ST>
       </Implementation>
     </Method>
+    <Method Name="LoopFlange" Id="{880e4534-3081-4a48-b123-cd72a4b21d81}">
+      <Declaration><![CDATA[(* Pose of the gripper flange of a Fxx mover at track position fS, absolute in the MCS: outwards from the track by the
+   configured tool offset, turned about the loop's Y axis with the track tangent. *)
+METHOD PRIVATE LoopFlange : ST_VisuPose
+VAR_INPUT
+	fS : LREAL; // mm, 0..perimeter
+END_VAR
+VAR
+	fArc : LREAL; // mm, length of one curve
+	fA : LREAL; // rad
+	fX : LREAL; // mm, local track point
+	fZ : LREAL; // mm
+	fAngle : LREAL; // degrees, mover rotation about local Y
+	fOut : LREAL; // mm, flange distance from the track
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[fArc := 3.141592653589793 * cLoopRadius;
+IF fS <= cLoopStraight THEN
+	fX := fS;
+	fZ := 0;
+	fAngle := 0;
+ELSIF fS <= cLoopStraight + fArc THEN
+	fA := (fS - cLoopStraight) / cLoopRadius;
+	fX := cLoopStraight + cLoopRadius * SIN(fA);
+	fZ := cLoopRadius - cLoopRadius * COS(fA);
+	fAngle := -fA / GVL_VisuConstants.fDegToRad;
+ELSIF fS <= 2 * cLoopStraight + fArc THEN
+	fX := cLoopStraight - (fS - cLoopStraight - fArc);
+	fZ := 2 * cLoopRadius;
+	fAngle := 180;
+ELSE
+	fA := (fS - 2 * cLoopStraight - fArc) / cLoopRadius;
+	fX := -cLoopRadius * SIN(fA);
+	fZ := cLoopRadius + cLoopRadius * COS(fA);
+	fAngle := 180 - fA / GVL_VisuConstants.fDegToRad;
+END_IF
+// The mover's -Z, turned about Y by fAngle, points outwards: Ry(angle) * (0, 0, -out).
+fOut := cLoopToolOffset - cCupHeight;
+LoopFlange.fX := cLoopX + fX - fOut * SIN(fAngle * GVL_VisuConstants.fDegToRad);
+LoopFlange.fY := cFxxY;
+LoopFlange.fZ := cBeltZ + cProductHeight + cLoopToolOffset + fZ - fOut * COS(fAngle * GVL_VisuConstants.fDegToRad);
+LoopFlange.fRx := 0;
+LoopFlange.fRy := fAngle;
+LoopFlange.fRz := 0;]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="MoveToward" Id="{85976e89-5ede-4f08-92ae-262b9a901175}">
       <Declaration><![CDATA[(* Moves a TCP towards a target by at most fMaxStep mm. TRUE once the target is reached. *)
 METHOD PRIVATE MoveToward : BOOL
 VAR_IN_OUT
-	stTcp : ST_VisuPlanarPose;
+	stTcp : ST_VisuPosition;
 END_VAR
 VAR_INPUT
 	fTargetX : LREAL;
@@ -694,7 +988,7 @@ CASE nCartPhase OF
 			// Lowers only once above the product with the gripper turned onto it.
 			IF CartMove(cCartXInfeed, fProductY, cCartZPick, fCartPickC, 0) THEN
 				fbCartInfeed.SetProductState(nId := nCartProduct, eState := E_VisuProductState.PICKED,
-					nRobotId := fbCartesian.Id());
+					nRobotId := fbCartesian.Id(), nFingerId := 1);
 				bCartGrip := TRUE;
 				nCartPhase := cCartLift;
 			END_IF
@@ -722,7 +1016,7 @@ CASE nCartPhase OF
 
 	cCartRelease:
 		fbCartInfeed.SetProductState(nId := nCartProduct, eState := E_VisuProductState.PLACED, nRobotId := fbCartesian.Id());
-		// Turned by -90 deg: the TCP (A = 0) is at MCS x = origin + Y, y = origin - X; the product keeps the turn.
+		// Turned by -90 deg: the cup (A = 0) is at MCS x = origin + Y, y = origin - X; the product keeps the turn.
 		stPlacePose.fX := cCartX + fCartY;
 		stPlacePose.fY := cCartY - fCartX;
 		stPlacePose.fZ := cBeltZ;
@@ -823,7 +1117,7 @@ END_VAR]]></Declaration>
 				IF aGantryProduct[nI] <> 0 THEN
 					aGantryGrip[nI] := TRUE;
 					fbIdhInfeed.SetProductState(nId := aGantryProduct[nI], eState := E_VisuProductState.PICKED,
-						nRobotId := fbIdh.Id(), nMoverId := INT_TO_UDINT(nI + 1));
+						nRobotId := fbIdh.Id(), nMoverId := INT_TO_UDINT(nI + 1), nFingerId := 1);
 				END_IF
 			END_FOR
 			nGantryPhase := cGantryPickUp;
@@ -889,8 +1183,15 @@ END_CASE
 fbIdh.SetZPosition(fGantryZ);
 fbIdh.SetMoverCount(4);
 FOR nI := 0 TO 3 DO
+	// The cup hangs from the flange, turned by the gripper's C. Turned by -90 deg: local (x, y, z) is
+	// MCS (gantry x + y, gantry y - x, gantry z + z).
+	aMoverFingers[0].stPose.fX := cGantryX + aGantryPos[nI];
+	aMoverFingers[0].stPose.fY := cGantryY - (aGantryX[nI] + cGantryToolX);
+	aMoverFingers[0].stPose.fZ := cGantryZ + fGantryZ + cGantryToolZ + cCupHeight;
+	aMoverFingers[0].stPose.fRz := -90 + aGantryC[nI];
+	aMoverFingers[0].bActive := aGantryGrip[nI];
 	fbIdh.SetMover(nIndex := INT_TO_UINT(nI), nId := INT_TO_UDINT(nI + 1), fPosition := aGantryPos[nI],
-		fX := aGantryX[nI], fC := aGantryC[nI], bGripperActive := aGantryGrip[nI]);
+		fX := aGantryX[nI], bGripperActive := aGantryGrip[nI], aFingerStates := aMoverFingers);
 END_FOR
 StepGantry := TRUE;]]></ST>
       </Implementation>
@@ -984,7 +1285,7 @@ FOR nI := 0 TO cLoopMovers - 1 DO
 				aLoopS[nI] := stPose.fX - cLoopX;
 				IF aLoopS[nI] >= cLoopGrip AND stProduct.eState = E_VisuProductState.ASSIGNED THEN
 					fbFxxInfeed.SetProductState(nId := stProduct.nId, eState := E_VisuProductState.PICKED,
-						nRobotId := fbFxx.Id(), nMoverId := INT_TO_UDINT(nI + 1));
+						nRobotId := fbFxx.Id(), nMoverId := INT_TO_UDINT(nI + 1), nFingerId := 1);
 				END_IF
 				IF aLoopS[nI] >= cLoopRelease THEN
 					aLoopMode[nI] := cLoopDeliver;
@@ -1024,7 +1325,9 @@ FOR nI := 0 TO cLoopMovers - 1 DO
 	IF fS >= fPerimeter THEN
 		fS := fS - fPerimeter;
 	END_IF
-	fbFxx.SetMover(nIndex := INT_TO_UINT(nI), nId := INT_TO_UDINT(nI + 1), fPosition := fS);
+	aMoverFingers[0].stPose := LoopFlange(fS);
+	aMoverFingers[0].bActive := aLoopMode[nI] = cLoopDeliver OR (aLoopMode[nI] = cLoopTrack AND aLoopS[nI] >= cLoopGrip);
+	fbFxx.SetMover(nIndex := INT_TO_UINT(nI), nId := INT_TO_UDINT(nI + 1), fPosition := fS, aFingerStates := aMoverFingers);
 END_FOR
 StepLoop := TRUE;]]></ST>
       </Implementation>

@@ -9,6 +9,8 @@ import {
   type ST_VisuCartesianState,
   type ST_VisuConveyor,
   type ST_VisuDelta,
+  type ST_VisuFinger,
+  type ST_VisuFingerState,
   type ST_VisuManifest,
   type ST_VisuManifestEntry,
   type ST_VisuPose,
@@ -17,6 +19,7 @@ import {
   type ST_VisuLoopMover,
   type ST_VisuXtsGantry,
   type ST_VisuXtsLoop,
+  type ST_VisuLimitArea,
   type ST_VisuZone,
 } from "./plc-contract";
 import type { InMemoryPlc } from "./in-memory-plc";
@@ -27,6 +30,25 @@ export const MAX_PRODUCTS = 128;
 export const MAX_PRODUCT_TYPES = 8;
 export const MAX_ZONES = 8;
 export const MAX_MOVERS = 40;
+export const MAX_FINGERS = 8;
+
+export function emptyFingerState(): ST_VisuFingerState {
+  return { stPose: pose(), bActive: false };
+}
+
+/** A full finger state array from the given states. */
+export function fingerStates(states: Partial<ST_VisuFingerState>[] = []): ST_VisuFingerState[] {
+  return padded(
+    states.map((s) => ({ ...emptyFingerState(), ...s })),
+    MAX_FINGERS,
+    emptyFingerState,
+  );
+}
+
+function fingerConfig(spec: { fingers?: ST_VisuFinger[] }) {
+  const fingers = spec.fingers ?? [];
+  return { nFingerCount: fingers.length, aFingers: padded(fingers, MAX_FINGERS, () => ({ fDiameter: 0, fHeight: 0 })) };
+}
 
 export function pose(p: Partial<ST_VisuPose> = {}): ST_VisuPose {
   return { fX: 0, fY: 0, fZ: 0, fRx: 0, fRy: 0, fRz: 0, ...p };
@@ -41,12 +63,20 @@ export function emptyProduct(): ST_VisuProduct {
     eState: E_VisuProductState.DETECTED,
     nRobotId: 0,
     nMoverId: 0,
+    nFingerId: 0,
     nProductType: 0,
   };
 }
 
 function emptyZone(): ST_VisuZone {
-  return { nConveyorId: 0, fStart: 0, fEnd: 0, eKind: E_VisuZoneKind.PICK };
+  return { nConveyorId: 0, fStart: 0, fEnd: 0, eKind: E_VisuZoneKind.PICK, fAllocationOffset: 0 };
+}
+
+/** A zone as tests and the simulator write it; the allocation offset defaults to 0. */
+export type ZoneSpec = Omit<ST_VisuZone, "fAllocationOffset"> & { fAllocationOffset?: number };
+
+function zoneList(spec: { zones?: ZoneSpec[] }): ST_VisuZone[] {
+  return (spec.zones ?? []).map((z) => ({ fAllocationOffset: 0, ...z }));
 }
 
 function padded<T>(items: T[], size: number, empty: () => T): T[] {
@@ -89,13 +119,15 @@ export interface DeltaSpec {
   effectorRadius?: number;
   upperArmLength?: number;
   lowerArmLength?: number;
-  hasRotationAxis?: boolean;
-  zones?: ST_VisuZone[];
+  fingers?: ST_VisuFinger[];
+  /** Activates the limit area. */
+  limitArea?: Omit<ST_VisuLimitArea, "bActive">;
+  zones?: ZoneSpec[];
   timestamp?: bigint;
 }
 
 export function delta(spec: DeltaSpec = {}): ST_VisuDelta {
-  const zones = spec.zones ?? [];
+  const zones = zoneList(spec);
   return {
     stConfig: {
       stPose: pose(spec.pose),
@@ -103,15 +135,19 @@ export function delta(spec: DeltaSpec = {}): ST_VisuDelta {
       fEffectorRadius: spec.effectorRadius ?? 50,
       fUpperArmLength: spec.upperArmLength ?? 350,
       fLowerArmLength: spec.lowerArmLength ?? 800,
-      bHasRotationAxis: spec.hasRotationAxis ?? false,
       stWorkingArea: { fRadius: 600, fZMin: -1100, fZMax: -600, fConeHeight: 0, fConeBottomRadius: 0 },
+      stLimitArea: spec.limitArea
+        ? { ...spec.limitArea, bActive: true }
+        : { fXMin: 0, fXMax: 0, fYMin: 0, fYMax: 0, fZMin: 0, fZMax: 0, bActive: false },
       nZoneCount: zones.length,
       aZones: padded(zones, MAX_ZONES, emptyZone),
+      ...fingerConfig(spec),
     },
     stState: {
       nTimestamp: spec.timestamp ?? 0n,
-      stActualTcp: { fX: 0, fY: 0, fZ: 0, fRz: 0 },
-      stSetpointTcp: { fX: 0, fY: 0, fZ: 0, fRz: 0 },
+      stActualTcp: { fX: 0, fY: 0, fZ: 0 },
+      stSetpointTcp: { fX: 0, fY: 0, fZ: 0 },
+      aFingerStates: fingerStates(),
     },
   };
 }
@@ -120,15 +156,23 @@ export interface XtsGantrySpec {
   pose?: Partial<ST_VisuPose>;
   moduleCount?: number;
   moduleLength?: number;
-  zones?: ST_VisuZone[];
+  zones?: ZoneSpec[];
+  fingers?: ST_VisuFinger[];
   z?: number;
   movers?: Partial<ST_VisuGantryMover>[];
   timestamp?: bigint;
 }
 
 export function xtsGantry(spec: XtsGantrySpec = {}): ST_VisuXtsGantry {
-  const zones = spec.zones ?? [];
-  const empty = (): ST_VisuGantryMover => ({ nId: 0, bValid: false, fPosition: 0, fX: 0, fC: 0, bGripperActive: false });
+  const zones = zoneList(spec);
+  const empty = (): ST_VisuGantryMover => ({
+    nId: 0,
+    bValid: false,
+    fPosition: 0,
+    fX: 0,
+    bGripperActive: false,
+    aFingerStates: fingerStates(),
+  });
   const movers = (spec.movers ?? []).map((m) => ({ ...empty(), bValid: true, ...m }));
   return {
     stConfig: {
@@ -139,14 +183,13 @@ export function xtsGantry(spec: XtsGantrySpec = {}): ST_VisuXtsGantry {
       fXMax: 300,
       fZMin: -200,
       fZMax: 0,
-      fCMin: -180,
-      fCMax: 180,
       fToolOffsetX: 150,
       fToolOffsetZ: -400,
       fMoverLength: 155,
       fMoverWidth: 80,
       nZoneCount: zones.length,
       aZones: padded(zones, MAX_ZONES, emptyZone),
+      ...fingerConfig(spec),
     },
     stState: {
       nTimestamp: spec.timestamp ?? 0n,
@@ -161,14 +204,15 @@ export interface XtsLoopSpec {
   pose?: Partial<ST_VisuPose>;
   straightLength?: number;
   curveRadius?: number;
-  zones?: ST_VisuZone[];
+  zones?: ZoneSpec[];
+  fingers?: ST_VisuFinger[];
   movers?: Partial<ST_VisuLoopMover>[];
   timestamp?: bigint;
 }
 
 export function xtsLoop(spec: XtsLoopSpec = {}): ST_VisuXtsLoop {
-  const zones = spec.zones ?? [];
-  const empty = (): ST_VisuLoopMover => ({ nId: 0, bValid: false, fPosition: 0 });
+  const zones = zoneList(spec);
+  const empty = (): ST_VisuLoopMover => ({ nId: 0, bValid: false, fPosition: 0, aFingerStates: fingerStates() });
   const movers = (spec.movers ?? []).map((m) => ({ ...empty(), bValid: true, ...m }));
   return {
     stConfig: {
@@ -180,6 +224,7 @@ export function xtsLoop(spec: XtsLoopSpec = {}): ST_VisuXtsLoop {
       fMoverWidth: 60,
       nZoneCount: zones.length,
       aZones: padded(zones, MAX_ZONES, emptyZone),
+      ...fingerConfig(spec),
     },
     stState: {
       nTimestamp: spec.timestamp ?? 0n,
@@ -191,13 +236,14 @@ export function xtsLoop(spec: XtsLoopSpec = {}): ST_VisuXtsLoop {
 
 export interface CartesianSpec {
   pose?: Partial<ST_VisuPose>;
-  zones?: ST_VisuZone[];
+  zones?: ZoneSpec[];
+  fingers?: ST_VisuFinger[];
   state?: Partial<Omit<ST_VisuCartesianState, "nTimestamp">>;
   timestamp?: bigint;
 }
 
 export function cartesian(spec: CartesianSpec = {}): ST_VisuCartesian {
-  const zones = spec.zones ?? [];
+  const zones = zoneList(spec);
   return {
     stConfig: {
       stPose: pose(spec.pose),
@@ -207,23 +253,18 @@ export function cartesian(spec: CartesianSpec = {}): ST_VisuCartesian {
       fYMax: 1000,
       fZMin: -600,
       fZMax: 0,
-      fCMin: -180,
-      fCMax: 180,
-      fAMin: -30,
-      fAMax: 30,
-      fToolLength: 150,
       fRailHeight: 1200,
       nZoneCount: zones.length,
       aZones: padded(zones, MAX_ZONES, emptyZone),
+      ...fingerConfig(spec),
     },
     stState: {
       nTimestamp: spec.timestamp ?? 0n,
       fX: 0,
       fY: 0,
       fZ: 0,
-      fC: 0,
-      fA: 0,
       bGripperActive: false,
+      aFingerStates: fingerStates(),
       ...spec.state,
     },
   };

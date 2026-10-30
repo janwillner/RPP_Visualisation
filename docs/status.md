@@ -15,9 +15,13 @@ Without a PLC: `--driver sim` (built-in simulator, same contract).
 ## Done
 
 - MVP from issue #1: protocol package, gateway (discovery, sum-read snapshots, version checks, reconnect), simulator, React Three Fiber debug UI.
-- PLC library `Syn_Visu` (`plc/Syn_Visu`), contract in `docs/plc-contract.md`, **protocol version 5** (3: work area → working area, windows → zones; 4: XTS kinematics, `nMoverId`, `fEncoder` → `fBeltPosition`; 5: Cartesian robot).
+- PLC library `Syn_Visu` (`plc/Syn_Visu`), contract in `docs/plc-contract.md`, **protocol version 7** (3: work area → working area, windows → zones; 4: XTS kinematics, `nMoverId`, `fEncoder` → `fBeltPosition`; 5: Cartesian robot; 6: Delta limit area, zone allocation offset; 7: gripper fingers, tool rotations removed).
 - XTS gantry (IDH) and XTS loop (Fxx), issue #3: contract, `FB_VisuXtsGantry` / `FB_VisuXtsLoop`, gateway, scene model, drawing, measure-mode snap points, mover table in the inspector.
 - Cartesian robot, issue #4: contract, `FB_VisuCartesian`, gateway, scene model (rails, bridge, carriage, column, gripper head, TCP volume), measure-mode snap points, axis table in the inspector.
+- Delta limit area (box in the robot frame, own layer toggle "Limit areas") and zone allocation area / allocation limit (layer zones), with measure-mode snap points.
+- Eye button per component in the component tree hides it (a hidden conveyor hides its products and the zones on it); separate "Limit areas" layer toggle; conveyors drawn dark blue.
+- Grippers for every kinematics: fingers as cylinders at MCS poses reported by the PLC, products hanging at a finger's grip point (`nFingerId`), finger table in the inspector; the tool rotations (Delta rz, IDH C, Cartesian C/A and tool length) moved into the finger poses. Demo: three different Delta grippers. The simulator has one Delta with a single cup.
+- The Syn_Visu copy in the Viersen project is still on protocol 6 (wrappers use IDH C and LUN C); to be updated.
 - ADS access through `apps/ads-bridge` (.NET, Beckhoff `TwinCAT.Ads` 7.0.389), because the pure TCP client `ads-client` is rejected by the 4026 user-mode runtime's router (no AMS TCP loopback, no route). `ads-client` remains as `--driver ads-tcp`.
 - Delta reports only its TCP; the web derives the arms by inverse kinematics (was: axis angles in protocol version 1).
 - Delta drawn like a real robot: base plate, motors, upper arms, parallelogram lower arms, effector with TCP axis triad.

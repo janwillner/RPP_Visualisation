@@ -1,14 +1,17 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="FB_VisuCartesian" Id="{e7710899-6b69-475f-b82a-013c31290615}" SpecialFunc="None">
-    <Declaration><![CDATA[(* One visualised Cartesian robot: linear X, Y, Z axes and a gripper head turning about C and tilting about A.
+  <POU Name="FB_VisuCartesian" Id="{9fe9841a-c288-4098-b60d-62e20af6fee3}" SpecialFunc="None">
+    <Declaration><![CDATA[(* One visualised Cartesian robot: linear X, Y, Z axes ending at a gripper flange.
    Typical cycle:
      fbCartesian.Register(GVL_Visu.stManifest, 40, 'Cartesian', 'MAIN.fbCartesian.stVisu');
      fbCartesian.Configure(stPose, fXMin := 0, fXMax := 1200, fYMin := 0, fYMax := 1000, fZMin := -600, fZMax := 0,
-         fCMin := -180, fCMax := 180, fAMin := -30, fAMax := 30, fToolLength := 150, fRailHeight := 1200);
+         fRailHeight := 1200);
+     fbCartesian.SetFinger(nFinger := 1, fDiameter := 40, fHeight := 40);
      fbCartesian.SetZone(nConveyorId := 7, eKind := E_VisuZoneKind.PICK, fStart := 1000, fEnd := 2000);
-     fbCartesian.SetAxes(fX := ..., fY := ..., fZ := ..., fC := ..., fA := ..., bGripperActive := ...);
-   Only actual values are reported. The config methods may be called every cycle; the config version only changes
+     fbCartesian.SetAxes(fX := ..., fY := ..., fZ := ...);
+     fbCartesian.SetFingerState(nFinger := 1, stPose := stCupPose, bActive := bVacuum);
+   Only actual values are reported; tool rotations (e.g. C and A) show only through the finger poses, absolute in
+   the MCS. The config methods may be called every cycle; the config version only changes
    when a value does. The gateway reads stVisu at the path given to Register. *)
 FUNCTION_BLOCK FB_VisuCartesian EXTENDS FB_VisuComponent
 VAR
@@ -29,6 +32,23 @@ IF ApplyConfig THEN
 	stVisu.stConfig := stNew;
 	NotifyConfigChanged();
 END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ClearFingers" Id="{4f29dbaa-c011-4c75-be33-2d41fec6472d}">
+      <Declaration><![CDATA[(* Removes the gripper definition. TRUE if there was one. *)
+METHOD ClearFingers : BOOL
+VAR
+	stNew : ST_VisuCartesianConfig;
+	stEmpty : ST_VisuFinger;
+	nIndex : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[stNew := stVisu.stConfig;
+FOR nIndex := 0 TO GVL_VisuParam.nMaxFingers - 1 DO
+	stNew.aFingers[nIndex] := stEmpty;
+END_FOR
+stNew.nFingerCount := 0;
+ClearFingers := ApplyConfig(stNew);]]></ST>
       </Implementation>
     </Method>
     <Method Name="ClearZones" Id="{73f29c14-bc77-4e48-b2ed-48ea01db9c2b}">
@@ -55,7 +75,7 @@ ClearZones := ApplyConfig(stNew);]]></ST>
       </Implementation>
     </Method>
     <Method Name="Configure" Id="{037f6f17-ed59-4182-aba6-cc78218dd5eb}">
-      <Declaration><![CDATA[(* Sets pose, strokes, tool length and rail height. TRUE if anything changed. *)
+      <Declaration><![CDATA[(* Sets pose, strokes and rail height. TRUE if anything changed. *)
 METHOD Configure : BOOL
 VAR_INPUT
 	stPose : ST_VisuPose; // MCS, axis origin X = Y = 0 with Z up
@@ -65,11 +85,6 @@ VAR_INPUT
 	fYMax : LREAL; // mm
 	fZMin : LREAL; // mm
 	fZMax : LREAL; // mm
-	fCMin : LREAL; // degrees
-	fCMax : LREAL; // degrees
-	fAMin : LREAL; // degrees
-	fAMax : LREAL; // degrees
-	fToolLength : LREAL; // mm, flange (A pivot) to TCP
 	fRailHeight : LREAL; // mm, top of the rails above the local origin
 END_VAR
 VAR
@@ -84,11 +99,6 @@ stNew.fYMin := fYMin;
 stNew.fYMax := fYMax;
 stNew.fZMin := fZMin;
 stNew.fZMax := fZMax;
-stNew.fCMin := fCMin;
-stNew.fCMax := fCMax;
-stNew.fAMin := fAMin;
-stNew.fAMax := fAMax;
-stNew.fToolLength := fToolLength;
 stNew.fRailHeight := fRailHeight;
 Configure := ApplyConfig(stNew);]]></ST>
       </Implementation>
@@ -101,19 +111,57 @@ VAR_INPUT
 	fX : LREAL; // mm
 	fY : LREAL; // mm
 	fZ : LREAL; // mm
-	fC : LREAL := 0; // degrees, about local +Z
-	fA : LREAL := 0; // degrees, tilt about the gripper's X axis
-	bGripperActive : BOOL := FALSE;
+	bGripperActive : BOOL := FALSE; // used only when no fingers are configured
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[stVisu.stState.fX := fX;
 stVisu.stState.fY := fY;
 stVisu.stState.fZ := fZ;
-stVisu.stState.fC := fC;
-stVisu.stState.fA := fA;
 stVisu.stState.bGripperActive := bGripperActive;
 stVisu.stState.nTimestamp := DcTime();
 SetAxes := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetFinger" Id="{076cf92a-8594-49fd-99ed-7160f2717ff5}">
+      <Declaration><![CDATA[(* Defines gripper finger nFinger (1-based): a cylinder hanging from the finger's pose along its local -Z. The finger
+   count grows to nFinger. FALSE outside 1..GVL_VisuParam.nMaxFingers. *)
+METHOD SetFinger : BOOL
+VAR_INPUT
+	nFinger : UINT; // 1-based, as a product's nFingerId
+	fDiameter : LREAL; // mm
+	fHeight : LREAL; // mm, along the finger's local -Z
+END_VAR
+VAR
+	stNew : ST_VisuCartesianConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[SetFinger := FALSE;
+IF nFinger = 0 OR nFinger > GVL_VisuParam.nMaxFingers THEN
+	RETURN;
+END_IF
+stNew := stVisu.stConfig;
+stNew.aFingers[nFinger - 1].fDiameter := fDiameter;
+stNew.aFingers[nFinger - 1].fHeight := fHeight;
+stNew.nFingerCount := MAX(stNew.nFingerCount, nFinger);
+ApplyConfig(stNew);
+SetFinger := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetFingerState" Id="{7be2b3a6-d0ab-4b98-b468-b8c10296c8cb}">
+      <Declaration><![CDATA[(* Reports finger nFinger (1-based): the pose of its frame (centre of its top face), absolute in the MCS, and whether it
+   grips. Call once per cycle per configured finger. FALSE outside 1..GVL_VisuParam.nMaxFingers. *)
+METHOD SetFingerState : BOOL
+VAR_INPUT
+	nFinger : UINT; // 1-based
+	stPose : ST_VisuPose; // MCS
+	bActive : BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[SetFingerState := nFinger > 0 AND nFinger <= GVL_VisuParam.nMaxFingers;
+IF SetFingerState THEN
+	stVisu.stState.aFingerStates[nFinger - 1].stPose := stPose;
+	stVisu.stState.aFingerStates[nFinger - 1].bActive := bActive;
+END_IF]]></ST>
       </Implementation>
     </Method>
     <Method Name="SetZone" Id="{8ac94b18-81ff-4dab-a603-d70635561648}">
@@ -125,6 +173,7 @@ VAR_INPUT
 	eKind : E_VisuZoneKind;
 	fStart : LREAL; // mm along the conveyor from its start (belt coordinates, not MCS)
 	fEnd : LREAL; // mm along the conveyor from its start
+	fAllocationOffset : LREAL := 0; // mm before fEnd up to which products may be allocated; 0 = no limit
 END_VAR
 VAR
 	stNew : ST_VisuCartesianConfig;
@@ -154,6 +203,7 @@ stNew.aZones[nIndex].nConveyorId := nConveyorId;
 stNew.aZones[nIndex].eKind := eKind;
 stNew.aZones[nIndex].fStart := fStart;
 stNew.aZones[nIndex].fEnd := fEnd;
+stNew.aZones[nIndex].fAllocationOffset := fAllocationOffset;
 ApplyConfig(stNew);
 SetZone := TRUE;]]></ST>
       </Implementation>

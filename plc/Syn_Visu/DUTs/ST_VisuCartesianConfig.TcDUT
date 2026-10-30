@@ -3,9 +3,9 @@
   <DUT Name="ST_VisuCartesianConfig" Id="{18b47416-e1a4-4b01-a968-98fa2be97861}">
     <Declaration><![CDATA[TYPE ST_VisuCartesianConfig :
 STRUCT
-	(* Cartesian robot: two fixed rails along local +Y, a bridge travelling in Y, a carriage on it travelling in X,
-	   a vertical column (Z) and a gripper head turning about C and tilting about A. Local frame: origin at axis
-	   X = Y = 0, Z up; the flange is at (X, Y, Z). TCP = flange + Rz(C) * Rx(A) * (0, 0, -fToolLength). *)
+	(* Cartesian robot: two fixed rails along local +Y, a bridge travelling in Y, a carriage on it travelling in X
+	   and a vertical column (Z) ending at the gripper flange. Local frame: origin at axis X = Y = 0, Z up; the
+	   flange is at (X, Y, Z). *)
 	stPose : ST_VisuPose; // MCS
 	fXMin : LREAL; // mm, X stroke
 	fXMax : LREAL; // mm
@@ -13,14 +13,11 @@ STRUCT
 	fYMax : LREAL; // mm
 	fZMin : LREAL; // mm, Z stroke
 	fZMax : LREAL; // mm
-	fCMin : LREAL; // degrees, C range
-	fCMax : LREAL; // degrees
-	fAMin : LREAL; // degrees, A range
-	fAMax : LREAL; // degrees
-	fToolLength : LREAL; // mm, flange (A pivot) to TCP
 	fRailHeight : LREAL; // mm, top of the rails above the local origin; the bridge sits on them
 	nZoneCount : UINT;
 	aZones : ARRAY[0..GVL_VisuParam.nMaxZones - 1] OF ST_VisuZone; // pick and place zones
+	nFingerCount : UINT; // 0 = no gripper definition
+	aFingers : ARRAY[0..GVL_VisuParam.nMaxFingers - 1] OF ST_VisuFinger;
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

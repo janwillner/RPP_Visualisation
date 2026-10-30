@@ -6,7 +6,10 @@ import type {
   ConveyorState,
   DeltaConfig,
   DeltaState,
+  Finger,
+  FingerState,
   PlanarPose,
+  Position,
   Pose,
   ProductState,
   XtsGantryConfig,
@@ -27,7 +30,10 @@ import {
   type ST_VisuConveyorState,
   type ST_VisuDeltaConfig,
   type ST_VisuDeltaState,
+  type ST_VisuFinger,
+  type ST_VisuFingerState,
   type ST_VisuPlanarPose,
+  type ST_VisuPosition,
   type ST_VisuPose,
   type ST_VisuXtsGantryConfig,
   type ST_VisuXtsGantryState,
@@ -52,8 +58,21 @@ function mapPlanarPose(p: ST_VisuPlanarPose): PlanarPose {
   return { x: p.fX, y: p.fY, z: p.fZ, rz: p.fRz };
 }
 
+function mapPosition(p: ST_VisuPosition): Position {
+  return { x: p.fX, y: p.fY, z: p.fZ };
+}
+
 function take<T>(items: T[], count: number): T[] {
   return items.slice(0, Math.max(0, Math.min(count, items.length)));
+}
+
+function mapFingers(c: { nFingerCount: number; aFingers: ST_VisuFinger[] }): Finger[] {
+  return take(c.aFingers, c.nFingerCount).map((f) => ({ diameter: f.fDiameter, height: f.fHeight }));
+}
+
+/** Finger states for the configured fingers only. */
+function mapFingerStates(states: ST_VisuFingerState[], count: number): FingerState[] {
+  return take(states, count).map((f) => ({ pose: mapPose(f.stPose), active: f.bActive }));
 }
 
 export function mapConveyorConfig(identity: ComponentIdentity, c: ST_VisuConveyorConfig): ConveyorConfig {
@@ -86,7 +105,6 @@ export function mapDeltaConfig(identity: ComponentIdentity, c: ST_VisuDeltaConfi
     effectorRadius: c.fEffectorRadius,
     upperArmLength: c.fUpperArmLength,
     lowerArmLength: c.fLowerArmLength,
-    hasRotationAxis: c.bHasRotationAxis,
     workingArea: {
       radius: c.stWorkingArea.fRadius,
       zMin: c.stWorkingArea.fZMin,
@@ -94,7 +112,18 @@ export function mapDeltaConfig(identity: ComponentIdentity, c: ST_VisuDeltaConfi
       coneHeight: c.stWorkingArea.fConeHeight,
       coneBottomRadius: c.stWorkingArea.fConeBottomRadius,
     },
+    limitArea: c.stLimitArea.bActive
+      ? {
+          xMin: c.stLimitArea.fXMin,
+          xMax: c.stLimitArea.fXMax,
+          yMin: c.stLimitArea.fYMin,
+          yMax: c.stLimitArea.fYMax,
+          zMin: c.stLimitArea.fZMin,
+          zMax: c.stLimitArea.fZMax,
+        }
+      : null,
     zones: mapZones(c.aZones, c.nZoneCount),
+    fingers: mapFingers(c),
   };
 }
 
@@ -104,6 +133,7 @@ function mapZones(zones: ST_VisuZone[], count: number): Zone[] {
     start: w.fStart,
     end: w.fEnd,
     kind: ZONE_KINDS[enumValue(w.eKind)] ?? "pick",
+    allocationOffset: w.fAllocationOffset,
   }));
 }
 
@@ -118,13 +148,12 @@ export function mapXtsGantryConfig(identity: ComponentIdentity, c: ST_VisuXtsGan
     xMax: c.fXMax,
     zMin: c.fZMin,
     zMax: c.fZMax,
-    cMin: c.fCMin,
-    cMax: c.fCMax,
     toolOffsetX: c.fToolOffsetX,
     toolOffsetZ: c.fToolOffsetZ,
     moverLength: c.fMoverLength,
     moverWidth: c.fMoverWidth,
     zones: mapZones(c.aZones, c.nZoneCount),
+    fingers: mapFingers(c),
   };
 }
 
@@ -139,10 +168,11 @@ export function mapXtsLoopConfig(identity: ComponentIdentity, c: ST_VisuXtsLoopC
     moverLength: c.fMoverLength,
     moverWidth: c.fMoverWidth,
     zones: mapZones(c.aZones, c.nZoneCount),
+    fingers: mapFingers(c),
   };
 }
 
-export function mapXtsGantryState(id: number, s: ST_VisuXtsGantryState): XtsGantryState {
+export function mapXtsGantryState(id: number, s: ST_VisuXtsGantryState, fingerCount: number): XtsGantryState {
   return {
     type: "xtsGantry",
     id,
@@ -150,18 +180,24 @@ export function mapXtsGantryState(id: number, s: ST_VisuXtsGantryState): XtsGant
     z: s.fZ,
     movers: take(s.aMovers, s.nMoverCount)
       .filter((m) => m.bValid)
-      .map((m) => ({ id: m.nId, position: m.fPosition, x: m.fX, c: m.fC, gripperActive: m.bGripperActive })),
+      .map((m) => ({
+        id: m.nId,
+        position: m.fPosition,
+        x: m.fX,
+        gripperActive: m.bGripperActive,
+        fingers: mapFingerStates(m.aFingerStates, fingerCount),
+      })),
   };
 }
 
-export function mapXtsLoopState(id: number, s: ST_VisuXtsLoopState): XtsLoopState {
+export function mapXtsLoopState(id: number, s: ST_VisuXtsLoopState, fingerCount: number): XtsLoopState {
   return {
     type: "xtsLoop",
     id,
     timestamp: BigInt(s.nTimestamp).toString(),
     movers: take(s.aMovers, s.nMoverCount)
       .filter((m) => m.bValid)
-      .map((m) => ({ id: m.nId, position: m.fPosition })),
+      .map((m) => ({ id: m.nId, position: m.fPosition, fingers: mapFingerStates(m.aFingerStates, fingerCount) })),
   };
 }
 
@@ -176,17 +212,13 @@ export function mapCartesianConfig(identity: ComponentIdentity, c: ST_VisuCartes
     yMax: c.fYMax,
     zMin: c.fZMin,
     zMax: c.fZMax,
-    cMin: c.fCMin,
-    cMax: c.fCMax,
-    aMin: c.fAMin,
-    aMax: c.fAMax,
-    toolLength: c.fToolLength,
     railHeight: c.fRailHeight,
     zones: mapZones(c.aZones, c.nZoneCount),
+    fingers: mapFingers(c),
   };
 }
 
-export function mapCartesianState(id: number, s: ST_VisuCartesianState): CartesianState {
+export function mapCartesianState(id: number, s: ST_VisuCartesianState, fingerCount: number): CartesianState {
   return {
     type: "cartesian",
     id,
@@ -194,9 +226,8 @@ export function mapCartesianState(id: number, s: ST_VisuCartesianState): Cartesi
     x: s.fX,
     y: s.fY,
     z: s.fZ,
-    c: s.fC,
-    a: s.fA,
     gripperActive: s.bGripperActive,
+    fingers: mapFingerStates(s.aFingerStates, fingerCount),
   };
 }
 
@@ -227,18 +258,20 @@ export function mapConveyorState(id: number, s: ST_VisuConveyorState): ConveyorS
         state: mapProductState(p.eState),
         robotId: p.nRobotId,
         moverId: p.nMoverId,
+        fingerId: p.nFingerId,
         productType: p.nProductType,
       })),
   };
 }
 
-export function mapDeltaState(id: number, s: ST_VisuDeltaState): DeltaState {
+export function mapDeltaState(id: number, s: ST_VisuDeltaState, fingerCount: number): DeltaState {
   return {
     type: "delta",
     id,
     timestamp: BigInt(s.nTimestamp).toString(),
-    actualTcp: mapPlanarPose(s.stActualTcp),
-    setpointTcp: mapPlanarPose(s.stSetpointTcp),
+    actualTcp: mapPosition(s.stActualTcp),
+    setpointTcp: mapPosition(s.stSetpointTcp),
+    fingers: mapFingerStates(s.aFingerStates, fingerCount),
   };
 }
 

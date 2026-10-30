@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuPosition" Id="{d5e714bc-cb69-41a3-b67b-65a62f692fb9}">
+    <Declaration><![CDATA[TYPE ST_VisuPosition :
+STRUCT
+	(* A point in the MCS, e.g. a Delta's TCP. *)
+	fX : LREAL; // mm
+	fY : LREAL; // mm
+	fZ : LREAL; // mm
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

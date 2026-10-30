@@ -7,8 +7,8 @@ STRUCT
 	bValid : BOOL; // invalid entries are not shown
 	fPosition : LREAL; // mm along the track (local +Y), actual value
 	fX : LREAL; // mm, X axis on the mover, actual value
-	fC : LREAL; // degrees, gripper rotation about local +Z; 0 = along local +X, actual value
-	bGripperActive : BOOL;
+	bGripperActive : BOOL; // used only when no fingers are configured
+	aFingerStates : ARRAY[0..GVL_VisuParam.nMaxFingers - 1] OF ST_VisuFingerState; // one per configured finger
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

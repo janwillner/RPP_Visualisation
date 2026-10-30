@@ -4,12 +4,11 @@
     <Declaration><![CDATA[TYPE ST_VisuCartesianState :
 STRUCT
 	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (set by FB_VisuCartesian)
-	fX : LREAL; // mm, actual value
+	fX : LREAL; // mm, actual value: the gripper flange
 	fY : LREAL; // mm, actual value
 	fZ : LREAL; // mm, actual value
-	fC : LREAL; // degrees, about local +Z; 0 = gripper along local +X, positive counter-clockwise from above
-	fA : LREAL; // degrees, tilt about the gripper's own (C-turned) X axis; 0 = pointing straight down
-	bGripperActive : BOOL;
+	bGripperActive : BOOL; // used only when no fingers are configured
+	aFingerStates : ARRAY[0..GVL_VisuParam.nMaxFingers - 1] OF ST_VisuFingerState; // one per configured finger
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

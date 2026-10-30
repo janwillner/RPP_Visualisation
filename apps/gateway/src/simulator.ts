@@ -1,12 +1,23 @@
 import type { Vec3 } from "@rpp/protocol";
 import { InMemoryPlc } from "./in-memory-plc";
-import { MAX_PRODUCTS, cartesian, conveyor, defineMachine, delta, emptyProduct, xtsGantry, xtsLoop } from "./plc-builders";
+import {
+  MAX_PRODUCTS,
+  cartesian,
+  conveyor,
+  defineMachine,
+  delta,
+  emptyProduct,
+  fingerStates,
+  xtsGantry,
+  xtsLoop,
+} from "./plc-builders";
 import {
   E_VisuProductState,
   E_VisuZoneKind,
   type ST_VisuCartesian,
   type ST_VisuConveyor,
   type ST_VisuDelta,
+  type ST_VisuFingerState,
   type ST_VisuProduct,
   type ST_VisuXtsGantry,
   type ST_VisuXtsLoop,
@@ -42,11 +53,26 @@ const CART_OUTFEED = { id: 8, path: "MAIN.stCartesianOutfeed", x: 0, y: 7300, le
 const ROBOT = { id: 10, path: "MAIN.stDelta1", x: 1500, y: 450, z: 1900 };
 const GEOMETRY = { baseRadius: 200, effectorRadius: 50, upperArmLength: 400, lowerArmLength: 950 };
 const PRODUCT = { type: 1, length: 120, width: 80, height: 40 };
-const PICK_ZONE = { start: 1100, end: 1900 };
+const PICK_ZONE = { start: 1100, end: 1900, allocationOffset: 300 };
 const PLACE_X = 1500;
 const SPAWN_INTERVAL_MS = 700;
 const TCP_SPEED = 2500; // mm/s
 const HOVER = 120; // mm above the product top
+/** Suction cup of the Delta, the IDH and the Fxx movers: it hangs below the flange, products below it. */
+const SUCTION = { fDiameter: 40, fHeight: 50 };
+/** Cartesian gripper below the flange: a central cup carries the product, two jaws close beside it. */
+const CART_TOOL = {
+  /** Flange to the cup's grip point (the product top). */
+  length: 150,
+  cup: { fDiameter: 40, fHeight: 40 },
+  jaw: { fDiameter: 20, fHeight: 120 },
+  /** Jaw top below the flange. */
+  jawTop: 60,
+  /** Jaw distance from the cup along the gripper's +X, closed on a 120 mm product and open. */
+  jawClosed: 70,
+  jawOpen: 120,
+  jawSpeed: 300,
+};
 /** Products are removed from the register this far beyond the belt end, so "missed" stays visible briefly. */
 const REMOVE_BEYOND_END = 300;
 
@@ -69,6 +95,45 @@ const LOOP = {
   returnSpeed: 900,
 };
 const LOOP_PERIMETER = 2 * LOOP.straight + 2 * Math.PI * LOOP.radius;
+
+/** Point and tangent angle (degrees about local Y) at track position s on the loop, in its local X-Z plane. */
+function loopPoint(s: number): { point: Vec3; angle: number } {
+  const L = LOOP.straight;
+  const R = LOOP.radius;
+  const arc = Math.PI * R;
+  const u = ((s % LOOP_PERIMETER) + LOOP_PERIMETER) % LOOP_PERIMETER;
+  const deg = (rad: number) => (rad * 180) / Math.PI;
+  if (u <= L) return { point: [u, 0, 0], angle: 0 };
+  if (u <= L + arc) {
+    const a = (u - L) / R;
+    return { point: [L + R * Math.sin(a), 0, R - R * Math.cos(a)], angle: -deg(a) };
+  }
+  if (u <= 2 * L + arc) return { point: [L - (u - L - arc), 0, 2 * R], angle: 180 };
+  const a = (u - 2 * L - arc) / R;
+  return { point: [-R * Math.sin(a), 0, R + R * Math.cos(a)], angle: 180 - deg(a) };
+}
+
+const rad = (deg: number) => (deg * Math.PI) / 180;
+/** Rz(c) · v and Rx(a) · v, degrees. */
+const turnZ = (v: Vec3, c: number): Vec3 => [
+  v[0] * Math.cos(rad(c)) - v[1] * Math.sin(rad(c)),
+  v[0] * Math.sin(rad(c)) + v[1] * Math.cos(rad(c)),
+  v[2],
+];
+const turnX = (v: Vec3, a: number): Vec3 => [
+  v[0],
+  v[1] * Math.cos(rad(a)) - v[2] * Math.sin(rad(a)),
+  v[1] * Math.sin(rad(a)) + v[2] * Math.cos(rad(a)),
+];
+/** A component frame turned by −90° about Z (IDH, Cartesian): local (x, y, z) → MCS (x0 + y, y0 − x, z0 + z). */
+const turnedFrame = (origin: Vec3, local: Vec3): Vec3 => [origin[0] + local[1], origin[1] - local[0], origin[2] + local[2]];
+
+function finger(p: Vec3, rot: { rx?: number; ry?: number; rz?: number }, active: boolean): Partial<ST_VisuFingerState> {
+  return {
+    stPose: { fX: p[0], fY: p[1], fZ: p[2], fRx: rot.rx ?? 0, fRy: rot.ry ?? 0, fRz: rot.rz ?? 0 },
+    bActive: active,
+  };
+}
 
 /**
  * XTS gantry turned by −90°: its track (local +Y) runs along MCS +X above the IDH infeed, its X axes (local +X)
@@ -104,7 +169,7 @@ const CART = {
   path: "MAIN.fbCartesian.stVisu",
   x: 1000,
   y: CART_OUTFEED.y + 100,
-  /** Pick height Z = −550 puts the TCP (A = 0) on the product top. */
+  /** Pick height Z = −550 puts the cup's grip point (A = 0) on the product top. */
   z: BELT_Z + PRODUCT.height + 550 + 150,
   xOutfeed: 100,
   xInfeed: 900,
@@ -184,9 +249,16 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       value: delta({
         pose: { fX: ROBOT.x, fY: ROBOT.y, fZ: ROBOT.z },
         ...GEOMETRY,
-        hasRotationAxis: true,
+        fingers: [SUCTION],
+        limitArea: { fXMin: -600, fXMax: 600, fYMin: -600, fYMax: 600, fZMin: -1500, fZMax: -700 },
         zones: [
-          { nConveyorId: INFEED.id, fStart: PICK_ZONE.start, fEnd: PICK_ZONE.end, eKind: E_VisuZoneKind.PICK },
+          {
+            nConveyorId: INFEED.id,
+            fStart: PICK_ZONE.start,
+            fEnd: PICK_ZONE.end,
+            eKind: E_VisuZoneKind.PICK,
+            fAllocationOffset: PICK_ZONE.allocationOffset,
+          },
           { nConveyorId: OUTFEED.id, fStart: PLACE_X - 300, fEnd: PLACE_X + 300, eKind: E_VisuZoneKind.PLACE },
         ],
       }),
@@ -200,6 +272,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         pose: { fX: LOOP.x, fY: FXX_INFEED.y, fZ: BELT_Z + PRODUCT.height + LOOP.toolOffset },
         straightLength: LOOP.straight,
         curveRadius: LOOP.radius,
+        fingers: [SUCTION],
         zones: [
           {
             nConveyorId: FXX_INFEED.id,
@@ -225,6 +298,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         pose: { fX: GANTRY.x, fY: GANTRY.y, fZ: GANTRY.z, fRz: -90 },
         moduleCount: GANTRY.modules,
         moduleLength: GANTRY.moduleLength,
+        fingers: [SUCTION],
         zones: [
           {
             nConveyorId: IDH_INFEED.id,
@@ -250,6 +324,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       kind: "cartesian",
       value: cartesian({
         pose: { fX: CART.x, fY: CART.y, fZ: CART.z, fRz: -90 },
+        fingers: [CART_TOOL.cup, CART_TOOL.jaw, CART_TOOL.jaw],
         zones: [
           { nConveyorId: CART_INFEED.id, fStart: CART.x, fEnd: CART.x + 1000, eKind: E_VisuZoneKind.PICK },
           {
@@ -274,7 +349,8 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   const robot = plc.get<ST_VisuDelta>(ROBOT.path);
   robot.stConfig.stWorkingArea = { fRadius: 700, fZMin: -1300, fZMax: -700, fConeHeight: 200, fConeBottomRadius: 400 };
   const loop = plc.get<ST_VisuXtsLoop>(LOOP.path);
-  loop.stConfig.fToolOffset = LOOP.toolOffset;
+  // The flange sits one cup height closer to the track, so the cup's grip point is the former tool point.
+  loop.stConfig.fToolOffset = LOOP.toolOffset - SUCTION.fHeight;
   loop.stConfig.fMoverLength = LOOP.moverLength;
   const gantry = plc.get<ST_VisuXtsGantry>(GANTRY.path);
   Object.assign(gantry.stConfig, {
@@ -283,7 +359,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     fZMin: GANTRY.zDown,
     fZMax: 0,
     fToolOffsetX: GANTRY.toolOffsetX,
-    fToolOffsetZ: GANTRY.toolOffsetZ,
+    fToolOffsetZ: GANTRY.toolOffsetZ + SUCTION.fHeight,
     fMoverLength: GANTRY.moverLength,
   });
 
@@ -328,7 +404,8 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     gripper: false,
   }));
 
-  const axes = { x: CART.xInfeed, y: CART.yHome, z: CART.zTravel, c: 0, a: 0, gripper: false };
+  // C and A turn and tilt the gripper below the flange; the PLC reports them only through the finger poses.
+  const axes = { x: CART.xInfeed, y: CART.yHome, z: CART.zTravel, c: 0, a: 0, gripper: false, jaw: CART_TOOL.jawOpen };
   let cartPhase: CartPhase = "idle";
   let cartTarget: TrackedProduct | undefined;
 
@@ -373,7 +450,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       case "idle": {
         target = infeedProducts.find((p) => {
           const x = productPosition(p, enc)[0] - INFEED.x;
-          return p.eState === E_VisuProductState.DETECTED && x >= PICK_ZONE.start && x <= PICK_ZONE.end - 300;
+          return p.eState === E_VisuProductState.DETECTED && x >= PICK_ZONE.start && x <= PICK_ZONE.end - PICK_ZONE.allocationOffset;
         });
         if (target) {
           target.eState = E_VisuProductState.ASSIGNED;
@@ -398,6 +475,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       case "descend":
         if (moveToward(ahead(top(target!), top(target!)[2]), dtS)) {
           target!.eState = E_VisuProductState.PICKED;
+          target!.nFingerId = 1;
           phase = "lift";
         }
         break;
@@ -457,7 +535,10 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       switch (m.mode) {
         case "track": {
           m.s = outfeedX(m.product!);
-          if (m.s >= LOOP.grip) m.product!.eState = E_VisuProductState.PICKED;
+          if (m.s >= LOOP.grip) {
+            m.product!.eState = E_VisuProductState.PICKED;
+            m.product!.nFingerId = 1;
+          }
           if (m.s >= LOOP.release) m.mode = "deliver";
           break;
         }
@@ -538,6 +619,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
             if (!m.product) continue;
             m.gripper = true;
             m.product.eState = E_VisuProductState.PICKED;
+            m.product.nFingerId = 1;
           }
           gantryPhase = "pickUp";
         }
@@ -593,6 +675,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
    * and places it.
    */
   function stepCartesian(dtS: number): void {
+    axes.jaw = approach(axes.jaw, axes.gripper ? CART_TOOL.jawClosed : CART_TOOL.jawOpen, CART_TOOL.jawSpeed * dtS);
     // Robot Y of a product on the infeed: its MCS x relative to the robot origin.
     const productY = (p: TrackedProduct) => productPosition(p, cartInfeed.stState.fBeltPosition)[0] - CART.x;
     const move = (goal: Partial<Record<"x" | "y" | "z" | "c" | "a", number>>) => {
@@ -636,6 +719,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         const above = move({ x: CART.xInfeed, y, c: pickC(cartTarget!) });
         if (above && move({ z: CART.zPick })) {
           cartTarget!.eState = E_VisuProductState.PICKED;
+          cartTarget!.nFingerId = 1;
           axes.gripper = true;
           cartPhase = "lift";
         }
@@ -691,16 +775,35 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   }
 
   function writeRobot(): void {
-    robot.stState.stActualTcp = { fX: tcp[0], fY: tcp[1], fZ: tcp[2], fRz: tcpRz };
+    // `tcp` is where the cup grips; the flange (the reported TCP) is one cup height above it.
+    const flange: Vec3 = [tcp[0], tcp[1], tcp[2] + SUCTION.fHeight];
+    robot.stState.stActualTcp = { fX: flange[0], fY: flange[1], fZ: flange[2] };
     // Setpoint leads the actual position slightly, like a small following error.
-    robot.stState.stSetpointTcp = { fX: tcp[0] + 2, fY: tcp[1], fZ: tcp[2] - 1, fRz: tcpRz };
+    robot.stState.stSetpointTcp = { fX: flange[0] + 2, fY: flange[1], fZ: flange[2] - 1 };
+    robot.stState.aFingerStates = fingerStates([
+      finger(flange, { rz: tcpRz }, target?.eState === E_VisuProductState.PICKED),
+    ]);
     robot.stState.nTimestamp = now;
   }
 
   function writeXts(): void {
     loop.stState.nMoverCount = loopMovers.length;
     loopMovers.forEach((m, i) => {
-      loop.stState.aMovers[i] = { nId: m.id, bValid: true, fPosition: m.s % LOOP_PERIMETER };
+      const { point, angle } = loopPoint(m.s);
+      // The flange lies outwards (mover −Z, turned about Y by the tangent angle) from the track point.
+      const d = LOOP.toolOffset - SUCTION.fHeight;
+      const origin: Vec3 = [LOOP.x, FXX_INFEED.y, BELT_Z + PRODUCT.height + LOOP.toolOffset];
+      const flange: Vec3 = [
+        origin[0] + point[0] - d * Math.sin(rad(angle)),
+        origin[1] + point[1],
+        origin[2] + point[2] - d * Math.cos(rad(angle)),
+      ];
+      loop.stState.aMovers[i] = {
+        nId: m.id,
+        bValid: true,
+        fPosition: m.s % LOOP_PERIMETER,
+        aFingerStates: fingerStates([finger(flange, { ry: angle }, m.product?.eState === E_VisuProductState.PICKED)]),
+      };
     });
     loop.stState.nTimestamp = now;
     gantry.stState.fZ = gantryZ;
@@ -711,19 +814,42 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         bValid: true,
         fPosition: m.position,
         fX: m.x,
-        fC: m.c,
         bGripperActive: m.gripper,
+        aFingerStates: fingerStates([
+          finger(
+            turnedFrame([GANTRY.x, GANTRY.y, GANTRY.z], [
+              m.x + GANTRY.toolOffsetX,
+              m.position,
+              gantryZ + GANTRY.toolOffsetZ + SUCTION.fHeight,
+            ]),
+            { rz: -90 + m.c },
+            m.gripper,
+          ),
+        ]),
       };
     });
     gantry.stState.nTimestamp = now;
+    // Finger frames: flange + Rz(C) · Rx(A) · offset in the robot frame, then into the MCS.
+    const cartFinger = (offset: Vec3) =>
+      finger(
+        turnedFrame([CART.x, CART.y, CART.z], (() => {
+          const v = turnZ(turnX(offset, axes.a), axes.c);
+          return [axes.x + v[0], axes.y + v[1], axes.z + v[2]] as Vec3;
+        })()),
+        { rx: axes.a, rz: -90 + axes.c },
+        axes.gripper,
+      );
     Object.assign(cart.stState, {
       nTimestamp: now,
       fX: axes.x,
       fY: axes.y,
       fZ: axes.z,
-      fC: axes.c,
-      fA: axes.a,
       bGripperActive: axes.gripper,
+      aFingerStates: fingerStates([
+        cartFinger([0, 0, -(CART_TOOL.length - CART_TOOL.cup.fHeight)]),
+        cartFinger([axes.jaw, 0, -CART_TOOL.jawTop]),
+        cartFinger([-axes.jaw, 0, -CART_TOOL.jawTop]),
+      ]),
     });
   }
 

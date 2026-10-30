@@ -9,6 +9,7 @@ VAR_GLOBAL CONSTANT
 	nMaxProductTypes : UINT := 8;
 	nMaxZones : UINT := 8;
 	nMaxMovers : UINT := 40; // per XTS gantry or loop
+	nMaxFingers : UINT := 8; // per gripper
 END_VAR]]></Declaration>
   </GVL>
 </TcPlcObject>

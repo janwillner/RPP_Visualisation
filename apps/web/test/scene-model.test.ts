@@ -6,7 +6,8 @@ import type {
   ConveyorConfig,
   DeltaConfig,
   GantryMover,
-  PlanarPose,
+  FingerState,
+  Position,
   Product,
   StateMessage,
   XtsGantryConfig,
@@ -93,6 +94,7 @@ function product(overrides: Partial<Product> = {}): Product {
     state: "detected",
     robotId: 0,
     moverId: 0,
+    fingerId: 0,
     productType: 1,
     ...overrides,
   };
@@ -160,9 +162,10 @@ function deltaConfig(overrides: Partial<DeltaConfig> = {}): DeltaConfig {
     effectorRadius: 50,
     upperArmLength: 350,
     lowerArmLength: 800,
-    hasRotationAxis: false,
     workingArea: { radius: 600, zMin: -1100, zMax: -600, coneHeight: 0, coneBottomRadius: 0 },
+    limitArea: null,
     zones: [],
+    fingers: [],
     ...overrides,
   };
 }
@@ -170,15 +173,20 @@ function deltaConfig(overrides: Partial<DeltaConfig> = {}): DeltaConfig {
 /** sqrt(800² − (200 + 350 − 50)²): TCP depth below the base at which all upper arms are horizontal. */
 const HORIZONTAL_DEPTH = 624.4997998398398;
 
-function deltaState(tcp: PlanarPose, setpoint = tcp, id = 20): StateMessage["components"][number] {
-  return { type: "delta", id, timestamp: "0", actualTcp: tcp, setpointTcp: setpoint };
+function deltaState(
+  tcp: Position,
+  setpoint = tcp,
+  id = 20,
+  fingers: FingerState[] = [],
+): StateMessage["components"][number] {
+  return { type: "delta", id, timestamp: "0", actualTcp: tcp, setpointTcp: setpoint, fingers };
 }
 
 const dist = (a: readonly number[], b: readonly number[]) => Math.hypot(...a.map((v, i) => v - b[i]!));
 
 describe("scene model: delta follows the TCP", () => {
   it("draws all upper arms horizontal when the TCP is straight below the base at the closing depth", () => {
-    const tcp = { x: 1500, y: 0, z: 1800 - HORIZONTAL_DEPTH, rz: 0 };
+    const tcp = { x: 1500, y: 0, z: 1800 - HORIZONTAL_DEPTH };
     const [d] = buildScene(config(deltaConfig()), [snapshot(0, [deltaState(tcp)])], 0).deltas;
 
     expect(d!.reachable).toBe(true);
@@ -196,7 +204,7 @@ describe("scene model: delta follows the TCP", () => {
 
   it("keeps every arm at its configured length for an off-centre TCP on a rotated base", () => {
     const cfg = deltaConfig({ pose: { x: 1500, y: 200, z: 1800, rx: 0, ry: 0, rz: 30 } });
-    const tcp = { x: 1650, y: 80, z: 1050, rz: 0 };
+    const tcp = { x: 1650, y: 80, z: 1050 };
     const [d] = buildScene(config(cfg), [snapshot(0, [deltaState(tcp)])], 0).deltas;
 
     expect(d!.reachable).toBe(true);
@@ -209,7 +217,7 @@ describe("scene model: delta follows the TCP", () => {
   });
 
   it("marks a TCP the arms cannot reach as unreachable but still shows the effector at the TCP", () => {
-    const [d] = buildScene(config(deltaConfig()), [snapshot(0, [deltaState({ x: 1500, y: 0, z: 0, rz: 0 })])], 0).deltas;
+    const [d] = buildScene(config(deltaConfig()), [snapshot(0, [deltaState({ x: 1500, y: 0, z: 0 })])], 0).deltas;
     expect(d!.reachable).toBe(false);
     expect(d!.elbows).toEqual([]);
     closeTo(d!.effector!.position, [1.5, 0, 0]);
@@ -218,7 +226,7 @@ describe("scene model: delta follows the TCP", () => {
   it("shows the setpoint TCP reported by the PLC as a separate marker", () => {
     const scene = buildScene(
       config(deltaConfig()),
-      [snapshot(0, [deltaState({ x: 1500, y: 100, z: 1000, rz: 0 }, { x: 1510, y: 100, z: 1000, rz: 0 })])],
+      [snapshot(0, [deltaState({ x: 1500, y: 100, z: 1000 }, { x: 1510, y: 100, z: 1000 })])],
       0,
     );
     closeTo(scene.deltas[0]!.actualTcp!, [1.5, 1, -0.1]);
@@ -227,29 +235,111 @@ describe("scene model: delta follows the TCP", () => {
 
   it("interpolates the TCP between snapshots and the arms follow", () => {
     const snapshots = [
-      snapshot(0, [deltaState({ x: 1500, y: 0, z: 1000, rz: 0 })]),
-      snapshot(20, [deltaState({ x: 1600, y: 0, z: 1000, rz: 0 })]),
+      snapshot(0, [deltaState({ x: 1500, y: 0, z: 1000 })]),
+      snapshot(20, [deltaState({ x: 1600, y: 0, z: 1000 })]),
     ];
     const d = buildScene(config(deltaConfig()), snapshots, 10).deltas[0]!;
     closeTo(d.effector!.position, [1.55, 1, 0]);
     closeTo(d.actualTcp!, [1.55, 1, 0]);
   });
 
-  it("rotates the effector by the TCP's rz, interpolating across the ±180° wrap the short way", () => {
-    const snapshots = [
-      snapshot(0, [deltaState({ x: 1500, y: 0, z: 1000, rz: 179 })]),
-      snapshot(20, [deltaState({ x: 1500, y: 0, z: 1000, rz: -179 })]),
+  it("keeps the effector turned with the base: tool rotations belong to the gripper", () => {
+    const cfg = deltaConfig({ pose: { x: 1500, y: 0, z: 1800, rx: 0, ry: 0, rz: 30 } });
+    const d = buildScene(config(cfg), [snapshot(0, [deltaState({ x: 1500, y: 0, z: 1000 })])], 0).deltas[0]!;
+    closeTo(rotate(d.effector!.quaternion, [1, 0, 0]), [Math.cos(Math.PI / 6), 0, -Math.sin(Math.PI / 6)]);
+  });
+});
+
+/** A finger state at an MCS position, turned about Z by rz. */
+function fingerAt(x: number, y: number, z: number, rz = 0, active = true): FingerState {
+  return { pose: { x, y, z, rx: 0, ry: 0, rz }, active };
+}
+
+describe("scene model: gripper fingers", () => {
+  const cup = { diameter: 40, height: 50 };
+  const robot = deltaConfig({ fingers: [cup] });
+  const flange = { x: 1500, y: 0, z: 1000 };
+  const at = (fingers: FingerState[], products: Product[] = [], hidden?: ReadonlySet<number>) =>
+    buildScene(
+      config(conveyorConfig(), robot),
+      [snapshot(0, [conveyorState(0, products), deltaState(flange, flange, 20, fingers)])],
+      0,
+      hidden,
+    );
+
+  it("draws each configured finger as a cylinder at its MCS pose, connected to the flange", () => {
+    const [finger] = at([fingerAt(1500, 0, 1000, 90)]).fingers;
+
+    expect(finger).toMatchObject({ key: "20:0:1", robotId: 20, moverId: 0, index: 1, active: true });
+    closeTo(finger!.transform.position, [1.5, 1, 0]);
+    // Turned by 90° about Z: its local +X points along MCS +Y (renderer −Z).
+    closeTo(rotate(finger!.transform.quaternion, [1, 0, 0]), [0, 0, -1]);
+    closeTo([finger!.diameter, finger!.height], [0.04, 0.05]);
+    closeTo(finger!.flange, [1.5, 1, 0]);
+  });
+
+  it("hangs a product picked with a finger id below that finger's grip point, turned with the finger", () => {
+    const picked = product({ state: "picked", robotId: 20, fingerId: 1, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } });
+    const carried = at([fingerAt(1500, 0, 1000, 90)], [picked]).products.find((p) => p.display === "atTcp")!;
+
+    // Grip point 50 mm below the finger top, the 40 mm product's centre 20 mm below that.
+    closeTo(carried.transform.position, [1.5, 0.93, 0]);
+    closeTo(rotate(carried.transform.quaternion, [1, 0, 0]), [0, 0, -1]);
+  });
+
+  it("hangs a product with finger id 0 at the flange", () => {
+    const picked = product({ state: "picked", robotId: 20, fingerId: 0 });
+    const carried = at([fingerAt(1500, 0, 1000)], [picked]).products.find((p) => p.display === "atTcp")!;
+    closeTo(carried.transform.position, [1.5, 0.98, 0]);
+  });
+
+  it("hangs a product from an unknown finger at the flange and warns", () => {
+    const picked = product({ state: "picked", robotId: 20, fingerId: 3 });
+    const scene = at([fingerAt(1500, 0, 1000)], [picked]);
+    closeTo(scene.products.find((p) => p.display === "atTcp")!.transform.position, [1.5, 0.98, 0]);
+    expect(scene.warnings).toEqual([expect.stringMatching(/finger 3/)]);
+  });
+
+  it("interpolates finger poses, angles across the ±180° wrap the short way", () => {
+    const state = (rz: number, x: number) => deltaState(flange, flange, 20, [fingerAt(x, 0, 1000, rz)]);
+    const [finger] = buildScene(config(robot), [snapshot(0, [state(179, 1500)]), snapshot(20, [state(-179, 1600)])], 10).fingers;
+    closeTo(finger!.transform.position, [1.55, 1, 0]);
+    // Halfway between 179° and −179° is 180°: local +X along MCS −X.
+    closeTo(rotate(finger!.transform.quaternion, [1, 0, 0]), [-1, 0, 0]);
+  });
+
+  it("offers each finger's grip point as a moving snap point in the robot's frame", () => {
+    const point = at([fingerAt(1500, 0, 1000)]).snapPoints.find((p) => p.label === "Delta 1 · finger 1 grip point")!;
+    closeTo(point.mcs, [1500, 0, 950]);
+    closeTo(point.local.point, [0, 0, -850]);
+    expect(point.moving).toBe(true);
+  });
+
+  it("ignores finger states beyond the configured fingers and drops the fingers of a hidden robot", () => {
+    expect(at([fingerAt(1500, 0, 1000), fingerAt(1600, 0, 1000)]).fingers).toHaveLength(1);
+    expect(at([fingerAt(1500, 0, 1000)], [], new Set([20])).fingers).toEqual([]);
+  });
+
+  it("gives every mover of an XTS gantry its own fingers", () => {
+    const gantry = gantryConfig({ fingers: [cup] });
+    const movers = [
+      { ...mover1, id: 1, fingers: [fingerAt(2750, -270, 1050)] },
+      { ...mover1, id: 2, position: 600, fingers: [fingerAt(2400, -270, 1050, 0, false)] },
     ];
-    const d = buildScene(config(deltaConfig({ hasRotationAxis: true })), snapshots, 10).deltas[0]!;
-    // Halfway between 179° and −179° is 180°: the effector's local +X points along MCS −X.
-    closeTo(rotate(d.effector!.quaternion, [1, 0, 0]), [-1, 0, 0]);
+    const scene = buildScene(config(gantry), [snapshot(0, [gantryState(-100, movers)])], 0);
+    expect(scene.fingers.map((f) => [f.key, f.active])).toEqual([
+      ["30:1:1", true],
+      ["30:2:1", false],
+    ]);
+    // A mover's flag no longer colours the flange once fingers are configured.
+    expect(scene.gantries[0]!.movers[0]!.gripperActive).toBe(false);
   });
 });
 
 describe("scene model: product lifecycle", () => {
   const belt = conveyorConfig({ length: 3000 });
   const robot = deltaConfig();
-  const tcp = { x: 1500, y: 0, z: 1000, rz: 0 };
+  const tcp = { x: 1500, y: 0, z: 1000 };
   const show = (p: Product, beltPosition = 0) =>
     buildScene(config(belt, robot), [snapshot(0, [conveyorState(beltPosition, [p]), deltaState(tcp)])], 0).products;
 
@@ -296,13 +386,44 @@ describe("scene model: product lifecycle", () => {
   });
 });
 
+describe("scene model: hidden components", () => {
+  it("drops a hidden robot's geometry, areas, zones, snap points and origin", () => {
+    const belt = conveyorConfig();
+    const robot = deltaConfig({
+      zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0 }],
+      limitArea: { xMin: -500, xMax: 500, yMin: -700, yMax: 700, zMin: -1400, zMax: -600 },
+    });
+    const scene = buildScene(config(belt, robot), [], 0, new Set([20]));
+
+    expect(scene.deltas).toEqual([]);
+    expect(scene.workingAreas).toEqual([]);
+    expect(scene.limitAreas).toEqual([]);
+    expect(scene.zones).toEqual([]);
+    expect(scene.snapPoints.filter((p) => p.label.startsWith("Delta 1"))).toEqual([]);
+    expect(scene.origins.map((o) => o.componentId)).toEqual([1]);
+    expect(scene.conveyors).toHaveLength(1);
+  });
+
+  it("drops a hidden conveyor with its products and the zones on it, keeping the robot", () => {
+    const belt = conveyorConfig();
+    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0 }] });
+    const scene = buildScene(config(belt, robot), [snapshot(0, [conveyorState(0, [product()])])], 0, new Set([1]));
+
+    expect(scene.conveyors).toEqual([]);
+    expect(scene.products).toEqual([]);
+    expect(scene.zones).toEqual([]);
+    expect(scene.warnings).toEqual([]);
+    expect(scene.deltas).toHaveLength(1);
+  });
+});
+
 describe("scene model: working areas and zones", () => {
   it("resolves a robot's zones onto the referenced conveyor in belt coordinates", () => {
     const belt = conveyorConfig({ pose: { x: 1000, y: 0, z: 800, rx: 0, ry: 0, rz: 90 }, width: 400 });
     const robot = deltaConfig({
       zones: [
-        { conveyorId: 1, start: 1200, end: 1800, kind: "pick" },
-        { conveyorId: 99, start: 0, end: 100, kind: "place" },
+        { conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0 },
+        { conveyorId: 99, start: 0, end: 100, kind: "place", allocationOffset: 0 },
       ],
     });
     const scene = buildScene(config(belt, robot), [], 0);
@@ -359,8 +480,58 @@ describe("scene model: measure mode", () => {
     closeTo(snap(scene, "Infeed · origin").mcs, [1000, 0, 800]);
   });
 
+  it("marks a zone's allocation area from the zone start up to the allocation limit", () => {
+    const belt = conveyorConfig({ pose: { x: 1000, y: 0, z: 800, rx: 0, ry: 0, rz: 90 }, width: 400 });
+    const robot = deltaConfig({
+      zones: [
+        { conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 200 },
+        { conveyorId: 1, start: 2000, end: 2400, kind: "place", allocationOffset: 0 },
+      ],
+    });
+    const scene = buildScene(config(belt, robot), [], 0);
+
+    const [pick, place] = scene.zones;
+    // Belt x = 1200..1600 in a zone centred at 1500: centre −100 mm, limit +100 mm.
+    expect(pick!.allocation!.centre).toBeCloseTo(-0.1);
+    expect(pick!.allocation!.length).toBeCloseTo(0.4);
+    expect(pick!.allocation!.limit).toBeCloseTo(0.1);
+    expect(place!.allocation).toBeNull();
+    const limit = snap(scene, "Delta 1 pick zone on Infeed · allocation limit, left");
+    closeTo(limit.local.point, [1600, 200, 0]);
+    expect(limit.layer).toBe("zones");
+  });
+
+  it("clamps an allocation offset longer than the zone to the zone start", () => {
+    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 900 }] });
+    const [zone] = buildScene(config(belt, robot), [], 0).zones;
+
+    expect(zone!.allocation!.length).toBeCloseTo(0);
+  });
+
+  it("draws a Delta's limit area as a box in its base frame with corner snap points", () => {
+    const robot = deltaConfig({
+      pose: { x: 1500, y: 0, z: 1800, rx: 0, ry: 0, rz: 90 },
+      limitArea: { xMin: -500, xMax: 300, yMin: -700, yMax: 700, zMin: -1400, zMax: -600 },
+    });
+    const scene = buildScene(config(belt, robot), [], 0);
+
+    const [area] = scene.limitAreas;
+    expect(area!.robotId).toBe(20);
+    // Centre (−100, 0, −1000) in the base frame, turned by 90° about Z: MCS (1500, −100, 800).
+    closeTo(area!.transform.position, [1.5, 0.8, 0.1]);
+    closeTo(area!.size, [0.8, 1.4, 0.8]);
+    const corner = snap(scene, "Delta 1 limit area · bottom, Y min, X max");
+    closeTo(corner.local.point, [300, -700, -1400]);
+    closeTo(corner.mcs, [2200, 300, 400]);
+    expect(corner.layer).toBe("limitAreas");
+  });
+
+  it("has no limit area for a Delta without one", () => {
+    expect(buildScene(config(belt, deltaConfig()), [], 0).limitAreas).toEqual([]);
+  });
+
   it("offers the corners of a zone on its conveyor, in belt coordinates", () => {
-    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick" }] });
+    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0 }] });
     const corner = snap(buildScene(config(belt, robot), [], 0), "Delta 1 pick zone on Infeed · start, right");
     closeTo(corner.mcs, [1200, 1200, 800]);
     expect(corner.local.componentName).toBe("Infeed");
@@ -369,7 +540,7 @@ describe("scene model: measure mode", () => {
   });
 
   it("offers a Delta's base, shoulders and actual TCP in the robot's base frame", () => {
-    const tcp = { x: 1500, y: 100, z: 1000, rz: 0 };
+    const tcp = { x: 1500, y: 100, z: 1000 };
     const scene = buildScene(config(deltaConfig()), [snapshot(0, [deltaState(tcp, { ...tcp, x: 1510 })])], 0);
     closeTo(snap(scene, "Delta 1 · base").mcs, [1500, 0, 1800]);
     closeTo(snap(scene, "Delta 1 · shoulder 1").mcs, [1700, 0, 1800]);
@@ -415,7 +586,7 @@ describe("scene model: measure mode", () => {
   it("offers a carried product at the TCP but not its placeholder", () => {
     const robot = deltaConfig();
     const picked = product({ state: "picked", robotId: 20 });
-    const tcp = { x: 1500, y: 0, z: 1000, rz: 0 };
+    const tcp = { x: 1500, y: 0, z: 1000 };
     const scene = buildScene(config(conveyorConfig(), robot), [snapshot(0, [conveyorState(0, [picked]), deltaState(tcp)])], 0);
     const productPoints = scene.snapPoints.filter((s) => s.label.startsWith("Product #7"));
     expect(productPoints).toHaveLength(5);
@@ -424,14 +595,22 @@ describe("scene model: measure mode", () => {
   });
 
   it("does not offer snap points of hidden layers", () => {
-    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 0, end: 500, kind: "pick" }] });
+    const robot = deltaConfig({
+      zones: [{ conveyorId: 1, start: 0, end: 500, kind: "pick", allocationOffset: 0 }],
+      limitArea: { xMin: -500, xMax: 500, yMin: -700, yMax: 700, zMin: -1400, zMax: -600 },
+    });
     const points = buildScene(config(belt, robot), [], 0).snapPoints;
     const layersOf = (shown: typeof points) => new Set(shown.map((p) => p.layer));
 
-    expect(layersOf(availableSnapPoints(points, { zones: true, workingAreas: true }))).toEqual(
-      new Set(["structure", "zones", "workingAreas"]),
+    expect(layersOf(availableSnapPoints(points, { zones: true, workingAreas: true, limitAreas: true }))).toEqual(
+      new Set(["structure", "zones", "workingAreas", "limitAreas"]),
     );
-    expect(layersOf(availableSnapPoints(points, { zones: false, workingAreas: false }))).toEqual(new Set(["structure"]));
+    expect(layersOf(availableSnapPoints(points, { zones: false, workingAreas: true, limitAreas: false }))).toEqual(
+      new Set(["structure", "workingAreas"]),
+    );
+    expect(layersOf(availableSnapPoints(points, { zones: false, workingAreas: false, limitAreas: false }))).toEqual(
+      new Set(["structure"]),
+    );
   });
 
   it("lists every conveyor's and Delta's origin frame", () => {
@@ -459,13 +638,12 @@ function gantryConfig(overrides: Partial<XtsGantryConfig> = {}): XtsGantryConfig
     xMax: 300,
     zMin: -200,
     zMax: 0,
-    cMin: -180,
-    cMax: 180,
     toolOffsetX: 150,
     toolOffsetZ: -400,
     moverLength: 155,
     moverWidth: 80,
     zones: [],
+    fingers: [],
     ...overrides,
   };
 }
@@ -474,7 +652,7 @@ function gantryState(z: number, movers: GantryMover[]): StateMessage["components
   return { type: "xtsGantry", id: 30, timestamp: "0", z, movers };
 }
 
-const mover1: GantryMover = { id: 1, position: 250, x: 80, c: 30, gripperActive: true };
+const mover1: GantryMover = { id: 1, position: 250, x: 80, gripperActive: true, fingers: [] };
 
 describe("scene model: XTS gantry", () => {
   const scene = buildScene(config(gantryConfig()), [snapshot(0, [gantryState(-100, [mover1])])], 0);
@@ -487,17 +665,17 @@ describe("scene model: XTS gantry", () => {
     closeTo(g!.track.position, [3, 1.4, 0.5]);
   });
 
-  it("places each mover on the track and its gripper TCP at X + offset, turned by C", () => {
+  it("places each mover on the track and its gripper flange at X + offset, turned with the gantry", () => {
     const [m] = g!.movers;
     expect(m).toMatchObject({ id: 1, gripperActive: true });
     // Mover at track position 250: MCS (2750, −500, 1400).
     closeTo(m!.carriage, [2.75, 1.4, 0.5]);
     // X arm end above the gripper: local (230, 250, −100) -> MCS (2750, −270, 1400).
     closeTo(m!.armEnd, [2.75, 1.4, 0.27]);
-    // Gripper tip: local (230, 250, −500) -> MCS (2750, −270, 1000).
+    // Gripper flange: local (230, 250, −500) -> MCS (2750, −270, 1000).
     closeTo(m!.tip.position, [2.75, 1, 0.27]);
-    // Pose rz 90° + C 30° = 120° about MCS Z.
-    closeTo(rotate(m!.tip.quaternion, [1, 0, 0]), [-0.5, 0, -Math.sqrt(3) / 2]);
+    // Pose rz 90°: the flange's local +X points along MCS +Y.
+    closeTo(rotate(m!.tip.quaternion, [1, 0, 0]), [0, 0, -1]);
   });
 
   it("draws the reachable gripper volume as a box in the working-area layer", () => {
@@ -508,7 +686,7 @@ describe("scene model: XTS gantry", () => {
     closeTo(area!.size, [0.35, 3, 0.2]);
   });
 
-  it("hangs a picked product below the gripper of its mover", () => {
+  it("hangs a picked product without finger below the gripper flange of its mover", () => {
     const belt = conveyorConfig();
     const picked = product({ state: "picked", robotId: 30, moverId: 1 });
     const products = buildScene(
@@ -517,16 +695,16 @@ describe("scene model: XTS gantry", () => {
       0,
     ).products;
     const carried = products.find((p) => p.display === "atTcp");
-    // 40 mm product, top at the gripper tip MCS (2750, −270, 1000).
+    // 40 mm product, top at the gripper flange MCS (2750, −270, 1000).
     closeTo(carried!.transform.position, [2.75, 0.98, 0.27]);
   });
 
-  it("offers track start, module boundaries, track end and the gripper TCPs as snap points", () => {
+  it("offers track start, module boundaries, track end and the gripper flanges as snap points", () => {
     const byLabel = new Map(scene.snapPoints.map((p) => [p.label, p]));
     closeTo(byLabel.get("IDH · track start")!.mcs, [3000, -500, 1400]);
     closeTo(byLabel.get("IDH · module boundary 1")!.mcs, [2000, -500, 1400]);
     closeTo(byLabel.get("IDH · track end")!.mcs, [0, -500, 1400]);
-    const tcp = byLabel.get("IDH · mover 1 gripper")!;
+    const tcp = byLabel.get("IDH · mover 1 flange")!;
     closeTo(tcp.mcs, [2750, -270, 1000]);
     closeTo(tcp.local.point, [230, 250, -500]);
     expect(tcp.moving).toBe(true);
@@ -535,7 +713,7 @@ describe("scene model: XTS gantry", () => {
 
   it("resolves its zones onto the referenced conveyor", () => {
     const zoned = buildScene(
-      config(conveyorConfig(), gantryConfig({ zones: [{ conveyorId: 1, start: 0, end: 800, kind: "pick" }] })),
+      config(conveyorConfig(), gantryConfig({ zones: [{ conveyorId: 1, start: 0, end: 800, kind: "pick", allocationOffset: 0 }] })),
       [],
       0,
     );
@@ -556,37 +734,30 @@ function cartesianConfig(overrides: Partial<CartesianConfig> = {}): CartesianCon
     yMax: 1000,
     zMin: -600,
     zMax: 0,
-    cMin: -180,
-    cMax: 180,
-    aMin: -30,
-    aMax: 30,
-    toolLength: 150,
     railHeight: 1200,
     zones: [],
+    fingers: [],
     ...overrides,
   };
 }
 
 function cartesianState(overrides: Partial<CartesianState> = {}): CartesianState {
-  return { type: "cartesian", id: 50, timestamp: "0", x: 600, y: 250, z: -400, c: 90, a: 20, gripperActive: true, ...overrides };
+  return { type: "cartesian", id: 50, timestamp: "0", x: 600, y: 250, z: -400, gripperActive: true, fingers: [], ...overrides };
 }
 
-const SIN20 = Math.sin((20 * Math.PI) / 180);
-const COS20 = Math.cos((20 * Math.PI) / 180);
-// Flange at MCS (6600, 250, 1600); the tool (0, 0, −150) tilted by A = 20° about X, then turned by C = 90° about Z.
-const CARTESIAN_TCP: Vec3 = [6600 - 150 * SIN20, 250, 1600 - 150 * COS20];
+/** Flange at local (600, 250, −400). */
+const CARTESIAN_FLANGE: Vec3 = [6600, 250, 1600];
 
 describe("scene model: Cartesian robot", () => {
   const scene = buildScene(config(cartesianConfig()), [snapshot(0, [cartesianState()])], 0);
   const [robot] = scene.cartesians;
   const part = (key: string) => robot!.parts.find((p) => p.key === key)!;
 
-  it("places the TCP at the flange plus the tool length, turned by C and tilted by A", () => {
+  it("places the gripper flange at the axis values, turned with the robot", () => {
     expect(robot).toMatchObject({ id: 50, name: "Cartesian", gripperActive: true });
-    expect(robot!.axes).toEqual({ x: 600, y: 250, z: -400, c: 90, a: 20 });
-    closeTo(rendererToMcs(robot!.tcp!.position), CARTESIAN_TCP, 4);
-    // The gripper's +X (C = 90°) points along MCS +Y.
-    closeTo(rotate(robot!.tcp!.quaternion, [1, 0, 0]), [0, 0, -1]);
+    expect(robot!.axes).toEqual({ x: 600, y: 250, z: -400 });
+    closeTo(rendererToMcs(robot!.flange!.position), CARTESIAN_FLANGE, 4);
+    closeTo(rotate(robot!.flange!.quaternion, [1, 0, 0]), [1, 0, 0]);
   });
 
   it("moves the bridge with Y, the carriage with X and Y, and ends the column at the flange", () => {
@@ -602,15 +773,15 @@ describe("scene model: Cartesian robot", () => {
     closeTo(part("rail right").size, [0.08, 1.38, 0.08]);
   });
 
-  it("draws the reachable TCP volume (A = 0) as a box in the working-area layer", () => {
+  it("draws the reachable flange volume as a box in the working-area layer", () => {
     const [area] = scene.boxAreas;
     expect(area!.robotId).toBe(50);
-    // X 0..1200, Y 0..1000, Z −750..−150 in the robot frame.
-    closeTo(rendererToMcs(area!.transform.position), [6600, 500, 1550], 4);
+    // X 0..1200, Y 0..1000, Z −600..0 in the robot frame.
+    closeTo(rendererToMcs(area!.transform.position), [6600, 500, 1700], 4);
     closeTo(area!.size, [1.2, 1, 0.6]);
   });
 
-  it("hangs a picked product at the TCP, turned and tilted with the gripper", () => {
+  it("hangs a picked product without finger at the flange", () => {
     const picked = product({ state: "picked", robotId: 50, moverId: 0 });
     const products = buildScene(
       config(conveyorConfig(), cartesianConfig()),
@@ -618,41 +789,39 @@ describe("scene model: Cartesian robot", () => {
       0,
     ).products;
     const carried = products.find((p) => p.display === "atTcp")!;
-    // 40 mm product: its centre lies 20 mm below the TCP along the tilted tool axis.
-    closeTo(rendererToMcs(carried.transform.position), [CARTESIAN_TCP[0] - 20 * SIN20, 250, CARTESIAN_TCP[2] - 20 * COS20], 4);
+    // 40 mm product: its centre lies 20 mm below the flange.
+    closeTo(rendererToMcs(carried.transform.position), [6600, 250, 1580], 4);
   });
 
-  it("offers origin, rail ends, stroke-space corners, flange and TCP as snap points", () => {
+  it("offers origin, rail ends, stroke-space corners and the flange as snap points", () => {
     const byLabel = new Map(scene.snapPoints.map((p) => [p.label, p]));
     closeTo(byLabel.get("Cartesian · origin")!.mcs, [6000, 0, 2000]);
     closeTo(byLabel.get("Cartesian · rail right, end")!.mcs, [7320, 1190, 3200]);
     const corner = byLabel.get("Cartesian stroke space · bottom, start, X min")!;
-    closeTo(corner.mcs, [6000, 0, 1250]);
+    closeTo(corner.mcs, [6000, 0, 1400]);
     expect(corner.layer).toBe("workingAreas");
-    closeTo(byLabel.get("Cartesian · flange")!.mcs, [6600, 250, 1600]);
-    const tcp = byLabel.get("Cartesian · TCP")!;
-    closeTo(tcp.mcs, CARTESIAN_TCP, 4);
-    closeTo(tcp.local.point, [CARTESIAN_TCP[0] - 6000, 250, CARTESIAN_TCP[2] - 2000], 4);
-    expect(tcp.moving).toBe(true);
+    const flange = byLabel.get("Cartesian · flange")!;
+    closeTo(flange.mcs, CARTESIAN_FLANGE);
+    closeTo(flange.local.point, [600, 250, -400]);
+    expect(flange.moving).toBe(true);
+    expect(byLabel.has("Cartesian · TCP")).toBe(false);
     expect(scene.origins.map((o) => o.name)).toContain("Cartesian");
   });
 
-  it("interpolates the axes, C and A along the shorter way", () => {
+  it("interpolates the axes", () => {
     const mid = buildScene(
       config(cartesianConfig()),
-      [snapshot(0, [cartesianState({ x: 0, c: 170, a: -10 })]), snapshot(20, [cartesianState({ x: 100, c: -170, a: 10 })])],
+      [snapshot(0, [cartesianState({ x: 0 })]), snapshot(20, [cartesianState({ x: 100 })])],
       10,
     ).cartesians[0]!;
     expect(mid.axes!.x).toBeCloseTo(50);
-    expect(Math.abs(mid.axes!.c)).toBeCloseTo(180);
-    expect(mid.axes!.a).toBeCloseTo(0);
   });
 
-  it("draws the robot without TCP before the first state", () => {
+  it("draws the robot without flange before the first state", () => {
     const [idle] = buildScene(config(cartesianConfig()), [], 0).cartesians;
-    expect(idle!.tcp).toBeNull();
+    expect(idle!.flange).toBeNull();
     expect(idle!.axes).toBeNull();
-    expect(idle!.parts.map((p) => p.key)).toEqual(["rail left", "rail right", "bridge", "carriage", "column", "head"]);
+    expect(idle!.parts.map((p) => p.key)).toEqual(["rail left", "rail right", "bridge", "carriage", "column"]);
   });
 });
 
@@ -669,12 +838,13 @@ function loopConfig(overrides: Partial<XtsLoopConfig> = {}): XtsLoopConfig {
     moverLength: 100,
     moverWidth: 60,
     zones: [],
+    fingers: [],
     ...overrides,
   };
 }
 
 function loopState(movers: { id: number; position: number }[]): StateMessage["components"][number] {
-  return { type: "xtsLoop", id: 40, timestamp: "0", movers };
+  return { type: "xtsLoop", id: 40, timestamp: "0", movers: movers.map((m) => ({ ...m, fingers: [] })) };
 }
 
 /** 2 × 2000 + 2π × 250 */

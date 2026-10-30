@@ -91,6 +91,22 @@ _Avoid_: quill, Z arm
 The end of a Cartesian robot's column that turns about C and tilts about A, carrying the gripper.
 _Avoid_: wrist, tool head
 
+**Gripper**:
+The tool at a robot's flange (or a mover's) that holds products, made of one or more fingers.
+_Avoid_: tool head, end effector
+
+**Gripper flange**:
+The point where a gripper is mounted: a Delta's TCP, the end of an XTS gantry mover's X arm, an XTS loop mover's tool point or the lower end of a Cartesian robot's column.
+_Avoid_: tool mount, wrist
+
+**Finger**:
+One element of a gripper that grips a product, e.g. a suction cup or a jaw.
+_Avoid_: cup (a cup is one kind of finger), jaw (likewise), gripper element
+
+**Grip point**:
+The point at the end of a finger where a carried product's top touches.
+_Avoid_: TCP (the TCP is the flange of a Delta)
+
 **Mover**:
 A carriage driven along an XTS track.
 _Avoid_: shuttle, slider
@@ -107,6 +123,18 @@ _Avoid_: mover encoder
 The volume the PLC allows a robot to move in.
 _Avoid_: work area, workspace, reach (reach is what the kinematics allow)
 
+**Limit area**:
+A box around a Delta robot that further restricts its working area, so that neighbouring robots cannot collide.
+_Avoid_: collision zone, safety box, limit zone
+
 **Pick zone** / **Place zone**:
 The stretch of a conveyor, measured along the conveying direction, where a robot may pick products from it or place products onto it.
 _Avoid_: window, tracking window
+
+**Allocation area**:
+The part of a zone, from its start up to the allocation limit, in which a robot may still allocate products.
+_Avoid_: reservation zone, booking area
+
+**Allocation limit**:
+The point in a zone, a set distance before its end, beyond which a robot no longer allocates products, so that it does not leave the zone while approaching one.
+_Avoid_: allocation end, reservation limit

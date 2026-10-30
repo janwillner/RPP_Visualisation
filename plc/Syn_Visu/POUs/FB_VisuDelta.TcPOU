@@ -1,14 +1,18 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="FB_VisuDelta" Id="{e1281368-944b-4e78-bd44-ba383f275f6e}" SpecialFunc="None">
+  <POU Name="FB_VisuDelta" Id="{97550407-bef2-4e75-81e5-9ee3c067ac81}" SpecialFunc="None">
     <Declaration><![CDATA[(* One visualised Delta robot. Typical cycle:
      fbDelta.Register(GVL_Visu.stManifest, 10, 'Delta 1', 'MAIN.fbDelta.stVisu');
      fbDelta.Configure(stBasePose, fBaseRadius := 200, fEffectorRadius := 50,
-         fUpperArmLength := 400, fLowerArmLength := 1000, bHasRotationAxis := TRUE);
+         fUpperArmLength := 400, fLowerArmLength := 1000);
+     fbDelta.SetFinger(nFinger := 1, fDiameter := 40, fHeight := 50);
      fbDelta.SetWorkingArea(fRadius := 750, fZMin := -1300, fZMax := -700, fConeHeight := 200, fConeBottomRadius := 450);
-     fbDelta.SetZone(nConveyorId := 1, eKind := E_VisuZoneKind.PICK, fStart := 1100, fEnd := 1900);
+     fbDelta.SetLimitArea(fXMin := -500, fXMax := 500, fYMin := -750, fYMax := 750, fZMin := -1500, fZMax := -700);
+     fbDelta.SetZone(nConveyorId := 1, eKind := E_VisuZoneKind.PICK, fStart := 1100, fEnd := 1900, fAllocationOffset := 300);
      fbDelta.SetTcp(stActualTcp, stSetpointTcp);
-   Only the TCP is reported; the visualisation derives the arms from it. The config methods may be called
+     fbDelta.SetFingerState(nFinger := 1, stPose := stCupPose, bActive := bVacuum);
+   Only the TCP (the gripper flange) is reported; the visualisation derives the arms from it. Tool rotations
+   (e.g. a 4th axis) show only through the finger poses, absolute in the MCS. The config methods may be called
    every cycle; the config version only changes when a value does.
    The gateway reads stVisu at the path given to Register. *)
 FUNCTION_BLOCK FB_VisuDelta EXTENDS FB_VisuComponent
@@ -37,6 +41,36 @@ END_IF]]></ST>
 METHOD BasePose : ST_VisuPose]]></Declaration>
       <Implementation>
         <ST><![CDATA[BasePose := stVisu.stConfig.stPose;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ClearFingers" Id="{d4431669-209c-491f-aaa6-4c1c4866104b}">
+      <Declaration><![CDATA[(* Removes the gripper definition. TRUE if there was one. *)
+METHOD ClearFingers : BOOL
+VAR
+	stNew : ST_VisuDeltaConfig;
+	stEmpty : ST_VisuFinger;
+	nIndex : UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[stNew := stVisu.stConfig;
+FOR nIndex := 0 TO GVL_VisuParam.nMaxFingers - 1 DO
+	stNew.aFingers[nIndex] := stEmpty;
+END_FOR
+stNew.nFingerCount := 0;
+ClearFingers := ApplyConfig(stNew);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="ClearLimitArea" Id="{6111c65a-69b8-4554-b0e6-27f21bc9a128}">
+      <Declaration><![CDATA[(* Removes the limit area. TRUE if changed. *)
+METHOD ClearLimitArea : BOOL
+VAR
+	stNew : ST_VisuDeltaConfig;
+	stEmpty : ST_VisuLimitArea;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[stNew := stVisu.stConfig;
+stNew.stLimitArea := stEmpty;
+ClearLimitArea := ApplyConfig(stNew);]]></ST>
       </Implementation>
     </Method>
     <Method Name="ClearZones" Id="{6ff1225f-1d85-4f13-8940-d18523272309}">
@@ -72,7 +106,6 @@ VAR_INPUT
 	fEffectorRadius : LREAL; // mm, effector centre to lower-arm joint
 	fUpperArmLength : LREAL; // mm
 	fLowerArmLength : LREAL; // mm
-	bHasRotationAxis : BOOL; // 4th axis: the effector is drawn rotated by the TCP's fRz
 END_VAR
 VAR
 	stNew : ST_VisuDeltaConfig;
@@ -84,16 +117,83 @@ stNew.fBaseRadius := fBaseRadius;
 stNew.fEffectorRadius := fEffectorRadius;
 stNew.fUpperArmLength := fUpperArmLength;
 stNew.fLowerArmLength := fLowerArmLength;
-stNew.bHasRotationAxis := bHasRotationAxis;
 Configure := ApplyConfig(stNew);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetFinger" Id="{546c7145-9601-4a5f-938b-af079ca1c84a}">
+      <Declaration><![CDATA[(* Defines gripper finger nFinger (1-based): a cylinder hanging from the finger's pose along its local -Z. The finger
+   count grows to nFinger. FALSE outside 1..GVL_VisuParam.nMaxFingers. *)
+METHOD SetFinger : BOOL
+VAR_INPUT
+	nFinger : UINT; // 1-based, as a product's nFingerId
+	fDiameter : LREAL; // mm
+	fHeight : LREAL; // mm, along the finger's local -Z
+END_VAR
+VAR
+	stNew : ST_VisuDeltaConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[SetFinger := FALSE;
+IF nFinger = 0 OR nFinger > GVL_VisuParam.nMaxFingers THEN
+	RETURN;
+END_IF
+stNew := stVisu.stConfig;
+stNew.aFingers[nFinger - 1].fDiameter := fDiameter;
+stNew.aFingers[nFinger - 1].fHeight := fHeight;
+stNew.nFingerCount := MAX(stNew.nFingerCount, nFinger);
+ApplyConfig(stNew);
+SetFinger := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetFingerState" Id="{6c03bdbd-598e-4a25-b3ce-4bdea279ef42}">
+      <Declaration><![CDATA[(* Reports finger nFinger (1-based): the pose of its frame (centre of its top face), absolute in the MCS, and whether it
+   grips. Call once per cycle per configured finger. FALSE outside 1..GVL_VisuParam.nMaxFingers. *)
+METHOD SetFingerState : BOOL
+VAR_INPUT
+	nFinger : UINT; // 1-based
+	stPose : ST_VisuPose; // MCS
+	bActive : BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[SetFingerState := nFinger > 0 AND nFinger <= GVL_VisuParam.nMaxFingers;
+IF SetFingerState THEN
+	stVisu.stState.aFingerStates[nFinger - 1].stPose := stPose;
+	stVisu.stState.aFingerStates[nFinger - 1].bActive := bActive;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="SetLimitArea" Id="{641a0f2e-a1bd-4fc6-b7d3-a4a5013464ca}">
+      <Declaration><![CDATA[(* Sets and activates the limit area: an axis-aligned box in the robot frame. TRUE if changed. *)
+METHOD SetLimitArea : BOOL
+VAR_INPUT
+	fXMin : LREAL; // mm
+	fXMax : LREAL; // mm
+	fYMin : LREAL; // mm
+	fYMax : LREAL; // mm
+	fZMin : LREAL; // mm relative to the base (below the base: negative)
+	fZMax : LREAL; // mm relative to the base
+END_VAR
+VAR
+	stNew : ST_VisuDeltaConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[stNew := stVisu.stConfig;
+stNew.stLimitArea.fXMin := fXMin;
+stNew.stLimitArea.fXMax := fXMax;
+stNew.stLimitArea.fYMin := fYMin;
+stNew.stLimitArea.fYMax := fYMax;
+stNew.stLimitArea.fZMin := fZMin;
+stNew.stLimitArea.fZMax := fZMax;
+stNew.stLimitArea.bActive := TRUE;
+SetLimitArea := ApplyConfig(stNew);]]></ST>
       </Implementation>
     </Method>
     <Method Name="SetTcp" Id="{9bcdd9c9-b2e8-4d5b-b773-17645ba273ae}">
       <Declaration><![CDATA[(* Reports the robot's TCP. Call once per cycle; it also stamps the state with the cycle's DC time. *)
 METHOD SetTcp : BOOL
 VAR_INPUT
-	stActualTcp : ST_VisuPlanarPose; // MCS, effector centre
-	stSetpointTcp : ST_VisuPlanarPose; // MCS
+	stActualTcp : ST_VisuPosition; // MCS, effector centre (the gripper flange)
+	stSetpointTcp : ST_VisuPosition; // MCS
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[stVisu.stState.stActualTcp := stActualTcp;
@@ -134,6 +234,7 @@ VAR_INPUT
 	eKind : E_VisuZoneKind;
 	fStart : LREAL; // mm along the conveyor from its start (belt coordinates, not MCS)
 	fEnd : LREAL; // mm along the conveyor from its start
+	fAllocationOffset : LREAL := 0; // mm before fEnd up to which products may be allocated; 0 = no limit
 END_VAR
 VAR
 	stNew : ST_VisuDeltaConfig;
@@ -163,6 +264,7 @@ stNew.aZones[nIndex].nConveyorId := nConveyorId;
 stNew.aZones[nIndex].eKind := eKind;
 stNew.aZones[nIndex].fStart := fStart;
 stNew.aZones[nIndex].fEnd := fEnd;
+stNew.aZones[nIndex].fAllocationOffset := fAllocationOffset;
 ApplyConfig(stNew);
 SetZone := TRUE;]]></ST>
       </Implementation>

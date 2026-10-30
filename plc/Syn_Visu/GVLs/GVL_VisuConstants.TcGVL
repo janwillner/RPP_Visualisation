@@ -8,8 +8,10 @@ VAR_GLOBAL CONSTANT
 	   2: the Delta reports only its TCP; the visualisation derives the arm posture.
 	   3: work area renamed to working area, windows to zones.
 	   4: XTS gantry and XTS loop, product nMoverId, fEncoder renamed to fBeltPosition.
-	   5: Cartesian robot. *)
-	nProtocolVersion : UINT := 5;
+	   5: Cartesian robot.
+	   6: Delta limit area, zone allocation offset.
+	   7: gripper fingers; tool rotations (Delta rz, IDH C, Cartesian C/A and tool length) removed. *)
+	nProtocolVersion : UINT := 7;
 	fDegToRad : LREAL := 0.017453292519943295; // pi / 180
 END_VAR]]></Declaration>
   </GVL>

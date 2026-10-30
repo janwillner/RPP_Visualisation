@@ -74,31 +74,34 @@ const COMPONENT_KINDS: Record<number, ComponentKind> = {
 };
 
 /** Mapping of each component type's PLC structures to the neutral model. */
+const fingerCount = (c: ComponentConfig) => ("fingers" in c ? c.fingers.length : 0);
+
 const MAPPERS: {
   [K in ComponentKind]: {
     config: (identity: ComponentIdentity, raw: unknown) => ComponentConfig;
-    state: (id: number, raw: unknown) => ComponentState;
+    /** Gets the component's config, e.g. for the number of configured fingers. */
+    state: (config: ComponentConfig, raw: unknown) => ComponentState;
   };
 } = {
   conveyor: {
     config: (i, raw) => mapConveyorConfig(i, raw as ST_VisuConveyorConfig),
-    state: (id, raw) => mapConveyorState(id, raw as ST_VisuConveyorState),
+    state: (c, raw) => mapConveyorState(c.id, raw as ST_VisuConveyorState),
   },
   delta: {
     config: (i, raw) => mapDeltaConfig(i, raw as ST_VisuDeltaConfig),
-    state: (id, raw) => mapDeltaState(id, raw as ST_VisuDeltaState),
+    state: (c, raw) => mapDeltaState(c.id, raw as ST_VisuDeltaState, fingerCount(c)),
   },
   xtsGantry: {
     config: (i, raw) => mapXtsGantryConfig(i, raw as ST_VisuXtsGantryConfig),
-    state: (id, raw) => mapXtsGantryState(id, raw as ST_VisuXtsGantryState),
+    state: (c, raw) => mapXtsGantryState(c.id, raw as ST_VisuXtsGantryState, fingerCount(c)),
   },
   xtsLoop: {
     config: (i, raw) => mapXtsLoopConfig(i, raw as ST_VisuXtsLoopConfig),
-    state: (id, raw) => mapXtsLoopState(id, raw as ST_VisuXtsLoopState),
+    state: (c, raw) => mapXtsLoopState(c.id, raw as ST_VisuXtsLoopState, fingerCount(c)),
   },
   cartesian: {
     config: (i, raw) => mapCartesianConfig(i, raw as ST_VisuCartesianConfig),
-    state: (id, raw) => mapCartesianState(id, raw as ST_VisuCartesianState),
+    state: (c, raw) => mapCartesianState(c.id, raw as ST_VisuCartesianState, fingerCount(c)),
   },
 };
 
@@ -194,7 +197,7 @@ export function createGateway({
   }
 
   function mapState(component: ActiveComponent, raw: unknown): ComponentState {
-    return MAPPERS[component.config.type].state(component.config.id, raw);
+    return MAPPERS[component.config.type].state(component.config, raw);
   }
 
   /**

@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="FB_VisuConveyor" Id="{dddf77fc-04b8-4b07-87b2-3add26014052}" SpecialFunc="None">
+  <POU Name="FB_VisuConveyor" Id="{df0fd64e-e630-4432-a80b-e37e7a2127fd}" SpecialFunc="None">
     <Declaration><![CDATA[(* One visualised conveyor. Typical cycle:
      fbInfeed.Register(GVL_Visu.stManifest, 1, 'Infeed', 'MAIN.fbInfeed.stVisu');
      fbInfeed.Configure(stPose, fLength := 5000, fWidth := 400);
@@ -304,6 +304,7 @@ VAR_INPUT
 	eState : E_VisuProductState;
 	nRobotId : UDINT; // manifest id of the robot, 0 = none
 	nMoverId : UDINT := 0; // mover of an XTS gantry or loop carrying the product, 0 = none
+	nFingerId : UDINT := 0; // gripper finger (1-based) the product hangs from while picked, 0 = the gripper flange
 END_VAR
 VAR
 	nIndex : INT;
@@ -315,6 +316,7 @@ IF SetProductState THEN
 	stVisu.stState.aProducts[nIndex].eState := eState;
 	stVisu.stState.aProducts[nIndex].nRobotId := nRobotId;
 	stVisu.stState.aProducts[nIndex].nMoverId := nMoverId;
+	stVisu.stState.aProducts[nIndex].nFingerId := nFingerId;
 	stVisu.stState.nTimestamp := DcTime();
 END_IF]]></ST>
       </Implementation>

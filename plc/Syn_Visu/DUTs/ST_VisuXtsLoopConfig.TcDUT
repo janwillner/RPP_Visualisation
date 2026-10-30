@@ -9,11 +9,13 @@ STRUCT
 	stPose : ST_VisuPose; // MCS
 	fStraightLength : LREAL; // mm
 	fCurveRadius : LREAL; // mm
-	fToolOffset : LREAL; // mm, tool point of a mover outwards from the track
+	fToolOffset : LREAL; // mm, gripper flange (tool point) of a mover outwards from the track
 	fMoverLength : LREAL; // mm, along the track
 	fMoverWidth : LREAL; // mm
 	nZoneCount : UINT;
 	aZones : ARRAY[0..GVL_VisuParam.nMaxZones - 1] OF ST_VisuZone; // pick and place zones
+	nFingerCount : UINT; // fingers of every mover's gripper, 0 = no gripper definition
+	aFingers : ARRAY[0..GVL_VisuParam.nMaxFingers - 1] OF ST_VisuFinger;
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

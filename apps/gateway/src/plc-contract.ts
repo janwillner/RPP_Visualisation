@@ -40,6 +40,23 @@ export interface ST_VisuPose {
   fRz: number;
 }
 
+export interface ST_VisuPosition {
+  fX: number;
+  fY: number;
+  fZ: number;
+}
+
+export interface ST_VisuFinger {
+  fDiameter: number;
+  fHeight: number;
+}
+
+export interface ST_VisuFingerState {
+  /** Pose of the finger's frame (centre of its top face), absolute in the MCS. */
+  stPose: ST_VisuPose;
+  bActive: boolean;
+}
+
 export interface ST_VisuPlanarPose {
   fX: number;
   fY: number;
@@ -84,6 +101,7 @@ export interface ST_VisuProduct {
   eState: PlcEnum;
   nRobotId: number;
   nMoverId: number;
+  nFingerId: number;
   nProductType: number;
 }
 
@@ -107,11 +125,22 @@ export interface ST_VisuWorkingArea {
   fConeBottomRadius: number;
 }
 
+export interface ST_VisuLimitArea {
+  fXMin: number;
+  fXMax: number;
+  fYMin: number;
+  fYMax: number;
+  fZMin: number;
+  fZMax: number;
+  bActive: boolean;
+}
+
 export interface ST_VisuZone {
   nConveyorId: number;
   fStart: number;
   fEnd: number;
   eKind: PlcEnum;
+  fAllocationOffset: number;
 }
 
 export interface ST_VisuDeltaConfig {
@@ -120,17 +149,20 @@ export interface ST_VisuDeltaConfig {
   fEffectorRadius: number;
   fUpperArmLength: number;
   fLowerArmLength: number;
-  bHasRotationAxis: boolean;
   stWorkingArea: ST_VisuWorkingArea;
+  stLimitArea: ST_VisuLimitArea;
   nZoneCount: number;
   aZones: ST_VisuZone[];
+  nFingerCount: number;
+  aFingers: ST_VisuFinger[];
 }
 
 export interface ST_VisuDeltaState {
   nTimestamp: bigint;
   /** Actual TCP (effector centre) in the MCS; the visualisation derives the arms from it. */
-  stActualTcp: ST_VisuPlanarPose;
-  stSetpointTcp: ST_VisuPlanarPose;
+  stActualTcp: ST_VisuPosition;
+  stSetpointTcp: ST_VisuPosition;
+  aFingerStates: ST_VisuFingerState[];
 }
 
 export interface ST_VisuDelta {
@@ -146,14 +178,14 @@ export interface ST_VisuXtsGantryConfig {
   fXMax: number;
   fZMin: number;
   fZMax: number;
-  fCMin: number;
-  fCMax: number;
   fToolOffsetX: number;
   fToolOffsetZ: number;
   fMoverLength: number;
   fMoverWidth: number;
   nZoneCount: number;
   aZones: ST_VisuZone[];
+  nFingerCount: number;
+  aFingers: ST_VisuFinger[];
 }
 
 export interface ST_VisuGantryMover {
@@ -161,8 +193,8 @@ export interface ST_VisuGantryMover {
   bValid: boolean;
   fPosition: number;
   fX: number;
-  fC: number;
   bGripperActive: boolean;
+  aFingerStates: ST_VisuFingerState[];
 }
 
 export interface ST_VisuXtsGantryState {
@@ -186,12 +218,15 @@ export interface ST_VisuXtsLoopConfig {
   fMoverWidth: number;
   nZoneCount: number;
   aZones: ST_VisuZone[];
+  nFingerCount: number;
+  aFingers: ST_VisuFinger[];
 }
 
 export interface ST_VisuLoopMover {
   nId: number;
   bValid: boolean;
   fPosition: number;
+  aFingerStates: ST_VisuFingerState[];
 }
 
 export interface ST_VisuXtsLoopState {
@@ -213,14 +248,11 @@ export interface ST_VisuCartesianConfig {
   fYMax: number;
   fZMin: number;
   fZMax: number;
-  fCMin: number;
-  fCMax: number;
-  fAMin: number;
-  fAMax: number;
-  fToolLength: number;
   fRailHeight: number;
   nZoneCount: number;
   aZones: ST_VisuZone[];
+  nFingerCount: number;
+  aFingers: ST_VisuFinger[];
 }
 
 export interface ST_VisuCartesianState {
@@ -228,9 +260,8 @@ export interface ST_VisuCartesianState {
   fX: number;
   fY: number;
   fZ: number;
-  fC: number;
-  fA: number;
   bGripperActive: boolean;
+  aFingerStates: ST_VisuFingerState[];
 }
 
 export interface ST_VisuCartesian {

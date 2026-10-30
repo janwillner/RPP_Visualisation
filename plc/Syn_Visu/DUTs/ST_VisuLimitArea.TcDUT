@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuLimitArea" Id="{2f71bba7-fc76-4d12-b7cf-6688fc968a22}">
+    <Declaration><![CDATA[TYPE ST_VisuLimitArea :
+STRUCT
+	(* Axis-aligned box in the robot frame (relative to the base centre, turned with the robot's pose) that further
+	   restricts the working area, e.g. so that neighbouring robots cannot collide. *)
+	fXMin : LREAL; // mm
+	fXMax : LREAL; // mm
+	fYMin : LREAL; // mm
+	fYMax : LREAL; // mm
+	fZMin : LREAL; // mm relative to the base (below the base: negative)
+	fZMax : LREAL; // mm relative to the base
+	bActive : BOOL; // FALSE: no limit area, the box is not drawn
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>
