@@ -221,6 +221,20 @@ describe("scene model: delta follows the TCP", () => {
     }
   });
 
+  it("turns upper arm 1 with the base: Rz 90° points it along MCS +Y, Rz -90° along -Y", () => {
+    for (const [rz, y] of [
+      [90, 0.2],
+      [-90, -0.2],
+    ] as const) {
+      const cfg = deltaConfig({ pose: { x: 1500, y: 0, z: 1800, rx: 0, ry: 0, rz } });
+      const tcp = { x: 1500, y: 0, z: 1800 - HORIZONTAL_DEPTH };
+      const [d] = buildScene(config(cfg), [snapshot(0, [deltaState(tcp)])], 0).deltas;
+
+      // Shoulder 1 at base + 200 mm along MCS ±Y; MCS +Y is renderer -Z.
+      closeTo(d!.shoulders[0]!, [1.5, 1.8, -y]);
+    }
+  });
+
   it("marks a TCP the arms cannot reach as unreachable but still shows the effector at the TCP", () => {
     const [d] = buildScene(config(deltaConfig()), [snapshot(0, [deltaState({ x: 1500, y: 0, z: 0 })])], 0).deltas;
     expect(d!.reachable).toBe(false);
