@@ -154,9 +154,6 @@ export function App() {
           <Toggle label="TCP markers" on={layers.tcpMarkers} onClick={() => toggle("tcpMarkers")} />
           <Toggle label="Fault labels" on={layers.faultLabels} onClick={() => toggle("faultLabels")} />
         </div>
-        <div className="group">
-          <Toggle label="Measure (M)" on={measureMode} onClick={() => setMeasureMode((m) => !m)} />
-        </div>
       </header>
       <aside className="panel left" hidden={!leftOpen}>
         <ComponentTree
@@ -185,6 +182,7 @@ export function App() {
           onFaults={setFaults}
         />
         <ViewControls onCamera={camera} />
+        <MeasureButton on={measureMode} onClick={() => setMeasureMode((m) => !m)} />
         {EMBEDDED && <OfflineNotice gateway={gateway} />}
         {(measureMode || measurePoints.length > 0) && (
           <MeasureList
@@ -261,6 +259,37 @@ function ViewControls({ onCamera }: { onCamera: (action: CameraAction) => void }
         Reset
       </button>
     </div>
+  );
+}
+
+/** Measure mode on / off, bottom right in the 3D view; the key M does the same. */
+function MeasureButton({ on, onClick }: { on: boolean; onClick: () => void }) {
+  return (
+    <button
+      className={on ? "measure-toggle toggle on" : "measure-toggle toggle"}
+      title={on ? "Leave measure mode (M)" : "Measure (M)"}
+      aria-label="Measure"
+      aria-pressed={on}
+      onClick={onClick}
+    >
+      <RulerIcon />
+    </button>
+  );
+}
+
+/** A ruler lying diagonally, with its scale marks. */
+function RulerIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+      <rect x="1.5" y="8" width="21" height="8" rx="1" transform="rotate(-45 12 12)" />
+      <g transform="rotate(-45 12 12)" strokeLinecap="round">
+        <line x1="5" y1="8" x2="5" y2="11" />
+        <line x1="8.5" y1="8" x2="8.5" y2="12.5" />
+        <line x1="12" y1="8" x2="12" y2="11" />
+        <line x1="15.5" y1="8" x2="15.5" y2="12.5" />
+        <line x1="19" y1="8" x2="19" y2="11" />
+      </g>
+    </svg>
   );
 }
 

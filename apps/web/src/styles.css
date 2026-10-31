@@ -184,6 +184,23 @@ button:hover {
   gap: 4px;
 }
 
+/* Measure mode toggle, bottom right in the 3D view. */
+.measure-toggle {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}
+
+.measure-toggle:not(.on) {
+  background: rgba(42, 49, 59, 0.9);
+}
+
 .view-controls button {
   background: rgba(42, 49, 59, 0.9);
 }
@@ -413,7 +430,8 @@ button.link {
   position: absolute;
   left: 8px;
   bottom: 8px;
-  max-width: min(440px, calc(100% - 16px));
+  /* Leaves room for the measure button on the right. */
+  max-width: min(440px, calc(100% - 72px));
   max-height: calc(100% - 16px);
   overflow: auto;
   padding: 6px 8px;
@@ -579,6 +597,11 @@ button.link {
     width: 44px;
   }
 
+  .measure-toggle {
+    width: 52px;
+    height: 52px;
+  }
+
   .dot {
     width: 12px;
     height: 12px;
@@ -593,7 +616,7 @@ button.link {
   }
 
   .measure {
-    max-width: min(520px, calc(100% - 16px));
+    max-width: min(520px, calc(100% - 80px));
   }
 
   .measure-row {
