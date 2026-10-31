@@ -3,10 +3,11 @@
   <DUT Name="ST_VisuXtsGantryState" Id="{62cc2a4c-89f4-4659-8699-e54ffb3ac860}">
     <Declaration><![CDATA[TYPE ST_VisuXtsGantryState :
 STRUCT
-	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (set by FB_VisuXtsGantry)
+	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (set by _FB_VisuXtsGantry)
 	fZ : LREAL; // mm, common Z axis, actual value
 	nMoverCount : UINT; // entries [0..nMoverCount-1] are evaluated
 	aMovers : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MOVERS - 1] OF ST_VisuGantryMover;
+	stFault : ST_VisuFault; // fault of the whole gantry (set by _FB_VisuXtsGantry.m_SetFault)
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

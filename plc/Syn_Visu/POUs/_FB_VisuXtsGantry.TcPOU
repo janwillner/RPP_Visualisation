@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuXtsGantry" Id="{da05b476-1630-4d2c-9855-a5748b32139e}" SpecialFunc="None">
+  <POU Name="_FB_VisuXtsGantry" Id="{c5cfd0a6-6bae-4471-a0e3-7309264301c1}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -160,6 +160,28 @@ TempNew.fMoverWidth := vi_lr_MoverWidth;
 m_Configure := m_ApplyConfig(TempNew);]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_SetFault" Id="{a224315d-90cd-4fab-ba72-581b61a07fcb}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets or clears the fault of the whole gantry: drawn red with the message while active. Faults of single<br>
+movers go through m_SetMover. The fault stays until it is cleared with m_SetFault(vi_b_Active := FALSE,<br>
+vi_str_Message := ''). TRUE.<br>
+****************************************************************************************************)
+METHOD m_SetFault : BOOL
+VAR_INPUT
+	vi_b_Active							: BOOL;	// TRUE: fault active
+	vi_str_Message						: STRING(80);	// shown to the operator; empty shows 'Fault'
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_Visu.stState.stFault.bActive := vi_b_Active;
+vo_Visu.stState.stFault.sMessage := vi_str_Message;
+m_SetFault := TRUE;]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_SetFinger" Id="{24f90d8b-fe9f-449c-b1b3-77e833cb2592}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -216,6 +238,8 @@ VAR_INPUT
 	vi_b_GripperActive					: BOOL;	// used only when no fingers are configured
 	(* Finger poses absolute in the MCS and grip states, index 0 = finger 1; entries beyond the finger count are ignored. *)
 	vi_FingerStates						: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;
+	vi_b_Fault							: BOOL := FALSE;	// TRUE: this mover is in a fault
+	vi_str_FaultMessage					: STRING(80) := '';	// shown to the operator; empty shows 'Fault'
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[m_SetMover := vi_un_Index < vo_Visu.stState.nMoverCount;
@@ -226,6 +250,8 @@ IF m_SetMover THEN
 	vo_Visu.stState.aMovers[vi_un_Index].fX := vi_lr_X;
 	vo_Visu.stState.aMovers[vi_un_Index].bGripperActive := vi_b_GripperActive;
 	vo_Visu.stState.aMovers[vi_un_Index].aFingerStates := vi_FingerStates;
+	vo_Visu.stState.aMovers[vi_un_Index].stFault.bActive := vi_b_Fault;
+	vo_Visu.stState.aMovers[vi_un_Index].stFault.sMessage := vi_str_FaultMessage;
 	vo_Visu.stState.nTimestamp := m_DcTime();
 END_IF]]></ST>
       </Implementation>

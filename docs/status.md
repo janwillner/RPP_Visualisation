@@ -15,7 +15,7 @@ Without a PLC: `--driver sim` (built-in simulator, same contract).
 ## Done
 
 - MVP from issue #1: protocol package, gateway (discovery, sum-read snapshots, version checks, reconnect), simulator, React Three Fiber debug UI.
-- PLC library `Syn_Visu` (`plc/Syn_Visu`), contract in `docs/plc-contract.md`, **protocol version 7** (3: work area → working area, windows → zones; 4: XTS kinematics, `nMoverId`, `fEncoder` → `fBeltPosition`; 5: Cartesian robot; 6: Delta limit area, zone allocation offset; 7: gripper fingers, tool rotations removed).
+- PLC library `Syn_Visu` (`plc/Syn_Visu`), contract in `docs/plc-contract.md`, **protocol version 8** (3: work area → working area, windows → zones; 4: XTS kinematics, `nMoverId`, `fEncoder` → `fBeltPosition`; 5: Cartesian robot; 6: Delta limit area, zone allocation offset; 7: gripper fingers, tool rotations removed; 8: faults).
 - XTS gantry (IDH) and XTS loop (Fxx), issue #3: contract, `FB_VisuXtsGantry` / `FB_VisuXtsLoop`, gateway, scene model, drawing, measure-mode snap points, mover table in the inspector.
 - Cartesian robot, issue #4: contract, `FB_VisuCartesian`, gateway, scene model (rails, bridge, carriage, column, gripper head, TCP volume), measure-mode snap points, axis table in the inspector.
 - Delta limit area (box in the robot frame, own layer toggle "Limit areas") and zone allocation area / allocation limit (layer zones), with measure-mode snap points.
@@ -31,6 +31,7 @@ Without a PLC: `--driver sim` (built-in simulator, same contract).
 - Demo in the PLC project (`P_VisuDemo`) and the gateway simulator: four independent applications side by side, all conveying along +X from X = 0: Delta (two infeeds, one outfeed, three Deltas in a row; Y = 0..1000), Fxx (irregular infeed evened out onto its outfeed; Y = 2500) and IDH (four movers picking in batches from its infeed onto a tray belt; Y = 4100..4850) and Cartesian (picks from its infeed, turns by C = −90°, tilts by A while lowering, places onto its outfeed; Y = 6500..7300).
 - PLC API: `FB_VisuConveyor` and `FB_VisuDelta` (base `FB_VisuComponent`) with methods replace the helper functions; library version 2.0.0. The ADS contract is unchanged.
 - PLC code follows the company guideline (`docs/plc-coding-guidelines.md`), library version 3.0.0: `_FB_Visu*` FBs, `m_` methods, `vi_`/`vo_`/`vio_` inputs and outputs, `Temp` method locals, `VISU_GlobalConst` / `VISU_GlobalConst_Param` with upper-case constants, copyright and help headers. The contract structure is the FB output `vo_Visu` (manifest paths end in `.vo_Visu`). Structures, members, enums and `GVL_Visu.stManifest` are unchanged, so the protocol stays at version 7. Not yet downloaded to the runtime.
+- Faults (protocol 8, library 3.1.0): every component and every XTS mover can be put into a fault with a message (`m_SetFault`, `m_SetMover` fault inputs). Faulted parts glow red, a label with the message hangs above them (layer toggle "Fault labels"), the component list marks them with ⚠ and the messages as tooltip, the inspector shows them and a Fault column for movers. Demo and simulator fault Delta 1, a Fxx mover and an IDH mover for 5 s every 20 s. Not yet downloaded to the runtime.
 
 ## Decisions changed during implementation
 

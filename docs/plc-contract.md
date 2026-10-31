@@ -1,4 +1,4 @@
-# PLC contract (library `Syn_Visu`, protocol version 7)
+# PLC contract (library `Syn_Visu`, protocol version 8)
 
 This is the PLC side of the contract the gateway reads. It is implemented by the TwinCAT library project in
 `plc/Syn_Visu` (solution `plc/RPP_Visu.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
@@ -15,6 +15,7 @@ their Beckhoff-style names, because the gateway reads them.
 - Pose rotation order: R = Rz(fRz) · Ry(fRy) · Rx(fRx).
 - `nTimestamp`: distributed-clock time in ns since 2000-01-01 of the cycle that wrote the state. The component FBs set it.
 - Cross-references (`nRobotId`, `nConveyorId`) use manifest `nId` values, never symbol paths; `nMoverId` uses the mover ids an XTS gantry or loop reports.
+- Fault: every component state and every XTS mover carries `stFault : ST_VisuFault` (`bActive`, `sMessage` STRING(80)). While `bActive` is TRUE the visualisation draws the component, or only that mover, red and shows `sMessage` ("Fault" if empty) above it, in the component list and in the inspector. There is one fault per component or mover at a time and no severity. Faults are live state: they are read every cycle and not interpolated.
 - `fBeltPosition` is a continuous position in mm (no modulo). For modulo axes use `_FB_VisuConveyor.m_SetModuloBeltPosition`.
 - Product latch pose = bottom centre of the product on the belt surface when it was latched.
 - Delta: the PLC reports only the **TCP** (effector centre, the gripper flange) as a position in the MCS. The
@@ -57,6 +58,7 @@ their Beckhoff-style names, because the gateway reads them.
 - Protocol version 5 added the Cartesian robot.
 - Protocol version 6 added the Delta limit area (`stLimitArea`, `ST_VisuLimitArea`) and the zones' `fAllocationOffset`.
 - Protocol version 7 added gripper fingers (`ST_VisuFinger`, `ST_VisuFingerState`, `nFingerCount`, `aFingers`, `aFingerStates`, the product's `nFingerId`) and removed the tool rotations: the Delta's `bHasRotationAxis` and TCP `fRz` (the TCP is now an `ST_VisuPosition`), the XTS gantry's `fCMin`/`fCMax` and mover `fC`, and the Cartesian robot's `fCMin`/`fCMax`/`fAMin`/`fAMax`/`fToolLength` and `fC`/`fA`.
+- Protocol version 8 added faults (`ST_VisuFault`, `stFault` in every component state and every XTS mover).
 
 ## What the library contains
 
@@ -77,11 +79,12 @@ the FBs fill them in their output `vo_Visu`, so application code does not write 
 | `ST_VisuXtsGantry` (`stConfig`: track, strokes, gripper offsets, mover size, zones, fingers / `stState`: Z and movers with finger states), `ST_VisuGantryMover` | XTS gantry contract structure (`_FB_VisuXtsGantry.vo_Visu`) |
 | `ST_VisuXtsLoop` (`stConfig`: straight length, curve radius, tool offset, mover size, zones, fingers / `stState`: movers with finger states), `ST_VisuLoopMover` | XTS loop contract structure (`_FB_VisuXtsLoop.vo_Visu`) |
 | `ST_VisuCartesian` (`stConfig`: X/Y/Z strokes, rail height, zones, fingers / `stState`: X, Y, Z, gripper, finger states) | Cartesian robot contract structure (`_FB_VisuCartesian.vo_Visu`) |
+| `ST_VisuFault` | Fault of a component or a mover: `bActive`, `sMessage` |
 | `ST_VisuFinger`, `ST_VisuFingerState` | Gripper finger (cylinder size) and its live MCS pose and grip state |
 | `ST_VisuPose`, `ST_VisuPlanarPose`, `ST_VisuPosition` | MCS poses and positions |
 | `VISU_GlobalConst` | `VISU_un_PROTOCOL_VERSION` (contract version; `ST_VisuManifest` initialises to it), `VISU_lr_DEG_TO_RAD` |
 | `VISU_GlobalConst_Param` | Array sizes: `VISU_un_MAX_MANIFEST_ENTRIES` (32), `VISU_un_MAX_PRODUCTS` (128), `VISU_un_MAX_PRODUCT_TYPES` (8), `VISU_un_MAX_ZONES` (8), `VISU_un_MAX_MOVERS` (40), `VISU_un_MAX_FINGERS` (8, per gripper) |
-| `_FC_GetVersionSynVisu` | Library version at runtime (3.0.0) |
+| `_FC_GetVersionSynVisu` | Library version at runtime (3.1.0) |
 
 ### Methods
 
@@ -94,6 +97,7 @@ All component FBs:
 | --- | --- |
 | `m_Register(vio_Manifest, vi_udn_Id, vi_str_Name, vi_str_Path)` | Adds the component to the manifest (bumps `nConfigVersion` when new). `vi_str_Path` is the symbol path of the instance's `vo_Visu`. Idempotent: call it every cycle, which also keeps `nProtocolVersion` current and the manifest reference valid after an online change |
 | `m_Id()` | Manifest id given to `m_Register`, 0 before |
+| `m_SetFault(vi_b_Active, vi_str_Message)` | Sets or clears the component's fault; it stays until cleared with `m_SetFault(FALSE, '')` |
 
 All configuration methods may be called every cycle: they bump `nConfigVersion` only when a value actually changes,
 and return TRUE in that case.
@@ -140,7 +144,7 @@ All robot FBs (Delta, XTS gantry, XTS loop, Cartesian):
 | `m_Configure(vi_Pose, vi_un_ModuleCount, vi_lr_ModuleLength, vi_lr_XMin, vi_lr_XMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ToolOffsetX, vi_lr_ToolOffsetZ, vi_lr_MoverLength, vi_lr_MoverWidth)` | Pose, track, strokes, gripper offsets, mover size |
 | `m_SetZPosition(vi_lr_Z)` | Common Z axis and state timestamp; call once per cycle |
 | `m_SetMoverCount(vi_un_Count)` | Number of mover entries evaluated; entries beyond are invalidated |
-| `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_lr_X, vi_b_GripperActive, vi_FingerStates)` | One mover's actual values and finger states |
+| `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_lr_X, vi_b_GripperActive, vi_FingerStates, vi_b_Fault := FALSE, vi_str_FaultMessage := '')` | One mover's actual values, finger states and fault |
 
 `_FB_VisuXtsLoop`:
 
@@ -148,7 +152,7 @@ All robot FBs (Delta, XTS gantry, XTS loop, Cartesian):
 | --- | --- |
 | `m_Configure(vi_Pose, vi_lr_StraightLength, vi_lr_CurveRadius, vi_lr_ToolOffset, vi_lr_MoverLength, vi_lr_MoverWidth)` | Pose, track geometry, tool offset, mover size |
 | `m_SetMoverCount(vi_un_Count)` | Number of mover entries evaluated; entries beyond are invalidated |
-| `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_FingerStates)` | One mover's position along the loop and finger states |
+| `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_FingerStates, vi_b_Fault := FALSE, vi_str_FaultMessage := '')` | One mover's position along the loop, finger states and fault |
 | `m_Perimeter()` | Loop length as the visualisation computes it, mm |
 
 `_FB_VisuCartesian`:

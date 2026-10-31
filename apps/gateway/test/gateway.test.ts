@@ -15,6 +15,7 @@ import {
   defineMachine,
   delta,
   fingerStates,
+  noFault,
   xtsGantry,
   xtsLoop,
   type MachineComponent,
@@ -453,6 +454,7 @@ describe("gateway state snapshots", () => {
       timestamp: (T0 + 20_000_000n).toString(),
       beltPosition: 110,
       products: [],
+      fault: null,
     });
   });
 
@@ -506,6 +508,7 @@ describe("gateway state snapshots", () => {
       fX,
       bGripperActive,
       aFingerStates: fingerStates(),
+      stFault: noFault(),
     });
     s.aMovers[0] = mover(1, true, 250, 80, true);
     s.aMovers[1] = mover(2, false, 500, 0, false);
@@ -520,9 +523,10 @@ describe("gateway state snapshots", () => {
       timestamp: "0",
       z: -120,
       movers: [
-        { id: 1, position: 250, x: 80, gripperActive: true, fingers: [] },
-        { id: 3, position: 900, x: -20, gripperActive: false, fingers: [] },
+        { id: 1, position: 250, x: 80, gripperActive: true, fingers: [], fault: null },
+        { id: 3, position: 900, x: -20, gripperActive: false, fingers: [], fault: null },
       ],
+      fault: null,
     });
   });
 
@@ -530,8 +534,8 @@ describe("gateway state snapshots", () => {
     const t = setup([infeed, loop]);
     const s = t.plc.get<ST_VisuXtsLoop>(loop.path).stState;
     s.nMoverCount = 2;
-    s.aMovers[0] = { nId: 11, bValid: true, fPosition: 120, aFingerStates: fingerStates() };
-    s.aMovers[1] = { nId: 12, bValid: true, fPosition: 2600, aFingerStates: fingerStates() };
+    s.aMovers[0] = { nId: 11, bValid: true, fPosition: 120, aFingerStates: fingerStates(), stFault: noFault() };
+    s.aMovers[1] = { nId: 12, bValid: true, fPosition: 2600, aFingerStates: fingerStates(), stFault: noFault() };
     await t.gateway.cycle();
 
     expect(t.states()[0]!.components).toContainEqual({
@@ -539,9 +543,10 @@ describe("gateway state snapshots", () => {
       id: 40,
       timestamp: "0",
       movers: [
-        { id: 11, position: 120, fingers: [] },
-        { id: 12, position: 2600, fingers: [] },
+        { id: 11, position: 120, fingers: [], fault: null },
+        { id: 12, position: 2600, fingers: [], fault: null },
       ],
+      fault: null,
     });
   });
 
@@ -560,6 +565,7 @@ describe("gateway state snapshots", () => {
       z: -400,
       gripperActive: true,
       fingers: [],
+      fault: null,
     });
   });
 
@@ -600,6 +606,46 @@ describe("gateway state snapshots", () => {
     ]);
   });
 
+  it("publishes a component's fault and the fault of each valid mover, null when there is none", async () => {
+    const faulted: MachineComponent = {
+      ...gantry,
+      value: xtsGantry({
+        fault: { bActive: true, sMessage: "Z axis error" },
+        movers: [
+          { nId: 1, fPosition: 250, stFault: { bActive: true, sMessage: "following error" } },
+          { nId: 2, fPosition: 500 },
+          // An inactive fault is no fault, whatever message is left in it.
+          { nId: 3, fPosition: 900, stFault: { bActive: false, sMessage: "old" } },
+        ],
+      }),
+    };
+    const t = setup([infeed, faulted]);
+    await t.gateway.cycle();
+
+    const components = t.states()[0]!.components;
+    const state = components.find((c) => c.type === "xtsGantry");
+    expect(state?.fault).toEqual({ message: "Z axis error" });
+    expect(state?.type === "xtsGantry" && state.movers.map((m) => m.fault)).toEqual([
+      { message: "following error" },
+      null,
+      null,
+    ]);
+    expect(components.find((c) => c.type === "conveyor")?.fault).toBeNull();
+  });
+
+  it("publishes the fault of an XTS loop's mover", async () => {
+    const faulted: MachineComponent = {
+      ...loop,
+      value: xtsLoop({ movers: [{ nId: 11, fPosition: 120, stFault: { bActive: true, sMessage: "" } }] }),
+    };
+    const t = setup([infeed, faulted]);
+    await t.gateway.cycle();
+
+    const state = t.states()[0]!.components.find((c) => c.type === "xtsLoop");
+    // An empty message is passed on as is; the visualisation decides what to show.
+    expect(state?.type === "xtsLoop" && state.movers[0]!.fault).toEqual({ message: "" });
+  });
+
   it("publishes the delta's actual and setpoint TCP", async () => {
     const t = setup([infeed, robot]);
     const s = t.plc.get<ST_VisuDelta>(robot.path).stState;
@@ -614,6 +660,7 @@ describe("gateway state snapshots", () => {
       actualTcp: { x: 1, y: 2, z: -900 },
       setpointTcp: { x: 3, y: 4, z: -905 },
       fingers: [],
+      fault: null,
     });
   });
 });

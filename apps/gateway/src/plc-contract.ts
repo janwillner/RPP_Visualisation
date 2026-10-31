@@ -57,6 +57,13 @@ export interface ST_VisuFingerState {
   bActive: boolean;
 }
 
+/** Fault of a component or a mover; set by the PLC, cleared when bActive is FALSE. */
+export interface ST_VisuFault {
+  bActive: boolean;
+  /** STRING(80) */
+  sMessage: string;
+}
+
 export interface ST_VisuPlanarPose {
   fX: number;
   fY: number;
@@ -110,6 +117,7 @@ export interface ST_VisuConveyorState {
   fBeltPosition: number;
   nProductCount: number;
   aProducts: ST_VisuProduct[];
+  stFault: ST_VisuFault;
 }
 
 export interface ST_VisuConveyor {
@@ -163,6 +171,7 @@ export interface ST_VisuDeltaState {
   stActualTcp: ST_VisuPosition;
   stSetpointTcp: ST_VisuPosition;
   aFingerStates: ST_VisuFingerState[];
+  stFault: ST_VisuFault;
 }
 
 export interface ST_VisuDelta {
@@ -195,6 +204,7 @@ export interface ST_VisuGantryMover {
   fX: number;
   bGripperActive: boolean;
   aFingerStates: ST_VisuFingerState[];
+  stFault: ST_VisuFault;
 }
 
 export interface ST_VisuXtsGantryState {
@@ -202,6 +212,7 @@ export interface ST_VisuXtsGantryState {
   fZ: number;
   nMoverCount: number;
   aMovers: ST_VisuGantryMover[];
+  stFault: ST_VisuFault;
 }
 
 export interface ST_VisuXtsGantry {
@@ -227,12 +238,14 @@ export interface ST_VisuLoopMover {
   bValid: boolean;
   fPosition: number;
   aFingerStates: ST_VisuFingerState[];
+  stFault: ST_VisuFault;
 }
 
 export interface ST_VisuXtsLoopState {
   nTimestamp: bigint;
   nMoverCount: number;
   aMovers: ST_VisuLoopMover[];
+  stFault: ST_VisuFault;
 }
 
 export interface ST_VisuXtsLoop {
@@ -262,6 +275,7 @@ export interface ST_VisuCartesianState {
   fZ: number;
   bGripperActive: boolean;
   aFingerStates: ST_VisuFingerState[];
+  stFault: ST_VisuFault;
 }
 
 export interface ST_VisuCartesian {

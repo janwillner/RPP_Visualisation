@@ -5,6 +5,7 @@ import type {
   ConveyorConfig,
   ConveyorState,
   DeltaConfig,
+  Fault,
   DeltaState,
   Finger,
   FingerState,
@@ -30,6 +31,7 @@ import {
   type ST_VisuConveyorState,
   type ST_VisuDeltaConfig,
   type ST_VisuDeltaState,
+  type ST_VisuFault,
   type ST_VisuFinger,
   type ST_VisuFingerState,
   type ST_VisuPlanarPose,
@@ -60,6 +62,10 @@ function mapPlanarPose(p: ST_VisuPlanarPose): PlanarPose {
 
 function mapPosition(p: ST_VisuPosition): Position {
   return { x: p.fX, y: p.fY, z: p.fZ };
+}
+
+function mapFault(f: ST_VisuFault): Fault | null {
+  return f.bActive ? { message: f.sMessage } : null;
 }
 
 function take<T>(items: T[], count: number): T[] {
@@ -186,7 +192,9 @@ export function mapXtsGantryState(id: number, s: ST_VisuXtsGantryState, fingerCo
         x: m.fX,
         gripperActive: m.bGripperActive,
         fingers: mapFingerStates(m.aFingerStates, fingerCount),
+        fault: mapFault(m.stFault),
       })),
+    fault: mapFault(s.stFault),
   };
 }
 
@@ -197,7 +205,13 @@ export function mapXtsLoopState(id: number, s: ST_VisuXtsLoopState, fingerCount:
     timestamp: BigInt(s.nTimestamp).toString(),
     movers: take(s.aMovers, s.nMoverCount)
       .filter((m) => m.bValid)
-      .map((m) => ({ id: m.nId, position: m.fPosition, fingers: mapFingerStates(m.aFingerStates, fingerCount) })),
+      .map((m) => ({
+        id: m.nId,
+        position: m.fPosition,
+        fingers: mapFingerStates(m.aFingerStates, fingerCount),
+        fault: mapFault(m.stFault),
+      })),
+    fault: mapFault(s.stFault),
   };
 }
 
@@ -228,6 +242,7 @@ export function mapCartesianState(id: number, s: ST_VisuCartesianState, fingerCo
     z: s.fZ,
     gripperActive: s.bGripperActive,
     fingers: mapFingerStates(s.aFingerStates, fingerCount),
+    fault: mapFault(s.stFault),
   };
 }
 
@@ -261,6 +276,7 @@ export function mapConveyorState(id: number, s: ST_VisuConveyorState): ConveyorS
         fingerId: p.nFingerId,
         productType: p.nProductType,
       })),
+    fault: mapFault(s.stFault),
   };
 }
 
@@ -272,6 +288,7 @@ export function mapDeltaState(id: number, s: ST_VisuDeltaState, fingerCount: num
     actualTcp: mapPosition(s.stActualTcp),
     setpointTcp: mapPosition(s.stSetpointTcp),
     fingers: mapFingerStates(s.aFingerStates, fingerCount),
+    fault: mapFault(s.stFault),
   };
 }
 

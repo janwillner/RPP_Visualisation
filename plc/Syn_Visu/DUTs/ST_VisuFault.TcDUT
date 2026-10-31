@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuFault" Id="{d69f0bfa-abcc-4f92-aef8-59f5c24f1700}">
+    <Declaration><![CDATA[(* Fault of a component or an XTS mover: drawn red with sMessage while bActive (contract, protocol 8). *)
+TYPE ST_VisuFault :
+STRUCT
+	bActive : BOOL; // TRUE while the fault is active
+	sMessage : STRING(80); // shown to the operator; empty shows 'Fault'
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

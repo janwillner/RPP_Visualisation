@@ -1,6 +1,6 @@
 import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import * as THREE from "three";
 import type { GatewayStore } from "../connection";
 import type {
@@ -19,6 +19,8 @@ import type {
   SnapPoint,
   Transform,
   Vec3,
+  ComponentFaults,
+  SceneFaultLabel,
 } from "./scene-model";
 import { availableSnapPoints, buildScene } from "./scene-model";
 import type { ConfigMessage, ProductState } from "@rpp/protocol";
@@ -28,6 +30,7 @@ export interface Layers {
   limitAreas: boolean;
   zones: boolean;
   tcpMarkers: boolean;
+  faultLabels: boolean;
 }
 
 /** A product is selected by register identity, so the selection survives display changes (e.g. picked). */
@@ -66,6 +69,8 @@ export interface SceneViewProps {
   measurePoints: MeasurePoint[];
   /** Manifest ids of components hidden by the user. */
   hidden: ReadonlySet<number>;
+  /** Called whenever the set of active faults changes (hidden components included). */
+  onFaults: (faults: ComponentFaults[]) => void;
 }
 
 const EMPTY: SceneModel = {
@@ -82,6 +87,8 @@ const EMPTY: SceneModel = {
   fingers: [],
   snapPoints: [],
   origins: [],
+  faultLabels: [],
+  faults: [],
   warnings: [],
 };
 
@@ -102,6 +109,52 @@ const SELECT_COLOR = "#ffd54f";
 /** Belt surface: dark blue, so it stands out from the near-black background and the light products. */
 const CONVEYOR_COLOR = "#1f4e9c";
 const CONVEYOR_SELECTED_COLOR = "#3d78d8";
+/** Faulted components and movers glow in this colour; a selection highlight stays visible underneath. */
+const FAULT_COLOR = "#e53935";
+
+/**
+ * Tints every standard material below `root` red while `faulted`, except inside nested fault scopes, which tint
+ * themselves (a faulted mover inside a gantry without fault).
+ */
+function tint(root: THREE.Object3D | null, faulted: boolean): void {
+  if (!root) return;
+  const visit = (o: THREE.Object3D) => {
+    const material = (o as THREE.Mesh).material;
+    if (material instanceof THREE.MeshStandardMaterial) {
+      material.emissive.set(faulted ? FAULT_COLOR : "#000000");
+      material.emissiveIntensity = faulted ? 0.9 : 1;
+    }
+    for (const c of o.children) if (!c.userData.faultScope) visit(c);
+  };
+  visit(root);
+}
+
+/** A group whose content is tinted red while `faulted`. Re-applied on every render, so new meshes are covered. */
+function FaultScope({ faulted, children }: { faulted: boolean; children: ReactNode }) {
+  const ref = useRef<THREE.Group>(null);
+  useLayoutEffect(() => tint(ref.current, faulted));
+  return (
+    <group ref={ref} userData={{ faultScope: true }}>
+      {children}
+    </group>
+  );
+}
+
+/** A fault message hanging above its component or mover; follows a moving mover. */
+function FaultLabel({ label, latest }: { label: SceneFaultLabel; latest: MutableRefObject<SceneModel> }) {
+  const group = useRef<THREE.Group>(null);
+  useFrame(() => {
+    const live = latest.current.faultLabels.find((l) => l.key === label.key);
+    if (live) group.current?.position.set(...live.position);
+  });
+  return (
+    <group ref={group} position={label.position}>
+      <Html center className="fault-label" zIndexRange={[25, 15]} style={{ pointerEvents: "none" }}>
+        {label.message}
+      </Html>
+    </group>
+  );
+}
 
 function applyTransform(object: THREE.Object3D | null, t: Transform | undefined): void {
   if (!object || !t) return;
@@ -146,16 +199,20 @@ function signature(m: SceneModel): string {
     m.loops.map((l) => `${l.id}:${l.straightLength}:${l.curveRadius}:${l.movers.map((x) => x.id).join("/")}`).join(","),
     m.cartesians.map((c) => `${c.id}:${c.parts.map((p) => p.size.join("/")).join("/")}:${c.flange ? 1 : 0}`).join(","),
     m.fingers.map((f) => `${f.key}:${f.diameter}:${f.height}`).join(","),
+    // Faults change colours and labels. Every fault of a shown component or mover has exactly one label, so the
+    // labels also stand for the red tint of the parts.
+    m.faultLabels.map((l) => `${l.key}:${l.message}`).join(","),
   ].join("|");
 }
 
 function SceneContent(props: SceneViewProps) {
-  const { store, config, layers, selection, modelRef, measureMode, onMeasure, measurePoints, hidden } = props;
+  const { store, config, layers, selection, modelRef, measureMode, onMeasure, measurePoints, hidden, onFaults } = props;
   // In measure mode a click measures; selecting works only through the component tree.
   const onSelect = measureMode ? () => {} : props.onSelect;
   const latest = useRef<SceneModel>(EMPTY);
   const [structure, setStructure] = useState<SceneModel>(EMPTY);
   const sig = useRef("");
+  const faultSig = useRef("");
   const productIndex = useRef(new Map<string, SceneProduct>());
   // A new config can change geometry without changing ids: force a structural update.
   useEffect(() => {
@@ -171,6 +228,11 @@ function SceneContent(props: SceneViewProps) {
     if (s !== sig.current) {
       sig.current = s;
       setStructure(model);
+    }
+    const f = JSON.stringify(model.faults);
+    if (f !== faultSig.current) {
+      faultSig.current = f;
+      onFaults(model.faults);
     }
   });
 
@@ -200,22 +262,24 @@ function SceneContent(props: SceneViewProps) {
       />
       {structure.conveyors.map((c) => (
         <group key={c.id} ref={(o) => applyTransform(o, c.transform)}>
-          <mesh
-            position={[c.length / 2, -0.025, 0]}
-            userData={{ label: c.name }}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelect({ kind: "component", id: c.id });
-            }}
-          >
-            <boxGeometry args={[c.length, 0.05, c.width]} />
-            <meshStandardMaterial color={isSelected(c.id) ? CONVEYOR_SELECTED_COLOR : CONVEYOR_COLOR} />
-          </mesh>
-          {/* Conveying direction */}
-          <mesh position={[c.length + 0.06, 0, 0]} rotation={[0, 0, -Math.PI / 2]} raycast={noRaycast}>
-            <coneGeometry args={[0.04, 0.12, 16]} />
-            <meshStandardMaterial color="#9aa5b5" />
-          </mesh>
+          <FaultScope faulted={c.fault !== null}>
+            <mesh
+              position={[c.length / 2, -0.025, 0]}
+              userData={{ label: c.name }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect({ kind: "component", id: c.id });
+              }}
+            >
+              <boxGeometry args={[c.length, 0.05, c.width]} />
+              <meshStandardMaterial color={isSelected(c.id) ? CONVEYOR_SELECTED_COLOR : CONVEYOR_COLOR} />
+            </mesh>
+            {/* Conveying direction */}
+            <mesh position={[c.length + 0.06, 0, 0]} rotation={[0, 0, -Math.PI / 2]} raycast={noRaycast}>
+              <coneGeometry args={[0.04, 0.12, 16]} />
+              <meshStandardMaterial color="#9aa5b5" />
+            </mesh>
+          </FaultScope>
           <Html position={[0, 0.06, -c.width / 2]} className="label" zIndexRange={[10, 0]}>
             {c.name}
           </Html>
@@ -313,6 +377,7 @@ function SceneContent(props: SceneViewProps) {
             )}
           </group>
         ))}
+      {layers.faultLabels && structure.faultLabels.map((l) => <FaultLabel key={l.key} label={l} latest={latest} />)}
       <CameraRig request={props.cameraRequest} structure={structure} />
     </>
   );
@@ -385,6 +450,9 @@ function FingerMesh(props: {
     }
     placeBetween(rod.current, live?.flange, live?.transform.position);
     material.current?.color.set(selected ? SELECT_COLOR : live?.active ? FINGER_COLORS.active : FINGER_COLORS.idle);
+    // Like every faulted part: glowing red, with the selection colour still underneath.
+    material.current?.emissive.set(live?.faulted ? FAULT_COLOR : "#000000");
+    if (material.current) material.current.emissiveIntensity = live?.faulted ? 0.9 : 1;
   });
   return (
     <>
@@ -594,66 +662,68 @@ function DeltaMesh(props: {
   };
   return (
     <group userData={{ label: name }}>
-      <group ref={base}>
-        <mesh geometry={parts.plate} onClick={select}>
-          <meshStandardMaterial color={highlight ?? DELTA_COLORS.plate} metalness={0.3} roughness={0.6} />
-        </mesh>
-        {parts.motors.map((m, i) => (
+      <FaultScope faulted={delta.fault !== null}>
+        <group ref={base}>
+          <mesh geometry={parts.plate} onClick={select}>
+            <meshStandardMaterial color={highlight ?? DELTA_COLORS.plate} metalness={0.3} roughness={0.6} />
+          </mesh>
+          {parts.motors.map((m, i) => (
+            <group key={i}>
+              <mesh position={m.hub} quaternion={m.quaternion} onClick={select}>
+                <cylinderGeometry args={[0.035, 0.035, 0.05, 20]} />
+                <meshStandardMaterial color={DELTA_COLORS.gearbox} metalness={0.5} roughness={0.4} />
+              </mesh>
+              <mesh position={m.gearbox} quaternion={m.quaternion} onClick={select}>
+                <cylinderGeometry args={[0.03, 0.03, 0.05, 20]} />
+                <meshStandardMaterial color={DELTA_COLORS.gearbox} metalness={0.5} roughness={0.4} />
+              </mesh>
+              <mesh position={m.motor} quaternion={m.quaternion} onClick={select}>
+                <boxGeometry args={[0.06, 0.11, 0.06]} />
+                <meshStandardMaterial color={DELTA_COLORS.motor} roughness={0.7} />
+              </mesh>
+            </group>
+          ))}
+          <Html position={[0, 0.1, 0]} className="label" zIndexRange={[10, 0]}>
+            {name}
+          </Html>
+        </group>
+        {[0, 1, 2].map((i) => (
           <group key={i}>
-            <mesh position={m.hub} quaternion={m.quaternion} onClick={select}>
-              <cylinderGeometry args={[0.035, 0.035, 0.05, 20]} />
-              <meshStandardMaterial color={DELTA_COLORS.gearbox} metalness={0.5} roughness={0.4} />
+            <mesh ref={(m) => (upper.current[i] = m)} onClick={select}>
+              <cylinderGeometry args={[0.022, 0.022, 1, 16]} />
+              <meshStandardMaterial color={highlight ?? DELTA_COLORS.arm} roughness={0.5} />
             </mesh>
-            <mesh position={m.gearbox} quaternion={m.quaternion} onClick={select}>
-              <cylinderGeometry args={[0.03, 0.03, 0.05, 20]} />
-              <meshStandardMaterial color={DELTA_COLORS.gearbox} metalness={0.5} roughness={0.4} />
-            </mesh>
-            <mesh position={m.motor} quaternion={m.quaternion} onClick={select}>
-              <boxGeometry args={[0.06, 0.11, 0.06]} />
-              <meshStandardMaterial color={DELTA_COLORS.motor} roughness={0.7} />
-            </mesh>
+            {[0, 1].map((k) => (
+              <mesh key={"bar" + k} ref={setLower(i, k)} onClick={select}>
+                <cylinderGeometry args={[0.006, 0.006, 1, 8]} />
+                <meshStandardMaterial color={DELTA_COLORS.joint} metalness={0.6} roughness={0.3} />
+              </mesh>
+            ))}
+            {[2, 3].map((k) => (
+              <mesh key={"rod" + k} ref={setLower(i, k)} onClick={select}>
+                <cylinderGeometry args={[0.006, 0.006, 1, 8]} />
+                <meshStandardMaterial color={highlight ?? DELTA_COLORS.rod} roughness={0.5} />
+              </mesh>
+            ))}
+            {[4, 5, 6, 7].map((k) => (
+              <mesh key={"ball" + k} ref={setLower(i, k)} raycast={noRaycast}>
+                <sphereGeometry args={[0.011, 12, 12]} />
+                <meshStandardMaterial color={DELTA_COLORS.joint} metalness={0.6} roughness={0.3} />
+              </mesh>
+            ))}
           </group>
         ))}
-        <Html position={[0, 0.1, 0]} className="label" zIndexRange={[10, 0]}>
-          {name}
-        </Html>
-      </group>
-      {[0, 1, 2].map((i) => (
-        <group key={i}>
-          <mesh ref={(m) => (upper.current[i] = m)} onClick={select}>
-            <cylinderGeometry args={[0.022, 0.022, 1, 16]} />
-            <meshStandardMaterial color={highlight ?? DELTA_COLORS.arm} roughness={0.5} />
+        <group ref={effector} userData={{ label: name + " TCP" }}>
+          <mesh geometry={parts.effectorPlate} onClick={select}>
+            <meshStandardMaterial color={DELTA_COLORS.effector} metalness={0.5} roughness={0.35} />
           </mesh>
-          {[0, 1].map((k) => (
-            <mesh key={"bar" + k} ref={setLower(i, k)} onClick={select}>
-              <cylinderGeometry args={[0.006, 0.006, 1, 8]} />
-              <meshStandardMaterial color={DELTA_COLORS.joint} metalness={0.6} roughness={0.3} />
-            </mesh>
-          ))}
-          {[2, 3].map((k) => (
-            <mesh key={"rod" + k} ref={setLower(i, k)} onClick={select}>
-              <cylinderGeometry args={[0.006, 0.006, 1, 8]} />
-              <meshStandardMaterial color={highlight ?? DELTA_COLORS.rod} roughness={0.5} />
-            </mesh>
-          ))}
-          {[4, 5, 6, 7].map((k) => (
-            <mesh key={"ball" + k} ref={setLower(i, k)} raycast={noRaycast}>
-              <sphereGeometry args={[0.011, 12, 12]} />
-              <meshStandardMaterial color={DELTA_COLORS.joint} metalness={0.6} roughness={0.3} />
-            </mesh>
-          ))}
+          {showTcp && TRIAD.map((t) => <TriadArrow key={t.color} color={t.color} quaternion={t.quaternion} />)}
         </group>
-      ))}
-      <group ref={effector} userData={{ label: name + " TCP" }}>
-        <mesh geometry={parts.effectorPlate} onClick={select}>
-          <meshStandardMaterial color={DELTA_COLORS.effector} metalness={0.5} roughness={0.35} />
+        <mesh ref={setpoint} userData={{ label: name + " setpoint TCP" }}>
+          <octahedronGeometry args={[0.018]} />
+          <meshBasicMaterial color="#ffee58" wireframe depthTest={false} transparent />
         </mesh>
-        {showTcp && TRIAD.map((t) => <TriadArrow key={t.color} color={t.color} quaternion={t.quaternion} />)}
-      </group>
-      <mesh ref={setpoint} userData={{ label: name + " setpoint TCP" }}>
-        <octahedronGeometry args={[0.018]} />
-        <meshBasicMaterial color="#ffee58" wireframe depthTest={false} transparent />
-      </mesh>
+      </FaultScope>
     </group>
   );
 }
@@ -883,51 +953,54 @@ function GantryMesh(props: {
     });
   });
 
+  const gantryFaulted = gantry.fault !== null;
   return (
     <group userData={{ label: name }}>
-      <group ref={track}>
-        {/* Beam above the movers along the track (MCS local +Y is renderer local −Z). */}
-        <mesh position={[0, 0.06, -trackLength / 2]} onClick={select}>
-          <boxGeometry args={[moverWidth + 0.04, 0.12, trackLength]} />
-          <meshStandardMaterial color={selected ? "#5c6b3a" : XTS_COLORS.beam} metalness={0.4} roughness={0.5} />
-        </mesh>
-        {Array.from({ length: moduleCount + 1 }, (_, k) => (
-          <mesh key={k} position={[0, 0.06, -k * moduleLength]} raycast={noRaycast}>
-            <boxGeometry args={[moverWidth + 0.05, 0.125, 0.006]} />
-            <meshStandardMaterial color={XTS_COLORS.module} />
+      <FaultScope faulted={gantryFaulted}>
+        <group ref={track}>
+          {/* Beam above the movers along the track (MCS local +Y is renderer local −Z). */}
+          <mesh position={[0, 0.06, -trackLength / 2]} onClick={select}>
+            <boxGeometry args={[moverWidth + 0.04, 0.12, trackLength]} />
+            <meshStandardMaterial color={selected ? "#5c6b3a" : XTS_COLORS.beam} metalness={0.4} roughness={0.5} />
           </mesh>
-        ))}
-        <Html position={[0, 0.16, 0]} className="label" zIndexRange={[10, 0]}>
-          {name}
-        </Html>
-      </group>
-      {gantry.movers.map((m, i) => (
-        <group key={m.id}>
-          <group ref={(o) => (carriages.current[i] = o)}>
-            <mesh position={[0, -0.02, 0]} onClick={select}>
-              <boxGeometry args={[moverWidth, 0.04, moverLength]} />
-              <meshStandardMaterial color={selected ? SELECT_COLOR : XTS_COLORS.mover} metalness={0.4} roughness={0.4} />
+          {Array.from({ length: moduleCount + 1 }, (_, k) => (
+            <mesh key={k} position={[0, 0.06, -k * moduleLength]} raycast={noRaycast}>
+              <boxGeometry args={[moverWidth + 0.05, 0.125, 0.006]} />
+              <meshStandardMaterial color={XTS_COLORS.module} />
             </mesh>
-            <Html position={[0, -0.05, 0]} className="label" zIndexRange={[10, 0]}>
-              {m.id}
-            </Html>
-          </group>
-          <mesh ref={(o) => (arms.current[i] = o)} onClick={select}>
-            <cylinderGeometry args={[0.012, 0.012, 1, 12]} />
-            <meshStandardMaterial color={XTS_COLORS.arm} roughness={0.5} />
-          </mesh>
-          <mesh ref={(o) => (columns.current[i] = o)} onClick={select}>
-            <cylinderGeometry args={[0.018, 0.018, 1, 16]} />
-            <meshStandardMaterial color={XTS_COLORS.arm} roughness={0.5} />
-          </mesh>
-          <group ref={(o) => (tips.current[i] = o)}>
-            <mesh position={[0, 0.006, 0]} raycast={noRaycast}>
-              <cylinderGeometry args={[0.022, 0.016, 0.012, 20]} />
-              <meshStandardMaterial ref={(mat) => (cups.current[i] = mat)} color={XTS_COLORS.cup} />
-            </mesh>
-          </group>
+          ))}
+          <Html position={[0, 0.16, 0]} className="label" zIndexRange={[10, 0]}>
+            {name}
+          </Html>
         </group>
-      ))}
+        {gantry.movers.map((m, i) => (
+          <FaultScope key={m.id} faulted={gantryFaulted || m.fault !== null}>
+            <group ref={(o) => (carriages.current[i] = o)}>
+              <mesh position={[0, -0.02, 0]} onClick={select}>
+                <boxGeometry args={[moverWidth, 0.04, moverLength]} />
+                <meshStandardMaterial color={selected ? SELECT_COLOR : XTS_COLORS.mover} metalness={0.4} roughness={0.4} />
+              </mesh>
+              <Html position={[0, -0.05, 0]} className="label" zIndexRange={[10, 0]}>
+                {m.id}
+              </Html>
+            </group>
+            <mesh ref={(o) => (arms.current[i] = o)} onClick={select}>
+              <cylinderGeometry args={[0.012, 0.012, 1, 12]} />
+              <meshStandardMaterial color={XTS_COLORS.arm} roughness={0.5} />
+            </mesh>
+            <mesh ref={(o) => (columns.current[i] = o)} onClick={select}>
+              <cylinderGeometry args={[0.018, 0.018, 1, 16]} />
+              <meshStandardMaterial color={XTS_COLORS.arm} roughness={0.5} />
+            </mesh>
+            <group ref={(o) => (tips.current[i] = o)}>
+              <mesh position={[0, 0.006, 0]} raycast={noRaycast}>
+                <cylinderGeometry args={[0.022, 0.016, 0.012, 20]} />
+                <meshStandardMaterial ref={(mat) => (cups.current[i] = mat)} color={XTS_COLORS.cup} />
+              </mesh>
+            </group>
+          </FaultScope>
+        ))}
+      </FaultScope>
     </group>
   );
 }
@@ -1000,34 +1073,37 @@ function LoopMesh(props: {
     });
   });
 
+  const loopFaulted = loop.fault !== null;
   return (
     <group userData={{ label: name }}>
-      <group ref={base}>
-        <mesh geometry={band} onClick={select}>
-          <meshStandardMaterial color={selected ? "#5c6b3a" : XTS_COLORS.track} metalness={0.4} roughness={0.5} />
-        </mesh>
-        <Html position={[straightLength / 2, curveRadius, 0]} className="label" zIndexRange={[10, 0]}>
-          {name}
-        </Html>
-      </group>
-      {loop.movers.map((m, i) => (
-        <group key={m.id}>
-          <group ref={(o) => (movers.current[i] = o)}>
-            {/* Outwards is the mover's local −Y (MCS −Z). */}
-            <mesh position={[0, -0.03, 0]} onClick={select}>
-              <boxGeometry args={[moverLength, 0.04, moverWidth]} />
-              <meshStandardMaterial color={selected ? SELECT_COLOR : XTS_COLORS.mover} metalness={0.4} roughness={0.4} />
-            </mesh>
-            <Html position={[0, -0.07, moverWidth / 2]} className="label" zIndexRange={[10, 0]}>
-              {m.id}
-            </Html>
-          </group>
-          <mesh ref={(o) => (tools.current[i] = o)} raycast={noRaycast}>
-            <sphereGeometry args={[0.008, 10, 10]} />
-            <meshBasicMaterial color={XTS_COLORS.tool} />
+      <FaultScope faulted={loopFaulted}>
+        <group ref={base}>
+          <mesh geometry={band} onClick={select}>
+            <meshStandardMaterial color={selected ? "#5c6b3a" : XTS_COLORS.track} metalness={0.4} roughness={0.5} />
           </mesh>
+          <Html position={[straightLength / 2, curveRadius, 0]} className="label" zIndexRange={[10, 0]}>
+            {name}
+          </Html>
         </group>
-      ))}
+        {loop.movers.map((m, i) => (
+          <FaultScope key={m.id} faulted={loopFaulted || m.fault !== null}>
+            <group ref={(o) => (movers.current[i] = o)}>
+              {/* Outwards is the mover's local −Y (MCS −Z). */}
+              <mesh position={[0, -0.03, 0]} onClick={select}>
+                <boxGeometry args={[moverLength, 0.04, moverWidth]} />
+                <meshStandardMaterial color={selected ? SELECT_COLOR : XTS_COLORS.mover} metalness={0.4} roughness={0.4} />
+              </mesh>
+              <Html position={[0, -0.07, moverWidth / 2]} className="label" zIndexRange={[10, 0]}>
+                {m.id}
+              </Html>
+            </group>
+            <mesh ref={(o) => (tools.current[i] = o)} raycast={noRaycast}>
+              <sphereGeometry args={[0.008, 10, 10]} />
+              <meshBasicMaterial color={XTS_COLORS.tool} />
+            </mesh>
+          </FaultScope>
+        ))}
+      </FaultScope>
     </group>
   );
 }
@@ -1075,28 +1151,30 @@ function CartesianMesh(props: {
   const rail = robot.parts.find((p) => p.key === "rail left");
   return (
     <group userData={{ label: name }}>
-      {robot.parts.map((p, i) => (
-        <mesh key={p.key} ref={(o) => (parts.current[i] = o)} onClick={select}>
-          {/* Renderer local axes: MCS X -> x, MCS Z -> y, MCS Y -> −z. */}
-          <boxGeometry args={[p.size[0], p.size[2], p.size[1]]} />
-          <meshStandardMaterial
-            color={selected ? (p.key === "carriage" ? SELECT_COLOR : "#5c6b3a") : CARTESIAN_COLORS[p.key]}
-            metalness={0.4}
-            roughness={0.5}
-          />
-        </mesh>
-      ))}
-      {rail && (
-        <Html position={rail.transform.position} className="label" zIndexRange={[10, 0]}>
-          {name}
-        </Html>
-      )}
-      <group ref={flange}>
-        <mesh position={[0, -0.006, 0]} raycast={noRaycast}>
-          <cylinderGeometry args={[0.05, 0.05, 0.012, 24]} />
-          <meshStandardMaterial ref={cup} color={XTS_COLORS.cup} />
-        </mesh>
-      </group>
+      <FaultScope faulted={robot.fault !== null}>
+        {robot.parts.map((p, i) => (
+          <mesh key={p.key} ref={(o) => (parts.current[i] = o)} onClick={select}>
+            {/* Renderer local axes: MCS X -> x, MCS Z -> y, MCS Y -> −z. */}
+            <boxGeometry args={[p.size[0], p.size[2], p.size[1]]} />
+            <meshStandardMaterial
+              color={selected ? (p.key === "carriage" ? SELECT_COLOR : "#5c6b3a") : CARTESIAN_COLORS[p.key]}
+              metalness={0.4}
+              roughness={0.5}
+            />
+          </mesh>
+        ))}
+        {rail && (
+          <Html position={rail.transform.position} className="label" zIndexRange={[10, 0]}>
+            {name}
+          </Html>
+        )}
+        <group ref={flange}>
+          <mesh position={[0, -0.006, 0]} raycast={noRaycast}>
+            <cylinderGeometry args={[0.05, 0.05, 0.012, 24]} />
+            <meshStandardMaterial ref={cup} color={XTS_COLORS.cup} />
+          </mesh>
+        </group>
+      </FaultScope>
     </group>
   );
 }

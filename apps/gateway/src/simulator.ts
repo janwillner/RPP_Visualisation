@@ -1,6 +1,7 @@
 import type { Vec3 } from "@rpp/protocol";
 import { InMemoryPlc } from "./in-memory-plc";
 import {
+  noFault,
   MAX_PRODUCTS,
   cartesian,
   conveyor,
@@ -229,6 +230,9 @@ function approach(value: number, goal: number, step: number): number {
 
 const productTypes = [{ nId: PRODUCT.type, fLength: PRODUCT.length, fWidth: PRODUCT.width, fHeight: PRODUCT.height }];
 
+const FAULT_PERIOD_MS = 20_000;
+const FAULT_DURATION_MS = 5_000;
+
 export function createSimulator(options: { seed?: number } = {}): Simulator {
   const random = mulberry32(options.seed ?? Date.now());
   const plc = new InMemoryPlc();
@@ -362,6 +366,15 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     fToolOffsetZ: GANTRY.toolOffsetZ + SUCTION.fHeight,
     fMoverLength: GANTRY.moverLength,
   });
+
+  // Simulated time in ms; drives the demo faults: every 20 s one Fxx mover and one IDH mover are in a fault for 5 s,
+  // the Delta at another time.
+  let simMs = 0;
+  const faultWindow = (start: number) => {
+    const phase = simMs % FAULT_PERIOD_MS;
+    return phase >= start && phase < start + FAULT_DURATION_MS;
+  };
+  const fault = (active: boolean, sMessage: string) => (active ? { bActive: true, sMessage } : noFault());
 
   // DC time: ns since 2000-01-01.
   let now = BigInt(Date.UTC(2026, 0, 1) - Date.UTC(2000, 0, 1)) * 1_000_000n;
@@ -783,6 +796,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     robot.stState.aFingerStates = fingerStates([
       finger(flange, { rz: tcpRz }, target?.eState === E_VisuProductState.PICKED),
     ]);
+    robot.stState.stFault = fault(faultWindow(4_000), "Drive 2: overtemperature");
     robot.stState.nTimestamp = now;
   }
 
@@ -803,6 +817,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         bValid: true,
         fPosition: m.s % LOOP_PERIMETER,
         aFingerStates: fingerStates([finger(flange, { ry: angle }, m.product?.eState === E_VisuProductState.PICKED)]),
+        stFault: fault(i === 2 && faultWindow(10_000), "Following error"),
       };
     });
     loop.stState.nTimestamp = now;
@@ -826,6 +841,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
             m.gripper,
           ),
         ]),
+        stFault: fault(i === 1 && faultWindow(12_000), "Vacuum not reached"),
       };
     });
     gantry.stState.nTimestamp = now;
@@ -857,6 +873,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     plc,
     step(dtMs) {
       const dtS = dtMs / 1000;
+      simMs += dtMs;
       now += BigInt(Math.round(dtMs * 1_000_000));
       infeed.stState.fBeltPosition += INFEED.speed * dtS;
       outfeed.stState.fBeltPosition += OUTFEED.speed * dtS;

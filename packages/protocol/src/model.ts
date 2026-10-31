@@ -9,7 +9,7 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
 /** Full 6-DOF pose. Rotation order: R = Rz(rz) · Ry(ry) · Rx(rx). */
 export const PoseSchema = z.object({
@@ -46,6 +46,13 @@ export const FingerStateSchema = z.object({
   active: z.boolean(),
 });
 export type FingerState = z.infer<typeof FingerStateSchema>;
+
+/** An active fault of a component or an XTS mover, reported live by the PLC. */
+export const FaultSchema = z.object({
+  /** As the PLC reports it; may be empty. */
+  message: z.string(),
+});
+export type Fault = z.infer<typeof FaultSchema>;
 
 /** Position plus rotation about Z, used for product latch poses. */
 export const PlanarPoseSchema = z.object({
@@ -254,6 +261,8 @@ export const ConveyorStateSchema = z.object({
   beltPosition: z.number(),
   /** Valid register entries only. */
   products: z.array(ProductSchema),
+  /** Active fault, null = none. */
+  fault: FaultSchema.nullable(),
 });
 export type ConveyorState = z.infer<typeof ConveyorStateSchema>;
 
@@ -266,6 +275,8 @@ export const DeltaStateSchema = z.object({
   setpointTcp: PositionSchema,
   /** One per configured finger. */
   fingers: z.array(FingerStateSchema),
+  /** Active fault, null = none. */
+  fault: FaultSchema.nullable(),
 });
 export type DeltaState = z.infer<typeof DeltaStateSchema>;
 
@@ -279,6 +290,8 @@ export const GantryMoverSchema = z.object({
   gripperActive: z.boolean(),
   /** One per configured finger. */
   fingers: z.array(FingerStateSchema),
+  /** Active fault of this mover, null = none. */
+  fault: FaultSchema.nullable(),
 });
 export type GantryMover = z.infer<typeof GantryMoverSchema>;
 
@@ -290,6 +303,8 @@ export const XtsGantryStateSchema = z.object({
   z: z.number(),
   /** Valid movers only. */
   movers: z.array(GantryMoverSchema),
+  /** Active fault of the whole gantry, null = none. */
+  fault: FaultSchema.nullable(),
 });
 export type XtsGantryState = z.infer<typeof XtsGantryStateSchema>;
 
@@ -299,6 +314,8 @@ export const LoopMoverSchema = z.object({
   position: z.number(),
   /** One per configured finger. */
   fingers: z.array(FingerStateSchema),
+  /** Active fault of this mover, null = none. */
+  fault: FaultSchema.nullable(),
 });
 export type LoopMover = z.infer<typeof LoopMoverSchema>;
 
@@ -308,6 +325,8 @@ export const XtsLoopStateSchema = z.object({
   timestamp: TimestampSchema,
   /** Valid movers only. */
   movers: z.array(LoopMoverSchema),
+  /** Active fault of the whole loop, null = none. */
+  fault: FaultSchema.nullable(),
 });
 export type XtsLoopState = z.infer<typeof XtsLoopStateSchema>;
 
@@ -323,6 +342,8 @@ export const CartesianStateSchema = z.object({
   gripperActive: z.boolean(),
   /** One per configured finger. */
   fingers: z.array(FingerStateSchema),
+  /** Active fault, null = none. */
+  fault: FaultSchema.nullable(),
 });
 export type CartesianState = z.infer<typeof CartesianStateSchema>;
 

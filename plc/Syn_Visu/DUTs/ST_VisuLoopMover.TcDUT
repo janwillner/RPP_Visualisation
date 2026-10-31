@@ -7,6 +7,7 @@ STRUCT
 	bValid : BOOL; // invalid entries are not shown
 	fPosition : LREAL; // mm along the loop from the start of the lower straight, in the conveying direction
 	aFingerStates : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState; // one per configured finger
+	stFault : ST_VisuFault; // fault of this mover
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

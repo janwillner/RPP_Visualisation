@@ -81,4 +81,37 @@ describe("simulator", () => {
       }
     }
   }, 30_000);
+
+  it("puts a Fxx mover, an IDH mover and the Delta into a fault now and then and clears it again", async () => {
+    const sim = createSimulator({ seed: 1 });
+    const gateway = createGateway({ plc: sim.plc, sourceId: "sim" });
+    const states: StateMessage[] = [];
+    gateway.subscribe((m) => {
+      const parsed = GatewayMessageSchema.parse(JSON.parse(JSON.stringify(m)));
+      if (parsed.kind === "state") states.push(parsed);
+    });
+
+    // 25 simulated seconds at a 20 ms cycle.
+    for (let i = 0; i < 1250; i++) {
+      sim.step(20);
+      await gateway.cycle();
+    }
+
+    const faultsOf = (type: string) =>
+      states.map((s) => {
+        const c = s.components.find((x) => x.type === type)!;
+        const movers = "movers" in c ? c.movers.filter((m) => m.fault) : [];
+        return { component: c.fault, movers };
+      });
+    for (const type of ["xtsLoop", "xtsGantry"]) {
+      const series = faultsOf(type);
+      // Exactly one mover at a time, with a message, and not all the time.
+      expect(series.some((f) => f.movers.length === 1 && f.movers[0]!.fault!.message.length > 0)).toBe(true);
+      expect(series.some((f) => f.movers.length === 0)).toBe(true);
+      expect(series.every((f) => f.movers.length <= 1 && f.component === null)).toBe(true);
+    }
+    const deltaFaults = faultsOf("delta").map((f) => f.component);
+    expect(deltaFaults.some((f) => f !== null && f.message.length > 0)).toBe(true);
+    expect(deltaFaults.some((f) => f === null)).toBe(true);
+  }, 30_000);
 });

@@ -9,6 +9,7 @@ import {
   type ConveyorState,
   type DeltaConfig,
   type DeltaState,
+  type Fault,
   type Finger,
   type FingerState,
   type Pose,
@@ -61,6 +62,8 @@ export interface SceneConveyor {
   transform: Transform;
   length: number;
   width: number;
+  /** Fault message to show, null = no fault. */
+  fault: string | null;
 }
 
 export interface Size {
@@ -112,6 +115,8 @@ export interface SceneDelta {
   setpointTcp: Vec3 | null;
   /** Upper-arm angles in degrees computed from the TCP (angle convention of the contract); empty if unreachable. */
   angles: number[];
+  /** Fault message to show, null = no fault. */
+  fault: string | null;
 }
 
 export interface SceneWorkingArea {
@@ -159,6 +164,8 @@ export interface SceneGantryMover {
   tip: Transform;
   /** The mover's gripper flag; false when fingers are configured (they show their own state). */
   gripperActive: boolean;
+  /** Fault message of this mover, null = none. */
+  fault: string | null;
 }
 
 export interface SceneGantry {
@@ -172,6 +179,8 @@ export interface SceneGantry {
   moverLength: number;
   moverWidth: number;
   movers: SceneGantryMover[];
+  /** Fault message of the whole gantry, null = none. */
+  fault: string | null;
 }
 
 /** An axis-aligned box in a component's frame, e.g. the reachable volume of an XTS gantry or a Cartesian robot. */
@@ -189,6 +198,8 @@ export interface SceneLoopMover {
   transform: Transform;
   /** Tool point (gripper flange), where a carried product without finger hangs. */
   tool: Vec3;
+  /** Fault message of this mover, null = none. */
+  fault: string | null;
 }
 
 export interface SceneLoop {
@@ -201,6 +212,8 @@ export interface SceneLoop {
   moverLength: number;
   moverWidth: number;
   movers: SceneLoopMover[];
+  /** Fault message of the whole loop, null = none. */
+  fault: string | null;
 }
 
 /** A solid box part of a component. */
@@ -225,6 +238,8 @@ export interface SceneCartesian {
   gripperActive: boolean;
   /** Actual axis values as reported; null before the first state. */
   axes: { x: number; y: number; z: number } | null;
+  /** Fault message to show, null = no fault. */
+  fault: string | null;
 }
 
 /** One gripper finger: a cylinder hanging from its frame's origin (top centre) along its local −Z. */
@@ -243,6 +258,8 @@ export interface SceneFinger {
   active: boolean;
   /** The gripper flange the finger belongs to, for the connecting rod. */
   flange: Vec3;
+  /** Its robot or its mover is in a fault. */
+  faulted: boolean;
 }
 
 /** Which layer toggle a snap point belongs to; "structure" is always shown. */
@@ -271,6 +288,23 @@ export interface SceneOrigin {
   transform: Transform;
 }
 
+/** A fault message drawn above a faulted component or mover. */
+export interface SceneFaultLabel {
+  key: string;
+  componentId: number;
+  /** 0 for the component itself. */
+  moverId: number;
+  message: string;
+  /** Renderer frame, metres: where the label hangs. */
+  position: Vec3;
+}
+
+/** Active faults of one component (its own first, then its movers'), for the component list. */
+export interface ComponentFaults {
+  componentId: number;
+  messages: string[];
+}
+
 export interface SceneModel {
   conveyors: SceneConveyor[];
   products: SceneProduct[];
@@ -286,11 +320,30 @@ export interface SceneModel {
   fingers: SceneFinger[];
   snapPoints: SnapPoint[];
   origins: SceneOrigin[];
+  faultLabels: SceneFaultLabel[];
+  /** Every component with an active fault, hidden ones included. */
+  faults: ComponentFaults[];
   /** Inconsistencies in the configuration, e.g. a zone referencing an unknown conveyor. */
   warnings: string[];
 }
 
 const MM = 1 / 1000;
+
+/** One gripper of a robot (one per mover for XTS kinematics): where its fingers hang and whether it is faulted. */
+type GripperSource = { moverId: number; flange: Frame; states: FingerState[]; faulted: boolean };
+
+/** How far above its anchor a fault label hangs, mm. */
+const LABEL_LIFT = { conveyor: 150, delta: 250, track: 300, gantryMover: 200, loopMover: 150, cartesian: 200 };
+
+/** The message to show for a fault; the PLC may leave it empty. */
+export function faultText(fault: Fault | null | undefined): string | null {
+  return fault ? fault.message || "Fault" : null;
+}
+
+/** An MCS point lifted by the given height along MCS Z. */
+function lifted(p: Vec3, height: number): Vec3 {
+  return [p[0], p[1], p[2] + height];
+}
 const DEFAULT_PRODUCT: ProductType = { id: 0, length: 100, width: 100, height: 100 };
 
 /**
@@ -316,6 +369,16 @@ export function buildScene(
   const loops: SceneLoop[] = [];
   const cartesians: SceneCartesian[] = [];
   const fingers: SceneFinger[] = [];
+  const faultLabels: SceneFaultLabel[] = [];
+  const faults: ComponentFaults[] = [];
+  /** A label for a component (moverId 0) or a mover at an MCS anchor, and its line in the component list. */
+  const addFault = (componentId: number, moverId: number, message: string | null, anchor: Vec3) => {
+    if (message === null) return;
+    faultLabels.push({ key: `${componentId}:${moverId}`, componentId, moverId, message, position: toRenderer(anchor) });
+    let entry = faults.find((f) => f.componentId === componentId);
+    if (!entry) faults.push((entry = { componentId, messages: [] }));
+    entry.messages.push(moverId ? `Mover ${moverId}: ${message}` : message);
+  };
   /**
    * Where a picked product hangs, keyed "robotId:moverId" for the gripper flange (mover 0 for a robot without movers)
    * and "robotId:moverId:finger" for a finger's grip point: an MCS frame whose origin touches the product's top, whose
@@ -333,7 +396,7 @@ export function buildScene(
   /** Fingers of one robot's grippers (one per mover), their grip points as carriers and snap points. */
   const addGripper = (
     robot: { id: number; name: string; pose: Pose; fingers: Finger[] },
-    grippers: { moverId: number; flange: Frame; states: FingerState[] }[],
+    grippers: GripperSource[],
   ) => {
     const owner = snapOwner(robot, frameFromPose(robot.pose));
     for (const g of grippers) {
@@ -353,6 +416,7 @@ export function buildScene(
           diameter: f.diameter * MM,
           height: f.height * MM,
           active: state.active,
+          faulted: g.faulted,
           flange: toRenderer(g.flange.origin),
         });
         const name = g.moverId ? `${robot.name} · mover ${g.moverId} finger ${index}` : `${robot.name} · finger ${index}`;
@@ -409,6 +473,7 @@ export function buildScene(
       boxAreas.push(built.area);
       snapPoints.push(...built.snapPoints);
       for (const [moverId, frame] of built.carriers) carriers.set(`${c.id}:${moverId}`, frame);
+      for (const f of built.faults) addFault(c.id, f.moverId, f.message, f.anchor);
       addGripper(c, built.grippers);
       addZones(c);
       continue;
@@ -418,6 +483,7 @@ export function buildScene(
       loops.push(built.loop);
       snapPoints.push(...built.snapPoints);
       for (const [moverId, frame] of built.carriers) carriers.set(`${c.id}:${moverId}`, frame);
+      for (const f of built.faults) addFault(c.id, f.moverId, f.message, f.anchor);
       addGripper(c, built.grippers);
       addZones(c);
       continue;
@@ -428,18 +494,21 @@ export function buildScene(
       boxAreas.push(built.area);
       snapPoints.push(...built.snapPoints);
       if (built.carrier) carriers.set(`${c.id}:0`, built.carrier);
+      addFault(c.id, 0, built.cartesian.fault, built.faultAnchor);
       addGripper(c, built.grippers);
       addZones(c);
       continue;
     }
     if (c.type !== "delta") continue;
     const deltaState = state?.type === "delta" ? state : undefined;
-    deltas.push(buildDelta(c, deltaState));
+    const builtDelta = buildDelta(c, deltaState);
+    deltas.push(builtDelta);
+    addFault(c.id, 0, builtDelta.fault, lifted(frameFromPose(c.pose).origin, LABEL_LIFT.delta));
     if (deltaState) {
       // The flange is the effector centre, turned with the base.
       const flange: Frame = { rotation: frameFromPose(c.pose).rotation, origin: positionToMcs(deltaState.actualTcp) };
       carriers.set(`${c.id}:0`, flange);
-      addGripper(c, [{ moverId: 0, flange, states: deltaState.fingers }]);
+      addGripper(c, [{ moverId: 0, flange, states: deltaState.fingers, faulted: builtDelta.fault !== null }]);
     }
     snapPoints.push(...deltaSnapPoints(c, deltaState));
 
@@ -469,13 +538,17 @@ export function buildScene(
   for (const c of config?.components ?? []) {
     if (c.type !== "conveyor") continue;
     const frame = frameFromPose(c.pose);
+    const conveyorState = states.get(c.id);
+    const fault = faultText(conveyorState?.type === "conveyor" ? conveyorState.fault : null);
     conveyors.push({
       id: c.id,
       name: c.name,
       transform: toRendererTransform(frame),
       length: c.length * MM,
       width: c.width * MM,
+      fault,
     });
+    addFault(c.id, 0, fault, lifted(toMcs(frame, [c.length / 2, 0, 0]), LABEL_LIFT.conveyor));
     const owner = snapOwner(c, frame);
     snapPoints.push(owner.at(`${c.name} · origin`, [0, 0, 0]));
     for (const end of ["start", "end"] as const) {
@@ -514,6 +587,8 @@ export function buildScene(
     fingers: fingers.filter((f) => shown(f.robotId)),
     snapPoints: snapPoints.filter((p) => shown(p.local.componentId)),
     origins: origins.filter((o) => shown(o.componentId)),
+    faultLabels: faultLabels.filter((l) => shown(l.componentId)),
+    faults,
     warnings,
   };
 }
@@ -667,6 +742,7 @@ function buildDelta(c: DeltaConfig, state: DeltaState | undefined): SceneDelta {
     actualTcp: state ? toRenderer(positionToMcs(state.actualTcp)) : null,
     setpointTcp: state ? toRenderer(positionToMcs(state.setpointTcp)) : null,
     angles: angles ?? [],
+    fault: faultText(state?.fault),
   };
 }
 
@@ -870,7 +946,11 @@ function buildGantry(c: XtsGantryConfig, state: XtsGantryState | undefined) {
   const trackLength = c.moduleCount * c.moduleLength;
   const owner = snapOwner(c, frame);
   const carriers = new Map<number, Frame>();
-  const grippers: { moverId: number; flange: Frame; states: FingerState[] }[] = [];
+  const grippers: GripperSource[] = [];
+  const gantryFault = faultText(state?.fault);
+  const faults = [
+    { moverId: 0, message: gantryFault, anchor: lifted(toMcs(frame, [0, trackLength / 2, z]), LABEL_LIFT.track) },
+  ];
   const snapPoints: SnapPoint[] = [
     owner.at(`${c.name} · track start`, [0, 0, z], "structure", true),
     ...Array.from({ length: Math.max(0, c.moduleCount - 1) }, (_, i) =>
@@ -882,14 +962,18 @@ function buildGantry(c: XtsGantryConfig, state: XtsGantryState | undefined) {
     const toolX = m.x + c.toolOffsetX;
     const tip = child(frame, [toolX, m.position, z + c.toolOffsetZ]);
     carriers.set(m.id, tip);
-    grippers.push({ moverId: m.id, flange: tip, states: m.fingers });
+    const fault = faultText(m.fault);
+    const carriage = toMcs(frame, [0, m.position, z]);
+    faults.push({ moverId: m.id, message: fault, anchor: lifted(carriage, LABEL_LIFT.gantryMover) });
+    grippers.push({ moverId: m.id, flange: tip, states: m.fingers, faulted: gantryFault !== null || fault !== null });
     snapPoints.push(owner.atMcs(`${c.name} · mover ${m.id} flange`, tip.origin, "structure", true));
     return {
       id: m.id,
-      carriage: toRenderer(toMcs(frame, [0, m.position, z])),
+      carriage: toRenderer(carriage),
       armEnd: toRenderer(toMcs(frame, [toolX, m.position, z])),
       tip: toRendererTransform(tip),
       gripperActive: c.fingers.length === 0 && m.gripperActive,
+      fault,
     };
   });
   const centre: Vec3 = [
@@ -908,6 +992,7 @@ function buildGantry(c: XtsGantryConfig, state: XtsGantryState | undefined) {
       moverLength: c.moverLength * MM,
       moverWidth: c.moverWidth * MM,
       movers,
+      fault: gantryFault,
     } satisfies SceneGantry,
     area: {
       robotId: c.id,
@@ -917,6 +1002,7 @@ function buildGantry(c: XtsGantryConfig, state: XtsGantryState | undefined) {
     snapPoints,
     carriers,
     grippers,
+    faults,
   };
 }
 
@@ -951,7 +1037,9 @@ function buildLoop(c: XtsLoopConfig, state: XtsLoopState | undefined) {
   const L = c.straightLength;
   const R = c.curveRadius;
   const carriers = new Map<number, Frame>();
-  const grippers: { moverId: number; flange: Frame; states: FingerState[] }[] = [];
+  const grippers: GripperSource[] = [];
+  const loopFault = faultText(state?.fault);
+  const faults = [{ moverId: 0, message: loopFault, anchor: lifted(toMcs(frame, [L / 2, 0, 2 * R]), LABEL_LIFT.track) }];
   const snapPoints: SnapPoint[] = [
     owner.at(`${c.name} · lower straight, start`, [0, 0, 0]),
     owner.at(`${c.name} · lower straight, end`, [L, 0, 0]),
@@ -967,9 +1055,11 @@ function buildLoop(c: XtsLoopConfig, state: XtsLoopState | undefined) {
     const mover = child(frame, point, rotY(angle));
     const tool = child(mover, [0, 0, -c.toolOffset]);
     carriers.set(m.id, tool);
-    grippers.push({ moverId: m.id, flange: tool, states: m.fingers });
+    const fault = faultText(m.fault);
+    faults.push({ moverId: m.id, message: fault, anchor: lifted(mover.origin, LABEL_LIFT.loopMover) });
+    grippers.push({ moverId: m.id, flange: tool, states: m.fingers, faulted: loopFault !== null || fault !== null });
     snapPoints.push(owner.atMcs(`${c.name} · mover ${m.id} tool`, tool.origin, "structure", true));
-    return { id: m.id, transform: toRendererTransform(mover), tool: toRenderer(tool.origin) };
+    return { id: m.id, transform: toRendererTransform(mover), tool: toRenderer(tool.origin), fault };
   });
   return {
     loop: {
@@ -981,10 +1071,12 @@ function buildLoop(c: XtsLoopConfig, state: XtsLoopState | undefined) {
       moverLength: c.moverLength * MM,
       moverWidth: c.moverWidth * MM,
       movers,
+      fault: loopFault,
     } satisfies SceneLoop,
     snapPoints,
     carriers,
     grippers,
+    faults,
   };
 }
 
@@ -1063,6 +1155,7 @@ function buildCartesian(c: CartesianConfig, state: CartesianState | undefined) {
       flange: state ? toRendererTransform(flange) : null,
       gripperActive: c.fingers.length === 0 && (state?.gripperActive ?? false),
       axes,
+      fault: faultText(state?.fault),
     } satisfies SceneCartesian,
     area: {
       robotId: c.id,
@@ -1072,6 +1165,11 @@ function buildCartesian(c: CartesianConfig, state: CartesianState | undefined) {
     snapPoints,
     /** A carried product without finger hangs at the flange. */
     carrier: state ? flange : undefined,
-    grippers: state ? [{ moverId: 0, flange, states: state.fingers }] : [],
+    grippers: state ? [{ moverId: 0, flange, states: state.fingers, faulted: state.fault !== null }] : [],
+    /** Above the middle of the bridge's travel. */
+    faultAnchor: lifted(
+      toMcs(frame, [(c.xMin + c.xMax) / 2, (c.yMin + c.yMax) / 2, c.railHeight + d.bridgeHeight]),
+      LABEL_LIFT.cartesian,
+    ),
   };
 }

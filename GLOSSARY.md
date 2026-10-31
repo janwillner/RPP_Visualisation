@@ -53,6 +53,10 @@ _Avoid_: ghost, empty product
 A product that reached the end of its conveyor without being picked.
 _Avoid_: lost product
 
+**Fault**:
+A condition the PLC reports for a component or a single mover, with a message for the operator, until it clears it. A faulted component or mover is drawn red.
+_Avoid_: error (for the display), alarm, warning
+
 ## Robots
 
 **Delta robot**:

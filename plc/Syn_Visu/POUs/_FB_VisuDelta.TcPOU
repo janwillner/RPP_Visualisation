@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuDelta" Id="{2cb800cd-711b-420f-a529-d7bdcc421ef9}" SpecialFunc="None">
+  <POU Name="_FB_VisuDelta" Id="{e9a6f3d0-c737-41aa-b364-7881afed2ca0}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -184,6 +184,27 @@ TempNew.fEffectorRadius := vi_lr_EffectorRadius;
 TempNew.fUpperArmLength := vi_lr_UpperArmLength;
 TempNew.fLowerArmLength := vi_lr_LowerArmLength;
 m_Configure := m_ApplyConfig(TempNew);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetFault" Id="{ffbdfca2-f936-4a97-9e98-c78fb12b7c8e}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets or clears the fault of the robot: drawn red with the message while active. The fault stays until it<br>
+is cleared with m_SetFault(vi_b_Active := FALSE, vi_str_Message := ''). TRUE.<br>
+****************************************************************************************************)
+METHOD m_SetFault : BOOL
+VAR_INPUT
+	vi_b_Active							: BOOL;	// TRUE: fault active
+	vi_str_Message						: STRING(80);	// shown to the operator; empty shows 'Fault'
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_Visu.stState.stFault.bActive := vi_b_Active;
+vo_Visu.stState.stFault.sMessage := vi_str_Message;
+m_SetFault := TRUE;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_SetFinger" Id="{546c7145-9601-4a5f-938b-af079ca1c84a}">

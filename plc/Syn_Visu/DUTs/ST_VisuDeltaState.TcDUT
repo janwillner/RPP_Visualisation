@@ -3,10 +3,11 @@
   <DUT Name="ST_VisuDeltaState" Id="{b9749b2c-cc76-421c-8b8d-a8b13fe1247b}">
     <Declaration><![CDATA[TYPE ST_VisuDeltaState :
 STRUCT
-	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (set by FB_VisuDelta.SetTcp)
+	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (set by _FB_VisuDelta.m_SetTcp)
 	stActualTcp : ST_VisuPosition; // MCS, effector centre (the gripper flange); the visualisation derives the arms from it
 	stSetpointTcp : ST_VisuPosition; // MCS
 	aFingerStates : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState; // one per configured finger
+	stFault : ST_VisuFault; // fault of the robot (set by _FB_VisuDelta.m_SetFault)
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

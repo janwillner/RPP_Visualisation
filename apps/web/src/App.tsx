@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ComponentConfig, ComponentState } from "@rpp/protocol";
+import type { Fault, ComponentConfig, ComponentState } from "@rpp/protocol";
 import { GatewayStore, STALE_AFTER_MS, defaultGatewayUrl, useGateway, type GatewaySnapshot } from "./connection";
-import { formatPointCopy, measureChain, pointsCsv, type SceneModel, type SnapPoint, type Vec3 } from "./scene/scene-model";
+import { faultText, type ComponentFaults, formatPointCopy, measureChain, pointsCsv, type SceneModel, type SnapPoint, type Vec3 } from "./scene/scene-model";
 import {
   MISSED_COLOR,
   PRODUCT_COLORS,
@@ -34,7 +34,9 @@ export function App() {
     limitAreas: true,
     zones: true,
     tcpMarkers: true,
+    faultLabels: true,
   });
+  const [faults, setFaults] = useState<ComponentFaults[]>([]);
   const [selection, setSelection] = useState<Selection>();
   const [hidden, setHidden] = useState<ReadonlySet<number>>(() => new Set());
   const toggleHidden = (id: number) =>
@@ -93,6 +95,7 @@ export function App() {
           <Toggle label="Limit areas" on={layers.limitAreas} onClick={() => toggle("limitAreas")} />
           <Toggle label="Zones" on={layers.zones} onClick={() => toggle("zones")} />
           <Toggle label="TCP markers" on={layers.tcpMarkers} onClick={() => toggle("tcpMarkers")} />
+          <Toggle label="Fault labels" on={layers.faultLabels} onClick={() => toggle("faultLabels")} />
         </div>
         <div className="group">
           <Toggle label="Measure (M)" on={measureMode} onClick={() => setMeasureMode((m) => !m)} />
@@ -105,6 +108,7 @@ export function App() {
           onSelect={setSelection}
           hidden={hidden}
           onToggleHidden={toggleHidden}
+          faults={faults}
         />
       </aside>
       <main className="viewport">
@@ -120,6 +124,7 @@ export function App() {
           onMeasure={addMeasurePoint}
           measurePoints={measurePoints}
           hidden={hidden}
+          onFaults={setFaults}
         />
         {(measureMode || measurePoints.length > 0) && (
           <MeasureList measureMode={measureMode} points={measurePoints} onClear={clearMeasurePoints} />
@@ -129,7 +134,13 @@ export function App() {
         )}
       </main>
       <aside className="panel right">
-        <Inspector store={store} config={gateway.config?.components ?? []} selection={selection} modelRef={modelRef} />
+        <Inspector
+          store={store}
+          config={gateway.config?.components ?? []}
+          selection={selection}
+          modelRef={modelRef}
+          faults={faults}
+        />
       </aside>
       <StatusBar store={store} gateway={gateway} modelRef={modelRef} />
     </div>
@@ -255,32 +266,42 @@ function ComponentTree(props: {
   onSelect: (s: Selection) => void;
   hidden: ReadonlySet<number>;
   onToggleHidden: (id: number) => void;
+  faults: ComponentFaults[];
 }) {
-  const { components, selection, onSelect, hidden, onToggleHidden } = props;
+  const { components, selection, onSelect, hidden, onToggleHidden, faults } = props;
   return (
     <>
       <h2>Components</h2>
       {components.length === 0 && <p className="muted">No components discovered.</p>}
       <ul className="tree">
-        {components.map((c) => (
-          <li key={c.id} className={hidden.has(c.id) ? "hidden" : ""}>
-            <button
-              className="visibility"
-              title={hidden.has(c.id) ? `Show ${c.name}` : `Hide ${c.name}`}
-              aria-label={hidden.has(c.id) ? `Show ${c.name}` : `Hide ${c.name}`}
-              aria-pressed={hidden.has(c.id)}
-              onClick={() => onToggleHidden(c.id)}
-            >
-              <EyeIcon open={!hidden.has(c.id)} />
-            </button>
-            <button
-              className={selection?.kind === "component" && selection.id === c.id ? "selected" : ""}
-              onClick={() => onSelect({ kind: "component", id: c.id })}
-            >
-              <span className={`badge ${c.type}`}>{c.type}</span> {c.name} <span className="muted">#{c.id}</span>
-            </button>
-          </li>
-        ))}
+        {components.map((c) => {
+          const messages = faults.find((f) => f.componentId === c.id)?.messages;
+          return (
+            <li key={c.id} className={[hidden.has(c.id) ? "hidden" : "", messages ? "faulted" : ""].join(" ").trim()}>
+              <button
+                className="visibility"
+                title={hidden.has(c.id) ? `Show ${c.name}` : `Hide ${c.name}`}
+                aria-label={hidden.has(c.id) ? `Show ${c.name}` : `Hide ${c.name}`}
+                aria-pressed={hidden.has(c.id)}
+                onClick={() => onToggleHidden(c.id)}
+              >
+                <EyeIcon open={!hidden.has(c.id)} />
+              </button>
+              <button
+                className={selection?.kind === "component" && selection.id === c.id ? "selected" : ""}
+                onClick={() => onSelect({ kind: "component", id: c.id })}
+                title={messages?.join("\n")}
+              >
+                {messages && (
+                  <span className="fault-icon" aria-label="Fault">
+                    ⚠
+                  </span>
+                )}
+                <span className={`badge ${c.type}`}>{c.type}</span> {c.name} <span className="muted">#{c.id}</span>
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </>
   );
@@ -302,8 +323,9 @@ function Inspector(props: {
   config: ComponentConfig[];
   selection: Selection;
   modelRef: React.RefObject<SceneModel | undefined>;
+  faults: ComponentFaults[];
 }) {
-  const { store, config, selection, modelRef } = props;
+  const { store, config, selection, modelRef, faults } = props;
   useTick(200);
   if (!selection) {
     return (
@@ -343,6 +365,13 @@ function Inspector(props: {
   return (
     <>
       <h2>{component?.name ?? `#${selection.id}`}</h2>
+      {faults
+        .find((f) => f.componentId === selection.id)
+        ?.messages.map((m, i) => (
+          <p key={i} className="fault">
+            ⚠ {m}
+          </p>
+        ))}
       {delta && !delta.reachable && <p className="warn">Kinematics: the arms cannot reach the reported TCP.</p>}
       {delta && delta.angles.length > 0 && (
         <p>
@@ -353,15 +382,24 @@ function Inspector(props: {
         <>
           <h3>Movers · Z {state.z.toFixed(1)}</h3>
           <MoverTable
-            head={["Id", "Position", "X", "Gripper"]}
-            rows={state.movers.map((m) => [m.id, m.position.toFixed(1), m.x.toFixed(1), m.gripperActive ? "on" : "off"])}
+            head={["Id", "Position", "X", "Gripper", "Fault"]}
+            rows={state.movers.map((m) => [
+              m.id,
+              m.position.toFixed(1),
+              m.x.toFixed(1),
+              m.gripperActive ? "on" : "off",
+              faultCell(m.fault),
+            ])}
           />
         </>
       )}
       {state?.type === "xtsLoop" && (
         <>
           <h3>Movers</h3>
-          <MoverTable head={["Id", "s"]} rows={state.movers.map((m) => [m.id, m.position.toFixed(1)])} />
+          <MoverTable
+            head={["Id", "s", "Fault"]}
+            rows={state.movers.map((m) => [m.id, m.position.toFixed(1), faultCell(m.fault)])}
+          />
         </>
       )}
       {state?.type === "cartesian" && (
@@ -405,6 +443,9 @@ function FingerTable({ state }: { state: ComponentState }) {
     </>
   );
 }
+
+/** A mover's fault as table text; empty when there is none. */
+const faultCell = (fault: Fault | null) => faultText(fault) ?? "";
 
 function MoverTable({ head, rows }: { head: string[]; rows: (string | number)[][] }) {
   return (

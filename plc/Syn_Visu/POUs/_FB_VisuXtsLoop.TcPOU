@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuXtsLoop" Id="{eb297b39-612c-45d7-a8e7-db16d2d14c44}" SpecialFunc="None">
+  <POU Name="_FB_VisuXtsLoop" Id="{48ab6824-7358-4f0b-90d9-7dcb430affbd}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -162,6 +162,28 @@ METHOD m_Perimeter : LREAL]]></Declaration>
         <ST><![CDATA[m_Perimeter := 2.0 * vo_Visu.stConfig.fStraightLength + 2.0 * 3.141592653589793 * vo_Visu.stConfig.fCurveRadius;]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_SetFault" Id="{dfe3503c-b1b7-448b-9e2d-61007f8c2ff9}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets or clears the fault of the whole loop: drawn red with the message while active. Faults of single<br>
+movers go through m_SetMover. The fault stays until it is cleared with m_SetFault(vi_b_Active := FALSE,<br>
+vi_str_Message := ''). TRUE.<br>
+****************************************************************************************************)
+METHOD m_SetFault : BOOL
+VAR_INPUT
+	vi_b_Active							: BOOL;	// TRUE: fault active
+	vi_str_Message						: STRING(80);	// shown to the operator; empty shows 'Fault'
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_Visu.stState.stFault.bActive := vi_b_Active;
+vo_Visu.stState.stFault.sMessage := vi_str_Message;
+m_SetFault := TRUE;]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_SetFinger" Id="{4bf0f4d8-2abb-4e38-9a43-96f3d9b9d9da}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -216,6 +238,8 @@ VAR_INPUT
 	vi_lr_Position						: LREAL;	// [mm] along the loop from the start of the lower straight (0..m_Perimeter())
 	(* Finger poses absolute in the MCS and grip states, index 0 = finger 1; entries beyond the finger count are ignored. *)
 	vi_FingerStates						: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;
+	vi_b_Fault							: BOOL := FALSE;	// TRUE: this mover is in a fault
+	vi_str_FaultMessage					: STRING(80) := '';	// shown to the operator; empty shows 'Fault'
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[m_SetMover := vi_un_Index < vo_Visu.stState.nMoverCount;
@@ -224,6 +248,8 @@ IF m_SetMover THEN
 	vo_Visu.stState.aMovers[vi_un_Index].bValid := TRUE;
 	vo_Visu.stState.aMovers[vi_un_Index].fPosition := vi_lr_Position;
 	vo_Visu.stState.aMovers[vi_un_Index].aFingerStates := vi_FingerStates;
+	vo_Visu.stState.aMovers[vi_un_Index].stFault.bActive := vi_b_Fault;
+	vo_Visu.stState.aMovers[vi_un_Index].stFault.sMessage := vi_str_FaultMessage;
 	vo_Visu.stState.nTimestamp := m_DcTime();
 END_IF]]></ST>
       </Implementation>

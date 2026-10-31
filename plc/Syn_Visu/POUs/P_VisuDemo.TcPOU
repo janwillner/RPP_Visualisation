@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="P_VisuDemo" Id="{9c7cd857-9bda-41a5-ae13-8f746bb276a5}" SpecialFunc="None">
+  <POU Name="P_VisuDemo" Id="{01008033-97ee-4e5b-8820-cabd11de4fda}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -61,6 +61,7 @@ VAR
 	n_Belt								: INT;
 	lr_Length							: LREAL;	// [mm]
 	lr_Random							: LREAL;	// [-] 0..1
+	lr_FaultPhase						: LREAL;	// [s] 0..lr_FAULT_PERIOD, drives the demo faults
 
 	(* Per Delta robot *)
 	n_Phase								: ARRAY[0..2] OF INT;
@@ -131,6 +132,12 @@ VAR CONSTANT
 	lr_BELT_WIDTH						: LREAL := 400;	// [mm]
 	lr_PRODUCT_HEIGHT					: LREAL := 40;	// [mm]
 	lr_REMOVE_BEYOND_END				: LREAL := 300;	// [mm]
+	(* Demo faults: every lr_FAULT_PERIOD one component or mover is in a fault for lr_FAULT_DURATION. *)
+	lr_FAULT_PERIOD						: LREAL := 20;	// [s]
+	lr_FAULT_DURATION					: LREAL := 5;	// [s]
+	lr_FAULT_DELTA_START				: LREAL := 4;	// [s] start of the Delta 1 fault in the period
+	lr_FAULT_LOOP_START					: LREAL := 10;	// [s] start of the Fxx mover 3 fault
+	lr_FAULT_GANTRY_START				: LREAL := 12;	// [s] start of the IDH mover 2 fault
 
 	(* Delta application *)
 	lr_BELT_LENGTH						: LREAL := 5000;	// [mm]
@@ -276,6 +283,10 @@ ELSE
 	lr_Dt := 0.01;
 END_IF
 lr_Step := lr_TCP_SPEED * lr_Dt;
+lr_FaultPhase := lr_FaultPhase + lr_Dt;
+IF lr_FaultPhase >= lr_FAULT_PERIOD THEN
+	lr_FaultPhase := lr_FaultPhase - lr_FAULT_PERIOD;
+END_IF
 
 
 (****************************************************************************************************)
@@ -709,6 +720,11 @@ SetpointTcp := Tcp[n_Robot];
 SetpointTcp.fX := SetpointTcp.fX + 2;
 SetpointTcp.fZ := SetpointTcp.fZ - 1;
 fb_RefRobot.m_SetTcp(vi_ActualTcp := Tcp[n_Robot], vi_SetpointTcp := SetpointTcp);
+
+(* Demo fault: Delta 1 overheats now and then. *)
+fb_RefRobot.m_SetFault(vi_b_Active := n_Robot = 0 AND lr_FaultPhase >= lr_FAULT_DELTA_START
+										AND lr_FaultPhase < lr_FAULT_DELTA_START + lr_FAULT_DURATION,
+	vi_str_Message := 'Drive 2: overtemperature');
 FOR n_Finger := 1 TO n_FingerCount DO
 	(* Delta 1: a cup grips while its slot holds a product; the others grip while anything is carried. *)
 	fb_RefRobot.m_SetFingerState(vi_un_Finger := INT_TO_UINT(n_Finger),
@@ -1471,7 +1487,10 @@ FOR n_TempI := 0 TO 3 DO
 	MoverFingers[0].bActive := b_GantryGrip[n_TempI];
 	fb_Idh.m_SetMover(vi_un_Index := INT_TO_UINT(n_TempI), vi_udn_Id := INT_TO_UDINT(n_TempI + 1),
 		vi_lr_Position := lr_GantryPos[n_TempI], vi_lr_X := lr_GantryX[n_TempI], vi_b_GripperActive := b_GantryGrip[n_TempI],
-		vi_FingerStates := MoverFingers);
+		vi_FingerStates := MoverFingers,
+		vi_b_Fault := n_TempI = 1 AND lr_FaultPhase >= lr_FAULT_GANTRY_START
+					AND lr_FaultPhase < lr_FAULT_GANTRY_START + lr_FAULT_DURATION,
+		vi_str_FaultMessage := 'Vacuum not reached');
 END_FOR
 m_StepGantry := TRUE;]]></ST>
       </Implementation>
@@ -1628,8 +1647,13 @@ FOR n_TempI := 0 TO n_LOOP_MOVERS - 1 DO
 	MoverFingers[0].stPose := m_LoopFlange(lr_TempS);
 	MoverFingers[0].bActive := n_LoopMode[n_TempI] = n_LOOP_DELIVER
 							OR (n_LoopMode[n_TempI] = n_LOOP_TRACK AND lr_LoopS[n_TempI] >= lr_LOOP_GRIP);
+
+	(* Demo fault: mover 3 now and then. *)
 	fb_Fxx.m_SetMover(vi_un_Index := INT_TO_UINT(n_TempI), vi_udn_Id := INT_TO_UDINT(n_TempI + 1), vi_lr_Position := lr_TempS,
-		vi_FingerStates := MoverFingers);
+		vi_FingerStates := MoverFingers,
+		vi_b_Fault := n_TempI = 2 AND lr_FaultPhase >= lr_FAULT_LOOP_START
+					AND lr_FaultPhase < lr_FAULT_LOOP_START + lr_FAULT_DURATION,
+		vi_str_FaultMessage := 'Following error');
 END_FOR
 m_StepLoop := TRUE;]]></ST>
       </Implementation>

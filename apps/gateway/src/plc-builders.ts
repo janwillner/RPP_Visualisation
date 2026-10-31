@@ -9,6 +9,7 @@ import {
   type ST_VisuCartesianState,
   type ST_VisuConveyor,
   type ST_VisuDelta,
+  type ST_VisuFault,
   type ST_VisuFinger,
   type ST_VisuFingerState,
   type ST_VisuManifest,
@@ -31,6 +32,10 @@ export const MAX_PRODUCT_TYPES = 8;
 export const MAX_ZONES = 8;
 export const MAX_MOVERS = 40;
 export const MAX_FINGERS = 8;
+
+export function noFault(): ST_VisuFault {
+  return { bActive: false, sMessage: "" };
+}
 
 export function emptyFingerState(): ST_VisuFingerState {
   return { stPose: pose(), bActive: false };
@@ -91,6 +96,7 @@ export interface ConveyorSpec {
   beltPosition?: number;
   timestamp?: bigint;
   products?: Partial<ST_VisuProduct>[];
+  fault?: ST_VisuFault;
 }
 
 export function conveyor(spec: ConveyorSpec = {}): ST_VisuConveyor {
@@ -109,6 +115,7 @@ export function conveyor(spec: ConveyorSpec = {}): ST_VisuConveyor {
       fBeltPosition: spec.beltPosition ?? 0,
       nProductCount: products.length,
       aProducts: padded(products, MAX_PRODUCTS, emptyProduct),
+      stFault: spec.fault ?? noFault(),
     },
   };
 }
@@ -124,6 +131,7 @@ export interface DeltaSpec {
   limitArea?: Omit<ST_VisuLimitArea, "bActive">;
   zones?: ZoneSpec[];
   timestamp?: bigint;
+  fault?: ST_VisuFault;
 }
 
 export function delta(spec: DeltaSpec = {}): ST_VisuDelta {
@@ -148,6 +156,7 @@ export function delta(spec: DeltaSpec = {}): ST_VisuDelta {
       stActualTcp: { fX: 0, fY: 0, fZ: 0 },
       stSetpointTcp: { fX: 0, fY: 0, fZ: 0 },
       aFingerStates: fingerStates(),
+      stFault: spec.fault ?? noFault(),
     },
   };
 }
@@ -161,6 +170,7 @@ export interface XtsGantrySpec {
   z?: number;
   movers?: Partial<ST_VisuGantryMover>[];
   timestamp?: bigint;
+  fault?: ST_VisuFault;
 }
 
 export function xtsGantry(spec: XtsGantrySpec = {}): ST_VisuXtsGantry {
@@ -172,6 +182,7 @@ export function xtsGantry(spec: XtsGantrySpec = {}): ST_VisuXtsGantry {
     fX: 0,
     bGripperActive: false,
     aFingerStates: fingerStates(),
+    stFault: noFault(),
   });
   const movers = (spec.movers ?? []).map((m) => ({ ...empty(), bValid: true, ...m }));
   return {
@@ -196,6 +207,7 @@ export function xtsGantry(spec: XtsGantrySpec = {}): ST_VisuXtsGantry {
       fZ: spec.z ?? 0,
       nMoverCount: movers.length,
       aMovers: padded(movers, MAX_MOVERS, empty),
+      stFault: spec.fault ?? noFault(),
     },
   };
 }
@@ -208,11 +220,18 @@ export interface XtsLoopSpec {
   fingers?: ST_VisuFinger[];
   movers?: Partial<ST_VisuLoopMover>[];
   timestamp?: bigint;
+  fault?: ST_VisuFault;
 }
 
 export function xtsLoop(spec: XtsLoopSpec = {}): ST_VisuXtsLoop {
   const zones = zoneList(spec);
-  const empty = (): ST_VisuLoopMover => ({ nId: 0, bValid: false, fPosition: 0, aFingerStates: fingerStates() });
+  const empty = (): ST_VisuLoopMover => ({
+    nId: 0,
+    bValid: false,
+    fPosition: 0,
+    aFingerStates: fingerStates(),
+    stFault: noFault(),
+  });
   const movers = (spec.movers ?? []).map((m) => ({ ...empty(), bValid: true, ...m }));
   return {
     stConfig: {
@@ -230,6 +249,7 @@ export function xtsLoop(spec: XtsLoopSpec = {}): ST_VisuXtsLoop {
       nTimestamp: spec.timestamp ?? 0n,
       nMoverCount: movers.length,
       aMovers: padded(movers, MAX_MOVERS, empty),
+      stFault: spec.fault ?? noFault(),
     },
   };
 }
@@ -265,6 +285,7 @@ export function cartesian(spec: CartesianSpec = {}): ST_VisuCartesian {
       fZ: 0,
       bGripperActive: false,
       aFingerStates: fingerStates(),
+      stFault: noFault(),
       ...spec.state,
     },
   };

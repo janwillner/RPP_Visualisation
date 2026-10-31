@@ -105,7 +105,7 @@ function snapshot(tRel: number, components: StateMessage["components"]): StateMe
 }
 
 function conveyorState(beltPosition: number, products: Product[], id = 1): StateMessage["components"][number] {
-  return { type: "conveyor", id, timestamp: "0", beltPosition, products };
+  return { type: "conveyor", id, timestamp: "0", beltPosition, products, fault: null };
 }
 
 describe("scene model: product tracking", () => {
@@ -179,7 +179,7 @@ function deltaState(
   id = 20,
   fingers: FingerState[] = [],
 ): StateMessage["components"][number] {
-  return { type: "delta", id, timestamp: "0", actualTcp: tcp, setpointTcp: setpoint, fingers };
+  return { type: "delta", id, timestamp: "0", actualTcp: tcp, setpointTcp: setpoint, fingers, fault: null };
 }
 
 const dist = (a: readonly number[], b: readonly number[]) => Math.hypot(...a.map((v, i) => v - b[i]!));
@@ -649,10 +649,10 @@ function gantryConfig(overrides: Partial<XtsGantryConfig> = {}): XtsGantryConfig
 }
 
 function gantryState(z: number, movers: GantryMover[]): StateMessage["components"][number] {
-  return { type: "xtsGantry", id: 30, timestamp: "0", z, movers };
+  return { type: "xtsGantry", id: 30, timestamp: "0", z, movers, fault: null };
 }
 
-const mover1: GantryMover = { id: 1, position: 250, x: 80, gripperActive: true, fingers: [] };
+const mover1: GantryMover = { id: 1, position: 250, x: 80, gripperActive: true, fingers: [], fault: null };
 
 describe("scene model: XTS gantry", () => {
   const scene = buildScene(config(gantryConfig()), [snapshot(0, [gantryState(-100, [mover1])])], 0);
@@ -742,7 +742,18 @@ function cartesianConfig(overrides: Partial<CartesianConfig> = {}): CartesianCon
 }
 
 function cartesianState(overrides: Partial<CartesianState> = {}): CartesianState {
-  return { type: "cartesian", id: 50, timestamp: "0", x: 600, y: 250, z: -400, gripperActive: true, fingers: [], ...overrides };
+  return {
+    type: "cartesian",
+    id: 50,
+    timestamp: "0",
+    x: 600,
+    y: 250,
+    z: -400,
+    gripperActive: true,
+    fingers: [],
+    fault: null,
+    ...overrides,
+  };
 }
 
 /** Flange at local (600, 250, −400). */
@@ -844,7 +855,7 @@ function loopConfig(overrides: Partial<XtsLoopConfig> = {}): XtsLoopConfig {
 }
 
 function loopState(movers: { id: number; position: number }[]): StateMessage["components"][number] {
-  return { type: "xtsLoop", id: 40, timestamp: "0", movers: movers.map((m) => ({ ...m, fingers: [] })) };
+  return { type: "xtsLoop", id: 40, timestamp: "0", movers: movers.map((m) => ({ ...m, fingers: [], fault: null })), fault: null };
 }
 
 /** 2 × 2000 + 2π × 250 */
@@ -956,3 +967,69 @@ function rotate([x, y, z, w]: readonly number[], [vx, vy, vz]: Vec3): Vec3 {
     iz * w! + iw * -z! + ix * -y! - iy * -x!,
   ];
 }
+
+describe("scene model: faults", () => {
+  it("marks a faulted mover, labels it above its carriage and lists it under its gantry", () => {
+    const faulty: GantryMover = { ...mover1, id: 2, position: 600, fault: { message: "following error" } };
+    const scene = buildScene(config(gantryConfig()), [snapshot(0, [gantryState(-100, [mover1, faulty])])], 0);
+
+    const g = scene.gantries[0]!;
+    expect(g.fault).toBeNull();
+    expect(g.movers.map((m) => m.fault)).toEqual([null, "following error"]);
+    expect(scene.faultLabels).toHaveLength(1);
+    expect(scene.faultLabels[0]).toMatchObject({ componentId: 30, moverId: 2, message: "following error" });
+    // Carriage at track position 600: MCS (2400, −500, 1400); the label 200 mm above it.
+    closeTo(scene.faultLabels[0]!.position, [2.4, 1.6, 0.5]);
+    expect(scene.faults).toEqual([{ componentId: 30, messages: ["Mover 2: following error"] }]);
+  });
+
+  it("marks a whole faulted component with its fingers and shows 'Fault' for an empty message", () => {
+    const robot = deltaConfig({ fingers: [{ diameter: 40, height: 50 }] });
+    const tcp = { x: 1500, y: 0, z: 1800 - HORIZONTAL_DEPTH };
+    const state = { ...deltaState(tcp, tcp, 20, [{ pose: { ...tcp, rx: 0, ry: 0, rz: 0 }, active: false }]), fault: { message: "" } };
+    const scene = buildScene(config(robot), [snapshot(0, [state])], 0);
+
+    expect(scene.deltas[0]!.fault).toBe("Fault");
+    expect(scene.fingers.map((f) => f.faulted)).toEqual([true]);
+    expect(scene.faultLabels).toHaveLength(1);
+    expect(scene.faultLabels[0]).toMatchObject({ componentId: 20, moverId: 0, message: "Fault" });
+    // 250 mm above the base at MCS (1500, 0, 1800).
+    closeTo(scene.faultLabels[0]!.position, [1.5, 2.05, 0]);
+    expect(scene.faults).toEqual([{ componentId: 20, messages: ["Fault"] }]);
+  });
+
+  it("lists the component's own fault before its movers' faults", () => {
+    const faulty: GantryMover = { ...mover1, fault: { message: "following error" } };
+    const state = { ...gantryState(0, [faulty]), fault: { message: "Z axis error" } };
+    const scene = buildScene(config(gantryConfig()), [snapshot(0, [state])], 0);
+
+    expect(scene.gantries[0]!.fault).toBe("Z axis error");
+    expect(scene.faults).toEqual([{ componentId: 30, messages: ["Z axis error", "Mover 1: following error"] }]);
+    expect(scene.faultLabels.map((l) => l.moverId)).toEqual([0, 1]);
+  });
+
+  it("takes faults from the earlier snapshot instead of interpolating them", () => {
+    const faulty: GantryMover = { ...mover1, fault: { message: "following error" } };
+    const snapshots = [snapshot(0, [gantryState(0, [mover1])]), snapshot(20, [gantryState(0, [faulty])])];
+
+    expect(buildScene(config(gantryConfig()), snapshots, 15).gantries[0]!.movers[0]!.fault).toBeNull();
+    expect(buildScene(config(gantryConfig()), snapshots, 20).gantries[0]!.movers[0]!.fault).toBe("following error");
+  });
+
+  it("keeps a hidden faulted component in the fault list but draws no label for it", () => {
+    const state = { ...conveyorState(0, []), fault: { message: "Belt stopped" } };
+    const scene = buildScene(config(conveyorConfig()), [snapshot(0, [state])], 0, new Set([1]));
+
+    expect(scene.faultLabels).toEqual([]);
+    expect(scene.faults).toEqual([{ componentId: 1, messages: ["Belt stopped"] }]);
+  });
+
+  it("labels a faulted conveyor above the middle of its belt", () => {
+    const state = { ...conveyorState(0, []), fault: { message: "Belt stopped" } };
+    const scene = buildScene(config(conveyorConfig()), [snapshot(0, [state])], 0);
+
+    expect(scene.conveyors[0]!.fault).toBe("Belt stopped");
+    // Belt from MCS (0, 0, 800) along +X, 3000 long: middle (1500, 0, 800), label 150 mm above it.
+    closeTo(scene.faultLabels[0]!.position, [1.5, 0.95, 0]);
+  });
+});
