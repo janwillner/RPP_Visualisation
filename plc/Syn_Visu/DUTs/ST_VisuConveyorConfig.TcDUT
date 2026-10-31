@@ -8,6 +8,9 @@ STRUCT
 	fWidth : LREAL; // mm
 	nProductTypeCount : UINT;
 	aProductTypes : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES - 1] OF ST_VisuProductType;
+	(* mm in the local frame from stPose: origin of the conveyor's coordinate system. Belt coordinates (zones'
+	   fStart, fEnd, fCcsOffset) count from this origin. 0 = the belt start. *)
+	stOriginShift : ST_VisuPosition;
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

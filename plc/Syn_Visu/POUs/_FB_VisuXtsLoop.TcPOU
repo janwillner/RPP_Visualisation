@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuXtsLoop" Id="{48ab6824-7358-4f0b-90d9-7dcb430affbd}" SpecialFunc="None">
+  <POU Name="_FB_VisuXtsLoop" Id="{efde4b40-81b5-40d9-96bf-89abc27909f1}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -279,6 +279,34 @@ FOR un_TempIndex := vo_Visu.stState.nMoverCount TO VISU_GlobalConst_Param.VISU_u
 END_FOR]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_SetOriginShift" Id="{230ad245-1781-4fe8-a177-c8ef5e0afbf6}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Moves the loop's shown coordinate system (origin triad, local measuring coordinates) away from the start of<br>
+the lower straight (stPose), in the loop's local frame. Geometry and mover positions stay relative to stPose.<br>
+TRUE if anything changed.<br>
+****************************************************************************************************)
+METHOD m_SetOriginShift : BOOL
+VAR_INPUT
+	vi_lr_X								: LREAL;	// [mm] along the lower straight (local X)
+	vi_lr_Y								: LREAL := 0;	// [mm] along the loop's local Y
+	vi_lr_Z								: LREAL := 0;	// [mm] along the loop's local Z
+END_VAR
+VAR
+	TempNew								: ST_VisuXtsLoopConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TempNew := vo_Visu.stConfig;
+TempNew.stOriginShift.fX := vi_lr_X;
+TempNew.stOriginShift.fY := vi_lr_Y;
+TempNew.stOriginShift.fZ := vi_lr_Z;
+m_SetOriginShift := m_ApplyConfig(TempNew);]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_SetZone" Id="{eaa0a699-c44d-42dd-ad98-69862eabbe68}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -295,9 +323,10 @@ METHOD m_SetZone : BOOL
 VAR_INPUT
 	vi_udn_ConveyorId					: UDINT;	// [-] manifest id of the conveyor
 	vi_e_Kind							: E_VisuZoneKind;
-	vi_lr_Start							: LREAL;	// [mm] along the conveyor from its start (belt coordinates, not MCS)
-	vi_lr_End							: LREAL;	// [mm] along the conveyor from its start
+	vi_lr_Start							: LREAL;	// [mm] along the conveyor from its origin (belt coordinates, not MCS)
+	vi_lr_End							: LREAL;	// [mm] along the conveyor from its origin
 	vi_lr_AllocationOffset				: LREAL := 0;	// [mm] before vi_lr_End up to which products may be allocated; 0 = no limit
+	vi_lr_CcsOffset						: LREAL := 0;	// [mm] along the conveyor from its origin: the robot's conveyor coordinate system
 END_VAR
 VAR
 	TempNew								: ST_VisuXtsLoopConfig;
@@ -328,6 +357,7 @@ TempNew.aZones[un_TempIndex].eKind := vi_e_Kind;
 TempNew.aZones[un_TempIndex].fStart := vi_lr_Start;
 TempNew.aZones[un_TempIndex].fEnd := vi_lr_End;
 TempNew.aZones[un_TempIndex].fAllocationOffset := vi_lr_AllocationOffset;
+TempNew.aZones[un_TempIndex].fCcsOffset := vi_lr_CcsOffset;
 m_ApplyConfig(TempNew);
 m_SetZone := TRUE;]]></ST>
       </Implementation>

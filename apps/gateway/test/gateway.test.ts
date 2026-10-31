@@ -138,6 +138,7 @@ describe("gateway discovery", () => {
         length: 3000,
         width: 400,
         productTypes: [{ id: 1, length: 120, width: 80, height: 40 }],
+        originShift: { x: 0, y: 0, z: 0 },
       },
       {
         type: "delta",
@@ -151,8 +152,9 @@ describe("gateway discovery", () => {
         lowerArmLength: 800,
         workingArea: { radius: 600, zMin: -1100, zMax: -600, coneHeight: 0, coneBottomRadius: 0 },
         limitArea: null,
-        zones: [{ conveyorId: 10, start: 1200, end: 1800, kind: "pick", allocationOffset: 0 }],
+        zones: [{ conveyorId: 10, start: 1200, end: 1800, kind: "pick", allocationOffset: 0, ccsOffset: 0 }],
         fingers: [],
+        originShift: { x: 0, y: 0, z: 0 },
       },
     ]);
   });
@@ -181,6 +183,29 @@ describe("gateway discovery", () => {
     });
   });
 
+  it("publishes each zone's CCS offset and every component's origin shift, zero when not set", async () => {
+    const shiftedBelt: MachineComponent = { ...infeed, value: conveyor({ originShift: { fX: 500, fY: -20 } }) };
+    const robotWithCcs: MachineComponent = {
+      ...robot,
+      value: delta({
+        originShift: { fZ: -700 },
+        zones: [
+          { nConveyorId: 10, fStart: 1200, fEnd: 1800, eKind: E_VisuZoneKind.PICK, fCcsOffset: 1350 },
+          { nConveyorId: 10, fStart: 2000, fEnd: 2400, eKind: E_VisuZoneKind.PLACE },
+        ],
+      }),
+    };
+    const gantry: MachineComponent = { id: 30, name: "IDH", path: "MAIN.stIdh", kind: "xtsGantry", value: xtsGantry() };
+    const t = setup([shiftedBelt, robotWithCcs, gantry]);
+    await t.gateway.cycle();
+
+    const [belt, d, g] = t.configs()[0]!.components;
+    expect(belt!.originShift).toEqual({ x: 500, y: -20, z: 0 });
+    expect(d!.originShift).toEqual({ x: 0, y: 0, z: -700 });
+    expect(g!.originShift).toEqual({ x: 0, y: 0, z: 0 });
+    expect(d!.type === "delta" && d!.zones.map((z) => z.ccsOffset)).toEqual([1350, 0]);
+  });
+
   it("publishes XTS gantries and loops with their geometry and zones", async () => {
     const t = setup([infeed, gantry, loop]);
     await t.gateway.cycle();
@@ -204,8 +229,9 @@ describe("gateway discovery", () => {
         toolOffsetZ: -400,
         moverLength: 155,
         moverWidth: 80,
-        zones: [{ conveyorId: 10, start: 0, end: 800, kind: "pick", allocationOffset: 0 }],
+        zones: [{ conveyorId: 10, start: 0, end: 800, kind: "pick", allocationOffset: 0, ccsOffset: 0 }],
         fingers: [],
+        originShift: { x: 0, y: 0, z: 0 },
       },
       {
         type: "xtsLoop",
@@ -218,8 +244,9 @@ describe("gateway discovery", () => {
         toolOffset: 120,
         moverLength: 100,
         moverWidth: 60,
-        zones: [{ conveyorId: 10, start: 2500, end: 2900, kind: "place", allocationOffset: 0 }],
+        zones: [{ conveyorId: 10, start: 2500, end: 2900, kind: "place", allocationOffset: 0, ccsOffset: 0 }],
         fingers: [],
+        originShift: { x: 0, y: 0, z: 0 },
       },
     ]);
   });
@@ -243,8 +270,9 @@ describe("gateway discovery", () => {
       zMin: -600,
       zMax: 0,
       railHeight: 1200,
-      zones: [{ conveyorId: 10, start: 100, end: 900, kind: "pick", allocationOffset: 0 }],
+      zones: [{ conveyorId: 10, start: 100, end: 900, kind: "pick", allocationOffset: 0, ccsOffset: 0 }],
       fingers: [],
+      originShift: { x: 0, y: 0, z: 0 },
     });
   });
 

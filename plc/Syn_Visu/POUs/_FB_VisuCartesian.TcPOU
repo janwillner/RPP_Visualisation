@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuCartesian" Id="{b15669cc-2450-4395-9908-fe63c4facdc2}" SpecialFunc="None">
+  <POU Name="_FB_VisuCartesian" Id="{96e8e7c6-667a-4548-864d-10d05dd749ce}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -260,6 +260,33 @@ IF m_SetFingerState THEN
 END_IF]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_SetOriginShift" Id="{2501dad8-487e-45df-9e39-a5b44ee2c6b7}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Moves the robot's shown coordinate system (origin triad, local measuring coordinates) away from axis zero<br>
+(stPose), in the robot's local frame. Geometry and axis values stay relative to stPose. TRUE if anything changed.<br>
+****************************************************************************************************)
+METHOD m_SetOriginShift : BOOL
+VAR_INPUT
+	vi_lr_X								: LREAL;	// [mm] along the robot's local X
+	vi_lr_Y								: LREAL := 0;	// [mm] along the robot's local Y
+	vi_lr_Z								: LREAL := 0;	// [mm] along the robot's local Z
+END_VAR
+VAR
+	TempNew								: ST_VisuCartesianConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TempNew := vo_Visu.stConfig;
+TempNew.stOriginShift.fX := vi_lr_X;
+TempNew.stOriginShift.fY := vi_lr_Y;
+TempNew.stOriginShift.fZ := vi_lr_Z;
+m_SetOriginShift := m_ApplyConfig(TempNew);]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_SetZone" Id="{8ac94b18-81ff-4dab-a603-d70635561648}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -276,9 +303,10 @@ METHOD m_SetZone : BOOL
 VAR_INPUT
 	vi_udn_ConveyorId					: UDINT;	// [-] manifest id of the conveyor
 	vi_e_Kind							: E_VisuZoneKind;
-	vi_lr_Start							: LREAL;	// [mm] along the conveyor from its start (belt coordinates, not MCS)
-	vi_lr_End							: LREAL;	// [mm] along the conveyor from its start
+	vi_lr_Start							: LREAL;	// [mm] along the conveyor from its origin (belt coordinates, not MCS)
+	vi_lr_End							: LREAL;	// [mm] along the conveyor from its origin
 	vi_lr_AllocationOffset				: LREAL := 0;	// [mm] before vi_lr_End up to which products may be allocated; 0 = no limit
+	vi_lr_CcsOffset						: LREAL := 0;	// [mm] along the conveyor from its origin: the robot's conveyor coordinate system
 END_VAR
 VAR
 	TempNew								: ST_VisuCartesianConfig;
@@ -309,6 +337,7 @@ TempNew.aZones[un_TempIndex].eKind := vi_e_Kind;
 TempNew.aZones[un_TempIndex].fStart := vi_lr_Start;
 TempNew.aZones[un_TempIndex].fEnd := vi_lr_End;
 TempNew.aZones[un_TempIndex].fAllocationOffset := vi_lr_AllocationOffset;
+TempNew.aZones[un_TempIndex].fCcsOffset := vi_lr_CcsOffset;
 m_ApplyConfig(TempNew);
 m_SetZone := TRUE;]]></ST>
       </Implementation>

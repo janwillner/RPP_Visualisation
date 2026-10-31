@@ -1,4 +1,4 @@
-# PLC contract (library `Syn_Visu`, protocol version 8)
+# PLC contract (library `Syn_Visu`, protocol version 9)
 
 This is the PLC side of the contract the gateway reads. It is implemented by the TwinCAT library project in
 `plc/Syn_Visu` (solution `plc/RPP_Visu.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
@@ -41,6 +41,15 @@ The library is installed under the title `SynVisu` from `Syntegon Group`.
 - Zone allocation: `fAllocationOffset` is the distance in mm before `fEnd`, against the conveying direction, up to
   which a robot may still allocate products in the zone, so it does not move out of the zone while approaching. The
   allocation area runs from `fStart` to `fEnd − fAllocationOffset` (never beyond `fStart`); 0 = no allocation limit.
+- Zone CCS: `fCcsOffset` is the belt coordinate (like `fStart` / `fEnd`) of the robot's conveyor coordinate system
+  (CCS) on that conveyor. It is drawn as a small black crosshair on the belt's centre line, in the zones layer, and is a
+  measure-mode snap point. A CCS outside its zone raises a warning.
+- Origin shift: every config has `stOriginShift : ST_VisuPosition`, mm in the component's local frame from `stPose`
+  (no rotation), where the component's coordinate system lies; 0 = at the pose. The origin triad and the local
+  measuring coordinates are shown from there. For a conveyor the belt coordinates also count from it: a zone's
+  `fStart`, `fEnd` and `fCcsOffset` are measured along the belt from `stOriginShift.fX` (its Y and Z move only the
+  shown origin). For robots only the shown origin moves; geometry, working and limit area, axis values and mover
+  positions stay relative to `stPose`. MCS values (latch poses, finger poses, TCP) are not affected.
 - XTS gantry (e.g. IDH): local frame at the track start on top of the movers with Z = 0; the track runs along local +Y,
   each mover's X axis along local +X, the common Z axis along local +Z. Gripper flange of a mover in the local frame:
   (X + `fToolOffsetX`, position, Z + `fToolOffsetZ`). Only actual values are reported; a gripper rotation (C) shows
@@ -72,6 +81,7 @@ The library is installed under the title `SynVisu` from `Syntegon Group`.
 - Protocol version 6 added the Delta limit area (`stLimitArea`, `ST_VisuLimitArea`) and the zones' `fAllocationOffset`.
 - Protocol version 7 added gripper fingers (`ST_VisuFinger`, `ST_VisuFingerState`, `nFingerCount`, `aFingers`, `aFingerStates`, the product's `nFingerId`) and removed the tool rotations: the Delta's `bHasRotationAxis` and TCP `fRz` (the TCP is now an `ST_VisuPosition`), the XTS gantry's `fCMin`/`fCMax` and mover `fC`, and the Cartesian robot's `fCMin`/`fCMax`/`fAMin`/`fAMax`/`fToolLength` and `fC`/`fA`.
 - Protocol version 8 added faults (`ST_VisuFault`, `stFault` in every component state and every XTS mover).
+- Protocol version 9 added the zones' `fCcsOffset` and `stOriginShift` in every config.
 
 ## What the library contains
 
@@ -111,6 +121,7 @@ All component FBs:
 | `m_Register(vio_Manifest, vi_udn_Id, vi_str_Name, vi_str_Path)` | Adds the component to the manifest (bumps `nConfigVersion` when new). `vi_str_Path` is the symbol path of the instance's `vo_Visu`. Idempotent: call it every cycle, which also keeps `nProtocolVersion` current and the manifest reference valid after an online change |
 | `m_Id()` | Manifest id given to `m_Register`, 0 before |
 | `m_SetFault(vi_b_Active, vi_str_Message)` | Sets or clears the component's fault; it stays until cleared with `m_SetFault(FALSE, '')` |
+| `m_SetOriginShift(vi_lr_X, vi_lr_Y := 0, vi_lr_Z := 0)` | Moves the component's coordinate system from its pose (local frame, mm); for a conveyor the belt coordinates count from there |
 
 All configuration methods may be called every cycle: they bump `nConfigVersion` only when a value actually changes,
 and return TRUE in that case.
@@ -121,7 +132,7 @@ All robot FBs (Delta, XTS gantry, XTS loop, Cartesian):
 | --- | --- |
 | `m_SetFinger(vi_un_Finger, vi_lr_Diameter, vi_lr_Height)` | Defines finger `vi_un_Finger` (1-based) of the gripper (for XTS kinematics: of every mover's gripper); the finger count grows to it |
 | `m_ClearFingers()` | Removes the gripper definition |
-| `m_SetZone(vi_udn_ConveyorId, vi_e_Kind, vi_lr_Start, vi_lr_End, vi_lr_AllocationOffset := 0)` | Adds or updates the pick or place zone for a conveyor |
+| `m_SetZone(vi_udn_ConveyorId, vi_e_Kind, vi_lr_Start, vi_lr_End, vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 0)` | Adds or updates the pick or place zone for a conveyor, with the robot's CCS on it |
 | `m_ClearZones()` | Removes all zones |
 
 `_FB_VisuConveyor`:

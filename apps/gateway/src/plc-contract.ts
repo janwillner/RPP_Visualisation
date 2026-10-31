@@ -98,6 +98,8 @@ export interface ST_VisuConveyorConfig {
   fWidth: number;
   nProductTypeCount: number;
   aProductTypes: ST_VisuProductType[];
+  /** mm in the local frame from stPose; belt coordinates count from here. */
+  stOriginShift: ST_VisuPosition;
 }
 
 export interface ST_VisuProduct {
@@ -149,6 +151,8 @@ export interface ST_VisuZone {
   fEnd: number;
   eKind: PlcEnum;
   fAllocationOffset: number;
+  /** mm along the conveyor's local X: the robot's conveyor coordinate system. */
+  fCcsOffset: number;
 }
 
 export interface ST_VisuDeltaConfig {
@@ -163,6 +167,8 @@ export interface ST_VisuDeltaConfig {
   aZones: ST_VisuZone[];
   nFingerCount: number;
   aFingers: ST_VisuFinger[];
+  /** mm in the local frame from stPose; only where the origin is shown. */
+  stOriginShift: ST_VisuPosition;
 }
 
 export interface ST_VisuDeltaState {
@@ -195,6 +201,8 @@ export interface ST_VisuXtsGantryConfig {
   aZones: ST_VisuZone[];
   nFingerCount: number;
   aFingers: ST_VisuFinger[];
+  /** mm in the local frame from stPose; only where the origin is shown. */
+  stOriginShift: ST_VisuPosition;
 }
 
 export interface ST_VisuGantryMover {
@@ -231,6 +239,8 @@ export interface ST_VisuXtsLoopConfig {
   aZones: ST_VisuZone[];
   nFingerCount: number;
   aFingers: ST_VisuFinger[];
+  /** mm in the local frame from stPose; only where the origin is shown. */
+  stOriginShift: ST_VisuPosition;
 }
 
 export interface ST_VisuLoopMover {
@@ -266,6 +276,8 @@ export interface ST_VisuCartesianConfig {
   aZones: ST_VisuZone[];
   nFingerCount: number;
   aFingers: ST_VisuFinger[];
+  /** mm in the local frame from stPose; only where the origin is shown. */
+  stOriginShift: ST_VisuPosition;
 }
 
 export interface ST_VisuCartesianState {

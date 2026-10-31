@@ -94,6 +94,7 @@ export function mapConveyorConfig(identity: ComponentIdentity, c: ST_VisuConveyo
       width: t.fWidth,
       height: t.fHeight,
     })),
+    originShift: mapPosition(c.stOriginShift),
   };
 }
 
@@ -130,6 +131,7 @@ export function mapDeltaConfig(identity: ComponentIdentity, c: ST_VisuDeltaConfi
       : null,
     zones: mapZones(c.aZones, c.nZoneCount),
     fingers: mapFingers(c),
+    originShift: mapPosition(c.stOriginShift),
   };
 }
 
@@ -140,6 +142,7 @@ function mapZones(zones: ST_VisuZone[], count: number): Zone[] {
     end: w.fEnd,
     kind: ZONE_KINDS[enumValue(w.eKind)] ?? "pick",
     allocationOffset: w.fAllocationOffset,
+    ccsOffset: w.fCcsOffset,
   }));
 }
 
@@ -160,6 +163,7 @@ export function mapXtsGantryConfig(identity: ComponentIdentity, c: ST_VisuXtsGan
     moverWidth: c.fMoverWidth,
     zones: mapZones(c.aZones, c.nZoneCount),
     fingers: mapFingers(c),
+    originShift: mapPosition(c.stOriginShift),
   };
 }
 
@@ -175,6 +179,7 @@ export function mapXtsLoopConfig(identity: ComponentIdentity, c: ST_VisuXtsLoopC
     moverWidth: c.fMoverWidth,
     zones: mapZones(c.aZones, c.nZoneCount),
     fingers: mapFingers(c),
+    originShift: mapPosition(c.stOriginShift),
   };
 }
 
@@ -229,6 +234,7 @@ export function mapCartesianConfig(identity: ComponentIdentity, c: ST_VisuCartes
     railHeight: c.fRailHeight,
     zones: mapZones(c.aZones, c.nZoneCount),
     fingers: mapFingers(c),
+    originShift: mapPosition(c.stOriginShift),
   };
 }
 

@@ -15,6 +15,7 @@ import {
   type ST_VisuManifest,
   type ST_VisuManifestEntry,
   type ST_VisuPose,
+  type ST_VisuPosition,
   type ST_VisuProduct,
   type ST_VisuGantryMover,
   type ST_VisuLoopMover,
@@ -74,14 +75,22 @@ export function emptyProduct(): ST_VisuProduct {
 }
 
 function emptyZone(): ST_VisuZone {
-  return { nConveyorId: 0, fStart: 0, fEnd: 0, eKind: E_VisuZoneKind.PICK, fAllocationOffset: 0 };
+  return { nConveyorId: 0, fStart: 0, fEnd: 0, eKind: E_VisuZoneKind.PICK, fAllocationOffset: 0, fCcsOffset: 0 };
 }
 
 /** A zone as tests and the simulator write it; the allocation offset defaults to 0. */
-export type ZoneSpec = Omit<ST_VisuZone, "fAllocationOffset"> & { fAllocationOffset?: number };
+export type ZoneSpec = Omit<ST_VisuZone, "fAllocationOffset" | "fCcsOffset"> & {
+  fAllocationOffset?: number;
+  fCcsOffset?: number;
+};
 
 function zoneList(spec: { zones?: ZoneSpec[] }): ST_VisuZone[] {
-  return (spec.zones ?? []).map((z) => ({ fAllocationOffset: 0, ...z }));
+  return (spec.zones ?? []).map((z) => ({ fAllocationOffset: 0, fCcsOffset: 0, ...z }));
+}
+
+/** Every config's origin shift; zero unless given. */
+function originShift(spec: { originShift?: Partial<ST_VisuPosition> }): { stOriginShift: ST_VisuPosition } {
+  return { stOriginShift: { fX: 0, fY: 0, fZ: 0, ...spec.originShift } };
 }
 
 function padded<T>(items: T[], size: number, empty: () => T): T[] {
@@ -90,6 +99,7 @@ function padded<T>(items: T[], size: number, empty: () => T): T[] {
 
 export interface ConveyorSpec {
   pose?: Partial<ST_VisuPose>;
+  originShift?: Partial<ST_VisuPosition>;
   length?: number;
   width?: number;
   productTypes?: { nId: number; fLength: number; fWidth: number; fHeight: number }[];
@@ -109,6 +119,7 @@ export function conveyor(spec: ConveyorSpec = {}): ST_VisuConveyor {
       fWidth: spec.width ?? 400,
       nProductTypeCount: productTypes.length,
       aProductTypes: padded(productTypes, MAX_PRODUCT_TYPES, () => ({ nId: 0, fLength: 0, fWidth: 0, fHeight: 0 })),
+      ...originShift(spec),
     },
     stState: {
       nTimestamp: spec.timestamp ?? 0n,
@@ -122,6 +133,7 @@ export function conveyor(spec: ConveyorSpec = {}): ST_VisuConveyor {
 
 export interface DeltaSpec {
   pose?: Partial<ST_VisuPose>;
+  originShift?: Partial<ST_VisuPosition>;
   baseRadius?: number;
   effectorRadius?: number;
   upperArmLength?: number;
@@ -150,6 +162,7 @@ export function delta(spec: DeltaSpec = {}): ST_VisuDelta {
       nZoneCount: zones.length,
       aZones: padded(zones, MAX_ZONES, emptyZone),
       ...fingerConfig(spec),
+      ...originShift(spec),
     },
     stState: {
       nTimestamp: spec.timestamp ?? 0n,
@@ -163,6 +176,7 @@ export function delta(spec: DeltaSpec = {}): ST_VisuDelta {
 
 export interface XtsGantrySpec {
   pose?: Partial<ST_VisuPose>;
+  originShift?: Partial<ST_VisuPosition>;
   moduleCount?: number;
   moduleLength?: number;
   zones?: ZoneSpec[];
@@ -201,6 +215,7 @@ export function xtsGantry(spec: XtsGantrySpec = {}): ST_VisuXtsGantry {
       nZoneCount: zones.length,
       aZones: padded(zones, MAX_ZONES, emptyZone),
       ...fingerConfig(spec),
+      ...originShift(spec),
     },
     stState: {
       nTimestamp: spec.timestamp ?? 0n,
@@ -214,6 +229,7 @@ export function xtsGantry(spec: XtsGantrySpec = {}): ST_VisuXtsGantry {
 
 export interface XtsLoopSpec {
   pose?: Partial<ST_VisuPose>;
+  originShift?: Partial<ST_VisuPosition>;
   straightLength?: number;
   curveRadius?: number;
   zones?: ZoneSpec[];
@@ -244,6 +260,7 @@ export function xtsLoop(spec: XtsLoopSpec = {}): ST_VisuXtsLoop {
       nZoneCount: zones.length,
       aZones: padded(zones, MAX_ZONES, emptyZone),
       ...fingerConfig(spec),
+      ...originShift(spec),
     },
     stState: {
       nTimestamp: spec.timestamp ?? 0n,
@@ -256,6 +273,7 @@ export function xtsLoop(spec: XtsLoopSpec = {}): ST_VisuXtsLoop {
 
 export interface CartesianSpec {
   pose?: Partial<ST_VisuPose>;
+  originShift?: Partial<ST_VisuPosition>;
   zones?: ZoneSpec[];
   fingers?: ST_VisuFinger[];
   state?: Partial<Omit<ST_VisuCartesianState, "nTimestamp">>;
@@ -277,6 +295,7 @@ export function cartesian(spec: CartesianSpec = {}): ST_VisuCartesian {
       nZoneCount: zones.length,
       aZones: padded(zones, MAX_ZONES, emptyZone),
       ...fingerConfig(spec),
+      ...originShift(spec),
     },
     stState: {
       nTimestamp: spec.timestamp ?? 0n,

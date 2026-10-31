@@ -21,6 +21,9 @@ STRUCT
 	aZones : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone; // pick and place zones
 	nFingerCount : UINT; // fingers of every mover's gripper, 0 = no gripper definition
 	aFingers : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFinger;
+	(* mm in the local frame from stPose: origin of the gantry's coordinate system as shown (origin triad, local
+	   measuring coordinates). The geometry and mover positions stay relative to stPose. *)
+	stOriginShift : ST_VisuPosition;
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

@@ -10,6 +10,9 @@ STRUCT
 	(* mm before fEnd, against the conveying direction: the robot may allocate products in the zone only up to
 	   fEnd - fAllocationOffset, so it does not move out of the zone while approaching. 0 = no allocation limit. *)
 	fAllocationOffset : LREAL;
+	(* mm along the conveyor's local X, like fStart / fEnd: position of the robot's conveyor coordinate system (CCS)
+	   on this conveyor. Drawn as a crosshair in the zone. *)
+	fCcsOffset : LREAL;
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

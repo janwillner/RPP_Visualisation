@@ -11,6 +11,7 @@ import {
   fingerStates,
   xtsGantry,
   xtsLoop,
+  type ZoneSpec,
 } from "./plc-builders";
 import {
   E_VisuProductState,
@@ -233,6 +234,11 @@ const productTypes = [{ nId: PRODUCT.type, fLength: PRODUCT.length, fWidth: PROD
 const FAULT_PERIOD_MS = 20_000;
 const FAULT_DURATION_MS = 5_000;
 
+/** The simulated robots keep their conveyor coordinate system (CCS) in the middle of each zone. */
+function centred(zones: ZoneSpec[]): ZoneSpec[] {
+  return zones.map((z) => ({ ...z, fCcsOffset: (z.fStart + z.fEnd) / 2 }));
+}
+
 export function createSimulator(options: { seed?: number } = {}): Simulator {
   const random = mulberry32(options.seed ?? Date.now());
   const plc = new InMemoryPlc();
@@ -255,7 +261,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         ...GEOMETRY,
         fingers: [SUCTION],
         limitArea: { fXMin: -600, fXMax: 600, fYMin: -600, fYMax: 600, fZMin: -1500, fZMax: -700 },
-        zones: [
+        zones: centred([
           {
             nConveyorId: INFEED.id,
             fStart: PICK_ZONE.start,
@@ -264,7 +270,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
             fAllocationOffset: PICK_ZONE.allocationOffset,
           },
           { nConveyorId: OUTFEED.id, fStart: PLACE_X - 300, fEnd: PLACE_X + 300, eKind: E_VisuZoneKind.PLACE },
-        ],
+        ]),
       }),
     },
     {
@@ -277,7 +283,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         straightLength: LOOP.straight,
         curveRadius: LOOP.radius,
         fingers: [SUCTION],
-        zones: [
+        zones: centred([
           {
             nConveyorId: FXX_INFEED.id,
             fStart: LOOP.x - FXX_INFEED.x,
@@ -290,7 +296,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
             fEnd: LOOP.x + LOOP.place - FXX_OUTFEED.x + 100,
             eKind: E_VisuZoneKind.PLACE,
           },
-        ],
+        ]),
       }),
     },
     {
@@ -303,7 +309,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         moduleCount: GANTRY.modules,
         moduleLength: GANTRY.moduleLength,
         fingers: [SUCTION],
-        zones: [
+        zones: centred([
           {
             nConveyorId: IDH_INFEED.id,
             fStart: GANTRY.x - IDH_INFEED.x,
@@ -316,7 +322,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
             fEnd: GANTRY.x - TRAY.x + GANTRY.modules * GANTRY.moduleLength,
             eKind: E_VisuZoneKind.PLACE,
           },
-        ],
+        ]),
       }),
     },
     { id: CART_INFEED.id, name: "Cartesian infeed", path: CART_INFEED.path, kind: "conveyor", value: belt(CART_INFEED) },
@@ -329,7 +335,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       value: cartesian({
         pose: { fX: CART.x, fY: CART.y, fZ: CART.z, fRz: -90 },
         fingers: [CART_TOOL.cup, CART_TOOL.jaw, CART_TOOL.jaw],
-        zones: [
+        zones: centred([
           { nConveyorId: CART_INFEED.id, fStart: CART.x, fEnd: CART.x + 1000, eKind: E_VisuZoneKind.PICK },
           {
             nConveyorId: CART_OUTFEED.id,
@@ -337,7 +343,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
             fEnd: CART.x + CART.yPlace + 200,
             eKind: E_VisuZoneKind.PLACE,
           },
-        ],
+        ]),
       }),
     },
   ]);

@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FC_GetVersionSynVisu" Id="{7698d9eb-fee2-4a62-94de-f323df96fbe2}" SpecialFunc="None">
+  <POU Name="_FC_GetVersionSynVisu" Id="{87e8908e-1e05-4b35-bea0-bb1979d575a0}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -13,6 +13,7 @@ VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
 Syn_Visu 3.1.0  ¦ 2026-10-31 ¦ J.Willner ¦ Faults of components and XTS movers (protocol 8)<br>
 Syn_Visu 3.2.0  ¦ 2026-10-31 ¦ J.Willner ¦ _FB_VisuConveyor.m_MoveProduct<br>
+Syn_Visu 3.3.0  ¦ 2026-10-31 ¦ J.Willner ¦ Zone CCS offset, origin shift per component (protocol 9)<br>
 ****************************************************************************************************)
 FUNCTION _FC_GetVersionSynVisu : UINT
 VAR_INPUT
@@ -21,7 +22,7 @@ END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[CASE vi_n_VersionElement OF
 	1: _FC_GetVersionSynVisu := 3;
-	2: _FC_GetVersionSynVisu := 2;
+	2: _FC_GetVersionSynVisu := 3;
 	3: _FC_GetVersionSynVisu := 0;
 ELSE
 	_FC_GetVersionSynVisu := 16#FFFF;

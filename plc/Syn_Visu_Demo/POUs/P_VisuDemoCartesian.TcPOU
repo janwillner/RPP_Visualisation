@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoCartesian" Id="{62dd7627-bc12-4752-9beb-21d1b110e909}" SpecialFunc="None">
+  <POU Name="P_VisuDemoCartesian" Id="{13cffabc-f95c-4fa8-b77d-0fb864510be7}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -106,6 +106,8 @@ fb_CartInfeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_CART_BELT_LENG
 BeltPose.fY := lr_CART_OUTFEED_Y;
 fb_CartOutfeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_CART_BELT_LENGTH,
 	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
+(* The infeed's belt coordinates count from the robot's Y = 0, 1000 mm behind the belt start. *)
+fb_CartInfeed.m_SetOriginShift(vi_lr_X := lr_CART_X);
 fb_CartInfeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
 	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
 fb_CartOutfeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
@@ -152,9 +154,10 @@ fb_Cartesian.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.D
 fb_Cartesian.m_SetFinger(vi_un_Finger := 2, vi_lr_Diameter := lr_CART_JAW_DIAMETER, vi_lr_Height := lr_CART_JAW_HEIGHT);
 fb_Cartesian.m_SetFinger(vi_un_Finger := 3, vi_lr_Diameter := lr_CART_JAW_DIAMETER, vi_lr_Height := lr_CART_JAW_HEIGHT);
 fb_Cartesian.m_SetZone(vi_udn_ConveyorId := fb_CartInfeed.m_Id(), vi_e_Kind := E_VisuZoneKind.PICK,
-	vi_lr_Start := lr_CART_X, vi_lr_End := lr_CART_X + 1000);
+	vi_lr_Start := 0, vi_lr_End := 1000, vi_lr_CcsOffset := 0);
 fb_Cartesian.m_SetZone(vi_udn_ConveyorId := fb_CartOutfeed.m_Id(), vi_e_Kind := E_VisuZoneKind.PLACE,
-	vi_lr_Start := lr_CART_X + lr_CART_Y_PLACE - 200, vi_lr_End := lr_CART_X + lr_CART_Y_PLACE + 200);
+	vi_lr_Start := lr_CART_X + lr_CART_Y_PLACE - 200, vi_lr_End := lr_CART_X + lr_CART_Y_PLACE + 200,
+	vi_lr_CcsOffset := lr_CART_X + lr_CART_Y_PLACE);
 m_Step();
 fb_Cartesian.m_SetAxes(vi_lr_X := lr_CartX, vi_lr_Y := lr_CartY, vi_lr_Z := lr_CartZ, vi_b_GripperActive := b_CartGrip);
 

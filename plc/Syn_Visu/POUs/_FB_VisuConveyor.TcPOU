@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuConveyor" Id="{928cf7b4-2e7f-481c-9422-f721470bd59e}" SpecialFunc="None">
+  <POU Name="_FB_VisuConveyor" Id="{e5db6457-2101-4e5d-b4d4-c31d1c70192a}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -466,6 +466,33 @@ ELSE
 END_IF
 lr_LastModuloPosition := vi_lr_ModuloPosition;
 m_SetModuloBeltPosition := m_SetBeltPosition(lr_TempPosition);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetOriginShift" Id="{cf660ade-3b6b-47d7-8a63-b69dcae1eff0}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Moves the conveyor's coordinate system away from the belt start (stPose), in the belt's local frame. Belt<br>
+coordinates (zones' start, end and CCS offset) then count from the shifted origin. TRUE if anything changed.<br>
+****************************************************************************************************)
+METHOD m_SetOriginShift : BOOL
+VAR_INPUT
+	vi_lr_X								: LREAL;	// [mm] along the conveying direction
+	vi_lr_Y								: LREAL := 0;	// [mm] across the belt
+	vi_lr_Z								: LREAL := 0;	// [mm] along the belt surface normal
+END_VAR
+VAR
+	TempNew								: ST_VisuConveyorConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TempNew := vo_Visu.stConfig;
+TempNew.stOriginShift.fX := vi_lr_X;
+TempNew.stOriginShift.fY := vi_lr_Y;
+TempNew.stOriginShift.fZ := vi_lr_Z;
+m_SetOriginShift := m_ApplyConfig(TempNew);]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_SetProductState" Id="{d750e750-04ba-4690-b114-957e9051074a}">

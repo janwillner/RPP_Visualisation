@@ -9,7 +9,7 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 
 /** Full 6-DOF pose. Rotation order: R = Rz(rz) · Ry(ry) · Rx(rx). */
 export const PoseSchema = z.object({
@@ -84,6 +84,8 @@ export const ConveyorConfigSchema = z.object({
   length: z.number(),
   width: z.number(),
   productTypes: z.array(ProductTypeSchema),
+  /** Origin of the component's coordinate system, mm in its local frame from `pose`; belt coordinates (zones' start, end, CCS offset) count from it. */
+  originShift: PositionSchema,
 });
 export type ConveyorConfig = z.infer<typeof ConveyorConfigSchema>;
 
@@ -126,6 +128,8 @@ export const ZoneSchema = z.object({
    * up to `end − allocationOffset`. 0 means no allocation limit.
    */
   allocationOffset: z.number(),
+  /** Belt coordinate, like `start` and `end`, of the robot's conveyor coordinate system (CCS) on this conveyor. */
+  ccsOffset: z.number(),
 });
 export type Zone = z.infer<typeof ZoneSchema>;
 
@@ -144,8 +148,10 @@ export const DeltaConfigSchema = z.object({
   /** Null when the robot has no limit area. */
   limitArea: LimitAreaSchema.nullable(),
   zones: z.array(ZoneSchema),
-  /** Gripper fingers; empty when the robot has no gripper definition. */
+  /** Gripper fingers; empty when there is no gripper definition. */
   fingers: z.array(FingerSchema),
+  /** Origin of the component's coordinate system, mm in its local frame from `pose`; only where the origin is shown (origin triad, local measuring coordinates). */
+  originShift: PositionSchema,
 });
 export type DeltaConfig = z.infer<typeof DeltaConfigSchema>;
 
@@ -174,6 +180,8 @@ export const XtsGantryConfigSchema = z.object({
   zones: z.array(ZoneSchema),
   /** Gripper fingers of every mover; empty when there is no gripper definition. */
   fingers: z.array(FingerSchema),
+  /** Origin of the component's coordinate system, mm in its local frame from `pose`; only where the origin is shown (origin triad, local measuring coordinates). */
+  originShift: PositionSchema,
 });
 export type XtsGantryConfig = z.infer<typeof XtsGantryConfigSchema>;
 
@@ -196,6 +204,8 @@ export const XtsLoopConfigSchema = z.object({
   zones: z.array(ZoneSchema),
   /** Gripper fingers of every mover; empty when there is no gripper definition. */
   fingers: z.array(FingerSchema),
+  /** Origin of the component's coordinate system, mm in its local frame from `pose`; only where the origin is shown (origin triad, local measuring coordinates). */
+  originShift: PositionSchema,
 });
 export type XtsLoopConfig = z.infer<typeof XtsLoopConfigSchema>;
 
@@ -221,6 +231,8 @@ export const CartesianConfigSchema = z.object({
   zones: z.array(ZoneSchema),
   /** Gripper fingers; empty when the robot has no gripper definition. */
   fingers: z.array(FingerSchema),
+  /** Origin of the component's coordinate system, mm in its local frame from `pose`; only where the origin is shown (origin triad, local measuring coordinates). */
+  originShift: PositionSchema,
 });
 export type CartesianConfig = z.infer<typeof CartesianConfigSchema>;
 

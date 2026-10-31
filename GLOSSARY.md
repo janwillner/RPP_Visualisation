@@ -24,6 +24,10 @@ _Avoid_: connection, target, IPC (an IPC may run several sources)
 The PLC's list of the components it currently has, each with an id, a type, a display name and where its data lives.
 _Avoid_: descriptor, registry
 
+**Origin shift**:
+Where a component's coordinate system lies relative to its pose. A conveyor's belt coordinates count from it.
+_Avoid_: offset, zero point
+
 **Configuration** (of a component):
 The rarely changing description of a component, such as its pose, dimensions, geometry, working area and zones.
 _Avoid_: settings, parameters
@@ -146,3 +150,7 @@ _Avoid_: reservation zone, booking area
 **Allocation limit**:
 The point in a zone, a set distance before its end, beyond which a robot no longer allocates products, so that it does not leave the zone while approaching one.
 _Avoid_: allocation end, reservation limit
+
+**CCS (conveyor coordinate system)**:
+Where a robot's coordinate system for one conveyor lies along that conveyor, given per zone as a belt coordinate.
+_Avoid_: client position, tracking origin

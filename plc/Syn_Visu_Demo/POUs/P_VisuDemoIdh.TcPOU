@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoIdh" Id="{4e6779b2-1baf-4442-aae8-266ee3b93365}" SpecialFunc="None">
+  <POU Name="P_VisuDemoIdh" Id="{c605b929-9f81-4ebb-99c9-6224424c5f71}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -144,10 +144,11 @@ fb_Idh.m_Configure(vi_Pose := XtsPose, vi_un_ModuleCount := un_GANTRY_MODULES, v
 fb_Idh.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER,
 	vi_lr_Height := DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT);
 fb_Idh.m_SetZone(vi_udn_ConveyorId := fb_IdhInfeed.m_Id(), vi_e_Kind := E_VisuZoneKind.PICK, vi_lr_Start := lr_GANTRY_X,
-	vi_lr_End := lr_GANTRY_X + UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH);
+	vi_lr_End := lr_GANTRY_X + UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH, vi_lr_CcsOffset := lr_GANTRY_X);
 fb_Idh.m_SetZone(vi_udn_ConveyorId := fb_IdhTray.m_Id(), vi_e_Kind := E_VisuZoneKind.PLACE,
 	vi_lr_Start := lr_GANTRY_X - lr_TRAY_X,
-	vi_lr_End := lr_GANTRY_X - lr_TRAY_X + UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH);
+	vi_lr_End := lr_GANTRY_X - lr_TRAY_X + UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH,
+	vi_lr_CcsOffset := lr_GANTRY_X - lr_TRAY_X);
 m_Step();
 
 

@@ -12,6 +12,7 @@ import {
   type Fault,
   type Finger,
   type FingerState,
+  type ComponentConfig,
   type Pose,
   type Position,
   type Product,
@@ -138,6 +139,8 @@ export interface SceneZone {
   transform: Transform;
   length: number;
   width: number;
+  /** The robot's conveyor coordinate system (CCS) on the belt's centre line, oriented like the belt. */
+  ccs: Transform;
   /**
    * Part of the zone in which the robot may still allocate products: from the zone start up to the allocation limit
    * (`end − allocationOffset`). Null when the zone has no allocation limit.
@@ -395,7 +398,7 @@ export function buildScene(
 
   /** Fingers of one robot's grippers (one per mover), their grip points as carriers and snap points. */
   const addGripper = (
-    robot: { id: number; name: string; pose: Pose; fingers: Finger[] },
+    robot: { id: number; name: string; pose: Pose; fingers: Finger[]; originShift: Position },
     grippers: GripperSource[],
   ) => {
     const owner = snapOwner(robot, frameFromPose(robot.pose));
@@ -435,15 +438,24 @@ export function buildScene(
       }
       if (hidden.has(belt.id)) continue;
       const beltFrame = frameFromPose(belt.pose);
+      // Belt coordinates count from the conveyor's origin, which may be shifted from the belt start.
+      const along = (beltCoordinate: number) => belt.originShift.x + beltCoordinate;
       const limit = allocationLimit(win);
       const zoneCentre = (win.start + win.end) / 2;
+      const name = `${c.name} ${win.kind} zone on ${belt.name}`;
+      if (win.ccsOffset < Math.min(win.start, win.end) || win.ccsOffset > Math.max(win.start, win.end)) {
+        warnings.push(
+          `${c.name}: CCS of the ${win.kind} zone on ${belt.name} (${win.ccsOffset} mm) lies outside the zone (${win.start} to ${win.end} mm)`,
+        );
+      }
       zones.push({
         robotId: c.id,
         conveyorId: belt.id,
         kind: win.kind,
-        transform: toRendererTransform(child(beltFrame, [zoneCentre, 0, 0])),
+        transform: toRendererTransform(child(beltFrame, [along(zoneCentre), 0, 0])),
         length: Math.abs(win.end - win.start) * MM,
         width: belt.width * MM,
+        ccs: toRendererTransform(child(beltFrame, [along(win.ccsOffset), 0, 0])),
         allocation:
           limit === undefined
             ? null
@@ -454,14 +466,14 @@ export function buildScene(
               },
       });
       const owner = snapOwner(belt, beltFrame);
-      const name = `${c.name} ${win.kind} zone on ${belt.name}`;
       for (const [side, y] of sides(belt.width)) {
-        snapPoints.push(owner.at(`${name} · start, ${side}`, [win.start, y, 0], "zones"));
-        snapPoints.push(owner.at(`${name} · end, ${side}`, [win.end, y, 0], "zones"));
+        snapPoints.push(owner.at(`${name} · start, ${side}`, [along(win.start), y, 0], "zones"));
+        snapPoints.push(owner.at(`${name} · end, ${side}`, [along(win.end), y, 0], "zones"));
         if (limit !== undefined) {
-          snapPoints.push(owner.at(`${name} · allocation limit, ${side}`, [limit, y, 0], "zones"));
+          snapPoints.push(owner.at(`${name} · allocation limit, ${side}`, [along(limit), y, 0], "zones"));
         }
       }
+      snapPoints.push(owner.at(`${name} · CCS`, [along(win.ccsOffset), 0, 0], "zones"));
     }
   };
 
@@ -550,7 +562,7 @@ export function buildScene(
     });
     addFault(c.id, 0, fault, lifted(toMcs(frame, [c.length / 2, 0, 0]), LABEL_LIFT.conveyor));
     const owner = snapOwner(c, frame);
-    snapPoints.push(owner.at(`${c.name} · origin`, [0, 0, 0]));
+    snapPoints.push(owner.at(`${c.name} · origin`, shiftOf(c)));
     for (const end of ["start", "end"] as const) {
       for (const [side, y] of sides(c.width)) {
         snapPoints.push(owner.at(`${c.name} · ${end}, ${side}`, [end === "start" ? 0 : c.length, y, 0]));
@@ -564,13 +576,11 @@ export function buildScene(
       for (const p of shown) snapPoints.push(...productSnapPoints(p, owner));
     }
   }
-  const origins: SceneOrigin[] = [
-    ...conveyors.map((c) => ({ componentId: c.id, name: c.name, transform: c.transform })),
-    ...deltas.map((d) => ({ componentId: d.id, name: d.name, transform: d.base })),
-    ...(config?.components ?? [])
-      .filter((c) => c.type === "xtsGantry" || c.type === "xtsLoop" || c.type === "cartesian")
-      .map((c) => ({ componentId: c.id, name: c.name, transform: toRendererTransform(frameFromPose(c.pose)) })),
-  ];
+  // Each component's coordinate system: at its pose, moved by its origin shift. Conveyors first, then Deltas.
+  const order = (c: ComponentConfig) => (c.type === "conveyor" ? 0 : c.type === "delta" ? 1 : 2);
+  const origins: SceneOrigin[] = [...(config?.components ?? [])]
+    .sort((a, b) => order(a) - order(b))
+    .map((c) => ({ componentId: c.id, name: c.name, transform: toRendererTransform(originFrame(c)) }));
   // Hidden components are built too (a hidden robot still carries products of a visible conveyor), then dropped.
   const shown = (id: number) => !hidden.has(id);
   return {
@@ -670,19 +680,33 @@ function sides(width: number): [string, number][] {
 
 type SnapOwner = ReturnType<typeof snapOwner>;
 
-/** Creates the snap points of one component; local coordinates are in its frame. */
-function snapOwner(component: { id: number; name: string }, frame: Frame) {
+/** A component's origin shift as a vector in its local frame. */
+function shiftOf(c: { originShift: Position }): Vec3 {
+  return [c.originShift.x, c.originShift.y, c.originShift.z];
+}
+
+/** The frame of a component's coordinate system: its pose moved by its origin shift (no rotation). */
+function originFrame(c: { pose: Pose; originShift: Position }): Frame {
+  return child(frameFromPose(c.pose), shiftOf(c));
+}
+
+/**
+ * Creates the snap points of one component. Points are given in the frame of its pose (`frame`); their local
+ * measuring coordinates are in its coordinate system, i.e. from its shifted origin.
+ */
+function snapOwner(component: { id: number; name: string; originShift: Position }, frame: Frame) {
+  const system = child(frame, shiftOf(component));
   const make = (label: string, mcs: Vec3, layer: SnapLayer, moving: boolean): SnapPoint => ({
     key: `${component.id}:${label}`,
     label,
     mcs,
     position: toRenderer(mcs),
-    local: { componentId: component.id, componentName: component.name, point: toLocal(frame, mcs) },
+    local: { componentId: component.id, componentName: component.name, point: toLocal(system, mcs) },
     layer,
     moving,
   });
   return {
-    /** A point given in the component's local frame. */
+    /** A point given in the frame of the component's pose. */
     at: (label: string, local: Vec3, layer: SnapLayer = "structure", moving = false) =>
       make(label, toMcs(frame, local), layer, moving),
     /** A point given in the MCS. */

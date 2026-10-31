@@ -12,6 +12,7 @@ import type {
   StateMessage,
   XtsGantryConfig,
   XtsLoopConfig,
+  Zone,
 } from "@rpp/protocol";
 import {
   availableSnapPoints,
@@ -42,6 +43,7 @@ function conveyorConfig(overrides: Partial<ConveyorConfig> = {}): ConveyorConfig
     length: 3000,
     width: 400,
     productTypes: [{ id: 1, length: 100, width: 80, height: 40 }],
+    originShift: { x: 0, y: 0, z: 0 },
     ...overrides,
   };
 }
@@ -168,6 +170,7 @@ function deltaConfig(overrides: Partial<DeltaConfig> = {}): DeltaConfig {
     limitArea: null,
     zones: [],
     fingers: [],
+    originShift: { x: 0, y: 0, z: 0 },
     ...overrides,
   };
 }
@@ -392,7 +395,7 @@ describe("scene model: hidden components", () => {
   it("drops a hidden robot's geometry, areas, zones, snap points and origin", () => {
     const belt = conveyorConfig();
     const robot = deltaConfig({
-      zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0 }],
+      zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0, ccsOffset: 0 }],
       limitArea: { xMin: -500, xMax: 500, yMin: -700, yMax: 700, zMin: -1400, zMax: -600 },
     });
     const scene = buildScene(config(belt, robot), [], 0, new Set([20]));
@@ -408,7 +411,7 @@ describe("scene model: hidden components", () => {
 
   it("drops a hidden conveyor with its products and the zones on it, keeping the robot", () => {
     const belt = conveyorConfig();
-    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0 }] });
+    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0, ccsOffset: 0 }] });
     const scene = buildScene(config(belt, robot), [snapshot(0, [conveyorState(0, [product()])])], 0, new Set([1]));
 
     expect(scene.conveyors).toEqual([]);
@@ -424,8 +427,8 @@ describe("scene model: working areas and zones", () => {
     const belt = conveyorConfig({ pose: { x: 1000, y: 0, z: 800, rx: 0, ry: 0, rz: 90 }, width: 400 });
     const robot = deltaConfig({
       zones: [
-        { conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0 },
-        { conveyorId: 99, start: 0, end: 100, kind: "place", allocationOffset: 0 },
+        { conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0, ccsOffset: 1500 },
+        { conveyorId: 99, start: 0, end: 100, kind: "place", allocationOffset: 0, ccsOffset: 0 },
       ],
     });
     const scene = buildScene(config(belt, robot), [], 0);
@@ -486,8 +489,8 @@ describe("scene model: measure mode", () => {
     const belt = conveyorConfig({ pose: { x: 1000, y: 0, z: 800, rx: 0, ry: 0, rz: 90 }, width: 400 });
     const robot = deltaConfig({
       zones: [
-        { conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 200 },
-        { conveyorId: 1, start: 2000, end: 2400, kind: "place", allocationOffset: 0 },
+        { conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 200, ccsOffset: 0 },
+        { conveyorId: 1, start: 2000, end: 2400, kind: "place", allocationOffset: 0, ccsOffset: 0 },
       ],
     });
     const scene = buildScene(config(belt, robot), [], 0);
@@ -504,7 +507,7 @@ describe("scene model: measure mode", () => {
   });
 
   it("clamps an allocation offset longer than the zone to the zone start", () => {
-    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 900 }] });
+    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 900, ccsOffset: 0 }] });
     const [zone] = buildScene(config(belt, robot), [], 0).zones;
 
     expect(zone!.allocation!.length).toBeCloseTo(0);
@@ -533,7 +536,7 @@ describe("scene model: measure mode", () => {
   });
 
   it("offers the corners of a zone on its conveyor, in belt coordinates", () => {
-    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0 }] });
+    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0, ccsOffset: 0 }] });
     const corner = snap(buildScene(config(belt, robot), [], 0), "Delta 1 pick zone on Infeed · start, right");
     closeTo(corner.mcs, [1200, 1200, 800]);
     expect(corner.local.componentName).toBe("Infeed");
@@ -598,7 +601,7 @@ describe("scene model: measure mode", () => {
 
   it("does not offer snap points of hidden layers", () => {
     const robot = deltaConfig({
-      zones: [{ conveyorId: 1, start: 0, end: 500, kind: "pick", allocationOffset: 0 }],
+      zones: [{ conveyorId: 1, start: 0, end: 500, kind: "pick", allocationOffset: 0, ccsOffset: 0 }],
       limitArea: { xMin: -500, xMax: 500, yMin: -700, yMax: 700, zMin: -1400, zMax: -600 },
     });
     const points = buildScene(config(belt, robot), [], 0).snapPoints;
@@ -646,6 +649,7 @@ function gantryConfig(overrides: Partial<XtsGantryConfig> = {}): XtsGantryConfig
     moverWidth: 80,
     zones: [],
     fingers: [],
+    originShift: { x: 0, y: 0, z: 0 },
     ...overrides,
   };
 }
@@ -715,7 +719,7 @@ describe("scene model: XTS gantry", () => {
 
   it("resolves its zones onto the referenced conveyor", () => {
     const zoned = buildScene(
-      config(conveyorConfig(), gantryConfig({ zones: [{ conveyorId: 1, start: 0, end: 800, kind: "pick", allocationOffset: 0 }] })),
+      config(conveyorConfig(), gantryConfig({ zones: [{ conveyorId: 1, start: 0, end: 800, kind: "pick", allocationOffset: 0, ccsOffset: 0 }] })),
       [],
       0,
     );
@@ -739,6 +743,7 @@ function cartesianConfig(overrides: Partial<CartesianConfig> = {}): CartesianCon
     railHeight: 1200,
     zones: [],
     fingers: [],
+    originShift: { x: 0, y: 0, z: 0 },
     ...overrides,
   };
 }
@@ -852,6 +857,7 @@ function loopConfig(overrides: Partial<XtsLoopConfig> = {}): XtsLoopConfig {
     moverWidth: 60,
     zones: [],
     fingers: [],
+    originShift: { x: 0, y: 0, z: 0 },
     ...overrides,
   };
 }
@@ -1102,5 +1108,69 @@ describe("machine scene: several PLC sources", () => {
     expect(machine.sources[1]!.scene.conveyors).toEqual([]);
     expect(machine.snapPoints.every((p) => p.sourceId === A)).toBe(true);
     expect(machine.faults).toEqual([{ sourceId: B, componentId: 1, messages: ["Belt jammed"] }]);
+  });
+});
+
+describe("scene model: conveyor coordinate system and origin shift", () => {
+  // Belt along MCS +X at height 800.
+  const belt = conveyorConfig();
+  const pickZone = (overrides: Partial<Zone> = {}): Zone => ({
+    conveyorId: 1,
+    start: 1200,
+    end: 1800,
+    kind: "pick",
+    allocationOffset: 0,
+    ccsOffset: 1500,
+    ...overrides,
+  });
+  const snapAt = (scene: ReturnType<typeof buildScene>, label: string) => {
+    const point = scene.snapPoints.find((p) => p.label === label);
+    if (!point) throw new Error(`no snap point "${label}" in: ${scene.snapPoints.map((p) => p.label).join(", ")}`);
+    return point;
+  };
+
+  it("puts a zone's CCS crosshair at its offset on the belt's centre line, as a zone snap point", () => {
+    const scene = buildScene(config(belt, deltaConfig({ zones: [pickZone()] })), [], 0);
+
+    closeTo(scene.zones[0]!.ccs.position, [1.5, 0.8, 0]);
+    const ccs = snapAt(scene, "Delta 1 pick zone on Infeed · CCS");
+    closeTo(ccs.mcs, [1500, 0, 800]);
+    expect(ccs.layer).toBe("zones");
+    expect(scene.warnings).toEqual([]);
+  });
+
+  it("warns when a zone's CCS lies outside the zone", () => {
+    const scene = buildScene(config(belt, deltaConfig({ zones: [pickZone({ ccsOffset: 2000 })] })), [], 0);
+
+    expect(scene.warnings).toEqual(["Delta 1: CCS of the pick zone on Infeed (2000 mm) lies outside the zone (1200 to 1800 mm)"]);
+  });
+
+  it("counts a conveyor's belt coordinates from its shifted origin", () => {
+    const shifted = conveyorConfig({ originShift: { x: 500, y: 0, z: 0 } });
+    const scene = buildScene(config(shifted, deltaConfig({ zones: [pickZone()] })), [], 0);
+
+    // Zone 1200..1800 from the origin 500 mm behind the belt start: centre at 2000 mm from the start.
+    closeTo(scene.zones[0]!.transform.position, [2, 0.8, 0]);
+    closeTo(scene.zones[0]!.ccs.position, [2, 0.8, 0]);
+    const start = snapAt(scene, "Delta 1 pick zone on Infeed · start, right");
+    closeTo(start.mcs, [1700, -200, 800]);
+    closeTo(start.local.point, [1200, -200, 0]);
+  });
+
+  it("shows a component's origin and local measuring coordinates at its shifted origin, the geometry stays", () => {
+    const shifted = conveyorConfig({ originShift: { x: 500, y: -20, z: 0 } });
+    const robot = deltaConfig({ originShift: { x: 0, y: 0, z: -700 } });
+    const scene = buildScene(config(shifted, robot), [], 0);
+
+    const [beltOrigin, robotOrigin] = scene.origins;
+    closeTo(beltOrigin!.transform.position, [0.5, 0.8, 0.02]);
+    closeTo(robotOrigin!.transform.position, [1.5, 1.1, 0]);
+    closeTo(snapAt(scene, "Infeed · origin").mcs, [500, -20, 800]);
+    closeTo(snapAt(scene, "Infeed · end centre").local.point, [2500, 20, 0]);
+    closeTo(snapAt(scene, "Delta 1 · base").local.point, [0, 0, 700]);
+    // Geometry and the working area stay at the pose.
+    closeTo(scene.conveyors[0]!.transform.position, [0, 0.8, 0]);
+    closeTo(scene.deltas[0]!.base.position, [1.5, 1.8, 0]);
+    closeTo(scene.workingAreas[0]!.transform.position, [1.5, 1.8, 0]);
   });
 });
