@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoFxx" Id="{1062c5f7-1c86-42a6-a673-3844ab3a056e}" SpecialFunc="None">
+  <POU Name="P_VisuDemoFxx" Id="{de1e4bb0-6350-48fd-865e-c7e904ac30cc}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -83,6 +83,8 @@ BeltPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 fb_FxxInfeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_FXX_INFEED_LENGTH,
 	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
 BeltPose.fX := lr_FXX_OUTFEED_X;
+(* The outfeed's coordinate system lies on its right edge (seen in the conveying direction). *)
+fb_FxxOutfeed.m_SetOriginShift(vi_lr_X := 0, vi_lr_Y := -DEMO_GlobalConst.DEMO_lr_BELT_WIDTH / 2);
 fb_FxxOutfeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_FXX_OUTFEED_LENGTH,
 	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
 fb_FxxInfeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
