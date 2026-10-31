@@ -689,13 +689,11 @@ export function availableSnapPoints(
   return points.filter((p) => p.layer === "structure" || layers[p.layer]);
 }
 
-/** Per measuring point: offset and distance to the previous point (none for the first). */
-export function measureChain(points: readonly Vec3[]): { delta: Vec3 | undefined; distance: number | undefined }[] {
+/** Per measuring point: its signed offset along MCS X, Y and Z from the previous point (none for the first). */
+export function measureChain(points: readonly Vec3[]): { delta: Vec3 | undefined }[] {
   return points.map((p, i) => {
     const prev = points[i - 1];
-    if (!prev) return { delta: undefined, distance: undefined };
-    const delta: Vec3 = [p[0] - prev[0], p[1] - prev[1], p[2] - prev[2]];
-    return { delta, distance: Math.hypot(...delta) };
+    return { delta: prev ? [p[0] - prev[0], p[1] - prev[1], p[2] - prev[2]] : undefined };
   });
 }
 
@@ -704,13 +702,15 @@ export function formatPointCopy(p: Vec3): string {
   return p.map((v) => v.toFixed(1)).join(";");
 }
 
-/** All measuring points as CSV (semicolon separated), with the distance to the previous point. */
+/** All measuring points as CSV (semicolon separated), with the offsets along X, Y and Z from the previous point. */
 export function pointsCsv(points: readonly { id: number; label: string; mcs: Vec3 }[]): string {
   const chain = measureChain(points.map((p) => p.mcs));
-  const rows = points.map(
-    (p, i) => `${p.id};${p.label};${formatPointCopy(p.mcs)};${chain[i]!.distance?.toFixed(1) ?? ""}`,
-  );
-  return ["#;label;x;y;z;distance", ...rows].join("\n");
+  const rows = points.map((p, i) => {
+    const delta = chain[i]!.delta;
+    // The first point has no offsets: three empty columns.
+    return `${p.id};${p.label};${formatPointCopy(p.mcs)};${delta ? formatPointCopy(delta) : ";;"}`;
+  });
+  return ["#;label;x;y;z;dx;dy;dz", ...rows].join("\n");
 }
 
 function positionToMcs(p: Position): Vec3 {

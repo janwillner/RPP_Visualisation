@@ -931,27 +931,27 @@ describe("scene model: XTS loop", () => {
 });
 
 describe("measuring point chain", () => {
-  it("gives each point after the first its offset and distance to the previous point", () => {
+  it("gives each point after the first its signed offset along X, Y and Z to the previous point", () => {
     const rows = measureChain([
       [0, 0, 0],
       [300, 400, 0],
-      [300, 400, 120],
+      [300, 250, 120],
     ]);
-    expect(rows[0]).toEqual({ delta: undefined, distance: undefined });
+    expect(rows[0]).toEqual({ delta: undefined });
     closeTo(rows[1]!.delta!, [300, 400, 0]);
-    expect(rows[1]!.distance).toBeCloseTo(500);
-    closeTo(rows[2]!.delta!, [0, 0, 120]);
-    expect(rows[2]!.distance).toBeCloseTo(120);
+    closeTo(rows[2]!.delta!, [0, -150, 120]);
   });
 
-  it("formats points as X;Y;Z and the whole list as CSV with 0.1 mm", () => {
+  it("formats points as X;Y;Z and the whole list as CSV with the offsets along X, Y and Z, all with 0.1 mm", () => {
     expect(formatPointCopy([1000, -2.25, 800.04])).toBe("1000.0;-2.3;800.0");
     expect(
       pointsCsv([
         { id: 1, label: "Infeed · origin", mcs: [1000, 0, 800] },
         { id: 2, label: "Infeed · end, left", mcs: [800, 3000, 800] },
       ]),
-    ).toBe("#;label;x;y;z;distance\n1;Infeed · origin;1000.0;0.0;800.0;\n2;Infeed · end, left;800.0;3000.0;800.0;3006.7");
+    ).toBe(
+      "#;label;x;y;z;dx;dy;dz\n1;Infeed · origin;1000.0;0.0;800.0;;;\n2;Infeed · end, left;800.0;3000.0;800.0;-200.0;3000.0;0.0",
+    );
   });
 });
 

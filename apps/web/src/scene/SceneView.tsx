@@ -23,6 +23,7 @@ import type {
   SceneFaultLabel,
 } from "./scene-model";
 import { availableSnapPoints, buildScene } from "./scene-model";
+import { isTap, nearestOnScreen, snapRadiusPx, type ScreenPoint } from "./picking";
 import type { ConfigMessage, ProductState } from "@rpp/protocol";
 
 export interface Layers {
@@ -39,7 +40,9 @@ export type Selection =
   | { kind: "product"; conveyorId: number; productId: number }
   | undefined;
 
-export type CameraPreset = "top" | "front" | "iso";
+export type CameraPreset = "top" | "front" | "side" | "iso";
+/** A preset view, or a zoom step towards / away from the orbit target (for single-finger use). */
+export type CameraAction = CameraPreset | "zoomIn" | "zoomOut";
 
 /** A measuring point: a snap point frozen at the moment it was clicked. */
 export interface MeasurePoint {
@@ -58,8 +61,8 @@ export interface SceneViewProps {
   layers: Layers;
   selection: Selection;
   onSelect: (selection: Selection) => void;
-  /** Changes to `{ preset, seq }` move the camera; `seq` allows repeating the same preset. */
-  cameraRequest: { preset: CameraPreset; seq: number };
+  /** Changes to `{ action, seq }` move the camera; `seq` allows repeating the same action. */
+  cameraRequest: { action: CameraAction; seq: number };
   /** Receives the scene model every frame, e.g. for the inspector. */
   modelRef: MutableRefObject<SceneModel | undefined>;
   /** Measure mode: origins and snap points are shown, a click on a snap point measures instead of selecting. */
@@ -92,10 +95,6 @@ const EMPTY: SceneModel = {
   warnings: [],
 };
 
-/** Snap radius on screen, CSS pixels. */
-const SNAP_RADIUS_PX = 12;
-/** Pointer travel below which a press counts as a click rather than a camera drag, CSS pixels. */
-const CLICK_TOLERANCE_PX = 4;
 
 export const PRODUCT_COLORS: Record<ProductState, string> = {
   detected: "#8fa8c8",
@@ -752,8 +751,10 @@ function MeasurePoints({ points }: { points: MeasurePoint[] }) {
 
 /**
  * Measure mode overlay: component origins, the static snap points as dots, and the snap point nearest to the
- * pointer (within SNAP_RADIUS_PX on screen, also when occluded) highlighted with its name. A click without camera
- * drag measures the highlighted point.
+ * pointer (within the pointer type's snap radius on screen, also when occluded) highlighted with its name.
+ * - Mouse and pen: the point under the hovering pointer is highlighted; a click without camera drag measures it.
+ * - Touch: there is no hover. One finger shows the point under it (its name above the finger), sliding moves the
+ *   choice, lifting the finger measures it. Two fingers move the camera and measure nothing.
  */
 function MeasureLayer(props: {
   latest: MutableRefObject<SceneModel>;
@@ -763,71 +764,113 @@ function MeasureLayer(props: {
 }) {
   const { latest, structure, layers, onMeasure } = props;
   const { camera, gl } = useThree();
-  const pointer = useRef<{ x: number; y: number } | null>(null);
-  const hovered = useRef<SnapPoint | null>(null);
+  const pointer = useRef<(ScreenPoint & { type: string }) | null>(null);
   const marker = useRef<THREE.Group>(null);
-  const [label, setLabel] = useState<string | null>(null);
+  const [label, setLabel] = useState<{ text: string; touch: boolean } | null>(null);
   const onMeasureRef = useRef(onMeasure);
   onMeasureRef.current = onMeasure;
 
+  /** The snap point under a screen position, for the given pointer type's snap radius. */
+  const pick = (at: ScreenPoint, pointerType: string): SnapPoint | undefined => {
+    const width = gl.domElement.clientWidth;
+    const height = gl.domElement.clientHeight;
+    const v = new THREE.Vector3();
+    const candidates: { item: SnapPoint; screen: ScreenPoint; depth: number }[] = [];
+    for (const point of availableSnapPoints(latest.current.snapPoints, layers)) {
+      v.set(...point.position).project(camera);
+      if (v.z < -1 || v.z > 1) continue;
+      candidates.push({
+        item: point,
+        screen: { x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height },
+        depth: camera.position.distanceTo(new THREE.Vector3(...point.position)),
+      });
+    }
+    return nearestOnScreen(candidates, at, snapRadiusPx(pointerType));
+  };
+  const pickRef = useRef(pick);
+  pickRef.current = pick;
+
   useEffect(() => {
     const el = gl.domElement;
-    let down: { x: number; y: number } | null = null;
-    const position = (e: PointerEvent) => {
+    const fingers = new Set<number>();
+    let press: { start: ScreenPoint; type: string; multi: boolean } | null = null;
+    const position = (e: PointerEvent): ScreenPoint => {
       const r = el.getBoundingClientRect();
       return { x: e.clientX - r.left, y: e.clientY - r.top };
     };
-    const onMove = (e: PointerEvent) => (pointer.current = position(e));
-    const onLeave = () => (pointer.current = null);
-    const onDown = (e: PointerEvent) => (down = e.button === 0 ? position(e) : null);
+    const onMove = (e: PointerEvent) => {
+      // A finger only points while it touches; with two fingers down the camera moves.
+      if (e.pointerType === "touch" && (!fingers.has(e.pointerId) || fingers.size > 1)) return;
+      pointer.current = { ...position(e), type: e.pointerType };
+    };
+    const onLeave = (e: PointerEvent) => {
+      if (e.pointerType !== "touch") pointer.current = null;
+    };
+    const onDown = (e: PointerEvent) => {
+      if (e.pointerType === "touch") {
+        fingers.add(e.pointerId);
+        if (fingers.size > 1) {
+          if (press) press.multi = true;
+          pointer.current = null;
+          return;
+        }
+      }
+      if (e.button !== 0) {
+        press = null;
+        return;
+      }
+      pointer.current = { ...position(e), type: e.pointerType };
+      press = { start: position(e), type: e.pointerType, multi: false };
+    };
     const onUp = (e: PointerEvent) => {
-      const p = position(e);
-      const start = down;
-      down = null;
-      if (!start || Math.hypot(p.x - start.x, p.y - start.y) > CLICK_TOLERANCE_PX) return;
-      if (hovered.current) onMeasureRef.current(hovered.current);
+      const p = press;
+      if (e.pointerType === "touch") {
+        fingers.delete(e.pointerId);
+        pointer.current = null;
+        if (fingers.size > 0) return;
+      }
+      press = null;
+      if (!p || p.multi) return;
+      // A finger may slide to adjust its choice; a mouse drag moves the camera instead.
+      const at = position(e);
+      if (p.type !== "touch" && !isTap(p.start, at, p.type)) return;
+      // Picked at the release position, not from the last frame: a quick tap may start and end within one frame.
+      const candidate = pickRef.current(at, p.type);
+      if (candidate) onMeasureRef.current(candidate);
+    };
+    const onCancel = (e: PointerEvent) => {
+      fingers.delete(e.pointerId);
+      press = null;
+      if (e.pointerType === "touch") pointer.current = null;
     };
     el.style.cursor = "crosshair";
     el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerleave", onLeave);
     el.addEventListener("pointerdown", onDown);
     el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onCancel);
     return () => {
       el.style.cursor = "";
       el.removeEventListener("pointermove", onMove);
       el.removeEventListener("pointerleave", onLeave);
       el.removeEventListener("pointerdown", onDown);
       el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onCancel);
     };
   }, [gl]);
 
   useFrame(() => {
     // Re-evaluated every frame: moving snap points pass under a still pointer.
     const p = pointer.current;
-    let best: { point: SnapPoint; px: number; depth: number } | null = null;
-    if (p) {
-      const width = gl.domElement.clientWidth;
-      const height = gl.domElement.clientHeight;
-      const v = new THREE.Vector3();
-      for (const point of availableSnapPoints(latest.current.snapPoints, layers)) {
-        v.set(...point.position).project(camera);
-        if (v.z < -1 || v.z > 1) continue;
-        const px = Math.hypot(((v.x + 1) / 2) * width - p.x, ((1 - v.y) / 2) * height - p.y);
-        if (px > SNAP_RADIUS_PX) continue;
-        const depth = camera.position.distanceTo(new THREE.Vector3(...point.position));
-        // Nearest on screen; on a tie the one nearer to the camera.
-        if (!best || px < best.px - 0.5 || (Math.abs(px - best.px) <= 0.5 && depth < best.depth)) {
-          best = { point, px, depth };
-        }
-      }
-    }
-    hovered.current = best?.point ?? null;
+    const best = p ? pick(p, p.type) : undefined;
     if (marker.current) {
-      marker.current.visible = best !== null;
-      if (best) marker.current.position.set(...best.point.position);
+      marker.current.visible = best !== undefined;
+      if (best) marker.current.position.set(...best.position);
     }
-    const next = best?.point.label ?? null;
-    if (next !== label) setLabel(next);
+    const touch = p?.type === "touch";
+    if (best?.label !== label?.text || (best && touch !== label?.touch)) {
+      setLabel(best ? { text: best.label, touch } : null);
+    }
   });
 
   const dots = availableSnapPoints(structure.snapPoints, layers).filter((p) => !p.moving);
@@ -848,8 +891,12 @@ function MeasureLayer(props: {
           <meshBasicMaterial color={SELECT_COLOR} depthTest={false} transparent opacity={0.9} />
         </mesh>
         {label && (
-          <Html className="snap-label" zIndexRange={[30, 20]} style={{ pointerEvents: "none" }}>
-            {label}
+          <Html
+            className={label.touch ? "snap-label touch" : "snap-label"}
+            zIndexRange={[30, 20]}
+            style={{ pointerEvents: "none" }}
+          >
+            {label.text}
           </Html>
         )}
       </group>
@@ -1201,7 +1248,10 @@ function McsAxes() {
   );
 }
 
-function CameraRig({ request, structure }: { request: { preset: CameraPreset; seq: number }; structure: SceneModel }) {
+/** Factor by which one zoom step changes the distance to the orbit target. */
+const ZOOM_STEP = 0.8;
+
+function CameraRig({ request, structure }: { request: { action: CameraAction; seq: number }; structure: SceneModel }) {
   const { camera, controls } = useThree() as unknown as { camera: THREE.PerspectiveCamera; controls: { target: THREE.Vector3; update(): void } | null };
   const hasFramed = useRef(false);
 
@@ -1220,6 +1270,8 @@ function CameraRig({ request, structure }: { request: { preset: CameraPreset; se
       top: new THREE.Vector3(0, size * 1.2, 0.001),
       // Front: looking along MCS +Y (renderer −Z), i.e. from MCS −Y.
       front: new THREE.Vector3(0, size * 0.15, size * 1.1),
+      // Side: looking along MCS +X (renderer +X), i.e. from MCS −X, against the conveying direction's start.
+      side: new THREE.Vector3(-size * 1.1, size * 0.15, 0),
       iso: new THREE.Vector3(size * 0.7, size * 0.7, size * 0.7),
     };
     camera.position.copy(centre).add(offsets[preset]);
@@ -1230,8 +1282,18 @@ function CameraRig({ request, structure }: { request: { preset: CameraPreset; se
     }
   };
 
+  /** Moves the camera towards (factor < 1) or away from the orbit target, keeping the view direction. */
+  const zoom = (factor: number) => {
+    const target = controls?.target ?? new THREE.Vector3();
+    camera.position.sub(target).multiplyScalar(factor).add(target);
+    controls?.update();
+  };
+
   useEffect(() => {
-    if (request.seq > 0) frame(request.preset);
+    if (request.seq === 0) return;
+    if (request.action === "zoomIn") zoom(ZOOM_STEP);
+    else if (request.action === "zoomOut") zoom(1 / ZOOM_STEP);
+    else frame(request.action);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request.seq]);
 
@@ -1247,19 +1309,81 @@ function CameraRig({ request, structure }: { request: { preset: CameraPreset; se
   return null;
 }
 
+/** Upper limit of the render resolution in device pixels per CSS pixel, for weak panel PC graphics. */
+const MAX_DPR = 1.5;
+
 export function SceneView(props: SceneViewProps) {
+  // The last press on the canvas: a selection counts only if it was a tap, not a camera drag or a pinch.
+  const press = useRef<{ start: ScreenPoint; end: ScreenPoint; type: string; multi: boolean } | null>(null);
+  const pointersDown = useRef(new Set<number>());
+  // Set when a tap ends; an object's click clears it again, otherwise the tap hit empty space.
+  const emptyTap = useRef(false);
+  const latestProps = useRef(props);
+  latestProps.current = props;
+  const wasTap = () => {
+    const p = press.current;
+    return !p || (!p.multi && isTap(p.start, p.end, p.type));
+  };
+  const onSelect = (selection: Selection) => {
+    emptyTap.current = false;
+    if (wasTap()) props.onSelect(selection);
+  };
+
+  // Releases are watched on the window: OrbitControls follows a drag on the document, so it may end outside the
+  // canvas. A cancelled pointer (e.g. the browser took over the touch) makes the press no tap.
+  useEffect(() => {
+    const release = (e: PointerEvent, cancelled: boolean) => {
+      if (!pointersDown.current.delete(e.pointerId)) return;
+      const p = press.current;
+      if (!p) return;
+      if (cancelled) p.multi = true;
+      if (pointersDown.current.size > 0) return;
+      p.end = { x: e.clientX, y: e.clientY };
+      if (!wasTap()) return;
+      // R3F reports a missed click only below 2 px of travel, too strict for a finger: decide here instead. The
+      // click, and with it an object's onClick, follows this pointerup before the timeout runs.
+      emptyTap.current = true;
+      setTimeout(() => {
+        if (emptyTap.current && !latestProps.current.measureMode) latestProps.current.onSelect(undefined);
+        emptyTap.current = false;
+      }, 0);
+    };
+    const onUp = (e: PointerEvent) => release(e, false);
+    const onCancel = (e: PointerEvent) => release(e, true);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
+    return () => {
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <Canvas
       camera={{ position: [4, 3, 4], fov: 45, near: 0.01, far: 200 }}
-      onPointerMissed={() => {
-        if (!props.measureMode) props.onSelect(undefined);
+      dpr={[1, MAX_DPR]}
+      onPointerDown={(e) => {
+        if (pointersDown.current.size > 0 && press.current) press.current.multi = true;
+        else {
+          const at = { x: e.clientX, y: e.clientY };
+          press.current = { start: at, end: at, type: e.pointerType, multi: false };
+        }
+        pointersDown.current.add(e.pointerId);
       }}
     >
       <color attach="background" args={["#1d2128"]} />
       <ambientLight intensity={0.6} />
       <directionalLight position={[5, 10, 5]} intensity={1.2} />
-      <SceneContent {...props} />
-      <OrbitControls makeDefault />
+      <SceneContent {...props} onSelect={onSelect} />
+      {/* One finger orbits, two pinch and pan; in measure mode one finger picks a point instead. */}
+      <OrbitControls
+        makeDefault
+        touches={{ ONE: props.measureMode ? NO_TOUCH_ACTION : THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN }}
+      />
     </Canvas>
   );
 }
+
+/** OrbitControls ignores a one-finger gesture whose action is none of THREE.TOUCH. */
+const NO_TOUCH_ACTION = -1 as THREE.TOUCH;

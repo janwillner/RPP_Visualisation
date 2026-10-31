@@ -67,6 +67,21 @@ Restart the service after editing the file: `Restart-Service RPP_Visualisation`.
 
 This creates the service `RPP_Visualisation_852` with `C:\ProgramData\RPP_Visualisation\config-852.json`. A new instance needs both `-AdsPort` and `-Port`, so it cannot collide with the default instance. All instances share the program files, so running `install.ps1` without parameters later updates every instance. `Get-Help .\install.ps1 -Detailed` lists all parameters.
 
+## Embedding in TwinCAT HMI
+
+Service technicians can open the visualisation on the machine's touch panel (13 to 19 inch) as a page of the machine HMI. Mouse and touch both work; on a touch panel the controls are finger-sized.
+
+1. In the TwinCAT HMI project, add a **Web Browser** control (or another iframe based control) to a content page.
+2. Set its source to `http://<IPC host name or IP>:<port>/?embedded`, for example `http://192.168.1.10:8080/?embedded`.
+   - Use the IPC's name or address, not `localhost`: the panel may be a separate client of the HMI server.
+   - `<port>` is the instance's `port` (8080 by default, one port per instance).
+   - `?embedded` hides the title and the status bar, because the HMI page has its own header. Leave it out to get the full page, e.g. in a separate browser.
+3. Make the control fill the page. Below 1600 px width the side panels start collapsed; the "Components" and "Inspector" buttons open them, and the panel remembers the choice.
+
+**Requirement: the HMI runs over http.** The visualisation is served over http only. A browser blocks an http frame inside an https page (mixed content), so embedding works only when the HMI itself is opened over http (for example port 1010, not the https port 1020). The installer's firewall rule already opens the instance port.
+
+Over http the browser offers no clipboard, so the measure list's copy buttons are hidden there.
+
 ## Update and roll back
 
 To update, run `install.ps1` from the newer zip. To roll back, run it from the older zip. `config.json` and the logs are kept either way.

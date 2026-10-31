@@ -6,11 +6,41 @@ import {
   MISSED_COLOR,
   PRODUCT_COLORS,
   SceneView,
-  type CameraPreset,
+  type CameraAction,
   type Layers,
   type MeasurePoint,
   type Selection,
 } from "./scene/SceneView";
+
+/** `?embedded`: the page is a frame inside the machine HMI, which has its own header; title and status bar go. */
+const EMBEDDED = new URLSearchParams(window.location.search).has("embedded");
+/** The clipboard exists only in a secure context (https or localhost), not when embedded over http. */
+const CAN_COPY = window.isSecureContext && navigator.clipboard !== undefined;
+/** From this window width the side panels start open; below, the 3D view gets the room. */
+const WIDE_SCREEN_PX = 1600;
+
+/** Whether a side panel is open: remembered per device, else open on wide screens only. */
+function usePanelOpen(storageKey: string): [boolean, () => void] {
+  const [open, setOpen] = useState(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored !== null) return stored === "1";
+    } catch {
+      // Storage may be blocked (private window, embedded frame): fall back to the width.
+    }
+    return window.innerWidth >= WIDE_SCREEN_PX;
+  });
+  const toggle = () =>
+    setOpen((o) => {
+      try {
+        localStorage.setItem(storageKey, o ? "0" : "1");
+      } catch {
+        // Not remembered then; the panel still toggles.
+      }
+      return !o;
+    });
+  return [open, toggle];
+}
 
 /** Re-render at a fixed rate, for panels that show live values. */
 function useTick(intervalMs: number): number {
@@ -45,7 +75,9 @@ export function App() {
       if (!next.delete(id)) next.add(id);
       return next;
     });
-  const [cameraRequest, setCameraRequest] = useState<{ preset: CameraPreset; seq: number }>({ preset: "iso", seq: 0 });
+  const [cameraRequest, setCameraRequest] = useState<{ action: CameraAction; seq: number }>({ action: "iso", seq: 0 });
+  const [leftOpen, toggleLeft] = usePanelOpen("rpp.panel.components");
+  const [rightOpen, toggleRight] = usePanelOpen("rpp.panel.inspector");
   const modelRef = useRef<SceneModel | undefined>(undefined);
   const [measureMode, setMeasureMode] = useState(false);
   const [measurePoints, setMeasurePoints] = useState<MeasurePoint[]>([]);
@@ -74,20 +106,25 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const camera = (preset: CameraPreset) => setCameraRequest((r) => ({ preset, seq: r.seq + 1 }));
+  const camera = (action: CameraAction) => setCameraRequest((r) => ({ action, seq: r.seq + 1 }));
   const toggle = (key: keyof Layers) => setLayers((l) => ({ ...l, [key]: !l[key] }));
+  const appClass = ["app", EMBEDDED && "embedded", !leftOpen && "left-closed", !rightOpen && "right-closed"]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <div className="app">
+    // A long press on a touch screen opens no context menu: the app has no secondary actions.
+    <div
+      className={appClass}
+      onContextMenu={(e) => {
+        if ((e.nativeEvent as PointerEvent).pointerType === "touch") e.preventDefault();
+      }}
+    >
       <header className="toolbar">
-        <strong className="title">RPP Visualisation</strong>
+        {!EMBEDDED && <strong className="title">RPP Visualisation</strong>}
         <div className="group">
-          <span className="muted">Camera</span>
-          {(["top", "front", "iso"] as const).map((p) => (
-            <button key={p} onClick={() => camera(p)}>
-              {p}
-            </button>
-          ))}
+          <Toggle label="Components" on={leftOpen} onClick={toggleLeft} />
+          <Toggle label="Inspector" on={rightOpen} onClick={toggleRight} />
         </div>
         <div className="group">
           <span className="muted">Layers</span>
@@ -101,7 +138,7 @@ export function App() {
           <Toggle label="Measure (M)" on={measureMode} onClick={() => setMeasureMode((m) => !m)} />
         </div>
       </header>
-      <aside className="panel left">
+      <aside className="panel left" hidden={!leftOpen}>
         <ComponentTree
           components={gateway.config?.components ?? []}
           selection={selection}
@@ -111,7 +148,8 @@ export function App() {
           faults={faults}
         />
       </aside>
-      <main className="viewport">
+      {/* No context menu on a long press: there are no secondary actions in the 3D view. */}
+      <main className="viewport" onContextMenu={(e) => e.preventDefault()}>
         <SceneView
           store={store}
           config={gateway.config}
@@ -126,14 +164,20 @@ export function App() {
           hidden={hidden}
           onFaults={setFaults}
         />
+        <ViewControls onCamera={camera} />
         {(measureMode || measurePoints.length > 0) && (
-          <MeasureList measureMode={measureMode} points={measurePoints} onClear={clearMeasurePoints} />
+          <MeasureList
+            measureMode={measureMode}
+            points={measurePoints}
+            onClear={clearMeasurePoints}
+            onDone={() => setMeasureMode(false)}
+          />
         )}
         {!measureMode && selection?.kind === "product" && (
           <ProductLegend selection={selection} modelRef={modelRef} onClose={() => setSelection(undefined)} />
         )}
       </main>
-      <aside className="panel right">
+      <aside className="panel right" hidden={!rightOpen}>
         <Inspector
           store={store}
           config={gateway.config?.components ?? []}
@@ -142,7 +186,37 @@ export function App() {
           faults={faults}
         />
       </aside>
-      <StatusBar store={store} gateway={gateway} modelRef={modelRef} />
+      {!EMBEDDED && <StatusBar store={store} gateway={gateway} modelRef={modelRef} />}
+    </div>
+  );
+}
+
+const VIEWS: { action: CameraAction; label: string; title: string }[] = [
+  { action: "top", label: "Top", title: "View from above" },
+  { action: "front", label: "Front", title: "View from the front (along +Y)" },
+  { action: "side", label: "Side", title: "View from the side (along +X)" },
+  { action: "iso", label: "Iso", title: "Isometric view of the whole machine" },
+];
+
+/** Camera buttons in the 3D view, so every view is reachable with one finger (no pinch needed). */
+function ViewControls({ onCamera }: { onCamera: (action: CameraAction) => void }) {
+  return (
+    <div className="view-controls" role="toolbar" aria-label="Camera">
+      {VIEWS.map((v) => (
+        <button key={v.action} title={v.title} onClick={() => onCamera(v.action)}>
+          {v.label}
+        </button>
+      ))}
+      <button title="Zoom in" aria-label="Zoom in" onClick={() => onCamera("zoomIn")}>
+        +
+      </button>
+      <button title="Zoom out" aria-label="Zoom out" onClick={() => onCamera("zoomOut")}>
+        −
+      </button>
+      {/* The start view: the whole machine, isometric. */}
+      <button title="Back to the start view" onClick={() => onCamera("iso")}>
+        Reset
+      </button>
     </div>
   );
 }
@@ -154,17 +228,18 @@ function copy(text: string) {
 }
 
 /**
- * Measuring points as a chain: MCS coordinates, the same point in its component's frame, and offset and
- * distance to the previous point. A click on a row copies "X;Y;Z".
+ * Measuring points as a chain: MCS coordinates, the same point in its component's frame, and the offsets along
+ * X, Y and Z from the previous point. Where the clipboard is available, a click on a row copies "X;Y;Z".
  */
-function MeasureList(props: { measureMode: boolean; points: MeasurePoint[]; onClear: () => void }) {
-  const { measureMode, points, onClear } = props;
+function MeasureList(props: { measureMode: boolean; points: MeasurePoint[]; onClear: () => void; onDone: () => void }) {
+  const { measureMode, points, onClear, onDone } = props;
   const chain = measureChain(points.map((p) => p.mcs));
   return (
     <div className="measure">
       {measureMode && (
-        <div className="muted measure-hint">
-          Measure mode · click a snap point to add it · M or Esc to leave
+        <div className="measure-hint">
+          <span className="muted">Measure mode · click or tap a snap point to add it</span>
+          <button onClick={onDone}>Done</button>
         </div>
       )}
       {points.length > 0 && (
@@ -172,9 +247,13 @@ function MeasureList(props: { measureMode: boolean; points: MeasurePoint[]; onCl
           <ol className="measure-points">
             {points.map((p, i) => {
               const link = chain[i]!;
+              const Row = CAN_COPY ? "button" : "div";
               return (
                 <li key={p.id}>
-                  <button className="measure-row" onClick={() => copy(formatPointCopy(p.mcs))} title="Copy X;Y;Z">
+                  <Row
+                    className="measure-row"
+                    {...(CAN_COPY ? { onClick: () => copy(formatPointCopy(p.mcs)), title: "Copy X;Y;Z" } : {})}
+                  >
                     <span className="measure-head">
                       <strong>#{p.id}</strong> <span className="muted">{p.label}</span>
                     </span>
@@ -186,18 +265,21 @@ function MeasureList(props: { measureMode: boolean; points: MeasurePoint[]; onCl
                     </span>
                     {link.delta && (
                       <span className="measure-delta">
-                        Δ {fmt(link.delta)} · distance <strong>{link.distance!.toFixed(1)}</strong> mm
+                        ΔX <strong>{link.delta[0].toFixed(1)}</strong> · ΔY <strong>{link.delta[1].toFixed(1)}</strong>
+                        {" · "}ΔZ <strong>{link.delta[2].toFixed(1)}</strong> mm
                       </span>
                     )}
-                  </button>
+                  </Row>
                 </li>
               );
             })}
           </ol>
           <div className="measure-actions">
-            <button className="link" onClick={() => copy(pointsCsv(points))}>
-              Copy all as CSV
-            </button>
+            {CAN_COPY && (
+              <button className="link" onClick={() => copy(pointsCsv(points))}>
+                Copy all as CSV
+              </button>
+            )}
             <button className="link muted" onClick={onClear}>
               Clear points
             </button>
@@ -290,7 +372,6 @@ function ComponentTree(props: {
               <button
                 className={selection?.kind === "component" && selection.id === c.id ? "selected" : ""}
                 onClick={() => onSelect({ kind: "component", id: c.id })}
-                title={messages?.join("\n")}
               >
                 {messages && (
                   <span className="fault-icon" aria-label="Fault">
@@ -299,6 +380,14 @@ function ComponentTree(props: {
                 )}
                 <span className={`badge ${c.type}`}>{c.type}</span> {c.name} <span className="muted">#{c.id}</span>
               </button>
+              {/* Visible, not a tooltip: a touch panel shows no tooltips. */}
+              {messages && (
+                <ul className="fault-lines">
+                  {messages.map((m, i) => (
+                    <li key={i}>{m}</li>
+                  ))}
+                </ul>
+              )}
             </li>
           );
         })}
