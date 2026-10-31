@@ -7,7 +7,7 @@ This guide is for commissioning and service technicians. It covers installing th
 ## Requirements
 
 - Windows 10/11 x64, build 1607 or newer (LTSC 2019/2021 included), with TwinCAT 3.
-- The PLC project uses the `Syn_Visu` library. Its version must match the protocol version of the gateway release; the release notes name the matching version.
+- The PLC project uses the `Syn_Visu` library (`plc/library/Syn_Visu_<version>.library` in the repo, installed under the title `SynVisu`). Its version must match the protocol version of the gateway release; the release notes name the matching version.
 - Administrator rights for installation. The IPC needs no internet access, and no Node or .NET installation.
 
 ## Install

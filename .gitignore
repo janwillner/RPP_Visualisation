@@ -13,7 +13,10 @@ plc/**/*.bak
 plc/**/*.~u
 plc/**/*.tclrs
 plc/**/*.tmc
+plc/**/*.tpy
 plc/**/*.library
+# ...except the released library files
+!plc/library/*.library
 plc/**/.vs/
 
 # .NET ADS bridge build output

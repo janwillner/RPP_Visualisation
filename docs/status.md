@@ -4,10 +4,10 @@ Snapshot of where the work stands, for picking it up later. Spec: GitHub issue #
 
 ## How to run it against the PLC
 
-1. Open `plc/ProductConfigurator.sln` in TwinCAT XAE (4026, user-mode runtime `UmRT_Default`, target `169.254.123.103.1.1`, which is this PC).
+1. Open `plc/RPP_Visu.sln` in TwinCAT XAE (4026, user-mode runtime `UmRT_Default`, target `169.254.123.103.1.1`, which is this PC).
 2. Build, activate the configuration, log in and start the PLC. If the manifest looks stale after an online change, do a cold reset and start again.
 3. `corepack pnpm install`, `corepack pnpm build:bridge`, `corepack pnpm --filter @rpp/web build`
-4. `cd apps/gateway && node_modules/.bin/tsx src/main.ts --driver ads --ams-net-id 169.254.123.103.1.1 --ads-port 851 --port 8080`
+4. `cd apps/gateway && node_modules/.bin/tsx src/main.ts --driver ads --ams-net-id 169.254.123.103.1.1 --ads-port 852 --port 8080` (the demo project `Syn_Visu_Demo` runs on port 852; the library project on 851 has no task)
 5. Open http://localhost:8080
 
 Without a PLC: `--driver sim` (built-in simulator, same contract).
@@ -28,10 +28,11 @@ Without a PLC: `--driver sim` (built-in simulator, same contract).
 - Measure mode (issue #2, key M): component origin triads, snap points at characteristic points (belt corners, zone corners, Delta base/shoulders/TCP, working area, product corners), frozen measuring points with MCS and local coordinates, distance chain and CSV copy. Replaced the pointer readout and Shift+click points.
 - Product colour legend appears only in a popup while a product is selected.
 - Gateway re-runs discovery every second (`--config-recheck-ms`), so configs changed live in the PLC appear without bumping `nConfigVersion`.
-- Demo in the PLC project (`P_VisuDemo`) and the gateway simulator: four independent applications side by side, all conveying along +X from X = 0: Delta (two infeeds, one outfeed, three Deltas in a row; Y = 0..1000), Fxx (irregular infeed evened out onto its outfeed; Y = 2500) and IDH (four movers picking in batches from its infeed onto a tray belt; Y = 4100..4850) and Cartesian (picks from its infeed, turns by C = −90°, tilts by A while lowering, places onto its outfeed; Y = 6500..7300).
+- Demo in its own PLC project `plc/Syn_Visu_Demo` (`P_VisuDemo`) and in the gateway simulator: four independent applications side by side, all conveying along +X from X = 0: Delta (two infeeds, one outfeed, three Deltas in a row; Y = 0..1000), Fxx (irregular infeed evened out onto its outfeed; Y = 2500) and IDH (four movers picking in batches from its infeed onto a tray belt; Y = 4100..4850) and Cartesian (picks from its infeed, turns by C = −90°, tilts by A while lowering, places onto its outfeed; Y = 6500..7300). The PLC demo has a fifth one, Spacing (Y = 9000, not in the simulator): an XTS loop under one belt pushes products arriving with random gaps along the belt and hands them back with a constant pitch of 200 mm.
 - PLC API: `FB_VisuConveyor` and `FB_VisuDelta` (base `FB_VisuComponent`) with methods replace the helper functions; library version 2.0.0. The ADS contract is unchanged.
 - PLC code follows the company guideline (`docs/plc-coding-guidelines.md`), library version 3.0.0: `_FB_Visu*` FBs, `m_` methods, `vi_`/`vo_`/`vio_` inputs and outputs, `Temp` method locals, `VISU_GlobalConst` / `VISU_GlobalConst_Param` with upper-case constants, copyright and help headers. The contract structure is the FB output `vo_Visu` (manifest paths end in `.vo_Visu`). Structures, members, enums and `GVL_Visu.stManifest` are unchanged, so the protocol stays at version 7. Not yet downloaded to the runtime.
 - Faults (protocol 8, library 3.1.0): every component and every XTS mover can be put into a fault with a message (`m_SetFault`, `m_SetMover` fault inputs). Faulted parts glow red, a label with the message hangs above them (layer toggle "Fault labels"), the component list marks them with ⚠ and the messages as tooltip, the inspector shows them and a Fault column for movers. Demo and simulator fault Delta 1, a Fxx mover and an IDH mover for 5 s every 20 s. Not yet downloaded to the runtime.
+- PLC layout: the library project `plc/Syn_Visu` holds only the library (no task, no `Tc3_Module`); the demo moved to its own project `plc/Syn_Visu_Demo`, which references the installed library. The exported library is committed as `plc/library/Syn_Visu_3.2.0.library` (installed as `SynVisu` 3.2.0.0, Syntegon Group). Not yet downloaded to the runtime.
 
 ## Decisions changed during implementation
 
@@ -46,8 +47,6 @@ Domain terms are defined in `GLOSSARY.md`.
 
 ## Open
 
-- **Demo objects live inside the library project** (`GVL_Visu`, `P_VisuDemo`, the `PlcTask` reference and the `Tc3_Module` reference it needs). They must be removed, or moved to a separate application project, before releasing the library.
-- **Exporting `Syn_Visu.library` fails** with a COM error; most likely the project information (Company, Title, Version) is missing. Set it in XAE, then save as library.
 - `VISU_GlobalConst_Param` is a plain constant GVL, not a library parameter list, so array sizes are not yet overridable per project.
 - Idea raised but not built: Delta part sizes scaled with the configured geometry.
 - Local machine leftovers from the ADS investigation (not needed any more): `EnableAmsTcpLoopback` in the Windows registry and in `UmRT_Default\3.1\TcRegistry.xml`.

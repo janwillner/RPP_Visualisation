@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <GVL Name="GVL_Visu" Id="{c3c96fb2-d0a3-44e3-b0ba-30f06bf970c2}">
+    <Declaration><![CDATA[(* The application's manifest (ADR-0003): the gateway starts discovery at GVL_Visu.stManifest. *)
+{attribute 'qualified_only'}
+VAR_GLOBAL
+	stManifest : ST_VisuManifest;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

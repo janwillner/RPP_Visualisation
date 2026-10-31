@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <FileVersion>1.0.0.0</FileVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{3a301515-aff3-44c7-9517-2d7210240937}</ProjectGuid>
+    <Name>Syn_Visu_Demo</Name>
+    <ProgramVersion>3.1.4026.22</ProgramVersion>
+    <Application>{080d2efa-8be1-4181-ba2f-95b7f939d64f}</Application>
+    <TypeSystem>{98423983-3171-4abc-97d8-d426b05f8d57}</TypeSystem>
+    <Implicit_Task_Info>{a1eb47ce-123a-49b4-9d7b-d84980150bae}</Implicit_Task_Info>
+    <Implicit_KindOfTask>{c9734440-efb5-401c-8351-6f1155ef9642}</Implicit_KindOfTask>
+    <Implicit_Jitter_Distribution>{bcc9f6e1-5029-4671-a711-e329ae062b95}</Implicit_Jitter_Distribution>
+    <LibraryReferences>{e01b9f67-9b7e-4c1c-8c72-dfc5bfc982b4}</LibraryReferences>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="GVL_Visu.TcGVL">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\PlcTask.TcTTO">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\P_VisuDemo.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="POUs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Syn_Visu_Demo.tmc">
+      <SubType>Content</SubType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <LibraryReference Include="SynVisu,3.2.0.0,Syntegon Group">
+      <Namespace>SynVisu</Namespace>
+    </LibraryReference>
+    <LibraryReference Include="Tc3_Module,3.4.5.0,Beckhoff Automation GmbH">
+      <Namespace>Tc3_Module</Namespace>
+    </LibraryReference>
+  </ItemGroup>
+  <ItemGroup>
+    <PlaceholderReference Include="Tc2_System">
+      <DefaultResolution>Tc2_System, * (Beckhoff Automation GmbH)</DefaultResolution>
+      <Namespace>Tc2_System</Namespace>
+    </PlaceholderReference>
+  </ItemGroup>
+  <ItemGroup>
+    <PlaceholderResolution Include="Tc2_System">
+      <Resolution>Tc2_System, * (Beckhoff Automation GmbH)</Resolution>
+    </PlaceholderResolution>
+  </ItemGroup>
+  <ProjectExtensions />
+</Project>

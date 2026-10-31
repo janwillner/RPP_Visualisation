@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuConveyor" Id="{c0faf986-598b-4427-8829-b4374224dbef}" SpecialFunc="None">
+  <POU Name="_FB_VisuConveyor" Id="{928cf7b4-2e7f-481c-9422-f721470bd59e}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -210,6 +210,37 @@ vo_Visu.stState.aProducts[un_TempIndex].nProductType := vi_udn_ProductType;
 vo_Visu.stState.nProductCount := un_TempIndex + 1;
 vo_Visu.stState.nTimestamp := m_DcTime();
 m_LatchProduct := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_MoveProduct" Id="{02f7a869-c82b-433e-ad49-b7303567daa7}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Puts a product of the register at a new MCS pose at the current belt position, e.g. while a mover pushes it<br>
+along the belt faster than the belt runs. Call m_SetBeltPosition first in the cycle. Keeps its state.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE if the product is not in the register.<br>
+****************************************************************************************************)
+METHOD m_MoveProduct : BOOL
+VAR_INPUT
+	vi_udn_Id							: UDINT;	// [-] product id
+	vi_Pose								: ST_VisuPlanarPose;	// MCS, bottom centre of the product now
+END_VAR
+VAR
+	n_TempIndex							: INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[n_TempIndex := m_FindProduct(vi_udn_Id);
+m_MoveProduct := n_TempIndex >= 0;
+IF m_MoveProduct THEN
+	vo_Visu.stState.aProducts[n_TempIndex].stLatchPose := vi_Pose;
+	vo_Visu.stState.aProducts[n_TempIndex].fLatchBeltPosition := vo_Visu.stState.fBeltPosition;
+	vo_Visu.stState.nTimestamp := m_DcTime();
+END_IF]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_ProductCount" Id="{cee0e139-fe59-4b22-b8cb-ec43b92b63f9}">

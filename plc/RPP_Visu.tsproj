@@ -13,6 +13,7 @@
 		</System>
 		<Plc>
 			<Project File="Syn_Visu.xti"/>
+			<Project File="Syn_Visu_Demo.xti"/>
 		</Plc>
 	</Project>
 </TcSmProject>

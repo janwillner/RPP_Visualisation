@@ -9,6 +9,19 @@ The library follows the company guideline in `docs/plc-coding-guidelines.md` (`_
 prefixes) except for the contract itself: the structures, their members, the enums and `GVL_Visu.stManifest` keep
 their Beckhoff-style names, because the gateway reads them.
 
+## Layout in the repo
+
+| Path | Content |
+| --- | --- |
+| `plc/RPP_Visu.sln` | TwinCAT solution with both PLC projects |
+| `plc/Syn_Visu/` | The library project: structures, enums, constants and the component function blocks. No task, no application code. |
+| `plc/Syn_Visu_Demo/` | The demo application (`GVL_Visu`, `P_VisuDemo`, called by `PlcTask`). It references the installed library like any machine project, so it also tests the library from the outside. ADS port 852. |
+| `plc/library/Syn_Visu_<version>.library` | The exported library, committed for every released version. Machine projects install it from here. |
+
+Releasing a version: bump `_FC_GetVersionSynVisu` and the project version (Properties → Common), build, export it with
+"Save as library and install" to `plc/library/Syn_Visu_<version>.library`, update the demo's reference and build again.
+The library is installed under the title `SynVisu` from `Syntegon Group`.
+
 ## Conventions
 
 - MCS: mm and degrees, right-handed, Z up, X in product flow direction.
@@ -84,7 +97,7 @@ the FBs fill them in their output `vo_Visu`, so application code does not write 
 | `ST_VisuPose`, `ST_VisuPlanarPose`, `ST_VisuPosition` | MCS poses and positions |
 | `VISU_GlobalConst` | `VISU_un_PROTOCOL_VERSION` (contract version; `ST_VisuManifest` initialises to it), `VISU_lr_DEG_TO_RAD` |
 | `VISU_GlobalConst_Param` | Array sizes: `VISU_un_MAX_MANIFEST_ENTRIES` (32), `VISU_un_MAX_PRODUCTS` (128), `VISU_un_MAX_PRODUCT_TYPES` (8), `VISU_un_MAX_ZONES` (8), `VISU_un_MAX_MOVERS` (40), `VISU_un_MAX_FINGERS` (8, per gripper) |
-| `_FC_GetVersionSynVisu` | Library version at runtime (3.1.0) |
+| `_FC_GetVersionSynVisu` | Library version at runtime (3.2.0) |
 
 ### Methods
 
@@ -121,6 +134,7 @@ All robot FBs (Delta, XTS gantry, XTS loop, Cartesian):
 | `m_SetModuloBeltPosition(vi_lr_ModuloPosition, vi_lr_ModuloPeriod, vi_b_Reset)` | Same for a modulo axis; unwraps to a continuous position |
 | `m_LatchProduct(vi_udn_Id, vi_LatchPose, vi_udn_ProductType)` | Adds a detected product at the current belt position (or at `vi_lr_LatchBeltPosition` with `vi_b_UseLatchBeltPosition`) |
 | `m_SetProductState(vi_udn_Id, vi_e_State, vi_udn_RobotId, vi_udn_MoverId := 0, vi_udn_FingerId := 0)` | Changes state, assigned robot, carrying mover and finger |
+| `m_MoveProduct(vi_udn_Id, vi_Pose)` | Puts a product at a new MCS pose at the current belt position, keeping its state, e.g. while a mover pushes it along the belt |
 | `m_RemoveProduct(vi_udn_Id)` | Removes one product |
 | `m_RemoveProductsBeyond(vi_lr_BeltX)` | Drops invalid entries and products beyond `vi_lr_BeltX` mm along the belt; keeps ASSIGNED and PICKED ones |
 | `m_ProductCount()`, `m_GetProduct(vi_un_Index, vo_Product =>, vo_Pose =>)`, `m_FindProduct(vi_udn_Id)` | Read the register; `vo_Pose` is the product's current MCS pose |
@@ -211,7 +225,7 @@ CupPose.fX := Tcp.fX; CupPose.fY := Tcp.fY; CupPose.fZ := Tcp.fZ; CupPose.fRz :=
 fb_Delta1.m_SetFingerState(vi_un_Finger := 1, vi_Pose := CupPose, vi_b_Active := b_Vacuum);
 ```
 
-`P_VisuDemo` in the library project is a complete example, including an XTS loop, an XTS gantry and a Cartesian robot,
+`P_VisuDemo` in the demo project `plc/Syn_Visu_Demo` is a complete example, including two XTS loops (one above two belts, one under a belt that spaces products evenly), an XTS gantry and a Cartesian robot,
 and three Delta grippers: two cups beside the flange turning about Rz (two picks, one place), one finger turning and
 tilting, and five fingers closing when picking and opening when placing.
 

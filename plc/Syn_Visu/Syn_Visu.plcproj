@@ -16,6 +16,11 @@
     <Implicit_KindOfTask>{2b53616b-7148-4252-a627-113caf5de964}</Implicit_KindOfTask>
     <Implicit_Jitter_Distribution>{bbbab09b-2282-459d-9b3f-e225590448bc}</Implicit_Jitter_Distribution>
     <LibraryReferences>{53004ee8-a56f-4378-9449-a2814f79f625}</LibraryReferences>
+    <Company>Syntegon Group</Company>
+    <Released>false</Released>
+    <Title>SynVisu</Title>
+    <ProjectVersion>3.2.0.0</ProjectVersion>
+    <DefaultNamespace>SynVisu</DefaultNamespace>
   </PropertyGroup>
   <ItemGroup>
     <Folder Include="DUTs" />
@@ -128,16 +133,10 @@
     <Compile Include="DUTs\ST_VisuWorkingArea.TcDUT">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="GVLs\GVL_Visu.TcGVL">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="GVLs\VISU_GlobalConst.TcGVL">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="GVLs\VISU_GlobalConst_Param.TcGVL">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="PlcTask.TcTTO">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\_FB_VisuCartesian.TcPOU">
@@ -158,9 +157,6 @@
     <Compile Include="POUs\_FB_VisuXtsLoop.TcPOU">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="POUs\P_VisuDemo.TcPOU">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="POUs\_FC_GetVersionSynVisu.TcPOU">
       <SubType>Code</SubType>
     </Compile>
@@ -169,11 +165,6 @@
     <None Include="Syn_Visu.tmc">
       <SubType>Content</SubType>
     </None>
-  </ItemGroup>
-  <ItemGroup>
-    <LibraryReference Include="Tc3_Module,newest,Beckhoff Automation GmbH">
-      <Namespace>Tc3_Module</Namespace>
-    </LibraryReference>
   </ItemGroup>
   <ProjectExtensions>
     <PlcProjectOptions>

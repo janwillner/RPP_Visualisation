@@ -31,12 +31,17 @@ A read-only web visualisation of packaging machines. It configures itself from w
     - `AdsSymbolAccess` (`--driver ads-tcp`): pure TCP client (`ads-client`). Needs a static route or AMS TCP loopback, which the TwinCAT 4026 user-mode runtime does not provide out of the box.
     - `InMemoryPlc`: tests and the simulator.
   - The simulator is just an `InMemoryPlc` preset that changes values on every `step`, so it runs through real discovery.
-  - PLC struct shapes and their mapping to the neutral model live in `plc-contract.ts` and `mapping.ts`. The PLC library `Syn_Visu` (TwinCAT project in `plc/`) implements the contract described in `docs/plc-contract.md`; keep library, `plc-contract.ts` and doc in sync. PLC code is edited only through the TwinCAT MCP tools and follows `docs/plc-coding-guidelines.md` (company guideline; `Syn_Visu`'s contract names stay Beckhoff-style).
+  - PLC struct shapes and their mapping to the neutral model live in `plc-contract.ts` and `mapping.ts`. The PLC library `Syn_Visu` (library project `plc/Syn_Visu`, demo application `plc/Syn_Visu_Demo` on ADS port 852, exported releases in `plc/library/`, all in `plc/RPP_Visu.sln`) implements the contract described in `docs/plc-contract.md`; keep library, `plc-contract.ts` and doc in sync. PLC code is edited only through the TwinCAT MCP tools and follows `docs/plc-coding-guidelines.md` (company guideline; `Syn_Visu`'s contract names stay Beckhoff-style).
 - `apps/web`: React + React Three Fiber.
   - **Seam:** `buildScene(config, snapshots, renderTime, hidden)` in `src/scene/scene-model.ts` is pure. It does hiding of user-hidden components, interpolation by `tRel`, latch + belt product positions, the product display lifecycle (normal / atTcp / placeholder / missed), Delta arms from the TCP (inverse kinematics), XTS gantry and loop movers (loop curves as semicircles) and products carried by movers, Cartesian robot parts and flange, gripper fingers and products carried by them, faults (red parts, labels and the per-component fault list), zones with their allocation areas, working areas and limit areas, the measure-mode snap points and component origins, and MCS → renderer conversion (`(x, y, z)mm → (x, z, −y)m`).
   - `SceneView.tsx` only draws the model and updates transforms per frame via refs. React re-renders only when the set of objects changes.
   - `connection.ts` buffers snapshots and renders `RENDER_DELAY_MS` behind the newest one.
 - Tests live only at the seams: gateway tests drive an `InMemoryPlc` and assert on emitted messages; web tests call `buildScene`. Two small gateway seams for deployment are tested too: `resolveGatewayOptions` (flags, config file, default paths packaged vs. repo) and `bridgeLaunch` (exe vs. dll). Rendering is not tested; the package is checked by a smoke run.
+
+## TwinCAT MCP
+
+- TwinCAT projects may be closed. If a call fails because no XAE is running (`find_projects` lists nothing, or RPC 0x800706BA), open the solution yourself: start `C:\Program Files\Beckhoff\TcXaeShell\Common7\IDE\TcXaeShell.exe "plc\RPP_Visu.sln"`, wait until the window title shows `RPP_Visu`, then call `initialize`.
+- If a TwinCAT MCP call has not answered after 5 minutes, do not keep waiting. Retry it once (after `initialize` again). If it hangs again, try another way: a different tool for the same goal, smaller steps, or check whether XAE shows a modal dialog and ask the user to close it.
 
 ## Agent skills
 
