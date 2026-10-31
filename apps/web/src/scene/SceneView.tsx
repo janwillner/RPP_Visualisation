@@ -2,7 +2,7 @@ import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import * as THREE from "three";
-import type { GatewayStore, SourceInfo } from "../connection";
+import type { SceneFeed, SourceInfo } from "../connection";
 import type {
   ProductDisplay,
   SceneAllocation,
@@ -64,7 +64,8 @@ export interface MeasurePoint {
 }
 
 export interface SceneViewProps {
-  store: GatewayStore;
+  /** The live gateway or a recording being played back. */
+  feed: SceneFeed;
   /** The PLC sources, each drawn on its own. */
   sources: SourceInfo[];
   layers: Layers;
@@ -257,7 +258,7 @@ function machineSignature(m: MachineScene): string {
 }
 
 function SceneContent(props: SceneViewProps) {
-  const { store, sources, layers, selection, modelRef, measureMode, onMeasure, measurePoints, hidden, onFaults } = props;
+  const { feed, sources, layers, selection, modelRef, measureMode, onMeasure, measurePoints, hidden, onFaults } = props;
   // In measure mode a click measures; selecting works only through the component tree.
   const onSelect = measureMode ? () => {} : props.onSelect;
   const machine = useRef<MachineScene>(EMPTY_MACHINE);
@@ -267,7 +268,7 @@ function SceneContent(props: SceneViewProps) {
 
   // Priority −1: runs before the sources' frame callbacks, which read the scene built here.
   useFrame(() => {
-    const model = buildMachineScene(store.sceneSources(), hidden);
+    const model = buildMachineScene(feed.sceneSources(), hidden);
     machine.current = model;
     modelRef.current = model;
     const s = machineSignature(model);

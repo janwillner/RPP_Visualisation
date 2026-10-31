@@ -201,6 +201,121 @@ button:hover {
   background: rgba(42, 49, 59, 0.9);
 }
 
+/* Record / stop, left of the measure button. */
+.record-toggle {
+  position: absolute;
+  right: 56px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 10px;
+  background: rgba(42, 49, 59, 0.9);
+}
+
+.record-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e53935;
+}
+
+.record-toggle.recording {
+  border-color: #e53935;
+}
+
+.stop-icon {
+  width: 12px;
+  height: 12px;
+  background: #e53935;
+  animation: recording-blink 1s steps(2, start) infinite;
+}
+
+@keyframes recording-blink {
+  to {
+    opacity: 0.3;
+  }
+}
+
+.record-time {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Playback controls along the bottom of the 3D view, clear of the record and measure buttons. */
+.player-bar {
+  position: absolute;
+  left: 8px;
+  right: 104px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(23, 27, 33, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.player-bar.playing {
+  border-color: var(--accent);
+}
+
+.player-bar .timeline {
+  flex: 1;
+  min-width: 80px;
+}
+
+.player-bar .player-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.player-bar .play {
+  min-width: 40px;
+}
+
+/* Playback: a coloured frame and a label make clear that this is not live. */
+.viewport.playback {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+
+.playback-banner {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 10px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #10141a;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.recording-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 60px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 6px 10px;
+  background: rgba(23, 27, 33, 0.95);
+  border: 1px solid var(--select);
+  border-radius: 4px;
+}
+
+/* The measure list sits above the player bar. */
+.viewport.has-player .measure {
+  bottom: 60px;
+  max-height: calc(100% - 68px);
+}
+
 .view-controls button {
   background: rgba(42, 49, 59, 0.9);
 }
@@ -600,6 +715,26 @@ button.link {
   .measure-toggle {
     width: 52px;
     height: 52px;
+  }
+
+  .record-toggle {
+    right: 68px;
+    min-width: 52px;
+    height: 52px;
+  }
+
+  .player-bar {
+    right: 128px;
+    flex-wrap: wrap;
+  }
+
+  .player-bar .timeline,
+  .player-bar select {
+    min-height: 44px;
+  }
+
+  .viewport.has-player .measure {
+    bottom: 120px;
   }
 
   .dot {

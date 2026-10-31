@@ -67,6 +67,18 @@ Restart the service after editing the file: `Restart-Service RPP_Visualisation`.
 
 This creates the service `RPP_Visualisation_852` with `C:\ProgramData\RPP_Visualisation\config-852.json`. A new instance needs `-Port`, and `-AdsPort` or `-AmsNetId`, so it cannot collide with the default instance. All instances share the program files, so running `install.ps1` without parameters later updates every instance. `Get-Help .\install.ps1 -Detailed` lists all parameters.
 
+## Recording and playback
+
+The round button with the red dot, bottom right in the 3D view, records the machine's motion: every PLC with its configuration, faults and products. Press it again (■) to stop. The recording shows its length and size while it runs, and stops by itself after 10 minutes. It is kept in this browser tab only.
+
+After stopping, the player bar along the bottom of the 3D view plays it back. While playing back the view has a coloured frame and says "Playback"; "Live" returns to the live machine.
+- ▶ / ❚❚ (Space) plays and pauses; ◀︎ ▶︎ (← →) step one snapshot; the slider jumps to any moment (Home and End to the start and end).
+- The speed goes from 0.1× to 2×. Selecting, the inspector, hiding components, the layers and measuring work as live.
+- **Save** downloads the recording as `rpp-recording-<date>-<time>.rpprec` (about 1.6 MB per minute). **Open recording** in the toolbar plays such a file, also on another PC. Recordings from another release with a different protocol version are refused.
+- The page warns before closing while a recording is not saved, and asks before an unsaved recording is replaced.
+
+Embedded in TwinCAT HMI, the browser control may block downloads. Then record and save in a normal browser on the same IPC.
+
 ## Reading other IPCs over an ADS route
 
 One visualisation can read the PLCs of several IPCs, for example when a machine's modules run on separate IPCs. It shows all of them in one 3D view. Install it on one IPC (or the HMI PC) with TwinCAT; it reads the other IPCs through TwinCAT's own ADS router.

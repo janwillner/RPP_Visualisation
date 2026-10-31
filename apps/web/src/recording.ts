@@ -1,0 +1,514 @@
+import { PROTOCOL_VERSION, type ConfigMessage, type GatewayMessage, type StateMessage } from "@rpp/protocol";
+import { RENDER_DELAY_MS, type SourceInfo } from "./connection";
+import type { SceneSource } from "./scene/scene-model";
+
+/**
+ * Recording and playback of what the gateway sends, kept in the browser (ADR 0006). The recorder stores every
+ * message with its arrival time, gzip-compressed in blocks of CHUNK_MS; a recording answers, for any moment, what
+ * every source looked like then, in the shape the machine scene takes.
+ */
+
+/** A recording stops taking messages at this length. */
+export const MAX_RECORDING_MS = 10 * 60_000;
+/** Messages are compressed in blocks of this length. */
+const CHUNK_MS = 1000;
+/** Snapshots before the playback moment that are kept for interpolation, like the live buffer. */
+const WINDOW_MS = 1000;
+/** Decompressed blocks kept for playback. */
+const CACHED_CHUNKS = 6;
+
+const FILE_FORMAT = "rpp-recording";
+const FILE_FORMAT_VERSION = 1;
+
+/** A gateway message and when it arrived, ms after the recording started. */
+interface Entry {
+  at: number;
+  message: GatewayMessage;
+}
+
+/**
+ * An entry as stored. A conveyor's product register hardly changes from one snapshot to the next but makes up most
+ * of a state, and a state is larger than gzip's window: so a stored state holds only the products that changed since
+ * the source's previous state, and `registers` lists per conveyor id the ids of the whole register in order.
+ */
+interface StoredEntry extends Entry {
+  registers?: Record<string, number[]>;
+}
+
+type Product = Extract<StateMessage["components"][number], { type: "conveyor" }>["products"][number];
+
+/** Per source and conveyor the products of its last state, as JSON by product id. */
+type Registers = Map<string, Map<number, Map<number, string>>>;
+
+/** Per source and conveyor the products of its last restored state, by product id. */
+type Restored = Map<string, Map<number, Map<number, Product>>>;
+
+/** The entry to store for `message`; `registers` holds the previous states and is updated. */
+function storedEntry(at: number, message: GatewayMessage, raw: string, registers: Registers): string {
+  if (message.kind !== "state") return `{"at":${at},"message":${raw}}`;
+  const bySource = registers.get(message.sourceId) ?? new Map<number, Map<number, string>>();
+  registers.set(message.sourceId, bySource);
+  const order: Record<string, number[]> = {};
+  const components = message.components.map((c) => {
+    if (c.type !== "conveyor") return c;
+    const previous = bySource.get(c.id);
+    const current = new Map<number, string>();
+    const changed: Product[] = [];
+    for (const p of c.products) {
+      const json = JSON.stringify(p);
+      current.set(p.id, json);
+      if (previous?.get(p.id) !== json) changed.push(p);
+    }
+    bySource.set(c.id, current);
+    order[c.id] = c.products.map((p) => p.id);
+    return { ...c, products: changed };
+  });
+  return JSON.stringify({ at, message: { ...message, components }, registers: order });
+}
+
+/** Restores stored entries in order; `registers` holds the products of each source's previous state. */
+function restoredEntry(stored: StoredEntry, registers: Restored): Entry {
+  const { at, message, registers: order } = stored;
+  if (message.kind !== "state" || !order) return { at, message };
+  const bySource = registers.get(message.sourceId) ?? new Map<number, Map<number, Product>>();
+  registers.set(message.sourceId, bySource);
+  const components = message.components.map((c) => {
+    const ids = order[c.id];
+    if (c.type !== "conveyor" || !ids) return c;
+    const known = new Map(bySource.get(c.id) ?? []);
+    for (const p of c.products) known.set(p.id, p);
+    const products = ids.map((id) => known.get(id)!);
+    bySource.set(c.id, new Map(products.map((p) => [p.id, p])));
+    return { ...c, products };
+  });
+  return { at, message: { ...message, components } };
+}
+
+interface Chunk {
+  start: number;
+  end: number;
+  /** Every source as it was when the block starts. */
+  context: SourceInfo[];
+  /** Sources with at least one state in the block. */
+  stateSources: string[];
+  data: Uint8Array;
+}
+
+interface FileHeader {
+  format: typeof FILE_FORMAT;
+  formatVersion: number;
+  protocolVersion: number;
+  recordedAt: string;
+  durationMs: number;
+  /** Every source as it was when the recording started. */
+  sources: SourceInfo[];
+}
+
+export class RecordingFileError extends Error {}
+
+/** Takes the gateway's messages while recording. */
+export class Recorder {
+  readonly recordedAt: string;
+  /** True once MAX_RECORDING_MS is reached; the recorder then takes nothing more. */
+  full = false;
+  private readonly initial: SourceInfo[];
+  private readonly sources = new Map<string, SourceInfo>();
+  private readonly chunks: Promise<Chunk>[] = [];
+  private pending: string[] = [];
+  private pendingStart = 0;
+  private pendingEnd = 0;
+  private pendingContext: SourceInfo[] = [];
+  private compressedBytes = 0;
+  private pendingBytes = 0;
+  private lastAt = 0;
+  private stopped = false;
+  private readonly snapshotTimes: number[] = [];
+  /** Previous product registers within the block being filled; every block starts complete. */
+  private registers: Registers = new Map();
+  private pendingStateSources = new Set<string>();
+
+  /** `initial`: every source as it is when recording starts (status and config, if any). */
+  constructor(initial: readonly SourceInfo[], recordedAt = new Date().toISOString()) {
+    this.recordedAt = recordedAt;
+    this.initial = initial.map((s) => ({ ...s }));
+    for (const s of this.initial) this.sources.set(s.sourceId, { ...s });
+  }
+
+  /** Length so far, ms. */
+  get durationMs(): number {
+    return this.lastAt;
+  }
+
+  /** Memory taken so far: compressed blocks plus the block being filled. */
+  get bytes(): number {
+    return this.compressedBytes + this.pendingBytes;
+  }
+
+  /**
+   * Adds a message that arrived `at` ms after the recording started; `raw` is its JSON as received. Returns false,
+   * and keeps nothing, once the recording is full or stopped.
+   */
+  add(at: number, message: GatewayMessage, raw: string = JSON.stringify(message)): boolean {
+    if (this.stopped || this.full) return false;
+    if (at >= MAX_RECORDING_MS) {
+      this.full = true;
+      return false;
+    }
+    if (this.pending.length > 0 && at >= this.pendingStart + CHUNK_MS) this.seal();
+    if (this.pending.length === 0) {
+      this.pendingStart = at;
+      this.pendingContext = [...this.sources.values()].map((s) => ({ ...s }));
+      this.registers = new Map();
+      this.pendingStateSources = new Set();
+    }
+    if (message.kind === "state") this.pendingStateSources.add(message.sourceId);
+    const line = storedEntry(at, message, raw, this.registers);
+    this.pending.push(line);
+    this.pendingBytes += line.length;
+    this.pendingEnd = at;
+    this.lastAt = at;
+    const source = this.sources.get(message.sourceId) ?? {
+      sourceId: message.sourceId,
+      name: message.sourceId,
+      status: undefined,
+      config: undefined,
+    };
+    if (message.kind === "status") Object.assign(source, { name: message.sourceName, status: message.status });
+    if (message.kind === "config") source.config = message;
+    if (message.kind === "state" && this.snapshotTimes.at(-1) !== at) this.snapshotTimes.push(at);
+    this.sources.set(message.sourceId, source);
+    return true;
+  }
+
+  /** Ends the recording. */
+  async stop(): Promise<Recording> {
+    if (this.pending.length > 0) this.seal();
+    this.stopped = true;
+    const chunks = await Promise.all(this.chunks);
+    return new Recording(this.initial, chunks, this.lastAt, this.recordedAt, this.snapshotTimes);
+  }
+
+  private seal(): void {
+    const text = this.pending.join("\n");
+    const block = {
+      start: this.pendingStart,
+      end: this.pendingEnd,
+      context: this.pendingContext,
+      stateSources: [...this.pendingStateSources],
+    };
+    this.pending = [];
+    this.pendingBytes = 0;
+    this.chunks.push(
+      gzip(text).then((data) => {
+        this.compressedBytes += data.length;
+        return { ...block, data };
+      }),
+    );
+  }
+}
+
+/** What playback shows at one moment. */
+export interface PlaybackView {
+  /** Every source with the status and config it had then. */
+  sources: SourceInfo[];
+  /** Every source as the machine scene takes it. */
+  scene: SceneSource[];
+  /** A source's newest state at that moment, e.g. for the inspector. */
+  latestState(sourceId: string): StateMessage | undefined;
+}
+
+/** A finished recording. */
+export class Recording {
+  private readonly decoded = new Map<number, Promise<Entry[]>>();
+  private readonly ready = new Map<number, Entry[]>();
+
+  constructor(
+    private readonly initial: readonly SourceInfo[],
+    private readonly chunks: readonly Chunk[],
+    readonly durationMs: number,
+    readonly recordedAt: string,
+    /** Moment of every state snapshot, ms, in order: where stepping stops. */
+    readonly snapshotTimes: readonly number[],
+  ) {}
+
+  /** Decompresses what the given moment needs; afterwards `view(t)` answers without waiting. */
+  async load(t: number): Promise<void> {
+    const { first, last, earlier } = this.range(t);
+    const loads: Promise<Entry[]>[] = [];
+    for (let i = first; i <= last; i++) loads.push(this.decode(i));
+    for (const i of earlier.values()) loads.push(this.decode(i));
+    await Promise.all(loads);
+  }
+
+  /** What playback shows at `t` ms, or undefined while the blocks it needs are not decompressed yet. */
+  view(t: number): PlaybackView | undefined {
+    const { first, last, earlier } = this.range(t);
+    const blocks: Entry[][] = [];
+    for (let i = first; i <= last; i++) {
+      const entries = this.ready.get(i);
+      if (!entries) return undefined;
+      blocks.push(entries);
+    }
+    // A source that stopped sending keeps its last state, as live.
+    const lastStates = new Map<string, Entry>();
+    for (const [sourceId, i] of earlier) {
+      const entries = this.ready.get(i);
+      if (!entries) return undefined;
+      const last = [...entries].reverse().find((e) => e.message.kind === "state" && e.message.sourceId === sourceId);
+      if (last) lastStates.set(sourceId, last);
+    }
+    return buildView(first >= 0 ? this.chunks[first]!.context : this.initial, lastStates, blocks, t);
+  }
+
+  /** `view(t)`, decompressing first if needed. */
+  async viewAt(t: number): Promise<PlaybackView> {
+    await this.load(t);
+    return this.view(t)!;
+  }
+
+  /** The recording as a file: one gzip-compressed JSON line per message, after a header line. */
+  async toFile(): Promise<Uint8Array> {
+    const header: FileHeader = {
+      format: FILE_FORMAT,
+      formatVersion: FILE_FORMAT_VERSION,
+      protocolVersion: PROTOCOL_VERSION,
+      recordedAt: this.recordedAt,
+      durationMs: this.durationMs,
+      sources: [...this.initial],
+    };
+    const encoder = new TextEncoder();
+    const chunks = this.chunks;
+    const lines = new ReadableStream<Uint8Array<ArrayBuffer>>({
+      async start(controller) {
+        controller.enqueue(encoder.encode(`${JSON.stringify(header)}\n`));
+        // One block at a time, so the whole recording is never decompressed at once.
+        for (const chunk of chunks) controller.enqueue(encoder.encode(`${await gunzipText(chunk.data)}\n`));
+        controller.close();
+      },
+    });
+    return new Uint8Array(await new Response(lines.pipeThrough(new CompressionStream("gzip"))).arrayBuffer());
+  }
+
+  /** Opens a file written by `toFile`. Throws RecordingFileError for anything else. */
+  static async fromFile(bytes: Uint8Array): Promise<Recording> {
+    let recorder: Recorder | undefined;
+    const registers = new Map() as Restored;
+    try {
+      const text = new Blob([bytes as BlobPart])
+        .stream()
+        .pipeThrough(new DecompressionStream("gzip"))
+        .pipeThrough(new TextDecoderStream());
+      for await (const line of lines(text)) {
+        if (!line) continue;
+        if (!recorder) {
+          recorder = new Recorder(...checkedHeader(line));
+          continue;
+        }
+        const { at, message } = restoredEntry(JSON.parse(line) as StoredEntry, registers);
+        recorder.add(at, message);
+      }
+    } catch (error) {
+      if (error instanceof RecordingFileError) throw error;
+      throw new RecordingFileError(`This is not a recording file (${(error as Error).message})`);
+    }
+    if (!recorder) throw new RecordingFileError("The recording file is empty");
+    return recorder.stop();
+  }
+
+  /**
+   * Blocks needed at `t`: from the one holding the oldest snapshot kept to the last one starting before `t`, and per
+   * source without a state in those the earlier block holding its last one.
+   */
+  private range(t: number): { first: number; last: number; earlier: Map<string, number> } {
+    let last = -1;
+    while (last + 1 < this.chunks.length && this.chunks[last + 1]!.start <= t) last++;
+    let first = last;
+    while (first > 0 && this.chunks[first - 1]!.end >= t - WINDOW_MS) first--;
+    const covered = new Set<string>();
+    for (let i = Math.max(first, 0); i <= last; i++) for (const id of this.chunks[i]!.stateSources) covered.add(id);
+    const earlier = new Map<string, number>();
+    for (let i = first - 1; i >= 0; i--) {
+      for (const id of this.chunks[i]!.stateSources) {
+        if (!covered.has(id) && !earlier.has(id)) earlier.set(id, i);
+      }
+    }
+    return { first, last, earlier };
+  }
+
+  private decode(index: number): Promise<Entry[]> {
+    let decoded = this.decoded.get(index);
+    if (decoded) {
+      // Most recently used last.
+      this.decoded.delete(index);
+      this.decoded.set(index, decoded);
+      return decoded;
+    }
+    const pending = gunzipText(this.chunks[index]!.data).then((text) => {
+      const registers: Restored = new Map();
+      const entries = text.split("\n").map((line) => restoredEntry(JSON.parse(line) as StoredEntry, registers));
+      // Not when the block was dropped from the cache meanwhile.
+      if (this.decoded.get(index) === pending) this.ready.set(index, entries);
+      return entries;
+    });
+    decoded = pending;
+    this.decoded.set(index, decoded);
+    // Keep only the most recently used blocks.
+    while (this.decoded.size > CACHED_CHUNKS) {
+      const oldest = this.decoded.keys().next().value!;
+      this.decoded.delete(oldest);
+      this.ready.delete(oldest);
+    }
+    return decoded;
+  }
+}
+
+/**
+ * Applies the blocks up to `t` on top of the sources as they were at the first block's start; `lastStates` are the
+ * states of sources that sent none since.
+ */
+function buildView(
+  context: readonly SourceInfo[],
+  lastStates: ReadonlyMap<string, Entry>,
+  blocks: Entry[][],
+  t: number,
+): PlaybackView {
+  const sources = new Map<string, SourceInfo>(context.map((s) => [s.sourceId, { ...s }]));
+  /** Per source the states of its current config version and timeline, with their arrival. */
+  const states = new Map<string, Entry[]>();
+  for (const [sourceId, entry] of lastStates) {
+    const m = entry.message as StateMessage;
+    if (m.configVersion === sources.get(sourceId)?.config?.configVersion) states.set(sourceId, [entry]);
+  }
+  for (const block of blocks) {
+    for (const entry of block) {
+      if (entry.at > t) break;
+      const m = entry.message;
+      const source = sources.get(m.sourceId) ?? { sourceId: m.sourceId, name: m.sourceId, status: undefined, config: undefined };
+      sources.set(m.sourceId, source);
+      if (m.kind === "status") Object.assign(source, { name: m.sourceName, status: m.status });
+      if (m.kind === "config") {
+        // A new config version starts a new timeline, as live.
+        if (m.configVersion !== source.config?.configVersion) states.delete(m.sourceId);
+        source.config = m;
+      }
+      if (m.kind === "state" && m.configVersion === source.config?.configVersion) {
+        let list = states.get(m.sourceId);
+        // tRel restarts when the gateway rediscovers: drop the old timeline.
+        const previous = list?.at(-1)?.message as StateMessage | undefined;
+        if (!list || (previous && m.tRel < previous.tRel)) states.set(m.sourceId, (list = []));
+        list.push(entry);
+      }
+    }
+  }
+  for (const [sourceId, list] of states) {
+    const kept = list.filter((e) => e.at >= t - WINDOW_MS);
+    states.set(sourceId, kept.length > 0 ? kept : list.slice(-1));
+  }
+  const infos = [...sources.values()];
+  return {
+    sources: infos,
+    scene: infos.map((s) => {
+      const list = states.get(s.sourceId) ?? [];
+      const snapshots = list.map((e) => e.message as StateMessage);
+      return {
+        sourceId: s.sourceId,
+        config: s.config,
+        snapshots,
+        renderTime: renderTime(list, t),
+        online: s.status?.plcConnected === true,
+      };
+    }),
+    latestState: (sourceId) => states.get(sourceId)?.at(-1)?.message as StateMessage | undefined,
+  };
+}
+
+/** Like the live buffer: RENDER_DELAY_MS behind, mapped onto the source's tRel by the smallest arrival offset. */
+function renderTime(list: readonly Entry[], t: number): number {
+  const latest = list.at(-1)?.message as StateMessage | undefined;
+  if (!latest) return 0;
+  let offset = Infinity;
+  for (const e of list) offset = Math.min(offset, e.at - (e.message as StateMessage).tRel);
+  return Math.min(latest.tRel, t - offset - RENDER_DELAY_MS);
+}
+
+function checkedHeader(line: string): [SourceInfo[], string] {
+  let header: Partial<FileHeader>;
+  try {
+    header = JSON.parse(line) as Partial<FileHeader>;
+  } catch {
+    throw new RecordingFileError("This is not a recording file");
+  }
+  if (header.format !== FILE_FORMAT || !Array.isArray(header.sources) || typeof header.recordedAt !== "string") {
+    throw new RecordingFileError("This is not a recording file");
+  }
+  if (header.formatVersion !== FILE_FORMAT_VERSION) {
+    throw new RecordingFileError(
+      `The recording has file format ${header.formatVersion}, this version reads ${FILE_FORMAT_VERSION}`,
+    );
+  }
+  if (header.protocolVersion !== PROTOCOL_VERSION) {
+    throw new RecordingFileError(
+      `The recording has protocol version ${header.protocolVersion}, this version plays ${PROTOCOL_VERSION}`,
+    );
+  }
+  return [header.sources, header.recordedAt];
+}
+
+async function* lines(text: ReadableStream<string>): AsyncGenerator<string> {
+  let rest = "";
+  const reader = text.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const parts = (rest + value).split("\n");
+    rest = parts.pop()!;
+    yield* parts;
+  }
+  if (rest) yield rest;
+}
+
+async function gzip(text: string): Promise<Uint8Array> {
+  const stream = new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function gunzipText(bytes: Uint8Array): Promise<string> {
+  return new Response(new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Playback clock
+
+/** Playback speeds offered. */
+export const SPEEDS = [0.1, 0.25, 0.5, 1, 2] as const;
+
+export interface PlaybackClock {
+  /** ms since the recording started. */
+  time: number;
+  playing: boolean;
+  speed: number;
+}
+
+/** The clock after `elapsedMs` of real time; playing stops at the end. */
+export function tick(clock: PlaybackClock, elapsedMs: number, durationMs: number): PlaybackClock {
+  if (!clock.playing) return clock;
+  const time = Math.min(durationMs, clock.time + elapsedMs * clock.speed);
+  return { ...clock, time, playing: time < durationMs };
+}
+
+/** Starts playing; at the end it starts again from the beginning. */
+export function playFrom(clock: PlaybackClock, durationMs: number): PlaybackClock {
+  return { ...clock, time: clock.time >= durationMs ? 0 : clock.time, playing: true };
+}
+
+/** Jumps to `time`, kept within the recording. */
+export function seek(clock: PlaybackClock, time: number, durationMs: number): PlaybackClock {
+  return { ...clock, time: Math.min(durationMs, Math.max(0, time)) };
+}
+
+/** Pauses and moves to the next (1) or previous (−1) snapshot moment; stays at the first and last one. */
+export function step(clock: PlaybackClock, times: readonly number[], direction: 1 | -1): PlaybackClock {
+  const next =
+    direction > 0 ? times.find((t) => t > clock.time) : [...times].reverse().find((t) => t < clock.time);
+  return { ...clock, playing: false, time: next ?? clock.time };
+}

@@ -7,8 +7,10 @@ import {
   isOnline,
   useGateway,
   type GatewaySnapshot,
+  type SceneFeed,
   type SourceInfo,
 } from "./connection";
+import { PlayerBar, RecordButton, usePlaybackKeys, useRecordingControls } from "./RecordingControls";
 import {
   componentKey,
   faultText,
@@ -126,6 +128,14 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const recording = useRecordingControls(store);
+  usePlaybackKeys(recording);
+  const fileInput = useRef<HTMLInputElement>(null);
+  // While playing back, the tree, the 3D view and the inspector show the recording instead of the live data.
+  const playback = recording.mode === "playback" ? recording.playback : undefined;
+  const shown: GatewaySnapshot = playback ? { socket: "open", sources: playback.sources, protocolError: undefined } : gateway;
+  const feed: SceneFeed = playback && recording.player ? recording.player : store;
+
   const camera = (action: CameraAction) => setCameraRequest((r) => ({ action, seq: r.seq + 1 }));
   const toggle = (key: keyof Layers) => setLayers((l) => ({ ...l, [key]: !l[key] }));
   const appClass = ["app", EMBEDDED && "embedded", !leftOpen && "left-closed", !rightOpen && "right-closed"]
@@ -154,10 +164,26 @@ export function App() {
           <Toggle label="TCP markers" on={layers.tcpMarkers} onClick={() => toggle("tcpMarkers")} />
           <Toggle label="Fault labels" on={layers.faultLabels} onClick={() => toggle("faultLabels")} />
         </div>
+        <div className="group">
+          <button disabled={recording.recorder !== undefined} onClick={() => fileInput.current?.click()}>
+            Open recording
+          </button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".rpprec"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) recording.open(file);
+              e.target.value = "";
+            }}
+          />
+        </div>
       </header>
       <aside className="panel left" hidden={!leftOpen}>
         <ComponentTree
-          gateway={gateway}
+          gateway={shown}
           selection={selection}
           onSelect={setSelection}
           hidden={hidden}
@@ -166,10 +192,15 @@ export function App() {
         />
       </aside>
       {/* No context menu on a long press: there are no secondary actions in the 3D view. */}
-      <main className="viewport" onContextMenu={(e) => e.preventDefault()}>
+      <main
+        className={["viewport", playback && "playback", recording.player && !recording.recorder && "has-player"]
+          .filter(Boolean)
+          .join(" ")}
+        onContextMenu={(e) => e.preventDefault()}
+      >
         <SceneView
-          store={store}
-          sources={gateway.sources}
+          feed={feed}
+          sources={shown.sources}
           layers={layers}
           selection={selection}
           onSelect={setSelection}
@@ -183,7 +214,18 @@ export function App() {
         />
         <ViewControls onCamera={camera} />
         <MeasureButton on={measureMode} onClick={() => setMeasureMode((m) => !m)} />
-        {EMBEDDED && <OfflineNotice gateway={gateway} />}
+        <RecordButton controls={recording} />
+        <PlayerBar controls={recording} />
+        {playback && <div className="playback-banner">Playback</div>}
+        {recording.notice && (
+          <div className="recording-notice" role="status">
+            {recording.notice}
+            <button className="link" aria-label="Close" onClick={recording.dismissNotice}>
+              ×
+            </button>
+          </div>
+        )}
+        {EMBEDDED && !playback && <OfflineNotice gateway={gateway} />}
         {(measureMode || measurePoints.length > 0) && (
           <MeasureList
             measureMode={measureMode}
@@ -198,8 +240,8 @@ export function App() {
       </main>
       <aside className="panel right" hidden={!rightOpen}>
         <Inspector
-          store={store}
-          sources={gateway.sources}
+          feed={feed}
+          sources={shown.sources}
           selection={selection}
           modelRef={modelRef}
           faults={faults}
@@ -535,13 +577,14 @@ function EyeIcon({ open }: { open: boolean }) {
 }
 
 function Inspector(props: {
-  store: GatewayStore;
+  /** The live gateway or the recording being played back. */
+  feed: SceneFeed;
   sources: SourceInfo[];
   selection: Selection;
   modelRef: React.RefObject<MachineScene | undefined>;
   faults: SourcedFaults[];
 }) {
-  const { store, sources, selection, modelRef, faults } = props;
+  const { feed, sources, selection, modelRef, faults } = props;
   useTick(200);
   if (!selection) {
     return (
@@ -577,9 +620,8 @@ function Inspector(props: {
   }
   const source = sources.find((s) => s.sourceId === selection.sourceId);
   const component: ComponentConfig | undefined = source?.config?.components.find((c) => c.id === selection.id);
-  const state: ComponentState | undefined = store
-    .buffer(selection.sourceId)
-    .latest()
+  const state: ComponentState | undefined = feed
+    .latestState(selection.sourceId)
     ?.components.find((c) => c.id === selection.id);
   const delta = sourceScene(modelRef, selection.sourceId)?.deltas.find((d) => d.id === selection.id);
   return (

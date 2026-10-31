@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import {
   GatewayMessageSchema,
   type ConfigMessage,
+  type GatewayMessage,
   type GatewayStatus,
   type StateMessage,
 } from "@rpp/protocol";
@@ -37,6 +38,17 @@ export interface GatewaySnapshot {
   sources: SourceInfo[];
   protocolError: string | undefined;
 }
+
+/** What the 3D view and the inspector read every frame: the live gateway or a recording being played back. */
+export interface SceneFeed {
+  /** Every source as the machine scene takes it, at `now` (performance.now()). */
+  sceneSources(now?: number): SceneSource[];
+  /** A source's newest state, e.g. for the inspector. */
+  latestState(sourceId: string): StateMessage | undefined;
+}
+
+/** Receives every valid message from the gateway with its JSON and arrival time (performance.now()). */
+export type MessageListener = (message: GatewayMessage, raw: string, arrival: number) => void;
 
 /** Snapshot buffer and clock of one source; every source has its own tRel axis. */
 export class SourceBuffer {
@@ -91,8 +103,9 @@ export class SourceBuffer {
  * Connection to the gateway's WebSocket: keeps config, status and a short buffer of state snapshots per PLC source.
  * Per-frame consumers read `buffer(sourceId)` and `sceneSources()` directly; React UI subscribes via `useGateway`.
  */
-export class GatewayStore {
+export class GatewayStore implements SceneFeed {
   private readonly buffers = new Map<string, SourceBuffer>();
+  private readonly messageListeners = new Set<MessageListener>();
   private socket: WebSocket | undefined;
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   private retryMs = 500;
@@ -126,6 +139,21 @@ export class GatewayStore {
   };
 
   getSnapshot = () => this.snapshot;
+
+  /** Every source as it is now, where a recording starts. */
+  recordingContext(): SourceInfo[] {
+    return this.snapshot.sources.map((s) => ({ ...s }));
+  }
+
+  /** Every message from now on, e.g. for recording. */
+  onMessage(listener: MessageListener): () => void {
+    this.messageListeners.add(listener);
+    return () => this.messageListeners.delete(listener);
+  }
+
+  latestState(sourceId: string): StateMessage | undefined {
+    return this.buffer(sourceId).latest();
+  }
 
   /** The snapshot buffer of a source; empty for an unknown one. */
   buffer(sourceId: string): SourceBuffer {
@@ -200,6 +228,8 @@ export class GatewayStore {
       return;
     }
     const message = parsed.data;
+    const arrival = performance.now();
+    for (const l of this.messageListeners) l(message, data, arrival);
     const source = this.snapshot.sources.find((s) => s.sourceId === message.sourceId);
     switch (message.kind) {
       case "status":

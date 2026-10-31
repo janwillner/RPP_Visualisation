@@ -16,6 +16,14 @@ _Avoid_: location, placement
 One visualised part of a machine that the PLC registers: a conveyor, a Delta robot, an XTS gantry, an XTS loop or a Cartesian robot.
 _Avoid_: unit, device, module
 
+**Recording**:
+What the visualisation received from the gateway during a period, kept to be played back: every source with its configuration, faults and state.
+_Avoid_: log, trace, history
+
+**Playback**:
+Showing a recording in the 3D view instead of the live machine, at any speed or moment.
+_Avoid_: replay, simulation (the simulator is something else)
+
 **Source**:
 One PLC runtime the visualisation reads, identified by its AmsNetId and ADS port. A machine may span several sources; all of them report in the same MCS, and component ids are unique only within one source.
 _Avoid_: connection, target, IPC (an IPC may run several sources)
