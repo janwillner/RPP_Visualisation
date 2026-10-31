@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Fault, ComponentConfig, ComponentState } from "@rpp/protocol";
 import {
   GatewayStore,
@@ -63,6 +63,32 @@ function usePanelOpen(storageKey: string, initial: () => boolean): [boolean, () 
   return [open, toggle];
 }
 
+/** Side panel width limits while dragging its edge, px. */
+const PANEL_MIN_PX = 180;
+const PANEL_MAX_SHARE = 0.45;
+
+/** A side panel's width set by dragging, remembered per device; undefined keeps the stylesheet's width. */
+function usePanelWidth(storageKey: string): [number | undefined, (px: number) => void] {
+  const [width, setWidth] = useState<number | undefined>(() => {
+    try {
+      const stored = Number(localStorage.getItem(storageKey));
+      return stored > 0 ? stored : undefined;
+    } catch {
+      return undefined;
+    }
+  });
+  const set = (px: number) => {
+    const clamped = Math.round(Math.min(Math.max(px, PANEL_MIN_PX), window.innerWidth * PANEL_MAX_SHARE));
+    setWidth(clamped);
+    try {
+      localStorage.setItem(storageKey, String(clamped));
+    } catch {
+      // Not remembered then; the width still applies.
+    }
+  };
+  return [width, set];
+}
+
 /** Re-render at a fixed rate, for panels that show live values. */
 function useTick(intervalMs: number): number {
   const [tick, setTick] = useState(0);
@@ -101,6 +127,8 @@ export function App() {
   const [leftOpen, toggleLeft] = usePanelOpen("rpp.panel.components", () => window.innerWidth >= WIDE_SCREEN_PX);
   // The inspector starts closed: the 3D view gets the room until someone wants the details.
   const [rightOpen, toggleRight] = usePanelOpen("rpp.panel.inspector", () => false);
+  const [leftWidth, setLeftWidth] = usePanelWidth("rpp.panel.components.width");
+  const [rightWidth, setRightWidth] = usePanelWidth("rpp.panel.inspector.width");
   const modelRef = useRef<MachineScene | undefined>(undefined);
   const [measureMode, setMeasureMode] = useState(false);
   const [measurePoints, setMeasurePoints] = useState<MeasurePoint[]>([]);
@@ -146,6 +174,12 @@ export function App() {
     // A long press on a touch screen opens no context menu: the app has no secondary actions.
     <div
       className={appClass}
+      style={
+        {
+          ...(leftOpen && leftWidth && { "--left": `${leftWidth}px` }),
+          ...(rightOpen && rightWidth && { "--right": `${rightWidth}px` }),
+        } as CSSProperties
+      }
       onContextMenu={(e) => {
         if ((e.nativeEvent as PointerEvent).pointerType === "touch") e.preventDefault();
       }}
@@ -192,6 +226,8 @@ export function App() {
           hidden={hidden}
           onFaults={setFaults}
         />
+        {leftOpen && <PanelEdge side="left" onResize={setLeftWidth} />}
+        {rightOpen && <PanelEdge side="right" onResize={setRightWidth} />}
         <PanelHandle side="left" label="Components" open={leftOpen} onClick={toggleLeft} />
         <PanelHandle side="right" label="Inspector" open={rightOpen} onClick={toggleRight} />
         <ViewControls onCamera={camera} />
@@ -394,6 +430,32 @@ function MeasureList(props: { measureMode: boolean; points: MeasurePoint[]; onCl
         </>
       )}
     </div>
+  );
+}
+
+/** The 3D view's edge next to an open side panel: dragging it sets the panel's width. */
+function PanelEdge({ side, onResize }: { side: "left" | "right"; onResize: (px: number) => void }) {
+  const drag = useRef<{ x: number; width: number }>(undefined);
+  return (
+    <div
+      className={`panel-edge ${side}`}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={side === "left" ? "Resize the components panel" : "Resize the inspector"}
+      onPointerDown={(e) => {
+        const panel = document.querySelector(`.panel.${side}`);
+        if (!panel) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        drag.current = { x: e.clientX, width: panel.getBoundingClientRect().width };
+      }}
+      onPointerMove={(e) => {
+        if (!drag.current) return;
+        const dx = e.clientX - drag.current.x;
+        onResize(drag.current.width + (side === "left" ? dx : -dx));
+      }}
+      onPointerUp={() => (drag.current = undefined)}
+      onPointerCancel={() => (drag.current = undefined)}
+    />
   );
 }
 

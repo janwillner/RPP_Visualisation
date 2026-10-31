@@ -176,6 +176,30 @@ button:hover {
 }
 
 /* Side panel handles: tabs on the 3D view's left and right edge, so they always sit next to their panel. */
+/* The 3D view's edge next to an open side panel: drag to resize it. */
+.panel-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.panel-edge.left {
+  left: 0;
+}
+
+.panel-edge.right {
+  right: 0;
+}
+
+.panel-edge:hover,
+.panel-edge:active {
+  background: rgba(79, 195, 247, 0.35);
+}
+
 .panel-handle {
   position: absolute;
   top: 50%;
@@ -592,6 +616,11 @@ button.link {
 }
 
 @media (max-width: 900px) {
+  /* The panels sit below the 3D view here: no width to drag. */
+  .panel-edge {
+    display: none;
+  }
+
   .app {
     grid-template-columns: 1fr;
     grid-template-rows: auto 40vh 1fr auto auto;
@@ -791,6 +820,10 @@ button.link {
     right: 68px;
     min-width: 52px;
     height: 52px;
+  }
+
+  .panel-edge {
+    width: 16px;
   }
 
   .player-bar-toggle {
