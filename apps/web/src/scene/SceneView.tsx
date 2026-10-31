@@ -49,8 +49,6 @@ export type LocalSelection =
 export type Selection = (NonNullable<LocalSelection> & { sourceId: string }) | undefined;
 
 export type CameraPreset = "top" | "front" | "side" | "iso";
-/** A preset view, or a zoom step towards / away from the orbit target (for single-finger use). */
-export type CameraAction = CameraPreset | "zoomIn" | "zoomOut";
 
 /** A measuring point: a snap point frozen at the moment it was clicked. */
 export interface MeasurePoint {
@@ -72,7 +70,7 @@ export interface SceneViewProps {
   selection: Selection;
   onSelect: (selection: Selection) => void;
   /** Changes to `{ action, seq }` move the camera; `seq` allows repeating the same action. */
-  cameraRequest: { action: CameraAction; seq: number };
+  cameraRequest: { action: CameraPreset; seq: number };
   /** Receives the machine scene every frame, e.g. for the inspector. */
   modelRef: MutableRefObject<MachineScene | undefined>;
   /** Measure mode: origins and snap points are shown, a click on a snap point measures instead of selecting. */
@@ -1373,12 +1371,10 @@ function McsAxes() {
   );
 }
 
-/** Factor by which one zoom step changes the distance to the orbit target. */
-const ZOOM_STEP = 0.8;
 
 /** Frames the conveyors and Delta bases of all sources. */
 function CameraRig(props: {
-  request: { action: CameraAction; seq: number };
+  request: { action: CameraPreset; seq: number };
   structure: { conveyors: SceneConveyor[]; deltas: SceneDelta[] };
 }) {
   const { request, structure } = props;
@@ -1412,18 +1408,9 @@ function CameraRig(props: {
     }
   };
 
-  /** Moves the camera towards (factor < 1) or away from the orbit target, keeping the view direction. */
-  const zoom = (factor: number) => {
-    const target = controls?.target ?? new THREE.Vector3();
-    camera.position.sub(target).multiplyScalar(factor).add(target);
-    controls?.update();
-  };
-
   useEffect(() => {
     if (request.seq === 0) return;
-    if (request.action === "zoomIn") zoom(ZOOM_STEP);
-    else if (request.action === "zoomOut") zoom(1 / ZOOM_STEP);
-    else frame(request.action);
+    frame(request.action);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request.seq]);
 

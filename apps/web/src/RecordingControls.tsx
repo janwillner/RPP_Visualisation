@@ -16,6 +16,9 @@ export interface RecordingControls {
   saved: boolean;
   /** Set when the recording stopped by itself (length limit) or a file could not be opened. */
   notice: string | undefined;
+  /** Whether the recording bar is out; it comes out by itself when there is a new recording. */
+  barOpen: boolean;
+  toggleBar(): void;
   start(): void;
   stop(): void;
   discard(): void;
@@ -32,6 +35,7 @@ export function useRecordingControls(store: GatewayStore): RecordingControls {
   const [mode, setMode] = useState<ViewMode>("live");
   const [saved, setSaved] = useState(true);
   const [notice, setNotice] = useState<string>();
+  const [barOpen, setBarOpen] = useState(false);
   const unsubscribe = useRef<() => void>(undefined);
   /** The recorder being stopped: its compression is still finishing. */
   const stopping = useRef<Recorder>(undefined);
@@ -53,6 +57,7 @@ export function useRecordingControls(store: GatewayStore): RecordingControls {
         setPlayer(new Player(recording));
         setSaved(false);
         setMode("playback");
+        setBarOpen(true);
         if (reason) setNotice(reason);
       })
       .catch((error: unknown) => setNotice(`The recording could not be finished: ${String(error)}`))
@@ -108,6 +113,8 @@ export function useRecordingControls(store: GatewayStore): RecordingControls {
     playback,
     saved,
     notice,
+    barOpen,
+    toggleBar: () => setBarOpen((o) => !o),
     start,
     stop: () => recorder && finish(recorder),
     discard: () => {
@@ -126,6 +133,7 @@ export function useRecordingControls(store: GatewayStore): RecordingControls {
           setPlayer(new Player(recording));
           setSaved(true);
           setMode("playback");
+          setBarOpen(true);
           setNotice(undefined);
         })
         .catch((error: unknown) =>
@@ -212,55 +220,94 @@ export function RecordButton({ controls }: { controls: RecordingControls }) {
   );
 }
 
-/** Playback controls along the bottom of the 3D view, once there is a recording. */
-export function PlayerBar({ controls }: { controls: RecordingControls }) {
-  const { player, playback, mode, recorder } = controls;
-  if (!player || !playback || recorder) return null;
-  if (mode === "live") {
-    return (
-      <div className="player-bar" role="toolbar" aria-label="Recording">
-        <span className="muted">Recording {formatTime(playback.durationMs)}</span>
-        <button onClick={() => controls.setMode("playback")}>▶ Play back</button>
-        <button onClick={controls.save}>Save</button>
-        <button className="link muted" title="Discard the recording" aria-label="Discard" onClick={controls.discard}>
-          ✕
-        </button>
-      </div>
-    );
-  }
+/** Opens a saved recording; the last button of the player bar. */
+function OpenButton({ controls }: { controls: RecordingControls }) {
+  const input = useRef<HTMLInputElement>(null);
   return (
-    <div className="player-bar playing" role="toolbar" aria-label="Playback">
-      <button title="Previous snapshot (←)" aria-label="Previous snapshot" onClick={() => player.step(-1)}>
+    <>
+      <button title="Open a saved recording (.rpprec)" onClick={() => input.current?.click()}>
+        Open
+      </button>
+      <input
+        ref={input}
+        type="file"
+        accept=".rpprec"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) controls.open(file);
+          e.target.value = "";
+        }}
+      />
+    </>
+  );
+}
+
+/** The small arrow left of the record button that slides the recording bar out and in (not while recording). */
+export function PlayerBarToggle({ controls }: { controls: RecordingControls }) {
+  if (controls.recorder) return null;
+  const label = controls.barOpen ? "Hide the recording bar" : "Show the recording bar";
+  return (
+    <button className="player-bar-toggle" title={label} aria-label={label} aria-expanded={controls.barOpen} onClick={controls.toggleBar}>
+      <span aria-hidden>{controls.barOpen ? "›" : "‹"}</span>
+    </button>
+  );
+}
+
+/**
+ * The recording bar along the bottom of the 3D view, left of its arrow; hidden until the arrow opens it and while
+ * recording. Always the whole playback bar: without a recording only Open works, and in live view any playback
+ * control switches to playback.
+ */
+export function PlayerBar({ controls }: { controls: RecordingControls }) {
+  const { player, playback, mode, recorder, barOpen } = controls;
+  if (recorder || !barOpen) return null;
+  const empty = !player || !playback;
+  const time = playback?.time ?? 0;
+  const durationMs = playback?.durationMs ?? 0;
+  const playing = mode === "playback" && playback?.playing === true;
+  /** Runs a playback action, going into playback first if the view is live. */
+  const play = (action: (p: Player) => void) => () => {
+    if (!player) return;
+    if (mode === "live") controls.setMode("playback");
+    action(player);
+  };
+  return (
+    <div className={mode === "playback" && !empty ? "player-bar playing" : "player-bar"} role="toolbar" aria-label="Playback">
+      <button title="Previous snapshot (←)" aria-label="Previous snapshot" disabled={empty} onClick={play((p) => p.step(-1))}>
         ◀︎
       </button>
       <button
         className="play"
-        title={playback.playing ? "Pause (Space)" : "Play (Space)"}
-        aria-label={playback.playing ? "Pause" : "Play"}
-        onClick={() => player.togglePlay()}
+        title={playing ? "Pause (Space)" : "Play (Space)"}
+        aria-label={playing ? "Pause" : "Play"}
+        disabled={empty}
+        onClick={play((p) => p.togglePlay())}
       >
-        {playback.playing ? "❚❚" : "▶"}
+        {playing ? "❚❚" : "▶"}
       </button>
-      <button title="Next snapshot (→)" aria-label="Next snapshot" onClick={() => player.step(1)}>
+      <button title="Next snapshot (→)" aria-label="Next snapshot" disabled={empty} onClick={play((p) => p.step(1))}>
         ▶︎
       </button>
       <input
         className="timeline"
         type="range"
         min={0}
-        max={playback.durationMs}
+        max={durationMs}
         step={1}
-        value={playback.time}
+        value={time}
+        disabled={empty}
         aria-label="Playback position"
-        onChange={(e) => player.seek(Number(e.target.value))}
+        onChange={(e) => play((p) => p.seek(Number(e.target.value)))()}
       />
       <span className="player-time">
-        {formatTime(playback.time)} / {formatTime(playback.durationMs)}
+        {formatTime(time)} / {formatTime(durationMs)}
       </span>
       <select
-        value={playback.speed}
+        value={playback?.speed ?? 1}
+        disabled={empty}
         aria-label="Playback speed"
-        onChange={(e) => player.setSpeed(Number(e.target.value))}
+        onChange={(e) => player?.setSpeed(Number(e.target.value))}
       >
         {SPEEDS.map((s) => (
           <option key={s} value={s}>
@@ -268,11 +315,20 @@ export function PlayerBar({ controls }: { controls: RecordingControls }) {
           </option>
         ))}
       </select>
-      <button onClick={controls.save}>Save</button>
-      <button className="live" onClick={() => controls.setMode("live")}>
+      <button disabled={empty} onClick={controls.save}>
+        Save
+      </button>
+      <OpenButton controls={controls} />
+      <button className="live" disabled={mode === "live"} onClick={() => controls.setMode("live")}>
         Live
       </button>
-      <button className="link muted" title="Discard the recording" aria-label="Discard" onClick={controls.discard}>
+      <button
+        className="link muted"
+        title="Discard the recording"
+        aria-label="Discard"
+        disabled={empty}
+        onClick={controls.discard}
+      >
         ✕
       </button>
     </div>

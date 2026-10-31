@@ -175,6 +175,41 @@ button:hover {
   -webkit-touch-callout: none;
 }
 
+/* Side panel handles: tabs on the 3D view's left and right edge, so they always sit next to their panel. */
+.panel-handle {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 64px;
+  min-width: 0;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+  background: rgba(42, 49, 59, 0.9);
+}
+
+.panel-handle:hover {
+  color: var(--text);
+}
+
+.panel-handle.left {
+  left: 0;
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+}
+
+.panel-handle.right {
+  right: 0;
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+}
+
 .view-controls {
   position: absolute;
   top: 8px;
@@ -245,10 +280,32 @@ button:hover {
 }
 
 /* Playback controls along the bottom of the 3D view, clear of the record and measure buttons. */
+/* Left of the record button: slides the recording bar out. */
+.player-bar-toggle {
+  position: absolute;
+  right: 104px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 40px;
+  min-width: 0;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+  background: rgba(42, 49, 59, 0.9);
+}
+
+.player-bar-toggle:hover {
+  color: var(--text);
+}
+
 .player-bar {
   position: absolute;
   left: 8px;
-  right: 104px;
+  right: 132px;
   bottom: 8px;
   display: flex;
   align-items: center;
@@ -317,6 +374,12 @@ button:hover {
 }
 
 .view-controls button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   background: rgba(42, 49, 59, 0.9);
 }
 
@@ -717,14 +780,29 @@ button.link {
     height: 52px;
   }
 
+  .panel-handle {
+    width: 32px;
+    min-width: 0;
+    height: 96px;
+    font-size: 24px;
+  }
+
   .record-toggle {
     right: 68px;
     min-width: 52px;
     height: 52px;
   }
 
-  .player-bar {
+  .player-bar-toggle {
     right: 128px;
+    width: 32px;
+    min-width: 0;
+    height: 52px;
+    font-size: 24px;
+  }
+
+  .player-bar {
+    right: 168px;
     flex-wrap: wrap;
   }
 
@@ -775,4 +853,10 @@ button.link {
   .movers td {
     padding: 4px 8px;
   }
+}
+
+/* Playback controls without a recording: visible, but clearly out of use. */
+.player-bar :disabled {
+  opacity: 0.4;
+  cursor: default;
 }

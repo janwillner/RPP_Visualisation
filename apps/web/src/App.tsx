@@ -10,7 +10,7 @@ import {
   type SceneFeed,
   type SourceInfo,
 } from "./connection";
-import { PlayerBar, RecordButton, usePlaybackKeys, useRecordingControls } from "./RecordingControls";
+import { PlayerBar, PlayerBarToggle, RecordButton, usePlaybackKeys, useRecordingControls } from "./RecordingControls";
 import {
   componentKey,
   faultText,
@@ -27,7 +27,7 @@ import {
   MISSED_COLOR,
   PRODUCT_COLORS,
   SceneView,
-  type CameraAction,
+  type CameraPreset,
   type Layers,
   type MeasurePoint,
   type Selection,
@@ -37,11 +37,11 @@ import {
 const EMBEDDED = new URLSearchParams(window.location.search).has("embedded");
 /** The clipboard exists only in a secure context (https or localhost), not when embedded over http. */
 const CAN_COPY = window.isSecureContext && navigator.clipboard !== undefined;
-/** From this window width the side panels start open; below, the 3D view gets the room. */
+/** From this window width the components panel starts open; below, the 3D view gets the room. */
 const WIDE_SCREEN_PX = 1600;
 
-/** Whether a side panel is open: remembered per device, else open on wide screens only. */
-function usePanelOpen(storageKey: string): [boolean, () => void] {
+/** Whether a side panel is open: remembered per device, else `initial`. */
+function usePanelOpen(storageKey: string, initial: () => boolean): [boolean, () => void] {
   const [open, setOpen] = useState(() => {
     try {
       const stored = localStorage.getItem(storageKey);
@@ -49,7 +49,7 @@ function usePanelOpen(storageKey: string): [boolean, () => void] {
     } catch {
       // Storage may be blocked (private window, embedded frame): fall back to the width.
     }
-    return window.innerWidth >= WIDE_SCREEN_PX;
+    return initial();
   });
   const toggle = () =>
     setOpen((o) => {
@@ -97,9 +97,10 @@ export function App() {
       if (!next.delete(key)) next.add(key);
       return next;
     });
-  const [cameraRequest, setCameraRequest] = useState<{ action: CameraAction; seq: number }>({ action: "iso", seq: 0 });
-  const [leftOpen, toggleLeft] = usePanelOpen("rpp.panel.components");
-  const [rightOpen, toggleRight] = usePanelOpen("rpp.panel.inspector");
+  const [cameraRequest, setCameraRequest] = useState<{ action: CameraPreset; seq: number }>({ action: "iso", seq: 0 });
+  const [leftOpen, toggleLeft] = usePanelOpen("rpp.panel.components", () => window.innerWidth >= WIDE_SCREEN_PX);
+  // The inspector starts closed: the 3D view gets the room until someone wants the details.
+  const [rightOpen, toggleRight] = usePanelOpen("rpp.panel.inspector", () => false);
   const modelRef = useRef<MachineScene | undefined>(undefined);
   const [measureMode, setMeasureMode] = useState(false);
   const [measurePoints, setMeasurePoints] = useState<MeasurePoint[]>([]);
@@ -130,13 +131,12 @@ export function App() {
 
   const recording = useRecordingControls(store);
   usePlaybackKeys(recording);
-  const fileInput = useRef<HTMLInputElement>(null);
   // While playing back, the tree, the 3D view and the inspector show the recording instead of the live data.
   const playback = recording.mode === "playback" ? recording.playback : undefined;
   const shown: GatewaySnapshot = playback ? { socket: "open", sources: playback.sources, protocolError: undefined } : gateway;
   const feed: SceneFeed = playback && recording.player ? recording.player : store;
 
-  const camera = (action: CameraAction) => setCameraRequest((r) => ({ action, seq: r.seq + 1 }));
+  const camera = (action: CameraPreset) => setCameraRequest((r) => ({ action, seq: r.seq + 1 }));
   const toggle = (key: keyof Layers) => setLayers((l) => ({ ...l, [key]: !l[key] }));
   const appClass = ["app", EMBEDDED && "embedded", !leftOpen && "left-closed", !rightOpen && "right-closed"]
     .filter(Boolean)
@@ -153,32 +153,12 @@ export function App() {
       <header className="toolbar">
         {!EMBEDDED && <strong className="title">RPP Visualisation</strong>}
         <div className="group">
-          <Toggle label="Components" on={leftOpen} onClick={toggleLeft} />
-          <Toggle label="Inspector" on={rightOpen} onClick={toggleRight} />
-        </div>
-        <div className="group">
           <span className="muted">Layers</span>
           <Toggle label="Working areas" on={layers.workingAreas} onClick={() => toggle("workingAreas")} />
           <Toggle label="Limit areas" on={layers.limitAreas} onClick={() => toggle("limitAreas")} />
           <Toggle label="Zones" on={layers.zones} onClick={() => toggle("zones")} />
           <Toggle label="TCP markers" on={layers.tcpMarkers} onClick={() => toggle("tcpMarkers")} />
           <Toggle label="Fault labels" on={layers.faultLabels} onClick={() => toggle("faultLabels")} />
-        </div>
-        <div className="group">
-          <button disabled={recording.recorder !== undefined} onClick={() => fileInput.current?.click()}>
-            Open recording
-          </button>
-          <input
-            ref={fileInput}
-            type="file"
-            accept=".rpprec"
-            hidden
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) recording.open(file);
-              e.target.value = "";
-            }}
-          />
         </div>
       </header>
       <aside className="panel left" hidden={!leftOpen}>
@@ -193,7 +173,7 @@ export function App() {
       </aside>
       {/* No context menu on a long press: there are no secondary actions in the 3D view. */}
       <main
-        className={["viewport", playback && "playback", recording.player && !recording.recorder && "has-player"]
+        className={["viewport", playback && "playback", !recording.recorder && recording.barOpen && "has-player"]
           .filter(Boolean)
           .join(" ")}
         onContextMenu={(e) => e.preventDefault()}
@@ -212,9 +192,12 @@ export function App() {
           hidden={hidden}
           onFaults={setFaults}
         />
+        <PanelHandle side="left" label="Components" open={leftOpen} onClick={toggleLeft} />
+        <PanelHandle side="right" label="Inspector" open={rightOpen} onClick={toggleRight} />
         <ViewControls onCamera={camera} />
         <MeasureButton on={measureMode} onClick={() => setMeasureMode((m) => !m)} />
         <RecordButton controls={recording} />
+        <PlayerBarToggle controls={recording} />
         <PlayerBar controls={recording} />
         {playback && <div className="playback-banner">Playback</div>}
         {recording.notice && (
@@ -274,32 +257,42 @@ function OfflineNotice({ gateway }: { gateway: GatewaySnapshot }) {
   );
 }
 
-const VIEWS: { action: CameraAction; label: string; title: string }[] = [
-  { action: "top", label: "Top", title: "View from above" },
-  { action: "front", label: "Front", title: "View from the front (along +Y)" },
-  { action: "side", label: "Side", title: "View from the side (along +X)" },
-  { action: "iso", label: "Iso", title: "Isometric view of the whole machine" },
+const VIEWS: { action: CameraPreset; title: string }[] = [
+  { action: "top", title: "View from above" },
+  { action: "front", title: "View from the front (along +Y)" },
+  { action: "side", title: "View from the side (along +X)" },
+  { action: "iso", title: "Isometric view of the whole machine" },
 ];
 
+/** Corners of an isometric cube in a 24 × 24 icon: its three visible faces. */
+const CUBE_FACES: Record<"top" | "front" | "side", string> = {
+  top: "12,3 20,7.5 12,12 4,7.5",
+  front: "4,7.5 12,12 12,21 4,16.5",
+  side: "12,12 20,7.5 20,16.5 12,21",
+};
+
+/** A cube with the face the view looks at filled; the iso view fills all three, shaded. */
+function ViewIcon({ view }: { view: CameraPreset }) {
+  const opacity = (face: keyof typeof CUBE_FACES) =>
+    view === "iso" ? { top: 0.9, front: 0.55, side: 0.3 }[face] : view === face ? 0.9 : 0;
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" aria-hidden>
+      {(Object.keys(CUBE_FACES) as (keyof typeof CUBE_FACES)[]).map((face) => (
+        <polygon key={face} points={CUBE_FACES[face]} fill="currentColor" fillOpacity={opacity(face)} />
+      ))}
+    </svg>
+  );
+}
+
 /** Camera buttons in the 3D view, so every view is reachable with one finger (no pinch needed). */
-function ViewControls({ onCamera }: { onCamera: (action: CameraAction) => void }) {
+function ViewControls({ onCamera }: { onCamera: (action: CameraPreset) => void }) {
   return (
     <div className="view-controls" role="toolbar" aria-label="Camera">
       {VIEWS.map((v) => (
-        <button key={v.action} title={v.title} onClick={() => onCamera(v.action)}>
-          {v.label}
+        <button key={v.action} title={v.title} aria-label={v.title} onClick={() => onCamera(v.action)}>
+          <ViewIcon view={v.action} />
         </button>
       ))}
-      <button title="Zoom in" aria-label="Zoom in" onClick={() => onCamera("zoomIn")}>
-        +
-      </button>
-      <button title="Zoom out" aria-label="Zoom out" onClick={() => onCamera("zoomOut")}>
-        −
-      </button>
-      {/* The start view: the whole machine, isometric. */}
-      <button title="Back to the start view" onClick={() => onCamera("iso")}>
-        Reset
-      </button>
     </div>
   );
 }
@@ -401,6 +394,24 @@ function MeasureList(props: { measureMode: boolean; points: MeasurePoint[]; onCl
         </>
       )}
     </div>
+  );
+}
+
+/** A tab on the 3D view's edge that opens or closes the side panel next to it. */
+function PanelHandle(props: { side: "left" | "right"; label: string; open: boolean; onClick: () => void }) {
+  const { side, label, open, onClick } = props;
+  // The chevron points where the panel goes: into the edge to close, out of it to open.
+  const pointsLeft = (side === "left") === open;
+  return (
+    <button
+      className={`panel-handle ${side}`}
+      title={`${open ? "Hide" : "Show"} ${label.toLowerCase()}`}
+      aria-label={`${open ? "Hide" : "Show"} ${label.toLowerCase()}`}
+      aria-expanded={open}
+      onClick={onClick}
+    >
+      <span aria-hidden>{pointsLeft ? "‹" : "›"}</span>
+    </button>
   );
 }
 

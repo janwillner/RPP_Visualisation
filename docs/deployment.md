@@ -74,7 +74,7 @@ The round button with the red dot, bottom right in the 3D view, records the mach
 After stopping, the player bar along the bottom of the 3D view plays it back. While playing back the view has a coloured frame and says "Playback"; "Live" returns to the live machine.
 - ▶ / ❚❚ (Space) plays and pauses; ◀︎ ▶︎ (← →) step one snapshot; the slider jumps to any moment (Home and End to the start and end).
 - The speed goes from 0.1× to 2×. Selecting, the inspector, hiding components, the layers and measuring work as live.
-- **Save** downloads the recording as `rpp-recording-<date>-<time>.rpprec` (about 1.6 MB per minute). **Open recording** in the toolbar plays such a file, also on another PC. Recordings from another release with a different protocol version are refused.
+- **Save** downloads the recording as `rpp-recording-<date>-<time>.rpprec` (about 1.6 MB per minute). **Open** in the recording bar (the arrow left of the record button slides it out) plays such a file, also on another PC. Recordings from another release with a different protocol version are refused.
 - The page warns before closing while a recording is not saved, and asks before an unsaved recording is replaced.
 
 Embedded in TwinCAT HMI, the browser control may block downloads. Then record and save in a normal browser on the same IPC.
@@ -113,7 +113,7 @@ Service technicians can open the visualisation on the machine's touch panel (13 
    - Use the IPC's name or address, not `localhost`: the panel may be a separate client of the HMI server.
    - `<port>` is the instance's `port` (8080 by default, one port per instance).
    - `?embedded` hides the title and the status bar, because the HMI page has its own header. Leave it out to get the full page, e.g. in a separate browser.
-3. Make the control fill the page. Below 1600 px width the side panels start collapsed; the "Components" and "Inspector" buttons open them, and the panel remembers the choice.
+3. Make the control fill the page. The handles on the 3D view's left and right edge open the components panel and the inspector. The inspector starts closed, the components panel too below 1600 px width; each panel remembers the choice.
 
 **Requirement: the HMI runs over http.** The visualisation is served over http only. A browser blocks an http frame inside an https page (mixed content), so embedding works only when the HMI itself is opened over http (for example port 1010, not the https port 1020). The installer's firewall rule already opens the instance port.
 
