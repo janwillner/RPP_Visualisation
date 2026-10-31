@@ -139,7 +139,7 @@ export interface SceneZone {
   transform: Transform;
   length: number;
   width: number;
-  /** The robot's conveyor coordinate system (CCS) on the belt's centre line, oriented like the belt. */
+  /** The robot's conveyor coordinate system (CCS) on the belt's centre line, oriented like the belt; drawn across the zone. */
   ccs: Transform;
   /**
    * Part of the zone in which the robot may still allocate products: from the zone start up to the allocation limit

@@ -477,28 +477,31 @@ function SourceContent(props: {
           </group>
         ))}
       {layers.zones &&
-        structure.zones.map((w, i) => <CcsCrosshair key={`ccs:${w.robotId}:${i}`} transform={w.ccs} />)}
+        structure.zones.map((w, i) => <CcsLine key={`ccs:${w.robotId}:${i}`} transform={w.ccs} width={w.width} />)}
       {layers.faultLabels && structure.faultLabels.map((l) => <FaultLabel key={l.key} label={l} latest={latest} />)}
     </OfflineScope>
   );
 }
 
-/** Half the arm length of a CCS crosshair, metres. */
-const CCS_ARM = 0.04;
-
-/** A zone's conveyor coordinate system: a small black crosshair lying on the belt, its arms along and across. */
-function CcsCrosshair({ transform }: { transform: Transform }) {
+/**
+ * A zone's conveyor coordinate system: a black dashed line lying on the belt, across the whole zone width.
+ * Renderer local axes: belt X -> x, belt Y -> −z.
+ */
+function CcsLine({ transform, width }: { transform: Transform; width: number }) {
   return (
     <group ref={(o) => applyTransform(o, transform)}>
-      {[
-        [2 * CCS_ARM, 0.006],
-        [0.006, 2 * CCS_ARM],
-      ].map(([x, z], k) => (
-        <mesh key={k} position={[0, 0.007, 0]} raycast={noRaycast}>
-          <boxGeometry args={[x!, 0.002, z!]} />
-          <meshBasicMaterial color="#000000" />
-        </mesh>
-      ))}
+      <Line
+        points={[
+          [0, 0.009, -width / 2],
+          [0, 0.009, width / 2],
+        ]}
+        color="#000000"
+        lineWidth={2}
+        dashed
+        dashSize={0.03}
+        gapSize={0.02}
+        raycast={noRaycast}
+      />
     </group>
   );
 }

@@ -42,7 +42,7 @@ The library is installed under the title `SynVisu` from `Syntegon Group`.
   which a robot may still allocate products in the zone, so it does not move out of the zone while approaching. The
   allocation area runs from `fStart` to `fEnd − fAllocationOffset` (never beyond `fStart`); 0 = no allocation limit.
 - Zone CCS: `fCcsOffset` is the belt coordinate (like `fStart` / `fEnd`) of the robot's conveyor coordinate system
-  (CCS) on that conveyor. It is drawn as a small black crosshair on the belt's centre line, in the zones layer, and is a
+  (CCS) on that conveyor. It is drawn as a black dashed line across the zone, in the zones layer, and is a
   measure-mode snap point. A CCS outside its zone raises a warning.
 - Origin shift: every config has `stOriginShift : ST_VisuPosition`, mm in the component's local frame from `stPose`
   (no rotation), where the component's coordinate system lies; 0 = at the pose. The origin triad and the local
