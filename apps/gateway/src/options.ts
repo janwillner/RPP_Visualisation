@@ -5,10 +5,20 @@ import { MANIFEST_PATH } from "./plc-contract";
 const drivers = ["sim", "ads", "ads-tcp"] as const;
 export type Driver = (typeof drivers)[number];
 
-export interface GatewayOptions {
-  driver: Driver;
+/** One PLC runtime the gateway reads: an AmsNetId plus ADS port, reached through the local AMS router. */
+export interface PlcSource {
+  /** `ads:<AmsNetId>:<port>`; identifies the source in every message. */
+  sourceId: string;
+  /** Display name; `<AmsNetId>:<port>` when none is configured. */
+  name: string;
   amsNetId: string;
   adsPort: number;
+}
+
+export interface GatewayOptions {
+  driver: Driver;
+  /** At least one; several only with the `ads` driver. */
+  sources: PlcSource[];
   routerAddress?: string;
   routerPort?: number;
   localAmsNetId?: string;
@@ -42,7 +52,15 @@ const numberKeys = ["adsPort", "routerPort", "cycleMs", "configRecheckMs", "port
 
 type StringKey = (typeof stringKeys)[number] | (typeof pathKeys)[number];
 type NumberKey = (typeof numberKeys)[number];
-type Settings = Partial<Record<StringKey, string> & Record<NumberKey, number>>;
+type Settings = Partial<Record<StringKey, string> & Record<NumberKey, number>> & { sources?: PlcSource[] };
+
+const DEFAULT_AMS_NET_ID = "127.0.0.1.1.1";
+const DEFAULT_ADS_PORT = 851;
+const sourceKeys = ["name", "amsNetId", "adsPort"];
+
+function plcSource(amsNetId: string, adsPort: number, name?: string): PlcSource {
+  return { sourceId: `ads:${amsNetId}:${adsPort}`, name: name ?? `${amsNetId}:${adsPort}`, amsNetId, adsPort };
+}
 
 const kebab = (key: string) => key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
 const isOneOf = (list: readonly string[], key: string) => list.includes(key);
@@ -74,11 +92,11 @@ export function resolveGatewayOptions(argv: readonly string[], env: OptionsEnvir
   const driver = settings.driver ?? "sim";
   if (!isOneOf(drivers, driver)) throw new OptionsError(`driver must be one of ${drivers.join(", ")}, got "${driver}"`);
   const staticDir = settings.staticDir ?? defaultStaticDir(env);
+  const sources = resolveSources(settings, driver as Driver);
 
   return {
     driver: driver as Driver,
-    amsNetId: settings.amsNetId ?? "127.0.0.1.1.1",
-    adsPort: settings.adsPort ?? 851,
+    sources,
     ...(settings.routerAddress !== undefined ? { routerAddress: settings.routerAddress } : {}),
     ...(settings.routerPort !== undefined ? { routerPort: settings.routerPort } : {}),
     ...(settings.localAmsNetId !== undefined ? { localAmsNetId: settings.localAmsNetId } : {}),
@@ -91,6 +109,45 @@ export function resolveGatewayOptions(argv: readonly string[], env: OptionsEnvir
     ...(staticDir !== undefined ? { staticDir } : {}),
     help: values.help === true,
   };
+}
+
+/** The `sources` list, or the one source given by `amsNetId` / `adsPort`. */
+function resolveSources(settings: Settings, driver: Driver): PlcSource[] {
+  if (!settings.sources) {
+    return [plcSource(settings.amsNetId ?? DEFAULT_AMS_NET_ID, settings.adsPort ?? DEFAULT_ADS_PORT)];
+  }
+  if (settings.amsNetId !== undefined || settings.adsPort !== undefined) {
+    throw new OptionsError(`Give either "sources" or amsNetId / adsPort for a single source, not both`);
+  }
+  if (driver === "sim") throw new OptionsError(`The simulator reads no PLC sources; remove "sources" or choose the ads driver`);
+  const seen = new Set<string>();
+  for (const source of settings.sources) {
+    if (seen.has(source.sourceId)) throw new OptionsError(`Source ${source.amsNetId}:${source.adsPort} is listed twice`);
+    seen.add(source.sourceId);
+  }
+  if (settings.sources.length > 1 && driver !== "ads") {
+    throw new OptionsError(`Only the ads driver reads several sources; driver is "${driver}"`);
+  }
+  return settings.sources;
+}
+
+function parseSources(value: unknown, path: string): PlcSource[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new OptionsError(`Config file ${path}: "sources" must be a non-empty list`);
+  }
+  return value.map((raw: unknown, i) => {
+    const where = `Config file ${path}: sources[${i}]`;
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new OptionsError(`${where} must be an object`);
+    const entry = raw as Record<string, unknown>;
+    const unknown = Object.keys(entry).find((k) => !sourceKeys.includes(k));
+    if (unknown) throw new OptionsError(`${where}: unknown key "${unknown}"`);
+    if (typeof entry.amsNetId !== "string") throw new OptionsError(`${where}: "amsNetId" must be a string`);
+    if (entry.adsPort !== undefined && !(typeof entry.adsPort === "number" && Number.isFinite(entry.adsPort))) {
+      throw new OptionsError(`${where}: "adsPort" must be a number`);
+    }
+    if (entry.name !== undefined && typeof entry.name !== "string") throw new OptionsError(`${where}: "name" must be a string`);
+    return plcSource(entry.amsNetId, (entry.adsPort as number | undefined) ?? DEFAULT_ADS_PORT, entry.name as string | undefined);
+  });
 }
 
 function parseFlags(argv: readonly string[]): Record<string, string | boolean | undefined> {
@@ -140,6 +197,10 @@ function readConfigFile(path: string, env: OptionsEnvironment): Settings {
 
   const settings: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(raw)) {
+    if (key === "sources") {
+      settings.sources = parseSources(value, path);
+      continue;
+    }
     const isPath = isOneOf(pathKeys, key);
     const expected = isPath || isOneOf(stringKeys, key) ? "string" : isOneOf(numberKeys, key) ? "number" : undefined;
     if (!expected) throw new OptionsError(`Config file ${path}: unknown key "${key}"`);

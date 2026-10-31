@@ -593,6 +593,62 @@ export function buildScene(
   };
 }
 
+/** A component across all sources: manifest ids are unique only within one source. */
+export type ComponentKey = string;
+export const componentKey = (sourceId: string, id: number): ComponentKey => `${sourceId}#${id}`;
+
+/** What one PLC source contributes to the machine scene. */
+export interface SceneSource {
+  sourceId: string;
+  config: ConfigMessage | undefined;
+  snapshots: readonly StateMessage[];
+  /** On this source's own tRel axis: the PLCs' clocks are not synchronised. */
+  renderTime: number;
+  /** False while the gateway cannot read the PLC; its last config and state stay in the scene. */
+  online: boolean;
+}
+
+export interface SourceScene {
+  sourceId: string;
+  online: boolean;
+  /** Ids in here are the source's manifest ids. */
+  scene: SceneModel;
+}
+
+export type SourcedSnapPoint = SnapPoint & { sourceId: string };
+export type SourcedFaults = ComponentFaults & { sourceId: string };
+
+export interface MachineScene {
+  sources: SourceScene[];
+  /** Snap points of every source; keys are unique across sources. */
+  snapPoints: SourcedSnapPoint[];
+  /** Component origins of every source, for measure mode. */
+  origins: (SceneOrigin & { sourceId: string })[];
+  /** Every component with an active fault, hidden ones and hidden sources included. */
+  faults: SourcedFaults[];
+}
+
+/**
+ * The scene of a machine read from several PLCs: each source is built on its own (its own timeline, its ids, its
+ * references) and the results are put side by side; all sources report in the same MCS. `hidden` holds component
+ * keys and source ids; a hidden source hides all of its components.
+ */
+export function buildMachineScene(sources: readonly SceneSource[], hidden: ReadonlySet<string>): MachineScene {
+  const built = sources.map(({ sourceId, config, snapshots, renderTime, online }) => {
+    const ids = (config?.components ?? []).map((c) => c.id);
+    const hiddenIds = new Set(hidden.has(sourceId) ? ids : ids.filter((id) => hidden.has(componentKey(sourceId, id))));
+    return { sourceId, online, scene: buildScene(config, snapshots, renderTime, hiddenIds) };
+  });
+  return {
+    sources: built,
+    snapPoints: built.flatMap(({ sourceId, scene }) =>
+      scene.snapPoints.map((p) => ({ ...p, key: `${sourceId}|${p.key}`, sourceId })),
+    ),
+    origins: built.flatMap(({ sourceId, scene }) => scene.origins.map((o) => ({ ...o, sourceId }))),
+    faults: built.flatMap(({ sourceId, scene }) => scene.faults.map((f) => ({ sourceId, ...f }))),
+  };
+}
+
 /**
  * Belt coordinate of a zone's allocation limit: `allocationOffset` before the zone end, against the conveying
  * direction, never beyond the zone start. Undefined when the zone has no allocation limit.

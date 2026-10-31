@@ -41,8 +41,10 @@ import { SymbolNotFoundError, type SymbolAccess } from "./symbol-access";
 
 export interface GatewayOptions {
   plc: SymbolAccess;
-  /** Identifies the PLC in the neutral model (one PLC per gateway in the MVP). */
+  /** Identifies the PLC in the neutral model and in every message. */
   sourceId: string;
+  /** Display name of the source, sent with every status. Default: the source id. */
+  sourceName?: string;
   /**
    * The full discovery is repeated at this interval and a new config is published if anything differs, so
    * configs changed live in the PLC show up even without a config version bump. Default 1000 ms; 0 disables.
@@ -56,11 +58,38 @@ export interface GatewayOptions {
 
 export type GatewayListener = (message: GatewayMessage) => void;
 
-export interface Gateway {
+/** After a failed attempt, the PLC is tried again only after this long, so an unreachable IPC costs little. */
+export const RECONNECT_MS = 5000;
+
+/** Anything clients can subscribe to: one gateway or several combined. */
+export interface MessageSource {
   /** Receive all messages. A new subscriber immediately gets the current status and config, if any. */
   subscribe(listener: GatewayListener): () => void;
-  /** Run one acquisition cycle: (re)discover when needed, then read and publish one state snapshot. */
+}
+
+/** Reads one PLC (one source). */
+export interface Gateway extends MessageSource {
+  readonly sourceId: string;
+  /**
+   * Run one acquisition cycle: (re)discover when needed, then read and publish one state snapshot. Within
+   * RECONNECT_MS after a failure it returns without touching the PLC.
+   */
   cycle(): Promise<void>;
+}
+
+/**
+ * The messages of several gateways as one stream; each message names its source. Each gateway keeps cycling on
+ * its own, so a slow or unreachable PLC does not hold up the others.
+ */
+export function combineGateways(gateways: readonly Gateway[]): MessageSource {
+  return {
+    subscribe(listener) {
+      const unsubscribes = gateways.map((g) => g.subscribe(listener));
+      return () => {
+        for (const u of unsubscribes) u();
+      };
+    },
+  };
 }
 
 type ComponentKind = ComponentConfig["type"];
@@ -119,6 +148,7 @@ interface Discovery {
 export function createGateway({
   plc,
   sourceId,
+  sourceName = sourceId,
   configRecheckMs = 1000,
   manifestPath = MANIFEST_PATH,
   now = () => performance.now(),
@@ -131,6 +161,8 @@ export function createGateway({
   /** PLC timestamp of the first snapshot after discovery; tRel is measured from here. */
   let t0: bigint | undefined;
   let lastConfigCheck = now();
+  /** Time of the last failed attempt; undefined while connected. */
+  let failedAt: number | undefined;
 
   const emit = (message: GatewayMessage) => {
     for (const l of listeners) l(message);
@@ -143,6 +175,7 @@ export function createGateway({
     const result = (): Discovery => ({
       config: {
         kind: "config",
+        sourceId,
         protocolVersion: manifest.nProtocolVersion,
         configVersion: manifest.nConfigVersion,
         components: active.map((a) => a.config),
@@ -219,6 +252,7 @@ export function createGateway({
     t0 ??= newest;
     emit({
       kind: "state",
+      sourceId,
       configVersion: current.config.configVersion,
       timestamp: newest.toString(),
       tRel: Number(newest - t0) / 1e6,
@@ -247,22 +281,28 @@ export function createGateway({
     return next;
   }
 
+  const statusMessage = (): GatewayMessage => ({ kind: "status", sourceId, sourceName, status });
+
   return {
+    sourceId,
     subscribe(listener) {
       listeners.add(listener);
-      listener({ kind: "status", status });
+      listener(statusMessage());
       if (discovery) listener(discovery.config);
       return () => listeners.delete(listener);
     },
     async cycle() {
+      if (failedAt !== undefined && now() - failedAt < RECONNECT_MS) return;
       try {
         let current = discovery ?? (await rediscover());
         if (configRecheckMs > 0 && now() - lastConfigCheck >= configRecheckMs) current = await recheckConfig(current);
         if (!(await publishSnapshot(current))) {
           await publishSnapshot(await rediscover());
         }
+        failedAt = undefined;
         setStatus({ plcConnected: true });
       } catch (error) {
+        failedAt = now();
         // Any failed read is treated as a lost connection; rediscover once the PLC answers again.
         discovery = undefined;
         setStatus({ plcConnected: false, lastError: error instanceof Error ? error.message : String(error) });
@@ -273,7 +313,7 @@ export function createGateway({
   function setStatus(next: GatewayStatus): void {
     if (next.plcConnected === status.plcConnected && next.lastError === status.lastError) return;
     status = next;
-    emit({ kind: "status", status });
+    emit(statusMessage());
   }
 }
 

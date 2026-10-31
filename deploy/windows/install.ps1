@@ -17,13 +17,18 @@
     Running it from an older package rolls back. Logs: C:\ProgramData\RPP_Visualisation\logs\.
 
 .PARAMETER Instance
-    Name of an additional instance for another PLC runtime on the same IPC, e.g. "852".
+    Name of an additional instance for another PLC, e.g. "852" or "line2".
     The service is then RPP_Visualisation_<Instance> with config-<Instance>.json.
     Leave empty for the default instance. "default" is reserved.
 
+.PARAMETER AmsNetId
+    AmsNetId of the PLC, written only into a newly created config file. Default: 127.0.0.1.1.1 (this IPC).
+    Another IPC needs an ADS route from this IPC to it (docs/deployment.md, "Reading other IPCs over an ADS route").
+    Several PLCs in one view: list them under "sources" in the config file instead.
+
 .PARAMETER AdsPort
     ADS port of the PLC runtime, written only into a newly created config file. Default: 851.
-    Required for a new additional instance.
+    A new additional instance needs -AdsPort or -AmsNetId, so that it reads another PLC than the default instance.
 
 .PARAMETER Port
     HTTP port of the page, written only into a newly created config file. Default: 8080.
@@ -34,12 +39,17 @@
 
 .EXAMPLE
     .\install.ps1 -Instance 852 -AdsPort 852 -Port 8081
+
+.EXAMPLE
+    .\install.ps1 -Instance line2 -AmsNetId 5.12.34.56.1.1 -Port 8082
 #>
 #Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
     [ValidatePattern('^[A-Za-z0-9-]*$')]
     [string]$Instance = '',
+    [ValidatePattern('^\d{1,3}(\.\d{1,3}){5}$')]
+    [string]$AmsNetId = '127.0.0.1.1.1',
     [ValidateRange(1, 65535)]
     [int]$AdsPort = 851,
     [ValidateRange(1, 65535)]
@@ -77,8 +87,9 @@ foreach ($file in 'node.exe', 'gateway.mjs', 'AdsBridge.exe', 'winsw.exe', 'web'
 }
 if ($Instance -eq 'default') { throw '"default" is reserved for the default instance; leave -Instance empty.' }
 if ($Instance -and -not (Test-Path (Get-ConfigPath $Instance)) -and
-    -not ($PSBoundParameters.ContainsKey('Port') -and $PSBoundParameters.ContainsKey('AdsPort'))) {
-    throw "A new instance needs its own ports: pass -AdsPort and -Port, e.g. -Instance $Instance -AdsPort 852 -Port 8081."
+    -not ($PSBoundParameters.ContainsKey('Port') -and
+        ($PSBoundParameters.ContainsKey('AdsPort') -or $PSBoundParameters.ContainsKey('AmsNetId')))) {
+    throw "A new instance needs its own PLC and HTTP port: pass -AdsPort or -AmsNetId, and -Port, e.g. -Instance $Instance -AdsPort 852 -Port 8081."
 }
 $version = (Get-Content -Raw (Join-Path $Source 'VERSION')).Trim()
 $targetId = Get-ServiceId $Instance
@@ -108,7 +119,7 @@ if (-not (Test-Path $targetConfig)) {
     Write-Host "  creating $targetConfig"
     $config = [ordered]@{
         driver          = 'ads'
-        amsNetId        = '127.0.0.1.1.1'
+        amsNetId        = $AmsNetId
         adsPort         = $AdsPort
         port            = $Port
         cycleMs         = 20

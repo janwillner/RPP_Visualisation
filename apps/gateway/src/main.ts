@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AdsBridgeSymbolAccess } from "./ads-bridge-symbol-access";
 import { AdsSymbolAccess } from "./ads-symbol-access";
-import { createGateway } from "./gateway";
+import { combineGateways, createGateway, type Gateway } from "./gateway";
 import { OptionsError, resolveGatewayOptions, type GatewayOptions } from "./options";
 import { startServer, WS_PATH } from "./server";
 import { createSimulator } from "./simulator";
@@ -30,8 +30,10 @@ if (options.help) {
                              ads:     official Beckhoff ADS library via the .NET bridge (local AMS router,
                                       no route needed; build it with "pnpm build:bridge")
                              ads-tcp: pure TCP client (ads-client); needs a route or AMS TCP loopback
-  --ams-net-id <id>          ADS target AmsNetId (default: 127.0.0.1.1.1)
+  --ams-net-id <id>          ADS target AmsNetId (default: 127.0.0.1.1.1); a remote IPC needs an ADS route
   --ads-port <port>          ADS target port (default: 851)
+                             Several PLCs: "sources": [{ "name": "...", "amsNetId": "...", "adsPort": 851 }]
+                             in the config file instead of these two (ads driver only)
   --ads-bridge <exe|dll>     ADS bridge (default: AdsBridge.exe next to the packaged gateway,
                              else apps/ads-bridge/bin/Release/net9.0/AdsBridge.dll)
   --router-address <host>    ads-tcp only: ADS router host when not using the local router
@@ -47,42 +49,54 @@ if (options.help) {
 }
 
 const cycleMs = Math.max(1, options.cycleMs);
-let plc: SymbolAccess;
-let simulator: ReturnType<typeof createSimulator> | undefined;
 
-if (options.driver === "ads") {
-  if (!existsSync(options.adsBridge)) {
-    console.error(`ADS bridge not found at ${options.adsBridge}. Build it with "pnpm build:bridge".`);
-    process.exit(1);
-  }
-  plc = new AdsBridgeSymbolAccess({
-    bridgePath: options.adsBridge,
-    targetAmsNetId: options.amsNetId,
-    targetAdsPort: options.adsPort,
-  });
-} else if (options.driver === "ads-tcp") {
-  plc = new AdsSymbolAccess({
-    targetAmsNetId: options.amsNetId,
-    targetAdsPort: options.adsPort,
-    ...(options.routerAddress ? { routerAddress: options.routerAddress } : {}),
-    ...(options.routerPort !== undefined ? { routerTcpPort: options.routerPort } : {}),
-    ...(options.localAmsNetId ? { localAmsNetId: options.localAmsNetId } : {}),
-  });
-} else {
-  simulator = createSimulator();
-  plc = simulator.plc;
+if (options.driver === "ads" && !existsSync(options.adsBridge)) {
+  console.error(`ADS bridge not found at ${options.adsBridge}. Build it with "pnpm build:bridge".`);
+  process.exit(1);
 }
 
-const sourceId = options.driver === "sim" ? "sim" : `ads:${options.amsNetId}:${options.adsPort}`;
-const gateway = createGateway({
-  plc,
-  sourceId,
-  configRecheckMs: options.configRecheckMs,
-  manifestPath: options.manifestPath,
-});
+/** The gateway of one source with its PLC access; each runs its own acquisition loop below. */
+interface SourceRuntime {
+  name: string;
+  gateway: Gateway;
+  close(): Promise<void> | void;
+}
+
+const simulator = options.driver === "sim" ? createSimulator() : undefined;
+const runtimes: SourceRuntime[] = simulator
+  ? [runtime("sim", "Simulator", simulator.plc, () => {})]
+  : options.sources.map((source) => {
+      if (options.driver === "ads") {
+        const plc = new AdsBridgeSymbolAccess({
+          bridgePath: options.adsBridge,
+          targetAmsNetId: source.amsNetId,
+          targetAdsPort: source.adsPort,
+        });
+        return runtime(source.sourceId, source.name, plc, () => plc.close());
+      }
+      const plc = new AdsSymbolAccess({
+        targetAmsNetId: source.amsNetId,
+        targetAdsPort: source.adsPort,
+        ...(options.routerAddress ? { routerAddress: options.routerAddress } : {}),
+        ...(options.routerPort !== undefined ? { routerTcpPort: options.routerPort } : {}),
+        ...(options.localAmsNetId ? { localAmsNetId: options.localAmsNetId } : {}),
+      });
+      return runtime(source.sourceId, source.name, plc, () => plc.close());
+    });
+
+function runtime(sourceId: string, name: string, plc: SymbolAccess, close: () => Promise<void> | void): SourceRuntime {
+  const gateway = createGateway({
+    plc,
+    sourceId,
+    sourceName: name,
+    configRecheckMs: options.configRecheckMs,
+    manifestPath: options.manifestPath,
+  });
+  return { name, gateway, close };
+}
 
 const server = await startServer({
-  gateway,
+  gateway: combineGateways(runtimes.map((r) => r.gateway)),
   port: options.port,
   ...(options.host ? { host: options.host } : {}),
   ...(options.staticDir ? { staticDir: options.staticDir } : {}),
@@ -91,22 +105,26 @@ console.log(
   `Gateway (${options.driver}) listening on http://${options.host ?? "localhost"}:${options.port}` +
     ` – WebSocket ${WS_PATH}${options.staticDir ? `, serving ${options.staticDir}` : ", no static web app"}`,
 );
-
-// Fixed-rate acquisition loop; a slow cycle delays the next one instead of overlapping it.
-let lastStep = performance.now();
-let lastConnected = false;
-gateway.subscribe((m) => {
-  if (m.kind === "status" && m.status.plcConnected !== lastConnected) {
-    lastConnected = m.status.plcConnected;
-    console.log(m.status.plcConnected ? "PLC connected" : `PLC not connected: ${m.status.lastError ?? ""}`);
-  }
-  if (m.kind === "config" && m.errors.length > 0) {
-    for (const e of m.errors) console.warn(`Discovery: ${e.path ?? ""} ${e.message}`);
-  }
-});
+console.log(`Sources: ${runtimes.map((r) => `${r.name} (${r.gateway.sourceId})`).join(", ")}`);
 
 let stopped = false;
-async function loop(): Promise<void> {
+
+/** Fixed-rate acquisition loop of one source; a slow cycle delays its next one instead of overlapping it. */
+async function loop({ name, gateway }: SourceRuntime): Promise<void> {
+  // Undefined until the first attempt, so a source that never connects is logged too.
+  let lastConnected: boolean | undefined;
+  gateway.subscribe((m) => {
+    // The initial status (not connected, no error yet) is not news.
+    const attempted = m.kind === "status" && (m.status.plcConnected || m.status.lastError !== undefined);
+    if (attempted && m.status.plcConnected !== lastConnected) {
+      lastConnected = m.status.plcConnected;
+      console.log(m.status.plcConnected ? `${name}: PLC connected` : `${name}: PLC not connected: ${m.status.lastError ?? ""}`);
+    }
+    if (m.kind === "config" && m.errors.length > 0) {
+      for (const e of m.errors) console.warn(`${name}: discovery: ${e.path ?? ""} ${e.message}`);
+    }
+  });
+  let lastStep = performance.now();
   while (!stopped) {
     const started = performance.now();
     simulator?.step(started - lastStep);
@@ -116,13 +134,12 @@ async function loop(): Promise<void> {
     await new Promise((r) => setTimeout(r, Math.max(0, wait)));
   }
 }
-void loop();
+for (const r of runtimes) void loop(r);
 
 const shutdown = async () => {
   stopped = true;
   server.close();
-  if (plc instanceof AdsSymbolAccess) await plc.close();
-  if (plc instanceof AdsBridgeSymbolAccess) plc.close();
+  await Promise.all(runtimes.map((r) => r.close()));
   process.exit(0);
 };
 process.on("SIGINT", shutdown);

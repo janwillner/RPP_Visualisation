@@ -48,7 +48,7 @@ The configuration lives in `C:\ProgramData\RPP_Visualisation\config.json`:
 | Key | Meaning |
 | --- | --- |
 | `driver` | `ads` on an IPC. `sim` runs the built-in simulator without a PLC. |
-| `amsNetId` | ADS target. Keep `127.0.0.1.1.1` (the local runtime). |
+| `amsNetId` | ADS target. `127.0.0.1.1.1` is the runtime on this IPC; another IPC needs an ADS route (see below). |
 | `adsPort` | PLC runtime port: 851 for the first runtime, 852 for the second, and so on. |
 | `port` | HTTP and WebSocket port of the page. |
 | `cycleMs` | Acquisition cycle in milliseconds. |
@@ -65,7 +65,32 @@ Restart the service after editing the file: `Restart-Service RPP_Visualisation`.
 .\install.ps1 -Instance 852 -AdsPort 852 -Port 8081
 ```
 
-This creates the service `RPP_Visualisation_852` with `C:\ProgramData\RPP_Visualisation\config-852.json`. A new instance needs both `-AdsPort` and `-Port`, so it cannot collide with the default instance. All instances share the program files, so running `install.ps1` without parameters later updates every instance. `Get-Help .\install.ps1 -Detailed` lists all parameters.
+This creates the service `RPP_Visualisation_852` with `C:\ProgramData\RPP_Visualisation\config-852.json`. A new instance needs `-Port`, and `-AdsPort` or `-AmsNetId`, so it cannot collide with the default instance. All instances share the program files, so running `install.ps1` without parameters later updates every instance. `Get-Help .\install.ps1 -Detailed` lists all parameters.
+
+## Reading other IPCs over an ADS route
+
+One visualisation can read the PLCs of several IPCs, for example when a machine's modules run on separate IPCs. It shows all of them in one 3D view. Install it on one IPC (or the HMI PC) with TwinCAT; it reads the other IPCs through TwinCAT's own ADS router.
+
+1. **Create an ADS route** from the IPC running the visualisation to every other IPC, as usual in TwinCAT: in XAE choose *Choose Target System → Search (Ethernet) → Add Route*, or use *Router → Edit Routes* in the TwinCAT tray menu. You need the target's user name and password once; the visualisation stores none.
+2. **Open the ADS port in the firewall** between the IPCs: TCP 48898 (and UDP 48899 for the route search).
+3. **List the PLCs** under `sources` in `config.json` instead of `amsNetId` / `adsPort`:
+
+   ```json
+   {
+     "driver": "ads",
+     "port": 8080,
+     "sources": [
+       { "name": "Infeed PLC", "amsNetId": "127.0.0.1.1.1", "adsPort": 851 },
+       { "name": "Outfeed PLC", "amsNetId": "5.12.34.56.1.1", "adsPort": 851 }
+     ]
+   }
+   ```
+
+   `name` is optional (default `<AmsNetId>:<port>`) and `adsPort` defaults to 851. A second runtime on the same IPC is its own entry with the same AmsNetId. Restart the service afterwards. Running `install.ps1` again for an update does not change the list.
+
+All PLCs must report positions in the same MCS of the machine. Component ids need to be unique only within one PLC. Every PLC is read on its own: if one IPC is not reachable, the others stay live, its components stay visible but faded, and the status bar shows "PLC: 1/2 online" with the reason in its list. In the embedded HMI page a red note in the 3D view names the PLC instead. A product that passes from one PLC's component to another's is shown as two products, one per PLC.
+
+For one remote PLC only, the installer can write the config: `.\install.ps1 -AmsNetId 5.12.34.56.1.1`.
 
 ## Embedding in TwinCAT HMI
 
@@ -100,6 +125,7 @@ This removes all services, the program files and the firewall rules. `C:\Program
 | --- | --- |
 | The page does not load | `Get-Service RPP_Visualisation` shows `Running`. The firewall rule exists. The port in `config.json` is the one you opened. |
 | The page loads but says the PLC is not connected | TwinCAT is in Run mode and the PLC is running. `adsPort` matches the runtime. |
+| A remote PLC reports "Target machine could not be found" | The ADS route from this IPC to the target is missing or uses another AmsNetId; check *Router → Edit Routes*. Firewall: TCP 48898. |
 | Protocol version mismatch is shown | The gateway release and the `Syn_Visu` version in the PLC project do not match. Install the matching release. |
 | The service will not start, or the ADS bridge is blocked | Look at the logs. Check whether SmartScreen or the virus scanner blocked `AdsBridge.exe`; if so, add `C:\Program Files\RPP_Visualisation\` as an exception. |
 

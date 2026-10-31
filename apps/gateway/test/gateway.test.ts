@@ -7,7 +7,7 @@ import {
   type StateMessage,
   type StatusMessage,
 } from "@rpp/protocol";
-import { createGateway } from "../src/gateway";
+import { RECONNECT_MS, combineGateways, createGateway } from "../src/gateway";
 import { InMemoryPlc } from "../src/in-memory-plc";
 import {
   cartesian,
@@ -37,7 +37,7 @@ function setup(components: MachineComponent[], options?: Parameters<typeof defin
   defineMachine(plc, components, options);
   // Gateway clock in ms, advanced explicitly by tests.
   let time = 0;
-  const gateway = createGateway({ plc, sourceId: "plc1", now: () => time });
+  const gateway = createGateway({ plc, sourceId: "plc1", sourceName: "Line PLC", now: () => time });
   const messages: GatewayMessage[] = [];
   gateway.subscribe((m) => {
     // Every emitted message must satisfy the browser contract.
@@ -402,7 +402,14 @@ describe("gateway subscribers", () => {
     await t.gateway.cycle();
 
     expect(late.map((m) => m.kind)).toEqual(["status", "config", "state"]);
-    expect(late[0]).toEqual({ kind: "status", status: { plcConnected: true } });
+    expect(late[0]).toEqual({ kind: "status", sourceId: "plc1", sourceName: "Line PLC", status: { plcConnected: true } });
+  });
+
+  it("marks every message with the source it comes from", async () => {
+    const t = setup([infeed, robot]);
+    await t.gateway.cycle();
+
+    expect(t.messages.map((m) => m.sourceId)).toEqual(["plc1", "plc1", "plc1", "plc1"]);
   });
 });
 
@@ -418,12 +425,102 @@ describe("gateway connection", () => {
     const statesWhileOffline = t.states().length;
 
     t.plc.setOnline(true);
+    t.advance(RECONNECT_MS);
     await t.gateway.cycle();
 
     // Initial status on subscribe, connected, lost, connected again.
     expect(t.statuses().map((s) => s.status.plcConnected)).toEqual([false, true, false, true]);
     expect(t.configs()).toHaveLength(2);
     expect(t.states().length).toBe(statesWhileOffline + 1);
+  });
+
+  it("waits 5 s after a failed attempt before trying the PLC again", async () => {
+    const t = setup([infeed, robot]);
+    await t.gateway.cycle();
+    t.plc.setOnline(false);
+    await t.gateway.cycle();
+    t.plc.setOnline(true);
+
+    t.advance(RECONNECT_MS - 1);
+    await t.gateway.cycle();
+    expect(t.statuses().at(-1)!.status.plcConnected).toBe(false);
+
+    t.advance(1);
+    await t.gateway.cycle();
+    expect(t.statuses().at(-1)!.status.plcConnected).toBe(true);
+  });
+});
+
+describe("gateway with several PLC sources", () => {
+  function twoSources() {
+    const a = new InMemoryPlc();
+    const b = new InMemoryPlc();
+    // Both PLCs use the same manifest ids: ids are unique per source only.
+    defineMachine(a, [infeed, robot]);
+    defineMachine(b, [{ ...infeed, name: "Outfeed" }]);
+    let time = 0;
+    const gateways = [
+      createGateway({ plc: a, sourceId: "ads:5.1.2.3.1.1:851", sourceName: "Infeed PLC", now: () => time }),
+      createGateway({ plc: b, sourceId: "ads:5.1.2.4.1.1:851", sourceName: "Outfeed PLC", now: () => time }),
+    ];
+    const hub = combineGateways(gateways);
+    const messages: GatewayMessage[] = [];
+    hub.subscribe((m) => messages.push(GatewayMessageSchema.parse(JSON.parse(JSON.stringify(m)))));
+    const cycleAll = () => Promise.all(gateways.map((g) => g.cycle()));
+    return { a, b, gateways, messages, cycleAll, advance: (ms: number) => (time += ms) };
+  }
+  const configsOf = (messages: GatewayMessage[], sourceId: string) =>
+    messages.filter((m): m is ConfigMessage => m.kind === "config" && m.sourceId === sourceId);
+  const statesOf = (messages: GatewayMessage[], sourceId: string) =>
+    messages.filter((m): m is StateMessage => m.kind === "state" && m.sourceId === sourceId);
+
+  it("publishes the components of every source, each under its own source id, even with the same manifest ids", async () => {
+    const t = twoSources();
+    await t.cycleAll();
+
+    const a = configsOf(t.messages, "ads:5.1.2.3.1.1:851")[0]!;
+    const b = configsOf(t.messages, "ads:5.1.2.4.1.1:851")[0]!;
+    expect(a.components.map((c) => [c.sourceId, c.id, c.name])).toEqual([
+      ["ads:5.1.2.3.1.1:851", 10, "Infeed"],
+      ["ads:5.1.2.3.1.1:851", 20, "Delta 1"],
+    ]);
+    expect(b.components.map((c) => [c.sourceId, c.id, c.name])).toEqual([["ads:5.1.2.4.1.1:851", 10, "Outfeed"]]);
+    expect(statesOf(t.messages, "ads:5.1.2.4.1.1:851")[0]!.components.map((c) => c.id)).toEqual([10]);
+  });
+
+  it("sends a late-joining subscriber the status and config of every source", async () => {
+    const t = twoSources();
+    await t.cycleAll();
+
+    const late: GatewayMessage[] = [];
+    combineGateways(t.gateways).subscribe((m) => late.push(m));
+
+    expect(late.map((m) => [m.kind, m.sourceId])).toEqual([
+      ["status", "ads:5.1.2.3.1.1:851"],
+      ["config", "ads:5.1.2.3.1.1:851"],
+      ["status", "ads:5.1.2.4.1.1:851"],
+      ["config", "ads:5.1.2.4.1.1:851"],
+    ]);
+  });
+
+  it("keeps publishing the other sources while one is unreachable, and picks the lost one up again", async () => {
+    const t = twoSources();
+    await t.cycleAll();
+    t.b.setOnline(false);
+    await t.cycleAll();
+    const before = statesOf(t.messages, "ads:5.1.2.3.1.1:851").length;
+
+    await t.cycleAll();
+    await t.cycleAll();
+    expect(statesOf(t.messages, "ads:5.1.2.3.1.1:851").length).toBe(before + 2);
+    const lost = t.messages.filter((m): m is StatusMessage => m.kind === "status" && m.sourceId === "ads:5.1.2.4.1.1:851");
+    expect(lost.at(-1)!).toMatchObject({ sourceName: "Outfeed PLC", status: { plcConnected: false } });
+
+    t.b.setOnline(true);
+    t.advance(RECONNECT_MS);
+    await t.cycleAll();
+    expect(configsOf(t.messages, "ads:5.1.2.4.1.1:851")).toHaveLength(2);
+    expect(statesOf(t.messages, "ads:5.1.2.4.1.1:851").length).toBe(2);
   });
 });
 

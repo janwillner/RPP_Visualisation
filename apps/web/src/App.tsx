@@ -1,7 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Fault, ComponentConfig, ComponentState } from "@rpp/protocol";
-import { GatewayStore, STALE_AFTER_MS, defaultGatewayUrl, useGateway, type GatewaySnapshot } from "./connection";
-import { faultText, type ComponentFaults, formatPointCopy, measureChain, pointsCsv, type SceneModel, type SnapPoint, type Vec3 } from "./scene/scene-model";
+import {
+  GatewayStore,
+  STALE_AFTER_MS,
+  defaultGatewayUrl,
+  isOnline,
+  useGateway,
+  type GatewaySnapshot,
+  type SourceInfo,
+} from "./connection";
+import {
+  componentKey,
+  faultText,
+  formatPointCopy,
+  measureChain,
+  pointsCsv,
+  type MachineScene,
+  type SceneModel,
+  type SnapPoint,
+  type SourcedFaults,
+  type Vec3,
+} from "./scene/scene-model";
 import {
   MISSED_COLOR,
   PRODUCT_COLORS,
@@ -66,19 +85,20 @@ export function App() {
     tcpMarkers: true,
     faultLabels: true,
   });
-  const [faults, setFaults] = useState<ComponentFaults[]>([]);
+  const [faults, setFaults] = useState<SourcedFaults[]>([]);
   const [selection, setSelection] = useState<Selection>();
-  const [hidden, setHidden] = useState<ReadonlySet<number>>(() => new Set());
-  const toggleHidden = (id: number) =>
+  // Component keys, and source ids for whole sources.
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleHidden = (key: string) =>
     setHidden((h) => {
       const next = new Set(h);
-      if (!next.delete(id)) next.add(id);
+      if (!next.delete(key)) next.add(key);
       return next;
     });
   const [cameraRequest, setCameraRequest] = useState<{ action: CameraAction; seq: number }>({ action: "iso", seq: 0 });
   const [leftOpen, toggleLeft] = usePanelOpen("rpp.panel.components");
   const [rightOpen, toggleRight] = usePanelOpen("rpp.panel.inspector");
-  const modelRef = useRef<SceneModel | undefined>(undefined);
+  const modelRef = useRef<MachineScene | undefined>(undefined);
   const [measureMode, setMeasureMode] = useState(false);
   const [measurePoints, setMeasurePoints] = useState<MeasurePoint[]>([]);
   const nextPointId = useRef(1);
@@ -140,7 +160,7 @@ export function App() {
       </header>
       <aside className="panel left" hidden={!leftOpen}>
         <ComponentTree
-          components={gateway.config?.components ?? []}
+          gateway={gateway}
           selection={selection}
           onSelect={setSelection}
           hidden={hidden}
@@ -152,7 +172,7 @@ export function App() {
       <main className="viewport" onContextMenu={(e) => e.preventDefault()}>
         <SceneView
           store={store}
-          config={gateway.config}
+          sources={gateway.sources}
           layers={layers}
           selection={selection}
           onSelect={setSelection}
@@ -165,6 +185,7 @@ export function App() {
           onFaults={setFaults}
         />
         <ViewControls onCamera={camera} />
+        {EMBEDDED && <OfflineNotice gateway={gateway} />}
         {(measureMode || measurePoints.length > 0) && (
           <MeasureList
             measureMode={measureMode}
@@ -180,13 +201,35 @@ export function App() {
       <aside className="panel right" hidden={!rightOpen}>
         <Inspector
           store={store}
-          config={gateway.config?.components ?? []}
+          sources={gateway.sources}
           selection={selection}
           modelRef={modelRef}
           faults={faults}
         />
       </aside>
       {!EMBEDDED && <StatusBar store={store} gateway={gateway} modelRef={modelRef} />}
+    </div>
+  );
+}
+
+/** Sources the gateway cannot read right now (all of them while the gateway connection is down). */
+function offlineSources(gateway: GatewaySnapshot): SourceInfo[] {
+  return gateway.sources.filter((s) => !isOnline(gateway, s));
+}
+
+/** Embedded there is no status bar: a red note in the 3D view tells that (part of) the machine is not live. */
+function OfflineNotice({ gateway }: { gateway: GatewaySnapshot }) {
+  const offline = offlineSources(gateway);
+  if (gateway.socket === "open" && offline.length === 0) return null;
+  const text =
+    gateway.socket !== "open"
+      ? "Gateway not connected"
+      : gateway.sources.length === 1
+        ? "PLC not connected"
+        : `PLC offline: ${offline.map((s) => s.name).join(", ")}`;
+  return (
+    <div className="offline-notice" role="status">
+      {text}
     </div>
   );
 }
@@ -302,15 +345,20 @@ function Toggle({ label, on, onClick }: { label: string; on: boolean; onClick: (
  * Colour legend, shown only while a product is selected (the selected product itself is drawn in the
  * selection colour). The entry matching the selected product is highlighted.
  */
+/** The scene of one source, by manifest ids. */
+function sourceScene(modelRef: React.RefObject<MachineScene | undefined>, sourceId: string): SceneModel | undefined {
+  return modelRef.current?.sources.find((s) => s.sourceId === sourceId)?.scene;
+}
+
 function ProductLegend(props: {
-  selection: { kind: "product"; conveyorId: number; productId: number };
-  modelRef: React.RefObject<SceneModel | undefined>;
+  selection: { kind: "product"; sourceId: string; conveyorId: number; productId: number };
+  modelRef: React.RefObject<MachineScene | undefined>;
   onClose: () => void;
 }) {
   const { selection, modelRef, onClose } = props;
   useTick(200);
   const matches =
-    modelRef.current?.products.filter(
+    sourceScene(modelRef, selection.sourceId)?.products.filter(
       (p) => p.conveyorId === selection.conveyorId && p.productId === selection.productId,
     ) ?? [];
   const product = matches.find((p) => p.display !== "placeholder") ?? matches[0];
@@ -342,57 +390,107 @@ function ProductLegend(props: {
   );
 }
 
+/**
+ * The components of every source. With more than one source they are grouped under the source's name, with its
+ * online state and an eye for the whole source.
+ */
 function ComponentTree(props: {
-  components: ComponentConfig[];
+  gateway: GatewaySnapshot;
   selection: Selection;
   onSelect: (s: Selection) => void;
-  hidden: ReadonlySet<number>;
-  onToggleHidden: (id: number) => void;
-  faults: ComponentFaults[];
+  hidden: ReadonlySet<string>;
+  onToggleHidden: (key: string) => void;
+  faults: SourcedFaults[];
 }) {
-  const { components, selection, onSelect, hidden, onToggleHidden, faults } = props;
+  const { gateway, selection, onSelect, hidden, onToggleHidden, faults } = props;
+  const grouped = gateway.sources.length > 1;
+  // A source that never answered has no config and appears only in the status bar.
+  const sources = gateway.sources.filter((s) => s.config !== undefined);
+  const components = (source: SourceInfo) => (
+    <ul className="tree">
+      {(source.config?.components ?? []).map((c) => {
+        const key = componentKey(source.sourceId, c.id);
+        const isHidden = hidden.has(key) || hidden.has(source.sourceId);
+        const messages = faults.find((f) => f.sourceId === source.sourceId && f.componentId === c.id)?.messages;
+        return (
+          <li key={key} className={[isHidden ? "hidden" : "", messages ? "faulted" : ""].join(" ").trim()}>
+            <VisibilityButton name={c.name} hidden={hidden.has(key)} onClick={() => onToggleHidden(key)} />
+            <button
+              className={
+                selection?.kind === "component" && selection.sourceId === source.sourceId && selection.id === c.id
+                  ? "selected"
+                  : ""
+              }
+              onClick={() => onSelect({ kind: "component", sourceId: source.sourceId, id: c.id })}
+            >
+              {messages && (
+                <span className="fault-icon" aria-label="Fault">
+                  ⚠
+                </span>
+              )}
+              <span className={`badge ${c.type}`}>{c.type}</span> {c.name} <span className="muted">#{c.id}</span>
+            </button>
+            {/* Visible, not a tooltip: a touch panel shows no tooltips. */}
+            {messages && (
+              <ul className="fault-lines">
+                {messages.map((m, i) => (
+                  <li key={i}>{m}</li>
+                ))}
+              </ul>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+  const empty = sources.every((s) => (s.config?.components.length ?? 0) === 0);
   return (
     <>
       <h2>Components</h2>
-      {components.length === 0 && <p className="muted">No components discovered.</p>}
-      <ul className="tree">
-        {components.map((c) => {
-          const messages = faults.find((f) => f.componentId === c.id)?.messages;
-          return (
-            <li key={c.id} className={[hidden.has(c.id) ? "hidden" : "", messages ? "faulted" : ""].join(" ").trim()}>
-              <button
-                className="visibility"
-                title={hidden.has(c.id) ? `Show ${c.name}` : `Hide ${c.name}`}
-                aria-label={hidden.has(c.id) ? `Show ${c.name}` : `Hide ${c.name}`}
-                aria-pressed={hidden.has(c.id)}
-                onClick={() => onToggleHidden(c.id)}
-              >
-                <EyeIcon open={!hidden.has(c.id)} />
-              </button>
-              <button
-                className={selection?.kind === "component" && selection.id === c.id ? "selected" : ""}
-                onClick={() => onSelect({ kind: "component", id: c.id })}
-              >
-                {messages && (
-                  <span className="fault-icon" aria-label="Fault">
-                    ⚠
-                  </span>
+      {empty && !grouped && <p className="muted">No components discovered.</p>}
+      {grouped ? (
+        <ul className="sources">
+          {sources.map((source) => {
+            const online = isOnline(gateway, source);
+            return (
+              <li key={source.sourceId} className={hidden.has(source.sourceId) ? "hidden" : ""}>
+                <div className="source-head">
+                  <VisibilityButton
+                    name={source.name}
+                    hidden={hidden.has(source.sourceId)}
+                    onClick={() => onToggleHidden(source.sourceId)}
+                  />
+                  <span className={online ? "dot ok" : "dot bad"} aria-label={online ? "Online" : "Offline"} />
+                  <strong>{source.name}</strong>
+                  {!online && <span className="bad">offline</span>}
+                </div>
+                {(source.config?.components.length ?? 0) === 0 ? (
+                  <p className="muted">No components discovered.</p>
+                ) : (
+                  components(source)
                 )}
-                <span className={`badge ${c.type}`}>{c.type}</span> {c.name} <span className="muted">#{c.id}</span>
-              </button>
-              {/* Visible, not a tooltip: a touch panel shows no tooltips. */}
-              {messages && (
-                <ul className="fault-lines">
-                  {messages.map((m, i) => (
-                    <li key={i}>{m}</li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        sources[0] && components(sources[0])
+      )}
     </>
+  );
+}
+
+function VisibilityButton({ name, hidden, onClick }: { name: string; hidden: boolean; onClick: () => void }) {
+  return (
+    <button
+      className="visibility"
+      title={hidden ? `Show ${name}` : `Hide ${name}`}
+      aria-label={hidden ? `Show ${name}` : `Hide ${name}`}
+      aria-pressed={hidden}
+      onClick={onClick}
+    >
+      <EyeIcon open={!hidden} />
+    </button>
   );
 }
 
@@ -409,12 +507,12 @@ function EyeIcon({ open }: { open: boolean }) {
 
 function Inspector(props: {
   store: GatewayStore;
-  config: ComponentConfig[];
+  sources: SourceInfo[];
   selection: Selection;
-  modelRef: React.RefObject<SceneModel | undefined>;
-  faults: ComponentFaults[];
+  modelRef: React.RefObject<MachineScene | undefined>;
+  faults: SourcedFaults[];
 }) {
-  const { store, config, selection, modelRef, faults } = props;
+  const { store, sources, selection, modelRef, faults } = props;
   useTick(200);
   if (!selection) {
     return (
@@ -427,7 +525,7 @@ function Inspector(props: {
   if (selection.kind === "product") {
     // A picked product appears twice (at the TCP and as placeholder); show the carried one.
     const matches =
-      modelRef.current?.products.filter(
+      sourceScene(modelRef, selection.sourceId)?.products.filter(
         (p) => p.conveyorId === selection.conveyorId && p.productId === selection.productId,
       ) ?? [];
     const product = matches.find((p) => p.display !== "placeholder") ?? matches[0];
@@ -448,14 +546,19 @@ function Inspector(props: {
       </>
     );
   }
-  const component = config.find((c) => c.id === selection.id);
-  const state: ComponentState | undefined = store.latest()?.components.find((c) => c.id === selection.id);
-  const delta = modelRef.current?.deltas.find((d) => d.id === selection.id);
+  const source = sources.find((s) => s.sourceId === selection.sourceId);
+  const component: ComponentConfig | undefined = source?.config?.components.find((c) => c.id === selection.id);
+  const state: ComponentState | undefined = store
+    .buffer(selection.sourceId)
+    .latest()
+    ?.components.find((c) => c.id === selection.id);
+  const delta = sourceScene(modelRef, selection.sourceId)?.deltas.find((d) => d.id === selection.id);
   return (
     <>
       <h2>{component?.name ?? `#${selection.id}`}</h2>
+      {sources.length > 1 && source && <p className="muted">PLC: {source.name}</p>}
       {faults
-        .find((f) => f.componentId === selection.id)
+        .find((f) => f.sourceId === selection.sourceId && f.componentId === selection.id)
         ?.messages.map((m, i) => (
           <p key={i} className="fault">
             ⚠ {m}
@@ -563,36 +666,81 @@ function Json({ value }: { value: unknown }) {
   return <pre className="json">{value === undefined ? "–" : JSON.stringify(value, null, 2)}</pre>;
 }
 
+/** Milliseconds since the newest data of the stalest connected source; undefined before any data. */
+function dataAge(store: GatewayStore, gateway: GatewaySnapshot): number | undefined {
+  const ages = gateway.sources
+    .filter((s) => s.status?.plcConnected)
+    .map((s) => store.buffer(s.sourceId).dataAge())
+    .filter((a): a is number => a !== undefined);
+  return ages.length ? Math.max(...ages) : undefined;
+}
+
 function StatusBar(props: {
   store: GatewayStore;
   gateway: GatewaySnapshot;
-  modelRef: React.RefObject<SceneModel | undefined>;
+  modelRef: React.RefObject<MachineScene | undefined>;
 }) {
   const { store, gateway, modelRef } = props;
   useTick(250);
   const [showErrors, setShowErrors] = useState(false);
-  const age = store.dataAge();
+  const [showSources, setShowSources] = useState(false);
+  const age = dataAge(store, gateway);
   const stale = age === undefined || age > STALE_AFTER_MS;
+  const several = gateway.sources.length > 1;
+  const prefix = (source: SourceInfo) => (several ? `${source.name}: ` : "");
   const errors = [
-    ...(gateway.config?.errors.map((e) => `${e.path ?? ""} ${e.message}`.trim()) ?? []),
-    ...(modelRef.current?.warnings ?? []),
+    ...gateway.sources.flatMap(
+      (source) => source.config?.errors.map((e) => `${prefix(source)}${e.path ?? ""} ${e.message}`.trim()) ?? [],
+    ),
+    ...(modelRef.current?.sources.flatMap((x) => {
+      const source = gateway.sources.find((s) => s.sourceId === x.sourceId);
+      return x.scene.warnings.map((w) => (source ? prefix(source) + w : w));
+    }) ?? []),
     ...(gateway.protocolError ? [`Protocol: ${gateway.protocolError}`] : []),
   ];
+  const online = gateway.sources.length - offlineSources(gateway).length;
+  const single = several ? undefined : gateway.sources[0];
   return (
     <footer className="statusbar">
       <span className={gateway.socket === "open" ? "ok" : "bad"}>Gateway: {gateway.socket}</span>
-      <span className={gateway.status?.plcConnected ? "ok" : "bad"}>
-        PLC: {gateway.status ? (gateway.status.plcConnected ? "connected" : "not connected") : "unknown"}
-        {gateway.status?.lastError && !gateway.status.plcConnected ? ` (${gateway.status.lastError})` : ""}
-      </span>
+      {several ? (
+        <button
+          className={online === gateway.sources.length ? "ok link" : "bad link"}
+          onClick={() => setShowSources((v) => !v)}
+        >
+          PLC: {online}/{gateway.sources.length} online
+        </button>
+      ) : (
+        <span className={single?.status?.plcConnected ? "ok" : "bad"}>
+          PLC: {single?.status ? (single.status.plcConnected ? "connected" : "not connected") : "unknown"}
+          {single?.status?.lastError && !single.status.plcConnected ? ` (${single.status.lastError})` : ""}
+        </span>
+      )}
       <span className={stale ? "bad" : "ok"}>
         Data age: {age === undefined ? "–" : `${Math.round(age)} ms`}
         {stale ? " – stale" : ""}
       </span>
-      {gateway.config && <span className="muted">Config v{gateway.config.configVersion}</span>}
-      <button className={errors.length ? "bad link" : "muted link"} onClick={() => setShowErrors((s) => !s)}>
+      {single?.config && <span className="muted">Config v{single.config.configVersion}</span>}
+      <button className={errors.length ? "bad link" : "muted link"} onClick={() => setShowErrors((v) => !v)}>
         {errors.length} discovery error{errors.length === 1 ? "" : "s"}
       </button>
+      {showSources && several && (
+        <ul className="errors sources-list">
+          {gateway.sources.map((source) => {
+            const connected = isOnline(gateway, source);
+            // A connected PLC can still be unusable, e.g. with another protocol version: show its first error.
+            const problem = connected ? source.config?.errors[0]?.message : source.status?.lastError;
+            return (
+              <li key={source.sourceId}>
+                <span className={connected ? "ok" : "bad"}>{connected ? "online" : "offline"}</span>{" "}
+                <strong>{source.name}</strong> <span className="muted">{source.sourceId.replace(/^ads:/, "")}</span>
+                {source.config && <span className="muted"> · config v{source.config.configVersion}</span>}
+                {problem && <span className="bad"> · {problem}</span>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
       {showErrors && errors.length > 0 && (
         <ul className="errors">
           {errors.map((e, i) => (

@@ -15,7 +15,9 @@ import type {
 } from "@rpp/protocol";
 import {
   availableSnapPoints,
+  buildMachineScene,
   buildScene,
+  componentKey,
   formatPointCopy,
   measureChain,
   pointsCsv,
@@ -45,7 +47,7 @@ function conveyorConfig(overrides: Partial<ConveyorConfig> = {}): ConveyorConfig
 }
 
 function config(...components: ConfigMessage["components"]): ConfigMessage {
-  return { kind: "config", protocolVersion: 1, configVersion: 1, components, errors: [] };
+  return { kind: "config", sourceId: "plc1", protocolVersion: 1, configVersion: 1, components, errors: [] };
 }
 
 describe("scene model: MCS to renderer frame", () => {
@@ -101,7 +103,7 @@ function product(overrides: Partial<Product> = {}): Product {
 }
 
 function snapshot(tRel: number, components: StateMessage["components"]): StateMessage {
-  return { kind: "state", configVersion: 1, timestamp: String(tRel * 1e6), tRel, components };
+  return { kind: "state", sourceId: "plc1", configVersion: 1, timestamp: String(tRel * 1e6), tRel, components };
 }
 
 function conveyorState(beltPosition: number, products: Product[], id = 1): StateMessage["components"][number] {
@@ -1031,5 +1033,74 @@ describe("scene model: faults", () => {
     expect(scene.conveyors[0]!.fault).toBe("Belt stopped");
     // Belt from MCS (0, 0, 800) along +X, 3000 long: middle (1500, 0, 800), label 150 mm above it.
     closeTo(scene.faultLabels[0]!.position, [1.5, 0.95, 0]);
+  });
+});
+
+describe("machine scene: several PLC sources", () => {
+  const A = "ads:5.1.2.3.1.1:851";
+  const B = "ads:5.1.2.4.1.1:851";
+  /** Both PLCs report a conveyor with manifest id 1 (ids are unique per source only), B's 2 m further along Y. */
+  const configOf = (sourceId: string, y: number): ConfigMessage => ({
+    ...config(conveyorConfig({ sourceId, name: sourceId === A ? "Infeed" : "Outfeed", pose: { x: 0, y, z: 800, rx: 0, ry: 0, rz: 0 } })),
+    sourceId,
+  });
+  const source = (sourceId: string, y: number, snapshots: StateMessage[], renderTime = 0, online = true) => ({
+    sourceId,
+    config: configOf(sourceId, y),
+    snapshots: snapshots.map((m) => ({ ...m, sourceId })),
+    renderTime,
+    online,
+  });
+  const belt = (tRel: number, beltPosition: number, fault: string | null = null) =>
+    snapshot(tRel, [{ ...conveyorState(beltPosition, [product()]), fault: fault === null ? null : { message: fault } }]);
+
+  it("keeps the components of different sources apart even when they use the same manifest id", () => {
+    const machine = buildMachineScene([source(A, 0, [belt(0, 0)]), source(B, 2000, [belt(0, 0)])], new Set());
+
+    expect(machine.sources.map((x) => [x.sourceId, x.scene.conveyors.map((c) => c.name)])).toEqual([
+      [A, ["Infeed"]],
+      [B, ["Outfeed"]],
+    ]);
+    closeTo(machine.sources[1]!.scene.conveyors[0]!.transform.position, [0, 0.8, -2]);
+    expect(machine.sources.map((x) => x.scene.products.length)).toEqual([1, 1]);
+    const keys = machine.snapPoints.map((p) => p.key);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(new Set(machine.snapPoints.map((p) => p.sourceId))).toEqual(new Set([A, B]));
+  });
+
+  it("interpolates each source on its own timeline", () => {
+    // B's PLC clock is unrelated to A's: its tRel axis started at another moment.
+    const machine = buildMachineScene(
+      [source(A, 0, [belt(0, 0), belt(20, 200)], 10), source(B, 2000, [belt(1000, 0), belt(1020, 400)], 1010)],
+      new Set(),
+    );
+
+    const productX = machine.sources.map((x) => x.scene.products[0]!.transform.position[0]);
+    closeTo(productX, [0.1, 0.2]);
+  });
+
+  it("keeps the last config and state of an unreachable source and marks it offline", () => {
+    const machine = buildMachineScene([source(A, 0, [belt(0, 0)]), source(B, 2000, [belt(0, 300)], 0, false)], new Set());
+
+    expect(machine.sources.map((x) => x.online)).toEqual([true, false]);
+    expect(machine.sources[1]!.scene.conveyors).toHaveLength(1);
+    closeTo([machine.sources[1]!.scene.products[0]!.transform.position[0]], [0.3]);
+  });
+
+  it("hides a component of one source without hiding the component with the same id of another", () => {
+    const machine = buildMachineScene([source(A, 0, []), source(B, 2000, [])], new Set([componentKey(B, 1)]));
+
+    expect(machine.sources.map((x) => x.scene.conveyors.length)).toEqual([1, 0]);
+  });
+
+  it("hides every component of a hidden source but still lists its faults", () => {
+    const machine = buildMachineScene(
+      [source(A, 0, [belt(0, 0)]), source(B, 2000, [belt(0, 0, "Belt jammed")])],
+      new Set([B]),
+    );
+
+    expect(machine.sources[1]!.scene.conveyors).toEqual([]);
+    expect(machine.snapPoints.every((p) => p.sourceId === A)).toBe(true);
+    expect(machine.faults).toEqual([{ sourceId: B, componentId: 1, messages: ["Belt jammed"] }]);
   });
 });

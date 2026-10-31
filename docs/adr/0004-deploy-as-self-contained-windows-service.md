@@ -7,7 +7,7 @@ This amends one consequence of ADR 0001. That ADR accepted a .NET 9 runtime on t
 ## Decisions
 
 - **Target:** Windows 10/11 x64, build 1607 or newer (LTSC 2019/2021 included). Windows 7, Windows Embedded Standard 7, Windows CE and TwinCAT/BSD are not supported.
-- **One service per PLC runtime:** each service has its own ADS port and HTTP port. The default is ADS port 851 served on HTTP port 8080. A single gateway serving several runtimes would need code changes and is not planned.
+- **One service per PLC runtime:** each service has its own ADS port and HTTP port. The default is ADS port 851 served on HTTP port 8080. A single gateway serving several runtimes would need code changes and is not planned. (Amended by ADR 0005: one gateway may now read several PLC sources, including other IPCs over ADS routes; one service per machine remains the default.)
 - **Service:** WinSW runs the service. It starts automatically at boot, restarts after a crash and runs at `BelowNormal` priority. The service may start before TwinCAT: the gateway treats every failed read as a lost connection and runs discovery again once the PLC answers. WinSW v2 applies service settings only when a service is registered, so `install.ps1` registers every instance again on each update.
 - **Layout:** program files go to `C:\Program Files\RPP_Visualisation\`, and an update replaces this folder completely. Machine-specific settings (`config.json`, read through `--config`) and rotating logs go to `C:\ProgramData\RPP_Visualisation\` and survive updates.
 - **Access:** the page is read-only and needs no login or TLS. Anyone on the machine network can open it. `install.ps1` adds a firewall rule for the HTTP port. Viewers use a remote browser; the IPC does not render the scene itself.

@@ -370,8 +370,15 @@ export const GatewayStatusSchema = z.object({
 });
 export type GatewayStatus = z.infer<typeof GatewayStatusSchema>;
 
+/**
+ * A PLC the gateway reads, as `ads:<AmsNetId>:<port>` (`sim` for the simulator). Every message carries it, and manifest
+ * ids are unique only within one source.
+ */
+export const SourceIdSchema = z.string().min(1);
+
 export const ConfigMessageSchema = z.object({
   kind: z.literal("config"),
+  sourceId: SourceIdSchema,
   protocolVersion: z.number().int(),
   configVersion: z.number().int(),
   components: z.array(ComponentConfigSchema),
@@ -381,10 +388,11 @@ export type ConfigMessage = z.infer<typeof ConfigMessageSchema>;
 
 export const StateMessageSchema = z.object({
   kind: z.literal("state"),
+  sourceId: SourceIdSchema,
   configVersion: z.number().int(),
   /** Newest PLC timestamp in this snapshot (ns, decimal string). */
   timestamp: TimestampSchema,
-  /** Milliseconds relative to the first snapshot after the gateway (re)discovered the PLC. */
+  /** Milliseconds relative to the first snapshot after the gateway (re)discovered this source's PLC. */
   tRel: z.number(),
   components: z.array(ComponentStateSchema),
 });
@@ -392,6 +400,9 @@ export type StateMessage = z.infer<typeof StateMessageSchema>;
 
 export const StatusMessageSchema = z.object({
   kind: z.literal("status"),
+  sourceId: SourceIdSchema,
+  /** Display name of the source: the configured name, else `<AmsNetId>:<port>`. */
+  sourceName: z.string(),
   status: GatewayStatusSchema,
 });
 export type StatusMessage = z.infer<typeof StatusMessageSchema>;

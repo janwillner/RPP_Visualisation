@@ -83,8 +83,10 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
         if (_symbols.TryGetValue(path, out var cached)) return cached;
         var client = Client();
         var error = client.TryReadSymbol(path, out IAdsSymbol? symbol);
-        if (error == AdsErrorCode.DeviceSymbolNotFound || symbol == null) return null;
+        // Check the error first: an unreachable target (no route, runtime stopped) also leaves the symbol null.
+        if (error == AdsErrorCode.DeviceSymbolNotFound) return null;
         if (error != AdsErrorCode.NoError) throw new AdsErrorException($"Reading symbol {path} failed", error);
+        if (symbol == null) return null;
         Loader().DataTypes.TryGetType(symbol.TypeName, out IDataType? dataType);
         var resolved = new ResolvedSymbol(symbol.IndexGroup, symbol.IndexOffset, symbol.ByteSize, symbol.TypeName, dataType);
         _symbols[path] = resolved;

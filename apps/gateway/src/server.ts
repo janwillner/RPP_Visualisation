@@ -3,7 +3,7 @@ import { stat } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { Gateway } from "./gateway";
+import type { MessageSource } from "./gateway";
 
 /** WebSocket path the web app connects to. */
 export const WS_PATH = "/ws";
@@ -23,7 +23,8 @@ const MIME: Record<string, string> = {
 };
 
 export interface ServerOptions {
-  gateway: Gateway;
+  /** One gateway, or several combined with `combineGateways`. */
+  gateway: MessageSource;
   port: number;
   host?: string;
   /** Directory with the built web app; omit to serve the WebSocket only (development with Vite). */

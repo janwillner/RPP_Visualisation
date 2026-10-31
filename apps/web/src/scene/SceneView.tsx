@@ -2,7 +2,7 @@ import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import * as THREE from "three";
-import type { GatewayStore } from "../connection";
+import type { GatewayStore, SourceInfo } from "../connection";
 import type {
   ProductDisplay,
   SceneAllocation,
@@ -19,10 +19,12 @@ import type {
   SnapPoint,
   Transform,
   Vec3,
-  ComponentFaults,
+  MachineScene,
+  SceneConveyor,
   SceneFaultLabel,
+  SourcedFaults,
 } from "./scene-model";
-import { availableSnapPoints, buildScene } from "./scene-model";
+import { availableSnapPoints, buildMachineScene } from "./scene-model";
 import { isTap, nearestOnScreen, snapRadiusPx, type ScreenPoint } from "./picking";
 import type { ConfigMessage, ProductState } from "@rpp/protocol";
 
@@ -34,11 +36,17 @@ export interface Layers {
   faultLabels: boolean;
 }
 
-/** A product is selected by register identity, so the selection survives display changes (e.g. picked). */
-export type Selection =
+/**
+ * A selection within one source's scene, by manifest id. A product is selected by register identity, so the
+ * selection survives display changes (e.g. picked).
+ */
+export type LocalSelection =
   | { kind: "component"; id: number }
   | { kind: "product"; conveyorId: number; productId: number }
   | undefined;
+
+/** A selection in the machine: manifest ids are unique only within their source. */
+export type Selection = (NonNullable<LocalSelection> & { sourceId: string }) | undefined;
 
 export type CameraPreset = "top" | "front" | "side" | "iso";
 /** A preset view, or a zoom step towards / away from the orbit target (for single-finger use). */
@@ -57,23 +65,24 @@ export interface MeasurePoint {
 
 export interface SceneViewProps {
   store: GatewayStore;
-  config: ConfigMessage | undefined;
+  /** The PLC sources, each drawn on its own. */
+  sources: SourceInfo[];
   layers: Layers;
   selection: Selection;
   onSelect: (selection: Selection) => void;
   /** Changes to `{ action, seq }` move the camera; `seq` allows repeating the same action. */
   cameraRequest: { action: CameraAction; seq: number };
-  /** Receives the scene model every frame, e.g. for the inspector. */
-  modelRef: MutableRefObject<SceneModel | undefined>;
+  /** Receives the machine scene every frame, e.g. for the inspector. */
+  modelRef: MutableRefObject<MachineScene | undefined>;
   /** Measure mode: origins and snap points are shown, a click on a snap point measures instead of selecting. */
   measureMode: boolean;
   /** Called with the snap point under the pointer when it is clicked in measure mode. */
   onMeasure: (point: SnapPoint) => void;
   measurePoints: MeasurePoint[];
-  /** Manifest ids of components hidden by the user. */
-  hidden: ReadonlySet<number>;
+  /** Component keys and source ids hidden by the user. */
+  hidden: ReadonlySet<string>;
   /** Called whenever the set of active faults changes (hidden components included). */
-  onFaults: (faults: ComponentFaults[]) => void;
+  onFaults: (faults: SourcedFaults[]) => void;
 }
 
 const EMPTY: SceneModel = {
@@ -137,6 +146,38 @@ function FaultScope({ faulted, children }: { faulted: boolean; children: ReactNo
       {children}
     </group>
   );
+}
+
+/** Opacity factor of everything a source draws while the gateway cannot read its PLC. */
+const OFFLINE_OPACITY = 0.25;
+
+/**
+ * Fades every material below `root` while `offline`: the source's last known state stays visible, clearly not live.
+ * The original opacity is kept on the material, so it comes back when the source is online again.
+ */
+function fade(root: THREE.Object3D | null, offline: boolean): void {
+  root?.traverse((o) => {
+    const material = (o as THREE.Mesh).material;
+    for (const m of Array.isArray(material) ? material : material ? [material] : []) {
+      const base = (m.userData.base ??= { opacity: m.opacity, transparent: m.transparent }) as {
+        opacity: number;
+        transparent: boolean;
+      };
+      const transparent = offline || base.transparent;
+      if (m.transparent !== transparent) {
+        m.transparent = transparent;
+        m.needsUpdate = true;
+      }
+      m.opacity = offline ? base.opacity * OFFLINE_OPACITY : base.opacity;
+    }
+  });
+}
+
+/** A group whose content is faded while `offline`. Re-applied on every render, so new meshes are covered. */
+function OfflineScope({ offline, children }: { offline: boolean; children: ReactNode }) {
+  const ref = useRef<THREE.Group>(null);
+  useLayoutEffect(() => fade(ref.current, offline));
+  return <group ref={ref}>{children}</group>;
 }
 
 /** A fault message hanging above its component or mover; follows a moving mover. */
@@ -204,26 +245,32 @@ function signature(m: SceneModel): string {
   ].join("|");
 }
 
+const EMPTY_MACHINE: MachineScene = { sources: [], snapPoints: [], origins: [], faults: [] };
+
+/** Structural signature of what is drawn across sources: measure dots, origins, camera bounds, online state. */
+function machineSignature(m: MachineScene): string {
+  return [
+    m.sources.map((s) => `${s.sourceId}:${s.online}:${s.scene.conveyors.length}:${s.scene.deltas.length}`).join(","),
+    m.snapPoints.filter((p) => !p.moving).map((p) => p.key).join(","),
+    m.origins.map((o) => `${o.sourceId}:${o.componentId}`).join(","),
+  ].join("|");
+}
+
 function SceneContent(props: SceneViewProps) {
-  const { store, config, layers, selection, modelRef, measureMode, onMeasure, measurePoints, hidden, onFaults } = props;
+  const { store, sources, layers, selection, modelRef, measureMode, onMeasure, measurePoints, hidden, onFaults } = props;
   // In measure mode a click measures; selecting works only through the component tree.
   const onSelect = measureMode ? () => {} : props.onSelect;
-  const latest = useRef<SceneModel>(EMPTY);
-  const [structure, setStructure] = useState<SceneModel>(EMPTY);
+  const machine = useRef<MachineScene>(EMPTY_MACHINE);
+  const [structure, setStructure] = useState<MachineScene>(EMPTY_MACHINE);
   const sig = useRef("");
   const faultSig = useRef("");
-  const productIndex = useRef(new Map<string, SceneProduct>());
-  // A new config can change geometry without changing ids: force a structural update.
-  useEffect(() => {
-    sig.current = "";
-  }, [config, hidden]);
 
+  // Priority −1: runs before the sources' frame callbacks, which read the scene built here.
   useFrame(() => {
-    const model = buildScene(config, store.snapshots, store.renderTime(), hidden);
-    latest.current = model;
-    productIndex.current = new Map(model.products.map((p) => [p.key, p]));
+    const model = buildMachineScene(store.sceneSources(), hidden);
+    machine.current = model;
     modelRef.current = model;
-    const s = signature(model);
+    const s = machineSignature(model);
     if (s !== sig.current) {
       sig.current = s;
       setStructure(model);
@@ -233,23 +280,21 @@ function SceneContent(props: SceneViewProps) {
       faultSig.current = f;
       onFaults(model.faults);
     }
-  });
+  }, -1);
 
-  const productByKey = (key: string) => productIndex.current.get(key);
-  const isSelected = (id: number) => selection?.kind === "component" && selection.id === id;
+  const bounds = useMemo(
+    () => ({
+      conveyors: structure.sources.flatMap((s) => s.scene.conveyors),
+      deltas: structure.sources.flatMap((s) => s.scene.deltas),
+    }),
+    [structure],
+  );
 
   return (
     <>
       <McsAxes />
       <MeasurePoints points={measurePoints} />
-      {measureMode && (
-        <MeasureLayer
-          latest={latest}
-          structure={structure}
-          layers={layers}
-          onMeasure={onMeasure}
-        />
-      )}
+      {measureMode && <MeasureLayer latest={machine} structure={structure} layers={layers} onMeasure={onMeasure} />}
       <Grid
         args={[20, 20]}
         cellSize={0.1}
@@ -259,6 +304,61 @@ function SceneContent(props: SceneViewProps) {
         fadeDistance={30}
         infiniteGrid
       />
+      {sources.map((source) => (
+        <SourceContent
+          key={source.sourceId}
+          sourceId={source.sourceId}
+          config={source.config}
+          online={structure.sources.find((x) => x.sourceId === source.sourceId)?.online ?? false}
+          machine={machine}
+          layers={layers}
+          hidden={hidden}
+          selection={selection?.sourceId === source.sourceId ? selection : undefined}
+          onSelect={(local) => onSelect(local && { ...local, sourceId: source.sourceId })}
+        />
+      ))}
+      <CameraRig request={props.cameraRequest} structure={bounds} />
+    </>
+  );
+}
+
+/** Everything one PLC source draws, with its manifest ids; faded while the source is offline. */
+function SourceContent(props: {
+  sourceId: string;
+  config: ConfigMessage | undefined;
+  online: boolean;
+  machine: MutableRefObject<MachineScene>;
+  layers: Layers;
+  hidden: ReadonlySet<string>;
+  selection: LocalSelection;
+  onSelect: (s: LocalSelection) => void;
+}) {
+  const { sourceId, config, online, machine, layers, hidden, selection, onSelect } = props;
+  const latest = useRef<SceneModel>(EMPTY);
+  const [structure, setStructure] = useState<SceneModel>(EMPTY);
+  const sig = useRef("");
+  const productIndex = useRef(new Map<string, SceneProduct>());
+  // A new config can change geometry without changing ids: force a structural update.
+  useEffect(() => {
+    sig.current = "";
+  }, [config, hidden]);
+
+  useFrame(() => {
+    const model = machine.current.sources.find((s) => s.sourceId === sourceId)?.scene ?? EMPTY;
+    latest.current = model;
+    productIndex.current = new Map(model.products.map((p) => [p.key, p]));
+    const s = signature(model);
+    if (s !== sig.current) {
+      sig.current = s;
+      setStructure(model);
+    }
+  });
+
+  const productByKey = (key: string) => productIndex.current.get(key);
+  const isSelected = (id: number) => selection?.kind === "component" && selection.id === id;
+
+  return (
+    <OfflineScope offline={!online}>
       {structure.conveyors.map((c) => (
         <group key={c.id} ref={(o) => applyTransform(o, c.transform)}>
           <FaultScope faulted={c.fault !== null}>
@@ -377,8 +477,7 @@ function SceneContent(props: SceneViewProps) {
           </group>
         ))}
       {layers.faultLabels && structure.faultLabels.map((l) => <FaultLabel key={l.key} label={l} latest={latest} />)}
-      <CameraRig request={props.cameraRequest} structure={structure} />
-    </>
+    </OfflineScope>
   );
 }
 
@@ -435,7 +534,7 @@ function FingerMesh(props: {
   finger: SceneFinger;
   latest: MutableRefObject<SceneModel>;
   selected: boolean;
-  onSelect: (s: Selection) => void;
+  onSelect: (s: LocalSelection) => void;
 }) {
   const { finger, latest, selected, onSelect } = props;
   const body = useRef<THREE.Group>(null);
@@ -480,7 +579,7 @@ function ProductMesh(props: {
   product: SceneProduct;
   selected: boolean;
   lookup: (key: string) => SceneProduct | undefined;
-  onSelect: (s: Selection) => void;
+  onSelect: (s: LocalSelection) => void;
 }) {
   const { product, selected, lookup, onSelect } = props;
   const ref = useRef<THREE.Mesh>(null);
@@ -578,7 +677,7 @@ function DeltaMesh(props: {
   latest: MutableRefObject<SceneModel>;
   showTcp: boolean;
   selected: boolean;
-  onSelect: (s: Selection) => void;
+  onSelect: (s: LocalSelection) => void;
 }) {
   const { delta, latest, showTcp, selected, onSelect } = props;
   const { id, name, baseRadius, effectorRadius } = delta;
@@ -757,8 +856,8 @@ function MeasurePoints({ points }: { points: MeasurePoint[] }) {
  *   choice, lifting the finger measures it. Two fingers move the camera and measure nothing.
  */
 function MeasureLayer(props: {
-  latest: MutableRefObject<SceneModel>;
-  structure: SceneModel;
+  latest: MutableRefObject<MachineScene>;
+  structure: MachineScene;
   layers: Layers;
   onMeasure: (point: SnapPoint) => void;
 }) {
@@ -877,7 +976,7 @@ function MeasureLayer(props: {
   return (
     <>
       {structure.origins.map((o) => (
-        <OriginTriad key={o.componentId} origin={o} />
+        <OriginTriad key={`${o.sourceId}:${o.componentId}`} origin={o} />
       ))}
       {dots.map((p) => (
         <mesh key={p.key} position={p.position} raycast={noRaycast} renderOrder={5}>
@@ -960,7 +1059,7 @@ function GantryMesh(props: {
   gantry: SceneGantry;
   latest: MutableRefObject<SceneModel>;
   selected: boolean;
-  onSelect: (s: Selection) => void;
+  onSelect: (s: LocalSelection) => void;
 }) {
   const { gantry, latest, selected, onSelect } = props;
   const { id, name, trackLength, moduleLength, moduleCount, moverLength, moverWidth } = gantry;
@@ -1085,7 +1184,7 @@ function LoopMesh(props: {
   loop: SceneLoop;
   latest: MutableRefObject<SceneModel>;
   selected: boolean;
-  onSelect: (s: Selection) => void;
+  onSelect: (s: LocalSelection) => void;
 }) {
   const { loop, latest, selected, onSelect } = props;
   const { id, name, straightLength, curveRadius, moverLength, moverWidth } = loop;
@@ -1171,7 +1270,7 @@ function CartesianMesh(props: {
   robot: SceneCartesian;
   latest: MutableRefObject<SceneModel>;
   selected: boolean;
-  onSelect: (s: Selection) => void;
+  onSelect: (s: LocalSelection) => void;
 }) {
   const { robot, latest, selected, onSelect } = props;
   const { id, name } = robot;
@@ -1251,7 +1350,12 @@ function McsAxes() {
 /** Factor by which one zoom step changes the distance to the orbit target. */
 const ZOOM_STEP = 0.8;
 
-function CameraRig({ request, structure }: { request: { action: CameraAction; seq: number }; structure: SceneModel }) {
+/** Frames the conveyors and Delta bases of all sources. */
+function CameraRig(props: {
+  request: { action: CameraAction; seq: number };
+  structure: { conveyors: SceneConveyor[]; deltas: SceneDelta[] };
+}) {
+  const { request, structure } = props;
   const { camera, controls } = useThree() as unknown as { camera: THREE.PerspectiveCamera; controls: { target: THREE.Vector3; update(): void } | null };
   const hasFramed = useRef(false);
 
