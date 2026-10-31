@@ -1,0 +1,421 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="P_VisuDemoIdh" Id="{4e6779b2-1baf-4442-aae8-266ee3b93365}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+DEMO ONLY: IDH application (Y = 4100..4850). An XTS gantry with four movers picks products from the IDH infeed<br>
+in batches and places them onto the tray belt. Mover 2 is in a fault now and then. Called by P_VisuDemo.<br>
+****************************************************************************************************)
+PROGRAM P_VisuDemoIdh
+VAR
+	fb_IdhInfeed						: _FB_VisuConveyor;
+	fb_IdhTray							: _FB_VisuConveyor;
+	fb_Idh								: _FB_VisuXtsGantry;
+
+	(* Conveyors *)
+	lr_Dt								: LREAL;	// [s] cycle time
+	udn_Seed							: UDINT := 34567;	// [-] pseudo random generator state
+	lr_InfeedPosition					: LREAL;	// [mm] belt position of the IDH infeed
+	lr_TrayPosition						: LREAL;	// [mm] belt position of the tray belt
+	lr_SinceSpawn						: LREAL;	// [s] since the last product
+	lr_SpawnInterval					: LREAL := 0.8;	// [s]
+	BeltPose							: ST_VisuPose;
+	LatchPose							: ST_VisuPlanarPose;
+	XtsPose								: ST_VisuPose;
+
+	(* XTS gantry *)
+	n_GantryPhase						: INT;
+	lr_GantryZ							: LREAL;	// [mm]
+	lr_GantryWait						: ARRAY[0..3] OF LREAL := [100, 300, 500, 700];	// [mm]
+	lr_GantryPos						: ARRAY[0..3] OF LREAL := [100, 300, 500, 700];	// [mm]
+	lr_GantryX							: ARRAY[0..3] OF LREAL := [200, 200, 200, 200];	// [mm]
+	lr_GantryC							: ARRAY[0..3] OF LREAL;	// [deg]
+	b_GantryGrip						: ARRAY[0..3] OF BOOL;
+	udn_GantryProduct					: ARRAY[0..3] OF UDINT;	// [-] product id on the IDH infeed
+	MoverFingers						: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;	// the mover's cup
+END_VAR
+VAR CONSTANT
+	(* Gantry turned by -90 deg: track along MCS +X, X axes towards MCS -Y (IDH infeed under X = 200, tray belt
+	   under X = 600). *)
+	lr_IDH_INFEED_Y						: LREAL := 4500;	// [mm]
+	lr_IDH_INFEED_LENGTH				: LREAL := 4000;	// [mm]
+	lr_IDH_INFEED_SPEED					: LREAL := 200;	// [mm/s]
+	lr_TRAY_X							: LREAL := 1300;	// [mm]
+	lr_TRAY_Y							: LREAL := 4100;	// [mm]
+	lr_TRAY_LENGTH						: LREAL := 2000;	// [mm]
+	lr_TRAY_SPEED						: LREAL := 80;	// [mm/s]
+	lr_GANTRY_X							: LREAL := 1500;	// [mm]
+	lr_GANTRY_Y							: LREAL := 4850;	// [mm]
+	lr_GANTRY_Z							: LREAL := 1340;	// [mm]
+	un_GANTRY_MODULES					: UINT := 6;	// [-]
+	lr_GANTRY_MODULE_LENGTH				: LREAL := 250;	// [mm]
+	lr_GANTRY_TOOL_X					: LREAL := 150;	// [mm]
+	lr_GANTRY_TOOL_Z					: LREAL := -400;	// [mm]
+	lr_GANTRY_MOVER_LENGTH				: LREAL := 155;	// [mm]
+	lr_GANTRY_GAP						: LREAL := 180;	// [mm] minimum distance between movers
+	lr_GANTRY_X_BELT					: LREAL := 200;	// [mm]
+	lr_GANTRY_X_TRAY					: LREAL := 600;	// [mm]
+	lr_GANTRY_Z_DOWN					: LREAL := -100;	// [mm]
+	lr_GANTRY_Z_SPEED					: LREAL := 500;	// [mm/s]
+	lr_GANTRY_X_SPEED					: LREAL := 1000;	// [mm/s]
+	lr_GANTRY_TRACK_SPEED				: LREAL := 1500;	// [mm/s]
+	lr_FAULT_START						: LREAL := 12;	// [s] start of the mover 2 fault in the fault period
+	n_GANTRY_COLLECT					: INT := 0;
+	n_GANTRY_PICK_DOWN					: INT := 1;
+	n_GANTRY_PICK_UP					: INT := 2;
+	n_GANTRY_TO_TRAY					: INT := 3;
+	n_GANTRY_PLACE_DOWN					: INT := 4;
+	n_GANTRY_PLACE_UP					: INT := 5;
+	n_GANTRY_RETURN						: INT := 6;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[lr_Dt := DEMO_GlobalVar.DEMO_lr_Dt;
+
+
+(****************************************************************************************************)
+(* REGISTRATION (idempotent, every cycle)                                                           *)
+(****************************************************************************************************)
+fb_IdhInfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 6, vi_str_Name := 'IDH infeed',
+	vi_str_Path := 'P_VisuDemoIdh.fb_IdhInfeed.vo_Visu');
+fb_IdhTray.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 7, vi_str_Name := 'Tray belt',
+	vi_str_Path := 'P_VisuDemoIdh.fb_IdhTray.vo_Visu');
+fb_Idh.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 30, vi_str_Name := 'IDH',
+	vi_str_Path := 'P_VisuDemoIdh.fb_Idh.vo_Visu');
+
+
+(****************************************************************************************************)
+(* CONVEYORS (configuration idempotent, every cycle)                                                *)
+(****************************************************************************************************)
+BeltPose.fX := 0;
+BeltPose.fY := lr_IDH_INFEED_Y;
+BeltPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+fb_IdhInfeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_IDH_INFEED_LENGTH,
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
+BeltPose.fX := lr_TRAY_X;
+BeltPose.fY := lr_TRAY_Y;
+fb_IdhTray.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_TRAY_LENGTH, vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
+fb_IdhInfeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
+fb_IdhTray.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
+
+(* Belt travel *)
+lr_InfeedPosition := lr_InfeedPosition + lr_IDH_INFEED_SPEED * lr_Dt;
+lr_TrayPosition := lr_TrayPosition + lr_TRAY_SPEED * lr_Dt;
+fb_IdhInfeed.m_SetBeltPosition(lr_InfeedPosition);
+fb_IdhTray.m_SetBeltPosition(lr_TrayPosition);
+
+
+(****************************************************************************************************)
+(* PRODUCT INFEED: slightly irregular gaps, products turned                                         *)
+(****************************************************************************************************)
+lr_SinceSpawn := lr_SinceSpawn + lr_Dt;
+IF lr_SinceSpawn >= lr_SpawnInterval THEN
+	lr_SinceSpawn := 0;
+	udn_Seed := udn_Seed * 1103515245 + 12345;
+	lr_SpawnInterval := 0.6 + UDINT_TO_LREAL(udn_Seed MOD 1000) / 1000.0 * 0.6;
+	LatchPose.fX := 100;
+	LatchPose.fY := lr_IDH_INFEED_Y;
+	LatchPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+	LatchPose.fRz := (UDINT_TO_LREAL((udn_Seed / 1000) MOD 1000) / 1000.0 - 0.5) * 60.0;
+	IF fb_IdhInfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := LatchPose,
+		vi_udn_ProductType := 1)
+	THEN
+		DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
+	END_IF
+END_IF
+
+
+(****************************************************************************************************)
+(* XTS GANTRY                                                                                       *)
+(****************************************************************************************************)
+XtsPose.fX := lr_GANTRY_X;
+XtsPose.fY := lr_GANTRY_Y;
+XtsPose.fZ := lr_GANTRY_Z;
+XtsPose.fRz := -90;
+fb_Idh.m_Configure(vi_Pose := XtsPose, vi_un_ModuleCount := un_GANTRY_MODULES, vi_lr_ModuleLength := lr_GANTRY_MODULE_LENGTH,
+	vi_lr_XMin := 0, vi_lr_XMax := 700, vi_lr_ZMin := lr_GANTRY_Z_DOWN, vi_lr_ZMax := 0,
+	vi_lr_ToolOffsetX := lr_GANTRY_TOOL_X, vi_lr_ToolOffsetZ := lr_GANTRY_TOOL_Z + DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT,
+	vi_lr_MoverLength := lr_GANTRY_MOVER_LENGTH, vi_lr_MoverWidth := 80);
+fb_Idh.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER,
+	vi_lr_Height := DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT);
+fb_Idh.m_SetZone(vi_udn_ConveyorId := fb_IdhInfeed.m_Id(), vi_e_Kind := E_VisuZoneKind.PICK, vi_lr_Start := lr_GANTRY_X,
+	vi_lr_End := lr_GANTRY_X + UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH);
+fb_Idh.m_SetZone(vi_udn_ConveyorId := fb_IdhTray.m_Id(), vi_e_Kind := E_VisuZoneKind.PLACE,
+	vi_lr_Start := lr_GANTRY_X - lr_TRAY_X,
+	vi_lr_End := lr_GANTRY_X - lr_TRAY_X + UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH);
+m_Step();
+
+
+(****************************************************************************************************)
+(* HOUSEKEEPING                                                                                     *)
+(****************************************************************************************************)
+fb_IdhInfeed.m_RemoveProductsBeyond(lr_IDH_INFEED_LENGTH + DEMO_GlobalConst.DEMO_lr_REMOVE_BEYOND_END);
+fb_IdhTray.m_RemoveProductsBeyond(lr_TRAY_LENGTH + DEMO_GlobalConst.DEMO_lr_REMOVE_BEYOND_END);]]></ST>
+    </Implementation>
+    <Method Name="m_Follow" Id="{9d6fad22-6239-4a8a-b912-9d761a345258}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Moves the gantry movers along the track: a mover with a product waits at its waiting position until the<br>
+product passes underneath and then follows it; a mover without one returns to its waiting position.<br>
+Downstream first, so each mover keeps its distance to the one ahead.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Follow : BOOL
+VAR
+	n_TempI								: INT;
+	lr_TempGoal							: LREAL;	// [mm]
+	lr_TempLimit						: LREAL;	// [mm]
+	lr_TempPos							: LREAL;	// [mm]
+	lr_TempRz							: LREAL;	// [deg]
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[FOR n_TempI := 3 TO 0 BY -1 DO
+	IF n_TempI = 3 THEN
+		lr_TempLimit := UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH - lr_GANTRY_MOVER_LENGTH / 2;
+	ELSE
+		lr_TempLimit := lr_GantryPos[n_TempI + 1] - lr_GANTRY_GAP;
+	END_IF
+	lr_TempGoal := lr_GantryWait[n_TempI];
+	IF udn_GantryProduct[n_TempI] <> 0 THEN
+		IF m_TrackPos(vi_udn_Id := udn_GantryProduct[n_TempI], vo_lr_TrackPos => lr_TempPos, vo_lr_Rz => lr_TempRz) THEN
+			lr_TempGoal := MAX(lr_TempPos, lr_GantryWait[n_TempI]);
+			lr_GantryC[n_TempI] := _FC_DemoApproach(lr_GantryC[n_TempI], lr_TempRz, 180.0 * lr_Dt);
+		END_IF
+	END_IF
+	lr_GantryPos[n_TempI] := MIN(_FC_DemoApproach(lr_GantryPos[n_TempI], lr_TempGoal, lr_GANTRY_TRACK_SPEED * lr_Dt),
+								lr_TempLimit);
+END_FOR
+m_Follow := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Step" Id="{c8f24896-128b-4724-94de-efb4af7b7e15}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+XTS gantry: the movers follow up to four products on the IDH infeed (the most downstream mover takes the<br>
+first product), then the Z axis lowers all grippers together, the X axes carry the products over the tray<br>
+belt, they are put down together and the movers return to their waiting positions.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Step : BOOL
+VAR
+	n_TempI								: INT;
+	un_TempIndex						: UINT;
+	udn_TempBest						: UDINT;	// [-] product id
+	lr_TempBest							: LREAL;	// [mm]
+	lr_TempPos							: LREAL;	// [mm]
+	lr_TempRz							: LREAL;	// [deg]
+	n_TempAssigned						: INT;
+	b_TempAllSynced						: BOOL;
+	b_TempAnySynced						: BOOL;
+	b_TempDone							: BOOL;
+	b_TempSynced						: ARRAY[0..3] OF BOOL;
+	TempProduct							: ST_VisuProduct;
+	TempPose							: ST_VisuPlanarPose;
+	TempLatch							: ST_VisuPlanarPose;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(****************************************************************************************************)
+(* SEQUENCE                                                                                         *)
+(****************************************************************************************************)
+CASE n_GantryPhase OF
+	n_GANTRY_COLLECT:
+		(* Downstream mover first: it takes the most downstream product not yet assigned. *)
+		FOR n_TempI := 3 TO 0 BY -1 DO
+			IF udn_GantryProduct[n_TempI] = 0 THEN
+				udn_TempBest := 0;
+				lr_TempBest := -1.0E9;
+				FOR un_TempIndex := 1 TO fb_IdhInfeed.m_ProductCount() DO
+					fb_IdhInfeed.m_GetProduct(vi_un_Index := un_TempIndex - 1, vo_Product => TempProduct, vo_Pose => TempPose);
+					lr_TempPos := TempPose.fX - lr_GANTRY_X;
+					IF TempProduct.eState = E_VisuProductState.DETECTED AND lr_TempPos < lr_GantryPos[n_TempI]
+					AND lr_TempPos > -500 AND lr_TempPos > lr_TempBest
+					THEN
+						udn_TempBest := TempProduct.nId;
+						lr_TempBest := lr_TempPos;
+					END_IF
+				END_FOR
+				IF udn_TempBest = 0 THEN
+					EXIT;
+				END_IF
+				fb_IdhInfeed.m_SetProductState(vi_udn_Id := udn_TempBest, vi_e_State := E_VisuProductState.ASSIGNED,
+					vi_udn_RobotId := fb_Idh.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempI + 1));
+				udn_GantryProduct[n_TempI] := udn_TempBest;
+			END_IF
+		END_FOR
+		m_Follow();
+
+		(* Pick once all four are above their products, or at the track end with any of them. *)
+		n_TempAssigned := 0;
+		b_TempAllSynced := TRUE;
+		b_TempAnySynced := FALSE;
+		FOR n_TempI := 0 TO 3 DO
+			b_TempSynced[n_TempI] := FALSE;
+			IF udn_GantryProduct[n_TempI] <> 0 THEN
+				n_TempAssigned := n_TempAssigned + 1;
+				b_TempSynced[n_TempI] := m_TrackPos(vi_udn_Id := udn_GantryProduct[n_TempI], vo_lr_TrackPos => lr_TempPos,
+											vo_lr_Rz => lr_TempRz)
+										AND ABS(lr_GantryPos[n_TempI] - lr_TempPos) < 2;
+				b_TempAllSynced := b_TempAllSynced AND b_TempSynced[n_TempI];
+				b_TempAnySynced := b_TempAnySynced OR b_TempSynced[n_TempI];
+			END_IF
+		END_FOR
+		IF (n_TempAssigned = 4 AND b_TempAllSynced)
+		OR (lr_GantryPos[3] >= UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH - 300 AND b_TempAnySynced)
+		THEN
+			(* Movers not yet above their product give it back. *)
+			FOR n_TempI := 0 TO 3 DO
+				IF udn_GantryProduct[n_TempI] <> 0 AND NOT b_TempSynced[n_TempI] THEN
+					fb_IdhInfeed.m_SetProductState(vi_udn_Id := udn_GantryProduct[n_TempI],
+						vi_e_State := E_VisuProductState.DETECTED, vi_udn_RobotId := 0);
+					udn_GantryProduct[n_TempI] := 0;
+				END_IF
+			END_FOR
+			n_GantryPhase := n_GANTRY_PICK_DOWN;
+		END_IF
+
+	n_GANTRY_PICK_DOWN:
+		m_Follow();
+		lr_GantryZ := _FC_DemoApproach(lr_GantryZ, lr_GANTRY_Z_DOWN, lr_GANTRY_Z_SPEED * lr_Dt);
+		IF lr_GantryZ = lr_GANTRY_Z_DOWN THEN
+			FOR n_TempI := 0 TO 3 DO
+				IF udn_GantryProduct[n_TempI] <> 0 THEN
+					b_GantryGrip[n_TempI] := TRUE;
+					fb_IdhInfeed.m_SetProductState(vi_udn_Id := udn_GantryProduct[n_TempI], vi_e_State := E_VisuProductState.PICKED,
+						vi_udn_RobotId := fb_Idh.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempI + 1), vi_udn_FingerId := 1);
+				END_IF
+			END_FOR
+			n_GantryPhase := n_GANTRY_PICK_UP;
+		END_IF
+
+	n_GANTRY_PICK_UP:
+		lr_GantryZ := _FC_DemoApproach(lr_GantryZ, 0, lr_GANTRY_Z_SPEED * lr_Dt);
+		IF lr_GantryZ = 0 THEN
+			n_GantryPhase := n_GANTRY_TO_TRAY;
+		END_IF
+
+	n_GANTRY_TO_TRAY:
+		b_TempDone := TRUE;
+		FOR n_TempI := 0 TO 3 DO
+			lr_GantryX[n_TempI] := _FC_DemoApproach(lr_GantryX[n_TempI], lr_GANTRY_X_TRAY, lr_GANTRY_X_SPEED * lr_Dt);
+			lr_GantryC[n_TempI] := _FC_DemoApproach(lr_GantryC[n_TempI], 0, 180.0 * lr_Dt);
+			b_TempDone := b_TempDone AND lr_GantryX[n_TempI] = lr_GANTRY_X_TRAY AND lr_GantryC[n_TempI] = 0;
+		END_FOR
+		IF b_TempDone THEN
+			n_GantryPhase := n_GANTRY_PLACE_DOWN;
+		END_IF
+
+	n_GANTRY_PLACE_DOWN:
+		lr_GantryZ := _FC_DemoApproach(lr_GantryZ, lr_GANTRY_Z_DOWN, lr_GANTRY_Z_SPEED * lr_Dt);
+		IF lr_GantryZ = lr_GANTRY_Z_DOWN THEN
+			FOR n_TempI := 0 TO 3 DO
+				IF udn_GantryProduct[n_TempI] <> 0 THEN
+					fb_IdhInfeed.m_SetProductState(vi_udn_Id := udn_GantryProduct[n_TempI], vi_e_State := E_VisuProductState.PLACED,
+						vi_udn_RobotId := fb_Idh.m_Id(), vi_udn_MoverId := 0);
+					(* Turned by -90 deg: gripper at MCS x = track start + position, y = pose y - (X + tool offset). *)
+					TempLatch.fX := lr_GANTRY_X + lr_GantryPos[n_TempI];
+					TempLatch.fY := lr_GANTRY_Y - (lr_GantryX[n_TempI] + lr_GANTRY_TOOL_X);
+					TempLatch.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+					TempLatch.fRz := 0;
+					IF fb_IdhTray.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := TempLatch,
+						vi_udn_ProductType := 1)
+					THEN
+						DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
+					END_IF
+					udn_GantryProduct[n_TempI] := 0;
+				END_IF
+				b_GantryGrip[n_TempI] := FALSE;
+			END_FOR
+			n_GantryPhase := n_GANTRY_PLACE_UP;
+		END_IF
+
+	n_GANTRY_PLACE_UP:
+		lr_GantryZ := _FC_DemoApproach(lr_GantryZ, 0, lr_GANTRY_Z_SPEED * lr_Dt);
+		IF lr_GantryZ = 0 THEN
+			n_GantryPhase := n_GANTRY_RETURN;
+		END_IF
+
+	n_GANTRY_RETURN:
+		m_Follow();
+		b_TempDone := TRUE;
+		FOR n_TempI := 0 TO 3 DO
+			lr_GantryX[n_TempI] := _FC_DemoApproach(lr_GantryX[n_TempI], lr_GANTRY_X_BELT, lr_GANTRY_X_SPEED * lr_Dt);
+			b_TempDone := b_TempDone AND lr_GantryX[n_TempI] = lr_GANTRY_X_BELT AND lr_GantryPos[n_TempI] = lr_GantryWait[n_TempI];
+		END_FOR
+		IF b_TempDone THEN
+			n_GantryPhase := n_GANTRY_COLLECT;
+		END_IF
+END_CASE
+
+
+(****************************************************************************************************)
+(* REPORT                                                                                           *)
+(****************************************************************************************************)
+fb_Idh.m_SetZPosition(lr_GantryZ);
+fb_Idh.m_SetMoverCount(4);
+FOR n_TempI := 0 TO 3 DO
+	(* The cup hangs from the flange and turns only about Rz, by the gripper's C. Turned by -90 deg: local (x, y, z)
+	   is MCS (gantry x + y, gantry y - x, gantry z + z). *)
+	MoverFingers[0].stPose.fX := lr_GANTRY_X + lr_GantryPos[n_TempI];
+	MoverFingers[0].stPose.fY := lr_GANTRY_Y - (lr_GantryX[n_TempI] + lr_GANTRY_TOOL_X);
+	MoverFingers[0].stPose.fZ := lr_GANTRY_Z + lr_GantryZ + lr_GANTRY_TOOL_Z + DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT;
+	MoverFingers[0].stPose.fRx := 0;
+	MoverFingers[0].stPose.fRy := 0;
+	MoverFingers[0].stPose.fRz := -90 + lr_GantryC[n_TempI];
+	MoverFingers[0].bActive := b_GantryGrip[n_TempI];
+	(* Demo fault: mover 2 now and then. *)
+	fb_Idh.m_SetMover(vi_un_Index := INT_TO_UINT(n_TempI), vi_udn_Id := INT_TO_UDINT(n_TempI + 1),
+		vi_lr_Position := lr_GantryPos[n_TempI], vi_lr_X := lr_GantryX[n_TempI], vi_b_GripperActive := b_GantryGrip[n_TempI],
+		vi_FingerStates := MoverFingers,
+		vi_b_Fault := n_TempI = 1 AND DEMO_GlobalVar.DEMO_lr_FaultPhase >= lr_FAULT_START
+					AND DEMO_GlobalVar.DEMO_lr_FaultPhase < lr_FAULT_START + DEMO_GlobalConst.DEMO_lr_FAULT_DURATION,
+		vi_str_FaultMessage := 'Vacuum not reached');
+END_FOR
+m_Step := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_TrackPos" Id="{c12858ff-15bd-40fc-bac6-78e98bcaf0d2}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Position of a product on the IDH infeed along the gantry track (MCS x - gantry x) and its rotation.<br>
+FALSE if the product is no longer in the register.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_TrackPos : BOOL
+VAR_INPUT
+	vi_udn_Id							: UDINT;	// [-] product id
+END_VAR
+VAR_OUTPUT
+	vo_lr_TrackPos						: LREAL;	// [mm]
+	vo_lr_Rz							: LREAL;	// [deg]
+END_VAR
+VAR
+	n_TempIndex							: INT;
+	TempProduct							: ST_VisuProduct;
+	TempPose							: ST_VisuPlanarPose;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[n_TempIndex := fb_IdhInfeed.m_FindProduct(vi_udn_Id);
+m_TrackPos := n_TempIndex >= 0;
+IF m_TrackPos THEN
+	fb_IdhInfeed.m_GetProduct(vi_un_Index := INT_TO_UINT(n_TempIndex), vo_Product => TempProduct, vo_Pose => TempPose);
+	vo_lr_TrackPos := TempPose.fX - lr_GANTRY_X;
+	vo_lr_Rz := TempPose.fRz;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

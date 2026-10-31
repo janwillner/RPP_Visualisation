@@ -1,0 +1,315 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="P_VisuDemoSpacing" Id="{56b81811-579d-48c2-af66-bcadbd159476}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+DEMO ONLY: Spacing application (Y = 9000). An XTS loop under one belt takes over products arriving with random<br>
+gaps and hands them back to the belt with a constant pitch. The pushed product stays on the belt (moved with<br>
+m_MoveProduct), so no placeholder appears. Called by P_VisuDemo.<br>
+****************************************************************************************************)
+PROGRAM P_VisuDemoSpacing
+VAR
+	fb_SpcBelt							: _FB_VisuConveyor;
+	fb_Spc								: _FB_VisuXtsLoop;
+
+	(* Conveyor *)
+	lr_Dt								: LREAL;	// [s] cycle time
+	udn_Seed							: UDINT := 56789;	// [-] pseudo random generator state
+	lr_SpcBeltPosition					: LREAL;	// [mm]
+	lr_SpcSinceSpawn					: LREAL;	// [s]
+	lr_SpcSpawnInterval					: LREAL := 1;	// [s] random: the loop puts the products at an even pitch
+	BeltPose							: ST_VisuPose;
+	LatchPose							: ST_VisuPlanarPose;
+	XtsPose								: ST_VisuPose;
+
+	(* XTS loop: track position per mover *)
+	b_SpcInitialised					: BOOL;
+	lr_SpcS								: ARRAY[0..7] OF LREAL;	// [mm] per mover (n_SPC_MOVERS)
+	n_SpcMode							: ARRAY[0..7] OF INT;
+	udn_SpcProduct						: ARRAY[0..7] OF UDINT;	// [-] product pushed by the mover, 0 = none
+	udn_SpcLastReleased					: UDINT;	// [-] product last handed back to the belt
+	NoFingers							: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;
+END_VAR
+VAR CONSTANT
+	(* Loop turned by 180 deg under the belt: its upper straight runs along MCS +X from X = 1000 to X = 4000, the
+	   movers' tool points at the belt surface. *)
+	lr_SPC_Y							: LREAL := 9000;	// [mm]
+	lr_SPC_BELT_LENGTH					: LREAL := 5000;	// [mm]
+	lr_SPC_BELT_SPEED					: LREAL := 150;	// [mm/s]
+	(* Random gaps between arriving products. They stay above lr_SPC_SLOT, so a mover can always take the next
+	   product over, and average lr_SPC_PITCH: the belt runs at the same speed on both sides, so the loop can only
+	   even out the gaps, not change their mean. *)
+	lr_SPC_MIN_GAP						: LREAL := 150;	// [mm]
+	lr_SPC_GAP_SPREAD					: LREAL := 100;	// [mm] gaps lie between lr_SPC_MIN_GAP and lr_SPC_MIN_GAP + this
+	lr_SPC_LOOP_END_X					: LREAL := 4000;	// [mm] MCS x of the loop origin, the downstream end
+	lr_SPC_STRAIGHT						: LREAL := 3000;	// [mm]
+	lr_SPC_RADIUS						: LREAL := 150;	// [mm]
+	lr_SPC_TOOL_OFFSET					: LREAL := 110;	// [mm] tool point outwards from the track: the belt surface
+	n_SPC_MOVERS						: INT := 8;	// [-] size of the lr_SpcS, n_SpcMode and udn_SpcProduct arrays
+	lr_SPC_SLOT							: LREAL := 130;	// [mm] queue spacing and minimum mover distance
+	lr_SPC_TAKE_WINDOW					: LREAL := 40;	// [mm] take-over window from the start of the upper straight
+	lr_SPC_PITCH						: LREAL := 200;	// [mm] constant product pitch on the outfeed
+	lr_SPC_PUSH_SPEED					: LREAL := 450;	// [mm/s] maximum speed of a pushing mover
+	lr_SPC_RETURN_SPEED					: LREAL := 900;	// [mm/s]
+	lr_SPC_RELEASE_MIN_X				: LREAL := 2000;	// [mm] products are handed back to the belt from here...
+	lr_SPC_RELEASE_MAX_X				: LREAL := 3800;	// [mm] ...up to here at the latest
+	n_SPC_QUEUE							: INT := 0;
+	n_SPC_PUSH							: INT := 1;
+	n_SPC_RETURN						: INT := 2;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[lr_Dt := DEMO_GlobalVar.DEMO_lr_Dt;
+
+
+(****************************************************************************************************)
+(* REGISTRATION (idempotent, every cycle)                                                           *)
+(****************************************************************************************************)
+fb_SpcBelt.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 13, vi_str_Name := 'Spacing belt',
+	vi_str_Path := 'P_VisuDemoSpacing.fb_SpcBelt.vo_Visu');
+fb_Spc.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 21, vi_str_Name := 'Spacer',
+	vi_str_Path := 'P_VisuDemoSpacing.fb_Spc.vo_Visu');
+
+
+(****************************************************************************************************)
+(* CONFIGURATION (idempotent, every cycle)                                                          *)
+(****************************************************************************************************)
+BeltPose.fX := 0;
+BeltPose.fY := lr_SPC_Y;
+BeltPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+fb_SpcBelt.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_SPC_BELT_LENGTH, vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
+fb_SpcBelt.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
+
+(* Turned by 180 deg: the upper straight runs along MCS +X just below the belt, the tool points reach its surface. *)
+XtsPose.fX := lr_SPC_LOOP_END_X;
+XtsPose.fY := lr_SPC_Y;
+XtsPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z - 2 * lr_SPC_RADIUS - lr_SPC_TOOL_OFFSET;
+XtsPose.fRz := 180;
+fb_Spc.m_Configure(vi_Pose := XtsPose, vi_lr_StraightLength := lr_SPC_STRAIGHT, vi_lr_CurveRadius := lr_SPC_RADIUS,
+	vi_lr_ToolOffset := lr_SPC_TOOL_OFFSET, vi_lr_MoverLength := 100, vi_lr_MoverWidth := 60);
+fb_Spc.m_SetZone(vi_udn_ConveyorId := fb_SpcBelt.m_Id(), vi_e_Kind := E_VisuZoneKind.PICK,
+	vi_lr_Start := lr_SPC_LOOP_END_X - lr_SPC_STRAIGHT, vi_lr_End := lr_SPC_LOOP_END_X - lr_SPC_STRAIGHT + lr_SPC_TAKE_WINDOW);
+fb_Spc.m_SetZone(vi_udn_ConveyorId := fb_SpcBelt.m_Id(), vi_e_Kind := E_VisuZoneKind.PLACE,
+	vi_lr_Start := lr_SPC_RELEASE_MIN_X, vi_lr_End := lr_SPC_RELEASE_MAX_X);
+
+
+(****************************************************************************************************)
+(* BELT AND INFEED: random gaps                                                                     *)
+(****************************************************************************************************)
+lr_SpcBeltPosition := lr_SpcBeltPosition + lr_SPC_BELT_SPEED * lr_Dt;
+fb_SpcBelt.m_SetBeltPosition(lr_SpcBeltPosition);
+lr_SpcSinceSpawn := lr_SpcSinceSpawn + lr_Dt;
+IF lr_SpcSinceSpawn >= lr_SpcSpawnInterval THEN
+	lr_SpcSinceSpawn := 0;
+	udn_Seed := udn_Seed * 1103515245 + 12345;
+	lr_SpcSpawnInterval := (lr_SPC_MIN_GAP + UDINT_TO_LREAL(udn_Seed MOD 1000) / 1000.0 * lr_SPC_GAP_SPREAD)
+							/ lr_SPC_BELT_SPEED;
+	LatchPose.fX := 100;
+	LatchPose.fY := lr_SPC_Y;
+	LatchPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+	LatchPose.fRz := 0;
+	IF fb_SpcBelt.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := LatchPose,
+		vi_udn_ProductType := 1)
+	THEN
+		DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
+	END_IF
+END_IF
+
+
+(****************************************************************************************************)
+(* XTS LOOP                                                                                         *)
+(****************************************************************************************************)
+m_Step();
+
+
+(****************************************************************************************************)
+(* HOUSEKEEPING                                                                                     *)
+(****************************************************************************************************)
+fb_SpcBelt.m_RemoveProductsBeyond(lr_SPC_BELT_LENGTH + DEMO_GlobalConst.DEMO_lr_REMOVE_BEYOND_END);]]></ST>
+    </Implementation>
+    <Method Name="m_Step" Id="{23a6c013-b689-4fe7-ab2d-2bdfbd5b80a4}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+XTS loop under the belt: the queue head takes over the next product passing above the start of the upper<br>
+straight and pushes it along the belt until it is lr_SPC_PITCH behind the product ahead, then lets the belt take<br>
+it on and runs round to the queue.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Step : BOOL
+VAR
+	lr_TempPerimeter					: LREAL;	// [mm]
+	lr_TempWait							: LREAL;	// [mm] track position of the start of the upper straight
+	lr_TempStartX						: LREAL;	// [mm] MCS x of the start of the upper straight
+	lr_TempX							: LREAL;	// [mm] MCS x
+	lr_TempTarget						: LREAL;	// [mm] MCS x a pushing mover heads for
+	lr_TempRef							: LREAL;	// [mm] MCS x of the product ahead
+	lr_TempMinPush						: LREAL;	// [mm] track position of the last pushing mover
+	n_TempI								: INT;
+	n_TempJ								: INT;
+	n_TempK								: INT;
+	n_TempRank							: INT;
+	n_TempHead							: INT;
+	n_TempNext							: INT;
+	n_TempIdx							: INT;
+	un_TempIndex						: UINT;
+	b_TempReady							: BOOL;
+	b_TempDone							: ARRAY[0..7] OF BOOL;	// per mover (n_SPC_MOVERS)
+	TempProduct							: ST_VisuProduct;
+	TempPose							: ST_VisuPlanarPose;
+	TempLatch							: ST_VisuPlanarPose;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(****************************************************************************************************)
+(* QUEUE AND TAKE-OVER                                                                              *)
+(****************************************************************************************************)
+lr_TempPerimeter := fb_Spc.m_Perimeter();
+lr_TempWait := lr_SPC_STRAIGHT + 3.141592653589793 * lr_SPC_RADIUS;
+lr_TempStartX := lr_SPC_LOOP_END_X - lr_SPC_STRAIGHT;
+IF NOT b_SpcInitialised THEN
+	FOR n_TempI := 0 TO n_SPC_MOVERS - 1 DO
+		lr_SpcS[n_TempI] := lr_TempWait - INT_TO_LREAL(n_TempI) * lr_SPC_SLOT;
+		n_SpcMode[n_TempI] := n_SPC_QUEUE;
+	END_FOR
+	b_SpcInitialised := TRUE;
+END_IF
+
+(* Queued movers close up towards their slots before the start of the upper straight. *)
+n_TempHead := -1;
+FOR n_TempI := 0 TO n_SPC_MOVERS - 1 DO
+	IF n_SpcMode[n_TempI] = n_SPC_QUEUE THEN
+		n_TempRank := 0;
+		FOR n_TempJ := 0 TO n_SPC_MOVERS - 1 DO
+			IF n_SpcMode[n_TempJ] = n_SPC_QUEUE
+			AND (lr_SpcS[n_TempJ] > lr_SpcS[n_TempI] OR (lr_SpcS[n_TempJ] = lr_SpcS[n_TempI] AND n_TempJ < n_TempI))
+			THEN
+				n_TempRank := n_TempRank + 1;
+			END_IF
+		END_FOR
+		lr_SpcS[n_TempI] := MIN(lr_SpcS[n_TempI] + lr_SPC_RETURN_SPEED * lr_Dt,
+								lr_TempWait - INT_TO_LREAL(n_TempRank) * lr_SPC_SLOT);
+		IF n_TempRank = 0 THEN
+			n_TempHead := n_TempI;
+		END_IF
+	END_IF
+END_FOR
+
+(* The ready queue head takes over the next product passing above the start of the upper straight, if the last
+   pushing mover is at least one slot ahead. ST evaluates both operands of AND: test the head separately. *)
+lr_TempMinPush := 1.0E9;
+FOR n_TempI := 0 TO n_SPC_MOVERS - 1 DO
+	IF n_SpcMode[n_TempI] = n_SPC_PUSH THEN
+		lr_TempMinPush := MIN(lr_TempMinPush, lr_SpcS[n_TempI]);
+	END_IF
+END_FOR
+b_TempReady := FALSE;
+IF n_TempHead >= 0 THEN
+	b_TempReady := lr_SpcS[n_TempHead] >= lr_TempWait - 1;
+END_IF
+IF b_TempReady THEN
+	un_TempIndex := 0;
+	WHILE n_SpcMode[n_TempHead] = n_SPC_QUEUE AND un_TempIndex < fb_SpcBelt.m_ProductCount() DO
+		fb_SpcBelt.m_GetProduct(vi_un_Index := un_TempIndex, vo_Product => TempProduct, vo_Pose => TempPose);
+		lr_TempX := TempPose.fX - lr_TempStartX;
+		IF TempProduct.eState = E_VisuProductState.DETECTED AND lr_TempX >= 0 AND lr_TempX < lr_SPC_TAKE_WINDOW
+		AND lr_TempMinPush - lr_TempWait - lr_TempX >= lr_SPC_SLOT
+		THEN
+			fb_SpcBelt.m_SetProductState(vi_udn_Id := TempProduct.nId, vi_e_State := E_VisuProductState.ASSIGNED,
+				vi_udn_RobotId := fb_Spc.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempHead + 1));
+			udn_SpcProduct[n_TempHead] := TempProduct.nId;
+			lr_SpcS[n_TempHead] := lr_TempWait + lr_TempX;
+			n_SpcMode[n_TempHead] := n_SPC_PUSH;
+		END_IF
+		un_TempIndex := un_TempIndex + 1;
+	END_WHILE
+END_IF
+
+
+(****************************************************************************************************)
+(* PUSHING: the front mover first, so each one keeps the pitch to the product ahead of it            *)
+(****************************************************************************************************)
+lr_TempRef := 1.0E9;
+IF udn_SpcLastReleased <> 0 THEN
+	n_TempIdx := fb_SpcBelt.m_FindProduct(udn_SpcLastReleased);
+	IF n_TempIdx >= 0 THEN
+		fb_SpcBelt.m_GetProduct(vi_un_Index := INT_TO_UINT(n_TempIdx), vo_Product => TempProduct, vo_Pose => TempPose);
+		lr_TempRef := TempPose.fX;
+	END_IF
+END_IF
+FOR n_TempI := 0 TO n_SPC_MOVERS - 1 DO
+	b_TempDone[n_TempI] := n_SpcMode[n_TempI] <> n_SPC_PUSH;
+END_FOR
+FOR n_TempK := 1 TO n_SPC_MOVERS DO
+	(* Next pushing mover: the one furthest along. *)
+	n_TempNext := -1;
+	FOR n_TempI := 0 TO n_SPC_MOVERS - 1 DO
+		IF NOT b_TempDone[n_TempI] THEN
+			IF n_TempNext < 0 THEN
+				n_TempNext := n_TempI;
+			ELSIF lr_SpcS[n_TempI] > lr_SpcS[n_TempNext] THEN
+				n_TempNext := n_TempI;
+			END_IF
+		END_IF
+	END_FOR
+	IF n_TempNext < 0 THEN
+		EXIT;
+	END_IF
+	b_TempDone[n_TempNext] := TRUE;
+
+	n_TempIdx := fb_SpcBelt.m_FindProduct(udn_SpcProduct[n_TempNext]);
+	IF n_TempIdx < 0 THEN
+		(* The product is gone: run round to the queue. *)
+		udn_SpcProduct[n_TempNext] := 0;
+		n_SpcMode[n_TempNext] := n_SPC_RETURN;
+	ELSE
+		lr_TempX := lr_TempStartX + lr_SpcS[n_TempNext] - lr_TempWait;
+		lr_TempTarget := MIN(lr_SPC_RELEASE_MAX_X, lr_TempRef - lr_SPC_PITCH);
+		lr_TempX := lr_TempX + LIMIT(0, lr_TempTarget - lr_TempX, lr_SPC_PUSH_SPEED * lr_Dt);
+		lr_SpcS[n_TempNext] := lr_TempWait + lr_TempX - lr_TempStartX;
+		TempLatch.fX := lr_TempX;
+		TempLatch.fY := lr_SPC_Y;
+		TempLatch.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+		TempLatch.fRz := 0;
+		fb_SpcBelt.m_MoveProduct(vi_udn_Id := udn_SpcProduct[n_TempNext], vi_Pose := TempLatch);
+		lr_TempRef := lr_TempX;
+
+		(* At the pitch behind the product ahead (or at the end of the release area): the belt takes it on. Only the
+		   front mover lets go, so a returning mover never overtakes one that still pushes. *)
+		IF n_TempK = 1 AND lr_TempX >= lr_SPC_RELEASE_MIN_X AND ABS(lr_TempTarget - lr_TempX) < 0.5 THEN
+			fb_SpcBelt.m_SetProductState(vi_udn_Id := udn_SpcProduct[n_TempNext], vi_e_State := E_VisuProductState.DETECTED,
+				vi_udn_RobotId := 0);
+			udn_SpcLastReleased := udn_SpcProduct[n_TempNext];
+			udn_SpcProduct[n_TempNext] := 0;
+			n_SpcMode[n_TempNext] := n_SPC_RETURN;
+		END_IF
+	END_IF
+END_FOR
+
+
+(****************************************************************************************************)
+(* RETURN AND REPORT                                                                                *)
+(****************************************************************************************************)
+fb_Spc.m_SetMoverCount(INT_TO_UINT(n_SPC_MOVERS));
+FOR n_TempI := 0 TO n_SPC_MOVERS - 1 DO
+	(* Back along the lower straight; past the perimeter the mover joins the queue. *)
+	IF n_SpcMode[n_TempI] = n_SPC_RETURN THEN
+		lr_SpcS[n_TempI] := lr_SpcS[n_TempI] + lr_SPC_RETURN_SPEED * lr_Dt;
+		IF lr_SpcS[n_TempI] >= lr_TempPerimeter THEN
+			lr_SpcS[n_TempI] := lr_SpcS[n_TempI] - lr_TempPerimeter;
+			n_SpcMode[n_TempI] := n_SPC_QUEUE;
+		END_IF
+	END_IF
+	fb_Spc.m_SetMover(vi_un_Index := INT_TO_UINT(n_TempI), vi_udn_Id := INT_TO_UDINT(n_TempI + 1),
+		vi_lr_Position := lr_SpcS[n_TempI], vi_FingerStates := NoFingers);
+END_FOR
+m_Step := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

@@ -15,7 +15,7 @@ their Beckhoff-style names, because the gateway reads them.
 | --- | --- |
 | `plc/RPP_Visu.sln` | TwinCAT solution with both PLC projects |
 | `plc/Syn_Visu/` | The library project: structures, enums, constants and the component function blocks. No task, no application code. |
-| `plc/Syn_Visu_Demo/` | The demo application (`GVL_Visu`, `P_VisuDemo`, called by `PlcTask`). It references the installed library like any machine project, so it also tests the library from the outside. ADS port 852. |
+| `plc/Syn_Visu_Demo/` | The demo application. It references the installed library like any machine project, so it also tests the library from the outside. ADS port 852. `PlcTask` calls `P_VisuDemo`, which sets the shared cycle time and fault phase (`DEMO_GlobalVar`) and calls one program per application: `P_VisuDemoDelta`, `P_VisuDemoFxx`, `P_VisuDemoIdh`, `P_VisuDemoCartesian`, `P_VisuDemoSpacing`. Shared constants (belt height and width, product, suction cup, fault timing) are in `DEMO_GlobalConst`, the manifest in `GVL_Visu`. |
 | `plc/library/Syn_Visu_<version>.library` | The exported library, committed for every released version. Machine projects install it from here. |
 
 Releasing a version: bump `_FC_GetVersionSynVisu` and the project version (Properties → Common), build, export it with
@@ -225,7 +225,7 @@ CupPose.fX := Tcp.fX; CupPose.fY := Tcp.fY; CupPose.fZ := Tcp.fZ; CupPose.fRz :=
 fb_Delta1.m_SetFingerState(vi_un_Finger := 1, vi_Pose := CupPose, vi_b_Active := b_Vacuum);
 ```
 
-`P_VisuDemo` in the demo project `plc/Syn_Visu_Demo` is a complete example, including two XTS loops (one above two belts, one under a belt that spaces products evenly), an XTS gantry and a Cartesian robot,
+The demo project `plc/Syn_Visu_Demo` is a complete example, one program per application, including two XTS loops (one above two belts, one under a belt that spaces products evenly), an XTS gantry and a Cartesian robot,
 and three Delta grippers: two cups beside the flange turning about Rz (two picks, one place), one finger turning and
 tilting, and five fingers closing when picking and opening when placing.
 

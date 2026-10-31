@@ -1,0 +1,369 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="P_VisuDemoFxx" Id="{6a8c12cb-4aeb-4be4-b853-86ce479e2fd6}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+DEMO ONLY: Fxx application (Y = 2500). Products arrive irregularly on the Fxx infeed; an XTS loop above the belts<br>
+takes them over and puts them onto the Fxx outfeed with an even spacing. Mover 3 is in a fault now and then.<br>
+Called by P_VisuDemo.<br>
+****************************************************************************************************)
+PROGRAM P_VisuDemoFxx
+VAR
+	fb_FxxInfeed						: _FB_VisuConveyor;
+	fb_FxxOutfeed						: _FB_VisuConveyor;
+	fb_Fxx								: _FB_VisuXtsLoop;
+
+	(* Conveyors *)
+	lr_Dt								: LREAL;	// [s] cycle time
+	udn_Seed							: UDINT := 23456;	// [-] pseudo random generator state
+	lr_InfeedPosition					: LREAL;	// [mm] belt position of the Fxx infeed
+	lr_OutfeedPosition					: LREAL;	// [mm] belt position of the Fxx outfeed
+	lr_SinceSpawn						: LREAL;	// [s] since the last product
+	lr_SpawnInterval					: LREAL := 0.6;	// [s] irregular: the Fxx evens the gaps out
+	BeltPose							: ST_VisuPose;
+	LatchPose							: ST_VisuPlanarPose;
+	XtsPose								: ST_VisuPose;
+
+	(* XTS loop: unwrapped track position per mover; queued movers wait just before the perimeter (= 0). *)
+	b_LoopInitialised					: BOOL;
+	lr_LoopS							: ARRAY[0..11] OF LREAL;	// [mm] per mover (n_LOOP_MOVERS)
+	n_LoopMode							: ARRAY[0..11] OF INT;
+	udn_LoopProduct						: ARRAY[0..11] OF UDINT;	// [-] product id on the Fxx infeed
+	MoverFingers						: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;	// the mover's cup
+END_VAR
+VAR CONSTANT
+	lr_FXX_Y							: LREAL := 2500;	// [mm]
+	lr_FXX_INFEED_LENGTH				: LREAL := 2000;	// [mm]
+	lr_FXX_INFEED_SPEED					: LREAL := 150;	// [mm/s]
+	lr_FXX_OUTFEED_X					: LREAL := 2400;	// [mm]
+	lr_FXX_OUTFEED_LENGTH				: LREAL := 3000;	// [mm]
+	lr_FXX_OUTFEED_SPEED				: LREAL := 300;	// [mm/s]
+	lr_LOOP_X							: LREAL := 1000;	// [mm] start of the lower straight above the Fxx infeed
+	lr_LOOP_STRAIGHT					: LREAL := 2400;	// [mm]
+	lr_LOOP_RADIUS						: LREAL := 250;	// [mm]
+	lr_LOOP_TOOL_OFFSET					: LREAL := 120;	// [mm]
+	n_LOOP_MOVERS						: INT := 12;	// [-] size of the lr_LoopS, n_LoopMode and udn_LoopProduct arrays
+	lr_LOOP_SLOT						: LREAL := 130;	// [mm] queue spacing
+	lr_LOOP_GRIP						: LREAL := 300;	// [mm] track position where the product is gripped
+	lr_LOOP_RELEASE						: LREAL := 600;	// [mm] track position where the mover stops following the infeed
+	lr_LOOP_PLACE						: LREAL := 2000;	// [mm] track position of the hand-over to the Fxx outfeed
+	lr_LOOP_DELIVER_SPEED				: LREAL := 700;	// [mm/s]
+	lr_LOOP_RETURN_SPEED				: LREAL := 900;	// [mm/s]
+	lr_FAULT_START						: LREAL := 10;	// [s] start of the mover 3 fault in the fault period
+	n_LOOP_QUEUE						: INT := 0;
+	n_LOOP_TRACK						: INT := 1;
+	n_LOOP_DELIVER						: INT := 2;
+	n_LOOP_RETURN						: INT := 3;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[lr_Dt := DEMO_GlobalVar.DEMO_lr_Dt;
+
+
+(****************************************************************************************************)
+(* REGISTRATION (idempotent, every cycle)                                                           *)
+(****************************************************************************************************)
+fb_FxxInfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 4, vi_str_Name := 'Fxx infeed',
+	vi_str_Path := 'P_VisuDemoFxx.fb_FxxInfeed.vo_Visu');
+fb_FxxOutfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 5, vi_str_Name := 'Fxx outfeed',
+	vi_str_Path := 'P_VisuDemoFxx.fb_FxxOutfeed.vo_Visu');
+fb_Fxx.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 20, vi_str_Name := 'Fxx',
+	vi_str_Path := 'P_VisuDemoFxx.fb_Fxx.vo_Visu');
+
+
+(****************************************************************************************************)
+(* CONVEYORS (configuration idempotent, every cycle)                                                *)
+(****************************************************************************************************)
+BeltPose.fX := 0;
+BeltPose.fY := lr_FXX_Y;
+BeltPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+fb_FxxInfeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_FXX_INFEED_LENGTH,
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
+BeltPose.fX := lr_FXX_OUTFEED_X;
+fb_FxxOutfeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_FXX_OUTFEED_LENGTH,
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
+fb_FxxInfeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
+fb_FxxOutfeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
+
+(* Belt travel *)
+lr_InfeedPosition := lr_InfeedPosition + lr_FXX_INFEED_SPEED * lr_Dt;
+lr_OutfeedPosition := lr_OutfeedPosition + lr_FXX_OUTFEED_SPEED * lr_Dt;
+fb_FxxInfeed.m_SetBeltPosition(lr_InfeedPosition);
+fb_FxxOutfeed.m_SetBeltPosition(lr_OutfeedPosition);
+
+
+(****************************************************************************************************)
+(* PRODUCT INFEED: irregular gaps                                                                   *)
+(****************************************************************************************************)
+lr_SinceSpawn := lr_SinceSpawn + lr_Dt;
+IF lr_SinceSpawn >= lr_SpawnInterval THEN
+	lr_SinceSpawn := 0;
+	udn_Seed := udn_Seed * 1103515245 + 12345;
+	lr_SpawnInterval := 0.4 + UDINT_TO_LREAL(udn_Seed MOD 1000) / 1000.0 * 1.2;
+	LatchPose.fX := 100;
+	LatchPose.fY := lr_FXX_Y;
+	LatchPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+	LatchPose.fRz := 0;
+	IF fb_FxxInfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := LatchPose,
+		vi_udn_ProductType := 1)
+	THEN
+		DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
+	END_IF
+END_IF
+
+
+(****************************************************************************************************)
+(* XTS LOOP                                                                                         *)
+(****************************************************************************************************)
+XtsPose.fX := lr_LOOP_X;
+XtsPose.fY := lr_FXX_Y;
+XtsPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT + lr_LOOP_TOOL_OFFSET;
+XtsPose.fRz := 0;
+(* The flange sits one cup height closer to the track, so the cup's grip point is at the products' tops. *)
+fb_Fxx.m_Configure(vi_Pose := XtsPose, vi_lr_StraightLength := lr_LOOP_STRAIGHT, vi_lr_CurveRadius := lr_LOOP_RADIUS,
+	vi_lr_ToolOffset := lr_LOOP_TOOL_OFFSET - DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT, vi_lr_MoverLength := 100,
+	vi_lr_MoverWidth := 60);
+fb_Fxx.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER,
+	vi_lr_Height := DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT);
+fb_Fxx.m_SetZone(vi_udn_ConveyorId := fb_FxxInfeed.m_Id(), vi_e_Kind := E_VisuZoneKind.PICK, vi_lr_Start := lr_LOOP_X,
+	vi_lr_End := lr_LOOP_X + lr_LOOP_RELEASE);
+fb_Fxx.m_SetZone(vi_udn_ConveyorId := fb_FxxOutfeed.m_Id(), vi_e_Kind := E_VisuZoneKind.PLACE,
+	vi_lr_Start := lr_LOOP_X + lr_LOOP_PLACE - lr_FXX_OUTFEED_X - 300,
+	vi_lr_End := lr_LOOP_X + lr_LOOP_PLACE - lr_FXX_OUTFEED_X + 100);
+m_Step();
+
+
+(****************************************************************************************************)
+(* HOUSEKEEPING                                                                                     *)
+(****************************************************************************************************)
+fb_FxxInfeed.m_RemoveProductsBeyond(lr_FXX_INFEED_LENGTH + DEMO_GlobalConst.DEMO_lr_REMOVE_BEYOND_END);
+fb_FxxOutfeed.m_RemoveProductsBeyond(lr_FXX_OUTFEED_LENGTH + DEMO_GlobalConst.DEMO_lr_REMOVE_BEYOND_END);]]></ST>
+    </Implementation>
+    <Method Name="m_Flange" Id="{d3f349a0-69e0-4458-aa49-687fe8075577}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Pose of the gripper flange of a Fxx mover at track position vi_lr_S, absolute in the MCS: outwards from the<br>
+track by the configured tool offset, turned about the loop's Y axis with the track tangent.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Flange : ST_VisuPose
+VAR_INPUT
+	vi_lr_S								: LREAL;	// [mm] 0..perimeter
+END_VAR
+VAR
+	lr_TempArc							: LREAL;	// [mm] length of one curve
+	lr_TempA							: LREAL;	// [rad]
+	lr_TempX							: LREAL;	// [mm] local track point
+	lr_TempZ							: LREAL;	// [mm]
+	lr_TempAngle						: LREAL;	// [deg] mover rotation about local Y
+	lr_TempOut							: LREAL;	// [mm] flange distance from the track
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[lr_TempArc := 3.141592653589793 * lr_LOOP_RADIUS;
+IF vi_lr_S <= lr_LOOP_STRAIGHT THEN
+	lr_TempX := vi_lr_S;
+	lr_TempZ := 0;
+	lr_TempAngle := 0;
+ELSIF vi_lr_S <= lr_LOOP_STRAIGHT + lr_TempArc THEN
+	lr_TempA := (vi_lr_S - lr_LOOP_STRAIGHT) / lr_LOOP_RADIUS;
+	lr_TempX := lr_LOOP_STRAIGHT + lr_LOOP_RADIUS * SIN(lr_TempA);
+	lr_TempZ := lr_LOOP_RADIUS - lr_LOOP_RADIUS * COS(lr_TempA);
+	lr_TempAngle := -lr_TempA / VISU_GlobalConst.VISU_lr_DEG_TO_RAD;
+ELSIF vi_lr_S <= 2 * lr_LOOP_STRAIGHT + lr_TempArc THEN
+	lr_TempX := lr_LOOP_STRAIGHT - (vi_lr_S - lr_LOOP_STRAIGHT - lr_TempArc);
+	lr_TempZ := 2 * lr_LOOP_RADIUS;
+	lr_TempAngle := 180;
+ELSE
+	lr_TempA := (vi_lr_S - 2 * lr_LOOP_STRAIGHT - lr_TempArc) / lr_LOOP_RADIUS;
+	lr_TempX := -lr_LOOP_RADIUS * SIN(lr_TempA);
+	lr_TempZ := lr_LOOP_RADIUS + lr_LOOP_RADIUS * COS(lr_TempA);
+	lr_TempAngle := 180 - lr_TempA / VISU_GlobalConst.VISU_lr_DEG_TO_RAD;
+END_IF
+
+(* The mover's -Z, turned about Y by the angle, points outwards: Ry(angle) * (0, 0, -out). *)
+lr_TempOut := lr_LOOP_TOOL_OFFSET - DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT;
+m_Flange.fX := lr_LOOP_X + lr_TempX - lr_TempOut * SIN(lr_TempAngle * VISU_GlobalConst.VISU_lr_DEG_TO_RAD);
+m_Flange.fY := lr_FXX_Y;
+m_Flange.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT + lr_LOOP_TOOL_OFFSET
+			+ lr_TempZ - lr_TempOut * COS(lr_TempAngle * VISU_GlobalConst.VISU_lr_DEG_TO_RAD);
+m_Flange.fRx := 0;
+m_Flange.fRy := lr_TempAngle;
+m_Flange.fRz := 0;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Step" Id="{ed9485c3-b537-4790-9a75-538f3bf97795}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+XTS loop: the queue head takes over the next product arriving on the Fxx infeed under the start of the lower<br>
+straight, follows it, grips it, carries it faster to the Fxx outfeed and releases it there; the mover then<br>
+runs round to the queue.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Step : BOOL
+VAR
+	lr_TempPerimeter					: LREAL;	// [mm]
+	lr_TempS							: LREAL;	// [mm]
+	lr_TempX							: LREAL;	// [mm]
+	lr_TempRz							: LREAL;	// [deg]
+	n_TempI								: INT;
+	n_TempJ								: INT;
+	n_TempRank							: INT;
+	n_TempHead							: INT;
+	b_TempHeadReady						: BOOL;
+	lr_TempMinTrack						: LREAL;	// [mm]
+	n_TempIdx							: INT;
+	un_TempIndex						: UINT;
+	TempProduct							: ST_VisuProduct;
+	TempPose							: ST_VisuPlanarPose;
+	TempLatch							: ST_VisuPlanarPose;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(****************************************************************************************************)
+(* QUEUE AND TAKE-OVER                                                                              *)
+(****************************************************************************************************)
+lr_TempPerimeter := fb_Fxx.m_Perimeter();
+IF NOT b_LoopInitialised THEN
+	FOR n_TempI := 0 TO n_LOOP_MOVERS - 1 DO
+		lr_LoopS[n_TempI] := lr_TempPerimeter - INT_TO_LREAL(n_TempI) * lr_LOOP_SLOT;
+		n_LoopMode[n_TempI] := n_LOOP_QUEUE;
+	END_FOR
+	b_LoopInitialised := TRUE;
+END_IF
+
+(* Queued movers close up towards their slots before the start of the lower straight. *)
+n_TempHead := -1;
+FOR n_TempI := 0 TO n_LOOP_MOVERS - 1 DO
+	IF n_LoopMode[n_TempI] = n_LOOP_QUEUE THEN
+		n_TempRank := 0;
+		FOR n_TempJ := 0 TO n_LOOP_MOVERS - 1 DO
+			IF n_LoopMode[n_TempJ] = n_LOOP_QUEUE
+			AND (lr_LoopS[n_TempJ] > lr_LoopS[n_TempI] OR (lr_LoopS[n_TempJ] = lr_LoopS[n_TempI] AND n_TempJ < n_TempI))
+			THEN
+				n_TempRank := n_TempRank + 1;
+			END_IF
+		END_FOR
+		lr_LoopS[n_TempI] := MIN(lr_LoopS[n_TempI] + lr_LOOP_RETURN_SPEED * lr_Dt,
+								lr_TempPerimeter - INT_TO_LREAL(n_TempRank) * lr_LOOP_SLOT);
+		IF n_TempRank = 0 THEN
+			n_TempHead := n_TempI;
+		END_IF
+	END_IF
+END_FOR
+
+(* The queue head takes over the next product arriving under the start of the lower straight.
+   ST evaluates both operands of AND, so the index check must be a separate IF (head = -1: queue empty). *)
+b_TempHeadReady := FALSE;
+IF n_TempHead >= 0 THEN
+	b_TempHeadReady := lr_LoopS[n_TempHead] >= lr_TempPerimeter - 1;
+END_IF
+(* Movers cannot overlap: the next product must be at least one slot behind the last mover following one. *)
+lr_TempMinTrack := 1.0E9;
+FOR n_TempI := 0 TO n_LOOP_MOVERS - 1 DO
+	IF n_LoopMode[n_TempI] = n_LOOP_TRACK THEN
+		lr_TempMinTrack := MIN(lr_TempMinTrack, lr_LoopS[n_TempI]);
+	END_IF
+END_FOR
+IF b_TempHeadReady THEN
+	un_TempIndex := 0;
+	WHILE n_LoopMode[n_TempHead] = n_LOOP_QUEUE AND un_TempIndex < fb_FxxInfeed.m_ProductCount() DO
+		fb_FxxInfeed.m_GetProduct(vi_un_Index := un_TempIndex, vo_Product => TempProduct, vo_Pose => TempPose);
+		lr_TempX := TempPose.fX - lr_LOOP_X;
+		IF TempProduct.eState = E_VisuProductState.DETECTED AND lr_TempX >= 0 AND lr_TempX < lr_LOOP_GRIP
+		AND lr_TempMinTrack - lr_TempX >= lr_LOOP_SLOT
+		THEN
+			fb_FxxInfeed.m_SetProductState(vi_udn_Id := TempProduct.nId, vi_e_State := E_VisuProductState.ASSIGNED,
+				vi_udn_RobotId := fb_Fxx.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempHead + 1));
+			udn_LoopProduct[n_TempHead] := TempProduct.nId;
+			n_LoopMode[n_TempHead] := n_LOOP_TRACK;
+		END_IF
+		un_TempIndex := un_TempIndex + 1;
+	END_WHILE
+END_IF
+
+
+(****************************************************************************************************)
+(* MOVERS                                                                                           *)
+(****************************************************************************************************)
+fb_Fxx.m_SetMoverCount(INT_TO_UINT(n_LOOP_MOVERS));
+FOR n_TempI := 0 TO n_LOOP_MOVERS - 1 DO
+	CASE n_LoopMode[n_TempI] OF
+		n_LOOP_TRACK:
+			n_TempIdx := fb_FxxInfeed.m_FindProduct(udn_LoopProduct[n_TempI]);
+			IF n_TempIdx < 0 THEN
+				udn_LoopProduct[n_TempI] := 0;
+				n_LoopMode[n_TempI] := n_LOOP_RETURN;
+			ELSE
+				fb_FxxInfeed.m_GetProduct(vi_un_Index := INT_TO_UINT(n_TempIdx), vo_Product => TempProduct, vo_Pose => TempPose);
+				lr_LoopS[n_TempI] := TempPose.fX - lr_LOOP_X;
+				IF lr_LoopS[n_TempI] >= lr_LOOP_GRIP AND TempProduct.eState = E_VisuProductState.ASSIGNED THEN
+					fb_FxxInfeed.m_SetProductState(vi_udn_Id := TempProduct.nId, vi_e_State := E_VisuProductState.PICKED,
+						vi_udn_RobotId := fb_Fxx.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempI + 1), vi_udn_FingerId := 1);
+				END_IF
+				IF lr_LoopS[n_TempI] >= lr_LOOP_RELEASE THEN
+					n_LoopMode[n_TempI] := n_LOOP_DELIVER;
+				END_IF
+			END_IF
+
+		n_LOOP_DELIVER:
+			lr_LoopS[n_TempI] := MIN(lr_LoopS[n_TempI] + lr_LOOP_DELIVER_SPEED * lr_Dt, lr_LOOP_PLACE);
+			IF lr_LoopS[n_TempI] >= lr_LOOP_PLACE THEN
+				lr_TempRz := 0;
+				n_TempIdx := fb_FxxInfeed.m_FindProduct(udn_LoopProduct[n_TempI]);
+				IF n_TempIdx >= 0 THEN
+					fb_FxxInfeed.m_GetProduct(vi_un_Index := INT_TO_UINT(n_TempIdx), vo_Product => TempProduct, vo_Pose => TempPose);
+					lr_TempRz := TempProduct.stLatchPose.fRz;
+					fb_FxxInfeed.m_SetProductState(vi_udn_Id := TempProduct.nId, vi_e_State := E_VisuProductState.PLACED,
+						vi_udn_RobotId := fb_Fxx.m_Id(), vi_udn_MoverId := 0);
+				END_IF
+				TempLatch.fX := lr_LOOP_X + lr_LoopS[n_TempI];
+				TempLatch.fY := lr_FXX_Y;
+				TempLatch.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+				TempLatch.fRz := lr_TempRz;
+				IF fb_FxxOutfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := TempLatch,
+					vi_udn_ProductType := 1)
+				THEN
+					DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
+				END_IF
+				udn_LoopProduct[n_TempI] := 0;
+				n_LoopMode[n_TempI] := n_LOOP_RETURN;
+			END_IF
+
+		n_LOOP_RETURN:
+			lr_LoopS[n_TempI] := lr_LoopS[n_TempI] + lr_LOOP_RETURN_SPEED * lr_Dt;
+			IF lr_LoopS[n_TempI] >= lr_TempPerimeter - INT_TO_LREAL(n_LOOP_MOVERS) * lr_LOOP_SLOT THEN
+				n_LoopMode[n_TempI] := n_LOOP_QUEUE;
+			END_IF
+	END_CASE
+
+	(* Report the mover with its cup *)
+	lr_TempS := lr_LoopS[n_TempI];
+	IF lr_TempS >= lr_TempPerimeter THEN
+		lr_TempS := lr_TempS - lr_TempPerimeter;
+	END_IF
+	MoverFingers[0].stPose := m_Flange(lr_TempS);
+	MoverFingers[0].bActive := n_LoopMode[n_TempI] = n_LOOP_DELIVER
+							OR (n_LoopMode[n_TempI] = n_LOOP_TRACK AND lr_LoopS[n_TempI] >= lr_LOOP_GRIP);
+
+	(* Demo fault: mover 3 now and then. *)
+	fb_Fxx.m_SetMover(vi_un_Index := INT_TO_UINT(n_TempI), vi_udn_Id := INT_TO_UDINT(n_TempI + 1), vi_lr_Position := lr_TempS,
+		vi_FingerStates := MoverFingers,
+		vi_b_Fault := n_TempI = 2 AND DEMO_GlobalVar.DEMO_lr_FaultPhase >= lr_FAULT_START
+					AND DEMO_GlobalVar.DEMO_lr_FaultPhase < lr_FAULT_START + DEMO_GlobalConst.DEMO_lr_FAULT_DURATION,
+		vi_str_FaultMessage := 'Following error');
+END_FOR
+m_Step := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

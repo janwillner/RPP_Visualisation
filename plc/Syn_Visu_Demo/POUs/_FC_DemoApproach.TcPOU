@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FC_DemoApproach" Id="{3c7eabb8-68e3-4aaf-a3f9-4ea0f0f665a3}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Moves vi_lr_Value towards vi_lr_Goal by at most vi_lr_Step. Lands exactly on the goal, so callers may compare<br>
+the result with the goal for equality.<br>
+****************************************************************************************************)
+FUNCTION _FC_DemoApproach : LREAL
+VAR_INPUT
+	vi_lr_Value							: LREAL;
+	vi_lr_Goal							: LREAL;
+	vi_lr_Step							: LREAL;	// >= 0
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[IF ABS(vi_lr_Goal - vi_lr_Value) <= vi_lr_Step THEN
+	_FC_DemoApproach := vi_lr_Goal;
+ELSIF vi_lr_Goal > vi_lr_Value THEN
+	_FC_DemoApproach := vi_lr_Value + vi_lr_Step;
+ELSE
+	_FC_DemoApproach := vi_lr_Value - vi_lr_Step;
+END_IF]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

@@ -14,6 +14,12 @@
     <LibraryReferences>{e01b9f67-9b7e-4c1c-8c72-dfc5bfc982b4}</LibraryReferences>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="DEMO_GlobalConst.TcGVL">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DEMO_GlobalVar.TcGVL">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="GVL_Visu.TcGVL">
       <SubType>Code</SubType>
     </Compile>
@@ -21,6 +27,24 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\P_VisuDemo.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\P_VisuDemoCartesian.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\P_VisuDemoDelta.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\P_VisuDemoFxx.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\P_VisuDemoIdh.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\P_VisuDemoSpacing.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FC_DemoApproach.TcPOU">
       <SubType>Code</SubType>
     </Compile>
   </ItemGroup>

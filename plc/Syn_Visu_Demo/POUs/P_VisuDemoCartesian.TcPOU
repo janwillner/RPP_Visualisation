@@ -1,0 +1,380 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="P_VisuDemoCartesian" Id="{62dd7627-bc12-4752-9beb-21d1b110e909}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+DEMO ONLY: Cartesian application (Y = 6500..7300). A Cartesian robot picks products from the Cartesian infeed,<br>
+turns them by C = -90 deg, tilts them by A while lowering and places them onto the Cartesian outfeed. Its gripper<br>
+is a cup in the middle with two jaws beside it. Called by P_VisuDemo.<br>
+****************************************************************************************************)
+PROGRAM P_VisuDemoCartesian
+VAR
+	fb_CartInfeed						: _FB_VisuConveyor;
+	fb_CartOutfeed						: _FB_VisuConveyor;
+	fb_Cartesian						: _FB_VisuCartesian;
+
+	(* Conveyors *)
+	lr_Dt								: LREAL;	// [s] cycle time
+	udn_Seed							: UDINT := 45678;	// [-] pseudo random generator state
+	lr_InfeedPosition					: LREAL;	// [mm] belt position of the Cartesian infeed
+	lr_OutfeedPosition					: LREAL;	// [mm] belt position of the Cartesian outfeed
+	lr_SinceSpawn						: LREAL;	// [s] since the last product
+	BeltPose							: ST_VisuPose;
+	LatchPose							: ST_VisuPlanarPose;
+	CartPose							: ST_VisuPose;
+
+	(* Cartesian robot: axis actual values, start above the infeed *)
+	n_CartPhase							: INT;
+	lr_CartX							: LREAL := 900;	// [mm]
+	lr_CartY							: LREAL := 200;	// [mm]
+	lr_CartZ							: LREAL := -200;	// [mm]
+	lr_CartC							: LREAL;	// [deg]
+	lr_CartA							: LREAL;	// [deg]
+	lr_CartPickC						: LREAL;	// [deg] C that turns the gripper onto the current product
+	lr_CartJaw							: LREAL := 120;	// [mm] jaw distance from the cup along the gripper's X
+	b_CartGrip							: BOOL;
+	udn_CartProduct						: UDINT;	// [-] product id on the Cartesian infeed
+END_VAR
+VAR CONSTANT
+	(* Robot turned by -90 deg: X axis across the belts towards MCS -Y (outfeed under X = 100, infeed under
+	   X = 900), Y axis along MCS +X from X = 1000. *)
+	lr_CART_INFEED_Y					: LREAL := 6500;	// [mm]
+	lr_CART_OUTFEED_Y					: LREAL := 7300;	// [mm]
+	lr_CART_BELT_LENGTH					: LREAL := 3000;	// [mm]
+	lr_CART_BELT_SPEED					: LREAL := 150;	// [mm/s]
+	lr_CART_SPAWN_INTERVAL				: LREAL := 2.5;	// [s]
+	lr_CART_X							: LREAL := 1000;	// [mm]
+	lr_CART_Y							: LREAL := 7400;	// [mm]
+	lr_CART_Z							: LREAL := 1540;	// [mm] Z = -550 puts the cup's grip point (A = 0) on the product top
+	lr_CART_TOOL_LENGTH					: LREAL := 150;	// [mm] flange to the cup's grip point
+	lr_CART_CUP_HEIGHT					: LREAL := 40;	// [mm]
+	lr_CART_JAW_DIAMETER				: LREAL := 20;	// [mm]
+	lr_CART_JAW_HEIGHT					: LREAL := 120;	// [mm]
+	lr_CART_JAW_TOP						: LREAL := 60;	// [mm] jaw tops below the flange
+	lr_CART_JAW_OPEN					: LREAL := 120;	// [mm]
+	lr_CART_JAW_CLOSED					: LREAL := 70;	// [mm] closed on a 120 mm product
+	lr_CART_JAW_SPEED					: LREAL := 300;	// [mm/s]
+	lr_CART_RAIL_HEIGHT					: LREAL := 1200;	// [mm]
+	lr_CART_X_OUTFEED					: LREAL := 100;	// [mm]
+	lr_CART_X_INFEED					: LREAL := 900;	// [mm]
+	lr_CART_Y_HOME						: LREAL := 200;	// [mm]
+	lr_CART_Y_PLACE						: LREAL := 500;	// [mm]
+	lr_CART_Z_PICK						: LREAL := -550;	// [mm]
+	lr_CART_Z_TRAVEL					: LREAL := -200;	// [mm]
+	lr_CART_TILT						: LREAL := 20;	// [deg] A while lowering
+	lr_CART_TURN						: LREAL := -90;	// [deg] C between pick and place
+	lr_CART_XY_SPEED					: LREAL := 1500;	// [mm/s]
+	lr_CART_Z_SPEED						: LREAL := 800;	// [mm/s]
+	lr_CART_C_SPEED						: LREAL := 180;	// [deg/s]
+	lr_CART_A_SPEED						: LREAL := 60;	// [deg/s]
+	n_CART_IDLE							: INT := 0;
+	n_CART_DESCEND						: INT := 1;
+	n_CART_LIFT							: INT := 2;
+	n_CART_TRANSFER						: INT := 3;
+	n_CART_LOWER						: INT := 4;
+	n_CART_STRAIGHTEN					: INT := 5;
+	n_CART_RELEASE						: INT := 6;
+	n_CART_RISE							: INT := 7;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[lr_Dt := DEMO_GlobalVar.DEMO_lr_Dt;
+
+
+(****************************************************************************************************)
+(* REGISTRATION (idempotent, every cycle)                                                           *)
+(****************************************************************************************************)
+fb_CartInfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 8, vi_str_Name := 'Cartesian infeed',
+	vi_str_Path := 'P_VisuDemoCartesian.fb_CartInfeed.vo_Visu');
+fb_CartOutfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 9, vi_str_Name := 'Cartesian outfeed',
+	vi_str_Path := 'P_VisuDemoCartesian.fb_CartOutfeed.vo_Visu');
+fb_Cartesian.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 40, vi_str_Name := 'Cartesian',
+	vi_str_Path := 'P_VisuDemoCartesian.fb_Cartesian.vo_Visu');
+
+
+(****************************************************************************************************)
+(* CONVEYORS (configuration idempotent, every cycle)                                                *)
+(****************************************************************************************************)
+BeltPose.fX := 0;
+BeltPose.fY := lr_CART_INFEED_Y;
+BeltPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+fb_CartInfeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_CART_BELT_LENGTH,
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
+BeltPose.fY := lr_CART_OUTFEED_Y;
+fb_CartOutfeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_CART_BELT_LENGTH,
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
+fb_CartInfeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
+fb_CartOutfeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
+
+(* Belt travel *)
+lr_InfeedPosition := lr_InfeedPosition + lr_CART_BELT_SPEED * lr_Dt;
+lr_OutfeedPosition := lr_OutfeedPosition + lr_CART_BELT_SPEED * lr_Dt;
+fb_CartInfeed.m_SetBeltPosition(lr_InfeedPosition);
+fb_CartOutfeed.m_SetBeltPosition(lr_OutfeedPosition);
+
+
+(****************************************************************************************************)
+(* PRODUCT INFEED: regular gaps, products turned                                                    *)
+(****************************************************************************************************)
+lr_SinceSpawn := lr_SinceSpawn + lr_Dt;
+IF lr_SinceSpawn >= lr_CART_SPAWN_INTERVAL THEN
+	lr_SinceSpawn := 0;
+	udn_Seed := udn_Seed * 1103515245 + 12345;
+	LatchPose.fX := 100;
+	LatchPose.fY := lr_CART_INFEED_Y;
+	LatchPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+	LatchPose.fRz := (UDINT_TO_LREAL((udn_Seed / 1000) MOD 1000) / 1000.0 - 0.5) * 60.0;
+	IF fb_CartInfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := LatchPose,
+		vi_udn_ProductType := 1)
+	THEN
+		DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
+	END_IF
+END_IF
+
+
+(****************************************************************************************************)
+(* CARTESIAN ROBOT                                                                                  *)
+(****************************************************************************************************)
+CartPose.fX := lr_CART_X;
+CartPose.fY := lr_CART_Y;
+CartPose.fZ := lr_CART_Z;
+CartPose.fRz := -90;
+fb_Cartesian.m_Configure(vi_Pose := CartPose, vi_lr_XMin := 0, vi_lr_XMax := 1200, vi_lr_YMin := 0, vi_lr_YMax := 1000,
+	vi_lr_ZMin := -600, vi_lr_ZMax := 0, vi_lr_RailHeight := lr_CART_RAIL_HEIGHT);
+(* A cup in the middle carries the product, two jaws close beside it. *)
+fb_Cartesian.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER,
+	vi_lr_Height := lr_CART_CUP_HEIGHT);
+fb_Cartesian.m_SetFinger(vi_un_Finger := 2, vi_lr_Diameter := lr_CART_JAW_DIAMETER, vi_lr_Height := lr_CART_JAW_HEIGHT);
+fb_Cartesian.m_SetFinger(vi_un_Finger := 3, vi_lr_Diameter := lr_CART_JAW_DIAMETER, vi_lr_Height := lr_CART_JAW_HEIGHT);
+fb_Cartesian.m_SetZone(vi_udn_ConveyorId := fb_CartInfeed.m_Id(), vi_e_Kind := E_VisuZoneKind.PICK,
+	vi_lr_Start := lr_CART_X, vi_lr_End := lr_CART_X + 1000);
+fb_Cartesian.m_SetZone(vi_udn_ConveyorId := fb_CartOutfeed.m_Id(), vi_e_Kind := E_VisuZoneKind.PLACE,
+	vi_lr_Start := lr_CART_X + lr_CART_Y_PLACE - 200, vi_lr_End := lr_CART_X + lr_CART_Y_PLACE + 200);
+m_Step();
+fb_Cartesian.m_SetAxes(vi_lr_X := lr_CartX, vi_lr_Y := lr_CartY, vi_lr_Z := lr_CartZ, vi_b_GripperActive := b_CartGrip);
+
+(* C and A turn and tilt the gripper below the flange; they show only through the finger poses. *)
+lr_CartJaw := _FC_DemoApproach(lr_CartJaw, SEL(b_CartGrip, lr_CART_JAW_OPEN, lr_CART_JAW_CLOSED), lr_CART_JAW_SPEED * lr_Dt);
+fb_Cartesian.m_SetFingerState(vi_un_Finger := 1,
+	vi_Pose := m_Finger(vi_lr_OffsetX := 0, vi_lr_OffsetZ := -(lr_CART_TOOL_LENGTH - lr_CART_CUP_HEIGHT)),
+	vi_b_Active := b_CartGrip);
+fb_Cartesian.m_SetFingerState(vi_un_Finger := 2,
+	vi_Pose := m_Finger(vi_lr_OffsetX := lr_CartJaw, vi_lr_OffsetZ := -lr_CART_JAW_TOP),
+	vi_b_Active := b_CartGrip);
+fb_Cartesian.m_SetFingerState(vi_un_Finger := 3,
+	vi_Pose := m_Finger(vi_lr_OffsetX := -lr_CartJaw, vi_lr_OffsetZ := -lr_CART_JAW_TOP),
+	vi_b_Active := b_CartGrip);
+
+
+(****************************************************************************************************)
+(* HOUSEKEEPING                                                                                     *)
+(****************************************************************************************************)
+fb_CartInfeed.m_RemoveProductsBeyond(lr_CART_BELT_LENGTH + DEMO_GlobalConst.DEMO_lr_REMOVE_BEYOND_END);
+fb_CartOutfeed.m_RemoveProductsBeyond(lr_CART_BELT_LENGTH + DEMO_GlobalConst.DEMO_lr_REMOVE_BEYOND_END);]]></ST>
+    </Implementation>
+    <Method Name="m_Finger" Id="{2e68f6f4-3124-4ca2-ba4d-f784a4bc7fa2}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Pose of a Cartesian gripper finger, absolute in the MCS: the finger sits at (vi_lr_OffsetX, 0, vi_lr_OffsetZ) in<br>
+the gripper, which is turned by C about Z and tilted by A about its own X below the flange. The robot is<br>
+turned by -90 deg: local (x, y, z) is MCS (lr_CART_X + y, lr_CART_Y - x, lr_CART_Z + z).<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Finger : ST_VisuPose
+VAR_INPUT
+	vi_lr_OffsetX						: LREAL;	// [mm] along the gripper's X
+	vi_lr_OffsetZ						: LREAL;	// [mm] below the flange: negative
+END_VAR
+VAR
+	lr_TempA							: LREAL;	// [rad]
+	lr_TempC							: LREAL;	// [rad]
+	lr_TempVx							: LREAL;	// [mm] offset in the robot frame
+	lr_TempVy							: LREAL;	// [mm]
+	lr_TempVz							: LREAL;	// [mm]
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[lr_TempA := lr_CartA * VISU_GlobalConst.VISU_lr_DEG_TO_RAD;
+lr_TempC := lr_CartC * VISU_GlobalConst.VISU_lr_DEG_TO_RAD;
+(* Rz(C) * Rx(A) * (x, 0, z) *)
+lr_TempVx := vi_lr_OffsetX * COS(lr_TempC) + vi_lr_OffsetZ * SIN(lr_TempA) * SIN(lr_TempC);
+lr_TempVy := vi_lr_OffsetX * SIN(lr_TempC) - vi_lr_OffsetZ * SIN(lr_TempA) * COS(lr_TempC);
+lr_TempVz := vi_lr_OffsetZ * COS(lr_TempA);
+m_Finger.fX := lr_CART_X + (lr_CartY + lr_TempVy);
+m_Finger.fY := lr_CART_Y - (lr_CartX + lr_TempVx);
+m_Finger.fZ := lr_CART_Z + (lr_CartZ + lr_TempVz);
+m_Finger.fRx := lr_CartA;
+m_Finger.fRy := 0;
+m_Finger.fRz := -90 + lr_CartC;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Move" Id="{dce46312-c5f0-47a4-acbf-bc429aa07c03}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Moves the Cartesian robot's axes one cycle towards the goal, each with its own speed. TRUE once all are there.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Move : BOOL
+VAR_INPUT
+	vi_lr_X								: LREAL;	// [mm]
+	vi_lr_Y								: LREAL;	// [mm]
+	vi_lr_Z								: LREAL;	// [mm]
+	vi_lr_C								: LREAL;	// [deg]
+	vi_lr_A								: LREAL;	// [deg]
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[lr_CartX := _FC_DemoApproach(lr_CartX, vi_lr_X, lr_CART_XY_SPEED * lr_Dt);
+lr_CartY := _FC_DemoApproach(lr_CartY, vi_lr_Y, lr_CART_XY_SPEED * lr_Dt);
+lr_CartZ := _FC_DemoApproach(lr_CartZ, vi_lr_Z, lr_CART_Z_SPEED * lr_Dt);
+lr_CartC := _FC_DemoApproach(lr_CartC, vi_lr_C, lr_CART_C_SPEED * lr_Dt);
+lr_CartA := _FC_DemoApproach(lr_CartA, vi_lr_A, lr_CART_A_SPEED * lr_Dt);
+(* _FC_DemoApproach lands exactly on the goal, so equality is safe. *)
+m_Move := lr_CartX = vi_lr_X AND lr_CartY = vi_lr_Y AND lr_CartZ = vi_lr_Z AND lr_CartC = vi_lr_C AND lr_CartA = vi_lr_A;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Step" Id="{05fd5b17-c85a-40bb-ba82-87c8709ed353}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Cartesian robot: follows a product on the Cartesian infeed in Y with the gripper turned onto it (C), picks<br>
+it, carries it across to the outfeed while turning it by a further -90 deg, tilts it by A while lowering,<br>
+straightens it and places it.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Step : BOOL
+VAR
+	n_TempFound							: INT;
+	un_TempScan							: UINT;
+	b_TempHave							: BOOL;
+	lr_TempProductY						: LREAL;	// [mm] robot Y of the current product: its MCS x relative to the robot origin
+	TempProduct							: ST_VisuProduct;
+	TempProductPose						: ST_VisuPlanarPose;
+	TempPlacePose						: ST_VisuPlanarPose;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(* Current product *)
+b_TempHave := FALSE;
+IF udn_CartProduct <> 0 THEN
+	n_TempFound := fb_CartInfeed.m_FindProduct(udn_CartProduct);
+	IF n_TempFound >= 0 THEN
+		b_TempHave := fb_CartInfeed.m_GetProduct(vi_un_Index := INT_TO_UINT(n_TempFound), vo_Product => TempProduct,
+			vo_Pose => TempProductPose);
+		lr_TempProductY := TempProductPose.fX - lr_CART_X;
+	END_IF
+END_IF
+
+(* Sequence *)
+CASE n_CartPhase OF
+	n_CART_IDLE:
+		un_TempScan := 0;
+		WHILE udn_CartProduct = 0 AND un_TempScan < fb_CartInfeed.m_ProductCount() DO
+			fb_CartInfeed.m_GetProduct(vi_un_Index := un_TempScan, vo_Product => TempProduct, vo_Pose => TempProductPose);
+			IF TempProduct.eState = E_VisuProductState.DETECTED
+			AND TempProductPose.fX - lr_CART_X >= 100
+			AND TempProductPose.fX - lr_CART_X <= 600
+			THEN
+				fb_CartInfeed.m_SetProductState(vi_udn_Id := TempProduct.nId, vi_e_State := E_VisuProductState.ASSIGNED,
+					vi_udn_RobotId := fb_Cartesian.m_Id());
+				udn_CartProduct := TempProduct.nId;
+				(* The gripper's +X in the MCS is pose rz (-90 deg) + C. *)
+				lr_CartPickC := TempProductPose.fRz + 90;
+				n_CartPhase := n_CART_DESCEND;
+			END_IF
+			un_TempScan := un_TempScan + 1;
+		END_WHILE
+		IF udn_CartProduct = 0 THEN
+			m_Move(vi_lr_X := lr_CART_X_INFEED, vi_lr_Y := lr_CART_Y_HOME, vi_lr_Z := lr_CART_Z_TRAVEL, vi_lr_C := 0,
+				vi_lr_A := 0);
+		END_IF
+
+	n_CART_DESCEND:
+		IF NOT b_TempHave THEN
+			udn_CartProduct := 0;
+			n_CartPhase := n_CART_RISE;
+		ELSIF lr_TempProductY > 1000 THEN
+			(* Out of reach: hand it back, it will be missed. *)
+			fb_CartInfeed.m_SetProductState(vi_udn_Id := udn_CartProduct, vi_e_State := E_VisuProductState.DETECTED,
+				vi_udn_RobotId := 0);
+			udn_CartProduct := 0;
+			n_CartPhase := n_CART_RISE;
+		ELSIF m_Move(vi_lr_X := lr_CART_X_INFEED, vi_lr_Y := lr_TempProductY, vi_lr_Z := lr_CartZ,
+			vi_lr_C := lr_CartPickC, vi_lr_A := 0)
+		THEN
+			(* Lowers only once above the product with the gripper turned onto it. *)
+			IF m_Move(vi_lr_X := lr_CART_X_INFEED, vi_lr_Y := lr_TempProductY, vi_lr_Z := lr_CART_Z_PICK,
+				vi_lr_C := lr_CartPickC, vi_lr_A := 0)
+			THEN
+				fb_CartInfeed.m_SetProductState(vi_udn_Id := udn_CartProduct, vi_e_State := E_VisuProductState.PICKED,
+					vi_udn_RobotId := fb_Cartesian.m_Id(), vi_udn_FingerId := 1);
+				b_CartGrip := TRUE;
+				n_CartPhase := n_CART_LIFT;
+			END_IF
+		END_IF
+
+	n_CART_LIFT:
+		IF m_Move(vi_lr_X := lr_CartX, vi_lr_Y := lr_CartY, vi_lr_Z := lr_CART_Z_TRAVEL, vi_lr_C := lr_CartC,
+			vi_lr_A := lr_CartA)
+		THEN
+			n_CartPhase := n_CART_TRANSFER;
+		END_IF
+
+	n_CART_TRANSFER:
+		IF m_Move(vi_lr_X := lr_CART_X_OUTFEED, vi_lr_Y := lr_CART_Y_PLACE, vi_lr_Z := lr_CART_Z_TRAVEL,
+			vi_lr_C := lr_CartPickC + lr_CART_TURN, vi_lr_A := 0)
+		THEN
+			n_CartPhase := n_CART_LOWER;
+		END_IF
+
+	n_CART_LOWER:
+		IF m_Move(vi_lr_X := lr_CartX, vi_lr_Y := lr_CartY, vi_lr_Z := lr_CART_Z_PICK, vi_lr_C := lr_CartC,
+			vi_lr_A := lr_CART_TILT)
+		THEN
+			n_CartPhase := n_CART_STRAIGHTEN;
+		END_IF
+
+	n_CART_STRAIGHTEN:
+		IF m_Move(vi_lr_X := lr_CartX, vi_lr_Y := lr_CartY, vi_lr_Z := lr_CartZ, vi_lr_C := lr_CartC, vi_lr_A := 0) THEN
+			n_CartPhase := n_CART_RELEASE;
+		END_IF
+
+	n_CART_RELEASE:
+		fb_CartInfeed.m_SetProductState(vi_udn_Id := udn_CartProduct, vi_e_State := E_VisuProductState.PLACED,
+			vi_udn_RobotId := fb_Cartesian.m_Id());
+		(* Turned by -90 deg: the cup (A = 0) is at MCS x = origin + Y, y = origin - X; the product keeps the turn. *)
+		TempPlacePose.fX := lr_CART_X + lr_CartY;
+		TempPlacePose.fY := lr_CART_Y - lr_CartX;
+		TempPlacePose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+		TempPlacePose.fRz := -90 + lr_CartC;
+		IF fb_CartOutfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := TempPlacePose,
+			vi_udn_ProductType := 1)
+		THEN
+			DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
+		END_IF
+		udn_CartProduct := 0;
+		b_CartGrip := FALSE;
+		n_CartPhase := n_CART_RISE;
+
+	n_CART_RISE:
+		IF m_Move(vi_lr_X := lr_CartX, vi_lr_Y := lr_CartY, vi_lr_Z := lr_CART_Z_TRAVEL, vi_lr_C := lr_CartC,
+			vi_lr_A := lr_CartA)
+		THEN
+			n_CartPhase := n_CART_IDLE;
+		END_IF
+END_CASE
+m_Step := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

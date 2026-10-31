@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <GVL Name="DEMO_GlobalConst" Id="{5fbed28c-7fbc-4155-a010-ea94de768293}">
+    <Declaration><![CDATA[(* Shared facts of the demo world: all applications use the same belt height and width, product and suction cup. *)
+{attribute 'qualified_only'}
+VAR_GLOBAL CONSTANT
+	DEMO_lr_BELT_Z						: LREAL := 800;	// [mm] belt surface
+	DEMO_lr_BELT_WIDTH					: LREAL := 400;	// [mm]
+	DEMO_lr_PRODUCT_LENGTH				: LREAL := 120;	// [mm]
+	DEMO_lr_PRODUCT_WIDTH				: LREAL := 80;	// [mm]
+	DEMO_lr_PRODUCT_HEIGHT				: LREAL := 40;	// [mm]
+	DEMO_lr_REMOVE_BEYOND_END			: LREAL := 300;	// [mm] register entries are dropped this far beyond the belt end
+	(* Suction cup of Delta 1, the Fxx and IDH movers and the Cartesian robot: its grip point is where the products'
+	   tops touch. *)
+	DEMO_lr_CUP_DIAMETER				: LREAL := 40;	// [mm]
+	DEMO_lr_CUP_HEIGHT					: LREAL := 50;	// [mm]
+	(* Demo faults: every period one component or mover is in a fault for the duration. *)
+	DEMO_lr_FAULT_PERIOD				: LREAL := 20;	// [s]
+	DEMO_lr_FAULT_DURATION				: LREAL := 5;	// [s]
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>
