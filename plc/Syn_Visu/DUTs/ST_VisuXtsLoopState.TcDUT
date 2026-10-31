@@ -5,7 +5,7 @@
 STRUCT
 	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (set by FB_VisuXtsLoop)
 	nMoverCount : UINT; // entries [0..nMoverCount-1] are evaluated
-	aMovers : ARRAY[0..GVL_VisuParam.nMaxMovers - 1] OF ST_VisuLoopMover;
+	aMovers : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MOVERS - 1] OF ST_VisuLoopMover;
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

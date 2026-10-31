@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="_FC_GetVersionSynVisu" Id="{6e16094b-9b89-4156-a680-a13abfff780d}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Runtime-readable version of the Syn_Visu library.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
+****************************************************************************************************)
+FUNCTION _FC_GetVersionSynVisu : UINT
+VAR_INPUT
+	vi_n_VersionElement					: INT;	// [-] 1 = major, 2 = minor, 3 = revision
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[CASE vi_n_VersionElement OF
+	1: _FC_GetVersionSynVisu := 3;
+	2: _FC_GetVersionSynVisu := 0;
+	3: _FC_GetVersionSynVisu := 0;
+ELSE
+	_FC_GetVersionSynVisu := 16#FFFF;
+END_CASE]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

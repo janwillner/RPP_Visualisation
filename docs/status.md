@@ -21,7 +21,7 @@ Without a PLC: `--driver sim` (built-in simulator, same contract).
 - Delta limit area (box in the robot frame, own layer toggle "Limit areas") and zone allocation area / allocation limit (layer zones), with measure-mode snap points.
 - Eye button per component in the component tree hides it (a hidden conveyor hides its products and the zones on it); separate "Limit areas" layer toggle; conveyors drawn dark blue.
 - Grippers for every kinematics: fingers as cylinders at MCS poses reported by the PLC, products hanging at a finger's grip point (`nFingerId`), finger table in the inspector; the tool rotations (Delta rz, IDH C, Cartesian C/A and tool length) moved into the finger poses. Demo: three different Delta grippers. The simulator has one Delta with a single cup.
-- The Syn_Visu copy in the Viersen project is still on protocol 6 (wrappers use IDH C and LUN C); to be updated.
+- The Syn_Visu copy in the Viersen project is still on protocol 6 (wrappers use IDH C and LUN C) and on the old names; to be updated.
 - ADS access through `apps/ads-bridge` (.NET, Beckhoff `TwinCAT.Ads` 7.0.389), because the pure TCP client `ads-client` is rejected by the 4026 user-mode runtime's router (no AMS TCP loopback, no route). `ads-client` remains as `--driver ads-tcp`.
 - Delta reports only its TCP; the web derives the arms by inverse kinematics (was: axis angles in protocol version 1).
 - Delta drawn like a real robot: base plate, motors, upper arms, parallelogram lower arms, effector with TCP axis triad.
@@ -30,6 +30,7 @@ Without a PLC: `--driver sim` (built-in simulator, same contract).
 - Gateway re-runs discovery every second (`--config-recheck-ms`), so configs changed live in the PLC appear without bumping `nConfigVersion`.
 - Demo in the PLC project (`P_VisuDemo`) and the gateway simulator: four independent applications side by side, all conveying along +X from X = 0: Delta (two infeeds, one outfeed, three Deltas in a row; Y = 0..1000), Fxx (irregular infeed evened out onto its outfeed; Y = 2500) and IDH (four movers picking in batches from its infeed onto a tray belt; Y = 4100..4850) and Cartesian (picks from its infeed, turns by C = −90°, tilts by A while lowering, places onto its outfeed; Y = 6500..7300).
 - PLC API: `FB_VisuConveyor` and `FB_VisuDelta` (base `FB_VisuComponent`) with methods replace the helper functions; library version 2.0.0. The ADS contract is unchanged.
+- PLC code follows the company guideline (`docs/plc-coding-guidelines.md`), library version 3.0.0: `_FB_Visu*` FBs, `m_` methods, `vi_`/`vo_`/`vio_` inputs and outputs, `Temp` method locals, `VISU_GlobalConst` / `VISU_GlobalConst_Param` with upper-case constants, copyright and help headers. The contract structure is the FB output `vo_Visu` (manifest paths end in `.vo_Visu`). Structures, members, enums and `GVL_Visu.stManifest` are unchanged, so the protocol stays at version 7. Not yet downloaded to the runtime.
 
 ## Decisions changed during implementation
 
@@ -46,6 +47,6 @@ Domain terms are defined in `GLOSSARY.md`.
 
 - **Demo objects live inside the library project** (`GVL_Visu`, `P_VisuDemo`, the `PlcTask` reference and the `Tc3_Module` reference it needs). They must be removed, or moved to a separate application project, before releasing the library.
 - **Exporting `Syn_Visu.library` fails** with a COM error; most likely the project information (Company, Title, Version) is missing. Set it in XAE, then save as library.
-- `GVL_VisuParam` is a plain constant GVL, not a library parameter list, so array sizes are not yet overridable per project.
+- `VISU_GlobalConst_Param` is a plain constant GVL, not a library parameter list, so array sizes are not yet overridable per project.
 - Idea raised but not built: Delta part sizes scaled with the configured geometry.
 - Local machine leftovers from the ADS investigation (not needed any more): `EnableAmsTcpLoopback` in the Windows registry and in `UmRT_Default\3.1\TcRegistry.xml`.

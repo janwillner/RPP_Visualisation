@@ -8,7 +8,7 @@ STRUCT
 	fPosition : LREAL; // mm along the track (local +Y), actual value
 	fX : LREAL; // mm, X axis on the mover, actual value
 	bGripperActive : BOOL; // used only when no fingers are configured
-	aFingerStates : ARRAY[0..GVL_VisuParam.nMaxFingers - 1] OF ST_VisuFingerState; // one per configured finger
+	aFingerStates : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState; // one per configured finger
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

@@ -5,11 +5,11 @@
 STRUCT
 	(* Discovery entry point. The application declares one instance at the fixed symbol
 	   GVL_Visu.stManifest; the gateway starts reading there. *)
-	nProtocolVersion : UINT := GVL_VisuConstants.nProtocolVersion;
+	nProtocolVersion : UINT := VISU_GlobalConst.VISU_un_PROTOCOL_VERSION;
 	(* Increment after any change to the manifest or to a component's stConfig. *)
 	nConfigVersion : UDINT := 1;
 	nCount : UINT; // entries [0..nCount-1] are evaluated
-	aEntries : ARRAY[0..GVL_VisuParam.nMaxManifestEntries - 1] OF ST_VisuManifestEntry;
+	aEntries : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MANIFEST_ENTRIES - 1] OF ST_VisuManifestEntry;
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

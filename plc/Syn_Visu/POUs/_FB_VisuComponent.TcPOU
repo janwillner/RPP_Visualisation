@@ -1,0 +1,157 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="_FB_VisuComponent" Id="{a70db01f-c2d1-494c-8092-3c5dc808ab89}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Base of every visualised component (_FB_VisuConveyor, _FB_VisuDelta, ...). Handles the manifest entry,<br>
+the config version and the DC timestamps. Not used directly.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
+****************************************************************************************************)
+FUNCTION_BLOCK ABSTRACT _FB_VisuComponent
+VAR
+	RefManifest							: REFERENCE TO ST_VisuManifest;	// set by m_Register
+	udn_ComponentId						: UDINT;	// [-] manifest id, 0 = not registered
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_ComponentType" Id="{40e7fa5c-7bb7-42db-b8bf-1580e630ae2f}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Manifest type of the component. Overridden by every derived FB.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_ComponentType : E_VisuComponentType]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ComponentType := E_VisuComponentType.NONE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_DcTime" Id="{a4316896-c21a-4592-b930-145869b82340}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Distributed-clock time of the calling task's current cycle in ns since 2000-01-01; 0 if unknown.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_DcTime : ULINT
+VAR
+	dn_TempTaskIndex					: DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[dn_TempTaskIndex := Tc2_System.GETCURTASKINDEXEX();
+IF dn_TempTaskIndex > 0 THEN
+	m_DcTime := LINT_TO_ULINT(TwinCAT_SystemInfoVarList._TaskInfo[dn_TempTaskIndex].DcTaskTime);
+ELSE
+	m_DcTime := 0;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Id" Id="{692a0329-f838-436a-bcd1-5379ec8af186}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Manifest id given to m_Register; 0 while not registered.<br>
+****************************************************************************************************)
+METHOD m_Id : UDINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Id := udn_ComponentId;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_NotifyConfigChanged" Id="{354c9cac-21e2-4858-989c-b1578155f413}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Increments the manifest's nConfigVersion so the gateway re-reads the config. No effect before m_Register.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_NotifyConfigChanged : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_NotifyConfigChanged := __ISVALIDREF(RefManifest);
+IF m_NotifyConfigChanged THEN
+	RefManifest.nConfigVersion := RefManifest.nConfigVersion + 1;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Register" Id="{ccfae2cd-4aa7-41dd-b228-7906e447b2e6}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Adds this component to the manifest; increments nConfigVersion when the entry is new.<br>
+Idempotent: call it every cycle, which also keeps the manifest reference valid after an online change.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for vi_udn_Id = 0, an id already used by a different entry, or a full manifest.<br>
+****************************************************************************************************)
+METHOD m_Register : BOOL
+VAR_IN_OUT
+	vio_Manifest						: ST_VisuManifest;	// GVL_Visu.stManifest of the application
+END_VAR
+VAR_INPUT
+	vi_udn_Id							: UDINT;	// [-] unique, > 0
+	vi_str_Name							: STRING(80);	// display name
+	vi_str_Path							: STRING(255);	// symbol path of this instance's vo_Visu, e.g. 'MAIN.fb_Infeed.vo_Visu'
+END_VAR
+VAR
+	e_TempType							: E_VisuComponentType;
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Register := FALSE;
+RefManifest REF= vio_Manifest;
+(* Always report the contract version of the library actually running, also after an online change. *)
+vio_Manifest.nProtocolVersion := VISU_GlobalConst.VISU_un_PROTOCOL_VERSION;
+e_TempType := m_ComponentType();
+IF vi_udn_Id = 0 OR e_TempType = E_VisuComponentType.NONE THEN
+	RETURN;
+END_IF
+
+(* An existing entry with the same id must match exactly. *)
+un_TempIndex := 0;
+WHILE un_TempIndex < vio_Manifest.nCount AND un_TempIndex < VISU_GlobalConst_Param.VISU_un_MAX_MANIFEST_ENTRIES DO
+	IF vio_Manifest.aEntries[un_TempIndex].nId = vi_udn_Id THEN
+		m_Register := vio_Manifest.aEntries[un_TempIndex].eType = e_TempType
+					AND vio_Manifest.aEntries[un_TempIndex].sName = vi_str_Name
+					AND vio_Manifest.aEntries[un_TempIndex].sPath = vi_str_Path;
+		IF m_Register THEN
+			udn_ComponentId := vi_udn_Id;
+		END_IF
+		RETURN;
+	END_IF
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE
+
+(* New entry. *)
+IF vio_Manifest.nCount >= VISU_GlobalConst_Param.VISU_un_MAX_MANIFEST_ENTRIES THEN
+	RETURN;
+END_IF
+vio_Manifest.aEntries[vio_Manifest.nCount].nId := vi_udn_Id;
+vio_Manifest.aEntries[vio_Manifest.nCount].eType := e_TempType;
+vio_Manifest.aEntries[vio_Manifest.nCount].sName := vi_str_Name;
+vio_Manifest.aEntries[vio_Manifest.nCount].sPath := vi_str_Path;
+vio_Manifest.nCount := vio_Manifest.nCount + 1;
+vio_Manifest.nConfigVersion := vio_Manifest.nConfigVersion + 1;
+udn_ComponentId := vi_udn_Id;
+m_Register := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

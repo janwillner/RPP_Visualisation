@@ -128,37 +128,37 @@
     <Compile Include="GVLs\GVL_Visu.TcGVL">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="GVLs\GVL_VisuConstants.TcGVL">
+    <Compile Include="GVLs\VISU_GlobalConst.TcGVL">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="GVLs\GVL_VisuParam.TcGVL">
+    <Compile Include="GVLs\VISU_GlobalConst_Param.TcGVL">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="PlcTask.TcTTO">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="POUs\FB_VisuCartesian.TcPOU">
+    <Compile Include="POUs\_FB_VisuCartesian.TcPOU">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="POUs\FB_VisuComponent.TcPOU">
+    <Compile Include="POUs\_FB_VisuComponent.TcPOU">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="POUs\FB_VisuConveyor.TcPOU">
+    <Compile Include="POUs\_FB_VisuConveyor.TcPOU">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="POUs\FB_VisuDelta.TcPOU">
+    <Compile Include="POUs\_FB_VisuDelta.TcPOU">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="POUs\FB_VisuXtsGantry.TcPOU">
+    <Compile Include="POUs\_FB_VisuXtsGantry.TcPOU">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="POUs\FB_VisuXtsLoop.TcPOU">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="POUs\F_GetVersionSyn_Visu.TcPOU">
+    <Compile Include="POUs\_FB_VisuXtsLoop.TcPOU">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\P_VisuDemo.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FC_GetVersionSynVisu.TcPOU">
       <SubType>Code</SubType>
     </Compile>
   </ItemGroup>

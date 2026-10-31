@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <GVL Name="VISU_GlobalConst_Param" Id="{89ac434b-5a22-4258-bea0-17e2e37767be}">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Library parameters of Syn_Visu: array sizes of the interface structures.<br>
+****************************************************************************************************)
+{attribute 'qualified_only'}
+VAR_GLOBAL CONSTANT
+	VISU_un_MAX_MANIFEST_ENTRIES		: UINT := 32;	// [-] components in the manifest
+	VISU_un_MAX_PRODUCTS				: UINT := 128;	// [-] products per conveyor
+	VISU_un_MAX_PRODUCT_TYPES			: UINT := 8;	// [-] product types per conveyor
+	VISU_un_MAX_ZONES					: UINT := 8;	// [-] zones per robot
+	VISU_un_MAX_MOVERS					: UINT := 40;	// [-] movers per XTS gantry or loop
+	VISU_un_MAX_FINGERS					: UINT := 8;	// [-] fingers per gripper
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

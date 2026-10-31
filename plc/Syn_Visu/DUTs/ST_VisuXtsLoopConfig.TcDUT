@@ -13,9 +13,9 @@ STRUCT
 	fMoverLength : LREAL; // mm, along the track
 	fMoverWidth : LREAL; // mm
 	nZoneCount : UINT;
-	aZones : ARRAY[0..GVL_VisuParam.nMaxZones - 1] OF ST_VisuZone; // pick and place zones
+	aZones : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone; // pick and place zones
 	nFingerCount : UINT; // fingers of every mover's gripper, 0 = no gripper definition
-	aFingers : ARRAY[0..GVL_VisuParam.nMaxFingers - 1] OF ST_VisuFinger;
+	aFingers : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFinger;
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

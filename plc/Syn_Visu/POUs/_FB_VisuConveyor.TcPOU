@@ -1,0 +1,500 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="_FB_VisuConveyor" Id="{2b4cbb3f-7a0f-4ce2-8dcd-bb92db0191fe}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+One visualised conveyor. Typical cycle:<br>
+  fb_Infeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed',<br>
+      vi_str_Path := 'MAIN.fb_Infeed.vo_Visu');<br>
+  fb_Infeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := 5000, vi_lr_Width := 400);<br>
+  fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40);<br>
+  fb_Infeed.m_SetBeltPosition(lr_AxisPosition);  // or m_SetModuloBeltPosition for a modulo axis<br>
+  IF b_Latched THEN fb_Infeed.m_LatchProduct(vi_udn_Id := udn_NextId, vi_LatchPose := LatchPose, vi_udn_ProductType := 1); END_IF<br>
+m_Configure and m_SetProductType may be called every cycle; the config version only changes when a value does.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+vo_Visu is the contract structure the gateway reads at the path given to m_Register. Do not write it.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_VisuConveyor EXTENDS _FB_VisuComponent
+VAR_OUTPUT
+	vo_Visu								: ST_VisuConveyor;	// contract structure read by the gateway
+END_VAR
+VAR
+	lr_LastModuloPosition				: LREAL;	// [mm] modulo position of the previous cycle
+	b_ModuloInitialised					: BOOL;
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_ApplyConfig" Id="{5ed88417-12f8-43f8-8bd2-fd54143c201b}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Takes over vio_New and increments the config version if it differs from the current config. TRUE if changed.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_ApplyConfig : BOOL
+VAR_IN_OUT
+	vio_New								: ST_VisuConveyorConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ApplyConfig := Tc2_System.MEMCMP(ADR(vio_New), ADR(vo_Visu.stConfig), SIZEOF(vio_New)) <> 0;
+IF m_ApplyConfig THEN
+	vo_Visu.stConfig := vio_New;
+	m_NotifyConfigChanged();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_BeltPosition" Id="{a9474132-4355-42b7-8b8a-f6a0d07f33f7}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Belt position last set, [mm].<br>
+****************************************************************************************************)
+METHOD m_BeltPosition : LREAL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_BeltPosition := vo_Visu.stState.fBeltPosition;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_ComponentType" Id="{7fffd466-f705-4090-93d1-33703f89d45d}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Manifest type: conveyor.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_ComponentType : E_VisuComponentType]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ComponentType := E_VisuComponentType.CONVEYOR;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Configure" Id="{384fa16c-3881-45d3-91b4-b959b18bb0fa}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets pose and size. TRUE if anything changed.<br>
+****************************************************************************************************)
+METHOD m_Configure : BOOL
+VAR_INPUT
+	vi_Pose								: ST_VisuPose;	// MCS, belt start on the belt surface; local +X = conveying direction
+	vi_lr_Length						: LREAL;	// [mm]
+	vi_lr_Width							: LREAL;	// [mm]
+END_VAR
+VAR
+	TempNew								: ST_VisuConveyorConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TempNew := vo_Visu.stConfig;
+TempNew.stPose := vi_Pose;
+TempNew.fLength := vi_lr_Length;
+TempNew.fWidth := vi_lr_Width;
+m_Configure := m_ApplyConfig(TempNew);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_FindProduct" Id="{4aa77263-875a-4173-8f5c-bdad838911a2}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Register index of the product with vi_udn_Id, -1 if not found.<br>
+****************************************************************************************************)
+METHOD m_FindProduct : INT
+VAR_INPUT
+	vi_udn_Id							: UDINT;	// [-] product id
+END_VAR
+VAR
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_FindProduct := -1;
+un_TempIndex := 0;
+WHILE un_TempIndex < vo_Visu.stState.nProductCount DO
+	IF vo_Visu.stState.aProducts[un_TempIndex].nId = vi_udn_Id THEN
+		m_FindProduct := UINT_TO_INT(un_TempIndex);
+		RETURN;
+	END_IF
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_GetProduct" Id="{aca84e95-a5a5-44df-9922-30307a93d5d4}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Reads register entry vi_un_Index and its current MCS pose (latch pose moved by the belt travel since).<br>
+Indices shift when products are removed; use the product id to follow a product.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE if vi_un_Index is out of range.<br>
+****************************************************************************************************)
+METHOD m_GetProduct : BOOL
+VAR_INPUT
+	vi_un_Index							: UINT;	// [-] 0..m_ProductCount() - 1
+END_VAR
+VAR_OUTPUT
+	vo_Product							: ST_VisuProduct;
+	vo_Pose								: ST_VisuPlanarPose;	// MCS, current bottom centre
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_GetProduct := vi_un_Index < vo_Visu.stState.nProductCount;
+IF m_GetProduct THEN
+	vo_Product := vo_Visu.stState.aProducts[vi_un_Index];
+	vo_Pose := m_ProductPose(vo_Product);
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_LatchProduct" Id="{3f858f34-48df-4798-a839-b1c6e0e2dead}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Adds a detected product at the current belt position. Call m_SetBeltPosition first in the cycle,<br>
+or pass the belt position at the latch moment in vi_lr_LatchBeltPosition.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for vi_udn_Id = 0, an id already in the register, or a full register.<br>
+****************************************************************************************************)
+METHOD m_LatchProduct : BOOL
+VAR_INPUT
+	vi_udn_Id							: UDINT;	// [-] unique on this conveyor, > 0
+	vi_LatchPose						: ST_VisuPlanarPose;	// MCS, bottom centre of the product at the latch moment
+	vi_udn_ProductType					: UDINT;	// [-] id given to m_SetProductType
+	vi_lr_LatchBeltPosition				: LREAL := 0;	// [mm] used only if vi_b_UseLatchBeltPosition
+	vi_b_UseLatchBeltPosition			: BOOL := FALSE;	// FALSE: latch at the current belt position
+END_VAR
+VAR
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_LatchProduct := FALSE;
+un_TempIndex := vo_Visu.stState.nProductCount;
+IF vi_udn_Id = 0 OR m_FindProduct(vi_udn_Id) >= 0 OR un_TempIndex >= VISU_GlobalConst_Param.VISU_un_MAX_PRODUCTS THEN
+	RETURN;
+END_IF
+vo_Visu.stState.aProducts[un_TempIndex].nId := vi_udn_Id;
+vo_Visu.stState.aProducts[un_TempIndex].bValid := TRUE;
+vo_Visu.stState.aProducts[un_TempIndex].stLatchPose := vi_LatchPose;
+IF vi_b_UseLatchBeltPosition THEN
+	vo_Visu.stState.aProducts[un_TempIndex].fLatchBeltPosition := vi_lr_LatchBeltPosition;
+ELSE
+	vo_Visu.stState.aProducts[un_TempIndex].fLatchBeltPosition := vo_Visu.stState.fBeltPosition;
+END_IF
+vo_Visu.stState.aProducts[un_TempIndex].eState := E_VisuProductState.DETECTED;
+vo_Visu.stState.aProducts[un_TempIndex].nRobotId := 0;
+vo_Visu.stState.aProducts[un_TempIndex].nMoverId := 0;
+vo_Visu.stState.aProducts[un_TempIndex].nProductType := vi_udn_ProductType;
+vo_Visu.stState.nProductCount := un_TempIndex + 1;
+vo_Visu.stState.nTimestamp := m_DcTime();
+m_LatchProduct := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_ProductCount" Id="{cee0e139-fe59-4b22-b8cb-ec43b92b63f9}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Number of products in the register; valid indices for m_GetProduct are 0..m_ProductCount() - 1.<br>
+****************************************************************************************************)
+METHOD m_ProductCount : UINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ProductCount := vo_Visu.stState.nProductCount;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_ProductPose" Id="{d201c571-8ab8-4791-985c-6517ab523334}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Current MCS pose of a product: latch pose moved along the conveying direction (local +X,<br>
+rotation Rz * Ry of the conveyor pose) by the belt travel since the latch.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_ProductPose : ST_VisuPlanarPose
+VAR_IN_OUT CONSTANT
+	vio_Product							: ST_VisuProduct;
+END_VAR
+VAR
+	lr_TempTravel						: LREAL;	// [mm]
+	lr_TempRz							: LREAL;	// [rad]
+	lr_TempRy							: LREAL;	// [rad]
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[lr_TempTravel := vo_Visu.stState.fBeltPosition - vio_Product.fLatchBeltPosition;
+lr_TempRz := vo_Visu.stConfig.stPose.fRz * VISU_GlobalConst.VISU_lr_DEG_TO_RAD;
+lr_TempRy := vo_Visu.stConfig.stPose.fRy * VISU_GlobalConst.VISU_lr_DEG_TO_RAD;
+m_ProductPose := vio_Product.stLatchPose;
+m_ProductPose.fX := m_ProductPose.fX + lr_TempTravel * COS(lr_TempRz) * COS(lr_TempRy);
+m_ProductPose.fY := m_ProductPose.fY + lr_TempTravel * SIN(lr_TempRz) * COS(lr_TempRy);
+m_ProductPose.fZ := m_ProductPose.fZ - lr_TempTravel * SIN(lr_TempRy);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RemoveProduct" Id="{74bfe229-686e-40e4-b091-b220e209c95d}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Removes a product from the register. FALSE if it is not in the register.<br>
+****************************************************************************************************)
+METHOD m_RemoveProduct : BOOL
+VAR_INPUT
+	vi_udn_Id							: UDINT;	// [-] product id
+END_VAR
+VAR
+	n_TempIndex							: INT;
+	n_TempLast							: INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[n_TempIndex := m_FindProduct(vi_udn_Id);
+m_RemoveProduct := n_TempIndex >= 0;
+IF NOT m_RemoveProduct THEN
+	RETURN;
+END_IF
+n_TempLast := UINT_TO_INT(vo_Visu.stState.nProductCount) - 1;
+WHILE n_TempIndex < n_TempLast DO
+	vo_Visu.stState.aProducts[n_TempIndex] := vo_Visu.stState.aProducts[n_TempIndex + 1];
+	n_TempIndex := n_TempIndex + 1;
+END_WHILE
+vo_Visu.stState.aProducts[n_TempLast].bValid := FALSE;
+vo_Visu.stState.nProductCount := INT_TO_UINT(n_TempLast);
+vo_Visu.stState.nTimestamp := m_DcTime();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RemoveProductsBeyond" Id="{b1d28b7d-067c-4e78-a58d-d7a9cedb8741}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Housekeeping: drops invalid entries and products that have travelled beyond vi_lr_BeltX (along the<br>
+conveyor from its start). Products a robot is working on (ASSIGNED or PICKED) are kept wherever they are.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+Number of removed entries.<br>
+****************************************************************************************************)
+METHOD m_RemoveProductsBeyond : UINT
+VAR_INPUT
+	vi_lr_BeltX							: LREAL;	// [mm] e.g. belt length + some margin so missed products stay visible briefly
+END_VAR
+VAR
+	un_TempRead							: UINT;
+	un_TempWrite						: UINT;
+	b_TempInUse							: BOOL;
+	TempPose							: ST_VisuPlanarPose;
+	lr_TempDx							: LREAL;	// [mm]
+	lr_TempDy							: LREAL;	// [mm]
+	lr_TempDz							: LREAL;	// [mm]
+	lr_TempRz							: LREAL;	// [rad]
+	lr_TempRy							: LREAL;	// [rad]
+	lr_TempX							: LREAL;	// [mm] belt X
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_RemoveProductsBeyond := 0;
+IF vo_Visu.stState.nProductCount = 0 THEN
+	RETURN;
+END_IF
+lr_TempRz := vo_Visu.stConfig.stPose.fRz * VISU_GlobalConst.VISU_lr_DEG_TO_RAD;
+lr_TempRy := vo_Visu.stConfig.stPose.fRy * VISU_GlobalConst.VISU_lr_DEG_TO_RAD;
+
+(* Keep the entries to stay, in order. *)
+un_TempWrite := 0;
+FOR un_TempRead := 0 TO vo_Visu.stState.nProductCount - 1 DO
+	(* Belt X = current position projected onto the conveying direction, measured from the belt start. *)
+	TempPose := m_ProductPose(vo_Visu.stState.aProducts[un_TempRead]);
+	lr_TempDx := TempPose.fX - vo_Visu.stConfig.stPose.fX;
+	lr_TempDy := TempPose.fY - vo_Visu.stConfig.stPose.fY;
+	lr_TempDz := TempPose.fZ - vo_Visu.stConfig.stPose.fZ;
+	lr_TempX := (lr_TempDx * COS(lr_TempRz) + lr_TempDy * SIN(lr_TempRz)) * COS(lr_TempRy)
+				- lr_TempDz * SIN(lr_TempRy);
+	b_TempInUse := vo_Visu.stState.aProducts[un_TempRead].eState = E_VisuProductState.ASSIGNED
+				OR vo_Visu.stState.aProducts[un_TempRead].eState = E_VisuProductState.PICKED;
+	IF vo_Visu.stState.aProducts[un_TempRead].bValid AND (lr_TempX <= vi_lr_BeltX OR b_TempInUse) THEN
+		IF un_TempWrite <> un_TempRead THEN
+			vo_Visu.stState.aProducts[un_TempWrite] := vo_Visu.stState.aProducts[un_TempRead];
+		END_IF
+		un_TempWrite := un_TempWrite + 1;
+	END_IF
+END_FOR
+
+(* Invalidate the freed tail. *)
+m_RemoveProductsBeyond := vo_Visu.stState.nProductCount - un_TempWrite;
+IF un_TempWrite < vo_Visu.stState.nProductCount THEN
+	FOR un_TempRead := un_TempWrite TO vo_Visu.stState.nProductCount - 1 DO
+		vo_Visu.stState.aProducts[un_TempRead].bValid := FALSE;
+	END_FOR
+	vo_Visu.stState.nProductCount := un_TempWrite;
+	vo_Visu.stState.nTimestamp := m_DcTime();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetBeltPosition" Id="{5b54c4bc-508c-49cf-b448-746ae37d7948}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets the belt position: how far the belt surface has travelled, continuous (no modulo).<br>
+Call once per cycle; it also stamps the state with the cycle's DC time.<br>
+****************************************************************************************************)
+METHOD m_SetBeltPosition : BOOL
+VAR_INPUT
+	vi_lr_Position						: LREAL;	// [mm]
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_Visu.stState.fBeltPosition := vi_lr_Position;
+vo_Visu.stState.nTimestamp := m_DcTime();
+m_SetBeltPosition := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetModuloBeltPosition" Id="{9208e68c-edba-4727-b6a1-06546932c639}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Like m_SetBeltPosition, for a modulo axis: unwraps the position so the belt position stays continuous.<br>
+Call once per cycle.<br>
+*****************************************************************************************************<br>
+LIMITS:<br>
+The axis must move less than half a modulo period per cycle.<br>
+****************************************************************************************************)
+METHOD m_SetModuloBeltPosition : BOOL
+VAR_INPUT
+	vi_lr_ModuloPosition				: LREAL;	// [mm] in [0, vi_lr_ModuloPeriod)
+	vi_lr_ModuloPeriod					: LREAL;	// [mm] <= 0 passes vi_lr_ModuloPosition through unchanged
+	vi_b_Reset							: BOOL;	// TRUE: restart the belt position at vi_lr_ModuloPosition
+END_VAR
+VAR
+	lr_TempPosition						: LREAL;	// [mm]
+	lr_TempDelta						: LREAL;	// [mm]
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF vi_b_Reset OR NOT b_ModuloInitialised OR vi_lr_ModuloPeriod <= 0 THEN
+	lr_TempPosition := vi_lr_ModuloPosition;
+	b_ModuloInitialised := TRUE;
+ELSE
+	lr_TempDelta := vi_lr_ModuloPosition - lr_LastModuloPosition;
+	IF lr_TempDelta > vi_lr_ModuloPeriod / 2 THEN
+		lr_TempDelta := lr_TempDelta - vi_lr_ModuloPeriod;
+	ELSIF lr_TempDelta < -vi_lr_ModuloPeriod / 2 THEN
+		lr_TempDelta := lr_TempDelta + vi_lr_ModuloPeriod;
+	END_IF
+	lr_TempPosition := vo_Visu.stState.fBeltPosition + lr_TempDelta;
+END_IF
+lr_LastModuloPosition := vi_lr_ModuloPosition;
+m_SetModuloBeltPosition := m_SetBeltPosition(lr_TempPosition);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetProductState" Id="{d750e750-04ba-4690-b114-957e9051074a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Changes a product's state and assigned robot. FALSE if the product is not in the register.<br>
+****************************************************************************************************)
+METHOD m_SetProductState : BOOL
+VAR_INPUT
+	vi_udn_Id							: UDINT;	// [-] product id
+	vi_e_State							: E_VisuProductState;
+	vi_udn_RobotId						: UDINT;	// [-] manifest id of the robot, 0 = none
+	vi_udn_MoverId						: UDINT := 0;	// [-] mover of an XTS gantry or loop carrying the product, 0 = none
+	vi_udn_FingerId						: UDINT := 0;	// [-] gripper finger (1-based) the product hangs from while picked, 0 = the flange
+END_VAR
+VAR
+	n_TempIndex							: INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[n_TempIndex := m_FindProduct(vi_udn_Id);
+m_SetProductState := n_TempIndex >= 0;
+IF m_SetProductState THEN
+	vo_Visu.stState.aProducts[n_TempIndex].eState := vi_e_State;
+	vo_Visu.stState.aProducts[n_TempIndex].nRobotId := vi_udn_RobotId;
+	vo_Visu.stState.aProducts[n_TempIndex].nMoverId := vi_udn_MoverId;
+	vo_Visu.stState.aProducts[n_TempIndex].nFingerId := vi_udn_FingerId;
+	vo_Visu.stState.nTimestamp := m_DcTime();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetProductType" Id="{384e1a50-75ce-481a-941e-2d2e78cfb2f1}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Adds a product type, or updates the one with the same id. FALSE for vi_udn_Id = 0 or a full list.<br>
+****************************************************************************************************)
+METHOD m_SetProductType : BOOL
+VAR_INPUT
+	vi_udn_Id							: UDINT;	// [-] referenced by m_LatchProduct's vi_udn_ProductType
+	vi_lr_Length						: LREAL;	// [mm] along the conveying direction
+	vi_lr_Width							: LREAL;	// [mm]
+	vi_lr_Height						: LREAL;	// [mm]
+END_VAR
+VAR
+	TempNew								: ST_VisuConveyorConfig;
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetProductType := FALSE;
+IF vi_udn_Id = 0 THEN
+	RETURN;
+END_IF
+TempNew := vo_Visu.stConfig;
+un_TempIndex := 0;
+(* ST evaluates both operands of AND: test the index before reading the array. *)
+WHILE un_TempIndex < TempNew.nProductTypeCount DO
+	IF TempNew.aProductTypes[un_TempIndex].nId = vi_udn_Id THEN
+		EXIT;
+	END_IF
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE
+IF un_TempIndex >= VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES THEN
+	RETURN;
+END_IF
+IF un_TempIndex = TempNew.nProductTypeCount THEN
+	TempNew.nProductTypeCount := TempNew.nProductTypeCount + 1;
+END_IF
+TempNew.aProductTypes[un_TempIndex].nId := vi_udn_Id;
+TempNew.aProductTypes[un_TempIndex].fLength := vi_lr_Length;
+TempNew.aProductTypes[un_TempIndex].fWidth := vi_lr_Width;
+TempNew.aProductTypes[un_TempIndex].fHeight := vi_lr_Height;
+m_ApplyConfig(TempNew);
+m_SetProductType := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

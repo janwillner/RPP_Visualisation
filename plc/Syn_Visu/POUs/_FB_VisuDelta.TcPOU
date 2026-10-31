@@ -1,0 +1,389 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="_FB_VisuDelta" Id="{2cb800cd-711b-420f-a529-d7bdcc421ef9}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+One visualised Delta robot. Typical cycle:<br>
+  fb_Delta.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 10, vi_str_Name := 'Delta 1',<br>
+      vi_str_Path := 'MAIN.fb_Delta.vo_Visu');<br>
+  fb_Delta.m_Configure(vi_Pose := BasePose, vi_lr_BaseRadius := 200, vi_lr_EffectorRadius := 50,<br>
+      vi_lr_UpperArmLength := 400, vi_lr_LowerArmLength := 1000);<br>
+  fb_Delta.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 50);<br>
+  fb_Delta.m_SetWorkingArea(vi_lr_Radius := 750, vi_lr_ZMin := -1300, vi_lr_ZMax := -700, vi_lr_ConeHeight := 200,<br>
+      vi_lr_ConeBottomRadius := 450);<br>
+  fb_Delta.m_SetLimitArea(vi_lr_XMin := -500, vi_lr_XMax := 500, vi_lr_YMin := -750, vi_lr_YMax := 750,<br>
+      vi_lr_ZMin := -1500, vi_lr_ZMax := -700);<br>
+  fb_Delta.m_SetZone(vi_udn_ConveyorId := 1, vi_e_Kind := E_VisuZoneKind.PICK, vi_lr_Start := 1100, vi_lr_End := 1900,<br>
+      vi_lr_AllocationOffset := 300);<br>
+  fb_Delta.m_SetTcp(vi_ActualTcp := ActualTcp, vi_SetpointTcp := SetpointTcp);<br>
+  fb_Delta.m_SetFingerState(vi_un_Finger := 1, vi_Pose := CupPose, vi_b_Active := b_Vacuum);<br>
+Only the TCP (the gripper flange) is reported; the visualisation derives the arms from it. Tool rotations<br>
+(e.g. a 4th axis) show only through the finger poses, absolute in the MCS. The config methods may be called<br>
+every cycle; the config version only changes when a value does.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+vo_Visu is the contract structure the gateway reads at the path given to m_Register. Do not write it.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_VisuDelta EXTENDS _FB_VisuComponent
+VAR_OUTPUT
+	vo_Visu								: ST_VisuDelta;	// contract structure read by the gateway
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_ApplyConfig" Id="{6730ad9a-4c2b-4aa9-bcb3-90fb8552c0db}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Takes over vio_New and increments the config version if it differs from the current config. TRUE if changed.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_ApplyConfig : BOOL
+VAR_IN_OUT
+	vio_New								: ST_VisuDeltaConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ApplyConfig := Tc2_System.MEMCMP(ADR(vio_New), ADR(vo_Visu.stConfig), SIZEOF(vio_New)) <> 0;
+IF m_ApplyConfig THEN
+	vo_Visu.stConfig := vio_New;
+	m_NotifyConfigChanged();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_BasePose" Id="{abe82513-8091-43ea-abd0-ff41998cb632}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Base pose last set by m_Configure, MCS.<br>
+****************************************************************************************************)
+METHOD m_BasePose : ST_VisuPose]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_BasePose := vo_Visu.stConfig.stPose;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_ClearFingers" Id="{d4431669-209c-491f-aaa6-4c1c4866104b}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Removes the gripper definition. TRUE if there was one.<br>
+****************************************************************************************************)
+METHOD m_ClearFingers : BOOL
+VAR
+	TempNew								: ST_VisuDeltaConfig;
+	TempEmpty							: ST_VisuFinger;
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TempNew := vo_Visu.stConfig;
+FOR un_TempIndex := 0 TO VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1 DO
+	TempNew.aFingers[un_TempIndex] := TempEmpty;
+END_FOR
+TempNew.nFingerCount := 0;
+m_ClearFingers := m_ApplyConfig(TempNew);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_ClearLimitArea" Id="{6111c65a-69b8-4554-b0e6-27f21bc9a128}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Removes the limit area. TRUE if changed.<br>
+****************************************************************************************************)
+METHOD m_ClearLimitArea : BOOL
+VAR
+	TempNew								: ST_VisuDeltaConfig;
+	TempEmpty							: ST_VisuLimitArea;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TempNew := vo_Visu.stConfig;
+TempNew.stLimitArea := TempEmpty;
+m_ClearLimitArea := m_ApplyConfig(TempNew);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_ClearZones" Id="{6ff1225f-1d85-4f13-8940-d18523272309}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Removes all pick and place zones. TRUE if there were any.<br>
+****************************************************************************************************)
+METHOD m_ClearZones : BOOL
+VAR
+	TempNew								: ST_VisuDeltaConfig;
+	TempEmpty							: ST_VisuZone;
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TempNew := vo_Visu.stConfig;
+FOR un_TempIndex := 0 TO VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1 DO
+	TempNew.aZones[un_TempIndex] := TempEmpty;
+END_FOR
+TempNew.nZoneCount := 0;
+m_ClearZones := m_ApplyConfig(TempNew);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_ComponentType" Id="{f964395e-f23a-461d-9fef-fcb546485570}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Manifest type: Delta robot.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_ComponentType : E_VisuComponentType]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ComponentType := E_VisuComponentType.DELTA;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Configure" Id="{a7d33ff7-a72b-41ce-8527-1ba3c323ca37}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets base pose and geometry. Arm 1 lies along the base's local +X; arms 2 and 3 follow<br>
+counter-clockwise (seen from above) at 120 deg each. TRUE if anything changed.<br>
+****************************************************************************************************)
+METHOD m_Configure : BOOL
+VAR_INPUT
+	vi_Pose								: ST_VisuPose;	// MCS, base centre
+	vi_lr_BaseRadius					: LREAL;	// [mm] base centre to shoulder joint
+	vi_lr_EffectorRadius				: LREAL;	// [mm] effector centre to lower-arm joint
+	vi_lr_UpperArmLength				: LREAL;	// [mm]
+	vi_lr_LowerArmLength				: LREAL;	// [mm]
+END_VAR
+VAR
+	TempNew								: ST_VisuDeltaConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TempNew := vo_Visu.stConfig;
+TempNew.stPose := vi_Pose;
+TempNew.fBaseRadius := vi_lr_BaseRadius;
+TempNew.fEffectorRadius := vi_lr_EffectorRadius;
+TempNew.fUpperArmLength := vi_lr_UpperArmLength;
+TempNew.fLowerArmLength := vi_lr_LowerArmLength;
+m_Configure := m_ApplyConfig(TempNew);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetFinger" Id="{546c7145-9601-4a5f-938b-af079ca1c84a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Defines gripper finger vi_un_Finger (1-based): a cylinder hanging from the finger's pose along its local -Z.<br>
+The finger count grows to vi_un_Finger.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE outside 1..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS.<br>
+****************************************************************************************************)
+METHOD m_SetFinger : BOOL
+VAR_INPUT
+	vi_un_Finger						: UINT;	// [-] 1-based, as a product's nFingerId
+	vi_lr_Diameter						: LREAL;	// [mm]
+	vi_lr_Height						: LREAL;	// [mm] along the finger's local -Z
+END_VAR
+VAR
+	TempNew								: ST_VisuDeltaConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetFinger := FALSE;
+IF vi_un_Finger = 0 OR vi_un_Finger > VISU_GlobalConst_Param.VISU_un_MAX_FINGERS THEN
+	RETURN;
+END_IF
+TempNew := vo_Visu.stConfig;
+TempNew.aFingers[vi_un_Finger - 1].fDiameter := vi_lr_Diameter;
+TempNew.aFingers[vi_un_Finger - 1].fHeight := vi_lr_Height;
+TempNew.nFingerCount := MAX(TempNew.nFingerCount, vi_un_Finger);
+m_ApplyConfig(TempNew);
+m_SetFinger := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetFingerState" Id="{6c03bdbd-598e-4a25-b3ce-4bdea279ef42}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Reports finger vi_un_Finger (1-based): the pose of its frame (centre of its top face), absolute in the MCS,<br>
+and whether it grips. Call once per cycle per configured finger.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE outside 1..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS.<br>
+****************************************************************************************************)
+METHOD m_SetFingerState : BOOL
+VAR_INPUT
+	vi_un_Finger						: UINT;	// [-] 1-based
+	vi_Pose								: ST_VisuPose;	// MCS
+	vi_b_Active							: BOOL;	// TRUE while the finger grips
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetFingerState := vi_un_Finger > 0 AND vi_un_Finger <= VISU_GlobalConst_Param.VISU_un_MAX_FINGERS;
+IF m_SetFingerState THEN
+	vo_Visu.stState.aFingerStates[vi_un_Finger - 1].stPose := vi_Pose;
+	vo_Visu.stState.aFingerStates[vi_un_Finger - 1].bActive := vi_b_Active;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetLimitArea" Id="{641a0f2e-a1bd-4fc6-b7d3-a4a5013464ca}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets and activates the limit area: an axis-aligned box in the robot frame. TRUE if changed.<br>
+****************************************************************************************************)
+METHOD m_SetLimitArea : BOOL
+VAR_INPUT
+	vi_lr_XMin							: LREAL;	// [mm]
+	vi_lr_XMax							: LREAL;	// [mm]
+	vi_lr_YMin							: LREAL;	// [mm]
+	vi_lr_YMax							: LREAL;	// [mm]
+	vi_lr_ZMin							: LREAL;	// [mm] relative to the base (below the base: negative)
+	vi_lr_ZMax							: LREAL;	// [mm] relative to the base
+END_VAR
+VAR
+	TempNew								: ST_VisuDeltaConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TempNew := vo_Visu.stConfig;
+TempNew.stLimitArea.fXMin := vi_lr_XMin;
+TempNew.stLimitArea.fXMax := vi_lr_XMax;
+TempNew.stLimitArea.fYMin := vi_lr_YMin;
+TempNew.stLimitArea.fYMax := vi_lr_YMax;
+TempNew.stLimitArea.fZMin := vi_lr_ZMin;
+TempNew.stLimitArea.fZMax := vi_lr_ZMax;
+TempNew.stLimitArea.bActive := TRUE;
+m_SetLimitArea := m_ApplyConfig(TempNew);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetTcp" Id="{9bcdd9c9-b2e8-4d5b-b773-17645ba273ae}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Reports the robot's TCP. Call once per cycle; it also stamps the state with the cycle's DC time.<br>
+****************************************************************************************************)
+METHOD m_SetTcp : BOOL
+VAR_INPUT
+	vi_ActualTcp						: ST_VisuPosition;	// MCS, effector centre (the gripper flange)
+	vi_SetpointTcp						: ST_VisuPosition;	// MCS
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_Visu.stState.stActualTcp := vi_ActualTcp;
+vo_Visu.stState.stSetpointTcp := vi_SetpointTcp;
+vo_Visu.stState.nTimestamp := m_DcTime();
+m_SetTcp := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetWorkingArea" Id="{bb5cfbaf-3153-41b4-a318-c3314c8b16f5}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets the working area: a vertical cylinder in the robot frame with an optional cone below. TRUE if changed.<br>
+****************************************************************************************************)
+METHOD m_SetWorkingArea : BOOL
+VAR_INPUT
+	vi_lr_Radius						: LREAL;	// [mm]
+	vi_lr_ZMin							: LREAL;	// [mm] relative to the base (below the base: negative)
+	vi_lr_ZMax							: LREAL;	// [mm] relative to the base
+	vi_lr_ConeHeight					: LREAL;	// [mm] below vi_lr_ZMin; 0 = no cone
+	vi_lr_ConeBottomRadius				: LREAL;	// [mm]
+END_VAR
+VAR
+	TempNew								: ST_VisuDeltaConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TempNew := vo_Visu.stConfig;
+TempNew.stWorkingArea.fRadius := vi_lr_Radius;
+TempNew.stWorkingArea.fZMin := vi_lr_ZMin;
+TempNew.stWorkingArea.fZMax := vi_lr_ZMax;
+TempNew.stWorkingArea.fConeHeight := vi_lr_ConeHeight;
+TempNew.stWorkingArea.fConeBottomRadius := vi_lr_ConeBottomRadius;
+m_SetWorkingArea := m_ApplyConfig(TempNew);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetZone" Id="{21fefdd8-a630-49c2-81dd-caaaf10ffbac}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Adds a pick or place zone, or updates the one for the same conveyor and kind.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for vi_udn_ConveyorId = 0 or a full list.<br>
+****************************************************************************************************)
+METHOD m_SetZone : BOOL
+VAR_INPUT
+	vi_udn_ConveyorId					: UDINT;	// [-] manifest id of the conveyor
+	vi_e_Kind							: E_VisuZoneKind;
+	vi_lr_Start							: LREAL;	// [mm] along the conveyor from its start (belt coordinates, not MCS)
+	vi_lr_End							: LREAL;	// [mm] along the conveyor from its start
+	vi_lr_AllocationOffset				: LREAL := 0;	// [mm] before vi_lr_End up to which products may be allocated; 0 = no limit
+END_VAR
+VAR
+	TempNew								: ST_VisuDeltaConfig;
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetZone := FALSE;
+IF vi_udn_ConveyorId = 0 THEN
+	RETURN;
+END_IF
+TempNew := vo_Visu.stConfig;
+un_TempIndex := 0;
+(* ST evaluates both operands of AND: test the index before reading the array. *)
+WHILE un_TempIndex < TempNew.nZoneCount DO
+	IF TempNew.aZones[un_TempIndex].nConveyorId = vi_udn_ConveyorId AND TempNew.aZones[un_TempIndex].eKind = vi_e_Kind THEN
+		EXIT;
+	END_IF
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE
+IF un_TempIndex >= VISU_GlobalConst_Param.VISU_un_MAX_ZONES THEN
+	RETURN;
+END_IF
+IF un_TempIndex = TempNew.nZoneCount THEN
+	TempNew.nZoneCount := TempNew.nZoneCount + 1;
+END_IF
+TempNew.aZones[un_TempIndex].nConveyorId := vi_udn_ConveyorId;
+TempNew.aZones[un_TempIndex].eKind := vi_e_Kind;
+TempNew.aZones[un_TempIndex].fStart := vi_lr_Start;
+TempNew.aZones[un_TempIndex].fEnd := vi_lr_End;
+TempNew.aZones[un_TempIndex].fAllocationOffset := vi_lr_AllocationOffset;
+m_ApplyConfig(TempNew);
+m_SetZone := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

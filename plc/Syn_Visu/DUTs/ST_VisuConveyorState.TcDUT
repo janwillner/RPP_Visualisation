@@ -6,7 +6,7 @@ STRUCT
 	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (set by FB_VisuConveyor)
 	fBeltPosition : LREAL; // continuous belt surface position, mm, no modulo (see FB_VisuConveyor.SetModuloBeltPosition)
 	nProductCount : UINT; // entries [0..nProductCount-1] are evaluated
-	aProducts : ARRAY[0..GVL_VisuParam.nMaxProducts - 1] OF ST_VisuProduct;
+	aProducts : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_PRODUCTS - 1] OF ST_VisuProduct;
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

@@ -7,7 +7,7 @@ STRUCT
 	fLength : LREAL; // mm
 	fWidth : LREAL; // mm
 	nProductTypeCount : UINT;
-	aProductTypes : ARRAY[0..GVL_VisuParam.nMaxProductTypes - 1] OF ST_VisuProductType;
+	aProductTypes : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES - 1] OF ST_VisuProductType;
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>
