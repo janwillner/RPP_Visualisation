@@ -6,7 +6,8 @@ import {
   type GatewayStatus,
   type StateMessage,
 } from "@rpp/protocol";
-import { ProductHistory, type ProductStep } from "./product-history";
+import { METRICS_WINDOW_MS } from "./metrics";
+import { ProductHistory, type ProductEvent, type ProductStep } from "./product-history";
 import type { SceneSource } from "./scene/scene-model";
 
 /** Render this far behind the newest snapshot so there is always a later sample to interpolate to. */
@@ -48,6 +49,8 @@ export interface SceneFeed {
   latestState(sourceId: string): StateMessage | undefined;
   /** What has happened to a product so far, and the current moment on the same clock. */
   productHistory(sourceId: string, conveyorId: number, productId: number): { steps: ProductStep[]; now: number };
+  /** Product events of the last `windowMs`, the current moment and when the data starts, for the metrics. */
+  productEvents(windowMs: number): { events: ProductEvent[]; now: number; since: number };
 }
 
 /** Receives every valid message from the gateway with its JSON and arrival time (performance.now()). */
@@ -109,7 +112,10 @@ export class SourceBuffer {
 export class GatewayStore implements SceneFeed {
   private readonly buffers = new Map<string, SourceBuffer>();
   private readonly messageListeners = new Set<MessageListener>();
-  private readonly products = new ProductHistory();
+  // Product events are kept a little longer than the metrics look back.
+  private readonly products = new ProductHistory(undefined, 2 * METRICS_WINDOW_MS);
+  /** Arrival of the first state: the metrics cover no more than the time since. */
+  private firstStateAt: number | undefined;
   private socket: WebSocket | undefined;
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   private retryMs = 500;
@@ -161,6 +167,11 @@ export class GatewayStore implements SceneFeed {
 
   productHistory(sourceId: string, conveyorId: number, productId: number) {
     return { steps: this.products.of(sourceId, conveyorId, productId), now: performance.now() };
+  }
+
+  productEvents(windowMs: number) {
+    const now = performance.now();
+    return { events: this.products.events(now - windowMs, now), now, since: this.firstStateAt ?? now };
   }
 
   /** The snapshot buffer of a source; empty for an unknown one. */
@@ -253,6 +264,7 @@ export class GatewayStore implements SceneFeed {
         if (message.configVersion !== source?.config?.configVersion) break;
         this.buffer(message.sourceId).push(message);
         this.products.add(arrival, message, source);
+        this.firstStateAt ??= arrival;
         break;
     }
   }

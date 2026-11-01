@@ -967,3 +967,20 @@ button.link {
 .product-history li.missed {
   color: var(--bad);
 }
+
+/* The machine's figures in the inspector. */
+table.metrics {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table.metrics td {
+  padding: 2px 0;
+  vertical-align: top;
+}
+
+table.metrics td + td {
+  padding-left: 8px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

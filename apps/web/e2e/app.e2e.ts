@@ -236,3 +236,12 @@ test("shows what happened to a selected product in the inspector", async ({ page
   await expect(history.last()).toContainText("Entered the register");
   await expect(history.last()).toContainText(/\d+\.\d s ago/);
 });
+
+test("shows the machine's metrics in the inspector while nothing is selected", async ({ page }) => {
+  await openApp(page);
+  await page.getByRole("button", { name: "Show inspector" }).click();
+  const inspector = page.locator("aside.panel.right");
+  await expect(inspector.getByRole("heading", { name: /^Metrics, last \d+ s$/ })).toBeVisible({ timeout: 20_000 });
+  await expect(inspector.locator("table.metrics")).toContainText("in/min");
+  await expect(inspector.locator("table.metrics")).toContainText("picks/min", { timeout: 20_000 });
+});

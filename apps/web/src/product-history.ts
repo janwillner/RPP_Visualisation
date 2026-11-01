@@ -12,6 +12,19 @@ export interface ProductStep {
   text: string;
 }
 
+/**
+ * A countable moment of a product, for the metrics: it entered the register, was picked, placed or rejected, or was
+ * missed. `robotId` is the robot that picked or placed it, else 0.
+ */
+export interface ProductEvent {
+  at: number;
+  sourceId: string;
+  conveyorId: number;
+  productId: number;
+  kind: "entered" | "picked" | "placed" | "rejected" | "missed";
+  robotId: number;
+}
+
 /** Products followed live by default; the oldest are forgotten beyond this. */
 const DEFAULT_MAX_PRODUCTS = 5000;
 
@@ -19,6 +32,8 @@ interface Followed {
   steps: ProductStep[];
   /** State, robot, mover and finger of the previous state: a change in any of them is a step. */
   last: string;
+  /** Register state of the previous state: a change into picked, placed or rejected is an event. */
+  state: Product["state"];
   missed: boolean;
   gone: boolean;
 }
@@ -31,12 +46,29 @@ export class ProductHistory {
   private readonly products = new Map<string, Followed>();
   /** Per conveyor the products in its previous register, to see which have left it. */
   private readonly registers = new Map<string, Set<string>>();
+  /** Product events in time order; `head` is the first one still kept. */
+  private log: ProductEvent[] = [];
+  private head = 0;
 
-  constructor(private readonly maxProducts = DEFAULT_MAX_PRODUCTS) {}
+  /** `retainMs`: how long product events are kept for `events`. */
+  constructor(
+    private readonly maxProducts = DEFAULT_MAX_PRODUCTS,
+    private readonly retainMs = Infinity,
+  ) {}
 
   /** `source`: the message's source with this message applied, for the conveyor geometry and robot names. */
   add(at: number, message: GatewayMessage, source: SourceInfo | undefined): void {
     if (message.kind !== "state") return;
+    this.forgetEventsBefore(at - this.retainMs);
+    const log = (conveyorId: number, p: Product, kind: ProductEvent["kind"]) =>
+      this.log.push({
+        at,
+        sourceId: message.sourceId,
+        conveyorId,
+        productId: p.id,
+        kind,
+        robotId: kind === "picked" || kind === "placed" ? p.robotId : 0,
+      });
     const components = source?.config?.components ?? [];
     const robot = (id: number) => components.find((c) => c.id === id)?.name ?? `robot #${id}`;
     for (const c of message.components) {
@@ -50,18 +82,24 @@ export class ProductHistory {
         let followed = this.products.get(key);
         if (!followed || followed.gone) {
           // A product id seen again after it left starts a new history.
-          followed = { steps: [], last: signature, missed: false, gone: false };
+          followed = { steps: [], last: signature, state: p.state, missed: false, gone: false };
           this.products.delete(key);
           this.products.set(key, followed);
           followed.steps.push({ at, kind: p.state, text: `Entered the register (${stateText(p, robot, true)})` });
           this.forgetOldest();
+          log(c.id, p, "entered");
         } else if (followed.last !== signature) {
           followed.last = signature;
           followed.steps.push({ at, kind: p.state, text: stateText(p, robot, false) });
+          if (p.state !== followed.state && (p.state === "picked" || p.state === "placed" || p.state === "rejected")) {
+            log(c.id, p, p.state);
+          }
+          followed.state = p.state;
         }
         if (!followed.missed && conveyor?.type === "conveyor" && isMissed(conveyor, c, p)) {
           followed.missed = true;
           followed.steps.push({ at, kind: "missed", text: "Missed: passed the belt end" });
+          log(c.id, p, "missed");
         }
       }
       const registerKey = `${message.sourceId}|${c.id}`;
@@ -79,6 +117,26 @@ export class ProductHistory {
   of(sourceId: string, conveyorId: number, productId: number, until = Infinity): ProductStep[] {
     const steps = this.products.get(productKey(sourceId, conveyorId, productId))?.steps ?? [];
     return steps.filter((s) => s.at <= until);
+  }
+
+  /** Product events from `from` to `until` (both included), in time order. */
+  events(from: number, until: number): ProductEvent[] {
+    const result: ProductEvent[] = [];
+    for (let i = this.head; i < this.log.length; i++) {
+      const e = this.log[i]!;
+      if (e.at > until) break;
+      if (e.at >= from) result.push(e);
+    }
+    return result;
+  }
+
+  private forgetEventsBefore(time: number): void {
+    while (this.head < this.log.length && this.log[this.head]!.at < time) this.head++;
+    // Drop the forgotten part now and then rather than shifting the array on every message.
+    if (this.head > 1000 && this.head * 2 > this.log.length) {
+      this.log = this.log.slice(this.head);
+      this.head = 0;
+    }
   }
 
   private forgetOldest(): void {

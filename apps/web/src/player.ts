@@ -56,6 +56,11 @@ export class Player implements SceneFeed {
     return this.view?.latestState(sourceId);
   }
 
+  productEvents(windowMs: number) {
+    const now = this.clock.time;
+    return { events: this.recording.products.events(now - windowMs, now), now, since: 0 };
+  }
+
   productHistory(sourceId: string, conveyorId: number, productId: number) {
     const now = this.clock.time;
     return { steps: this.recording.products.of(sourceId, conveyorId, productId, now), now };

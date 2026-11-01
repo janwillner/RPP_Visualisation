@@ -23,6 +23,7 @@ import {
   type SourcedFaults,
   type Vec3,
 } from "./scene/scene-model";
+import { METRICS_WINDOW_MS, metrics, type MachineMetrics } from "./metrics";
 import { loadViewSettings, saveViewSettings, type CameraPose, type ViewSettings } from "./view-settings";
 import {
   MISSED_COLOR,
@@ -88,6 +89,66 @@ function usePanelWidth(storageKey: string): [number | undefined, (px: number) =>
     }
   };
   return [width, set];
+}
+
+/** "last 60 s", or the shorter time covered so far. */
+const windowText = (m: MachineMetrics) => `last ${Math.round(m.windowMs / 1000)} s`;
+const rate = (perMin: number) => perMin.toFixed(1);
+
+/** The machine's figures over the last minute, while nothing is selected. */
+function MetricsOverview({ figures, sources }: { figures: MachineMetrics; sources: SourceInfo[] }) {
+  const named = (x: { sourceId: string; name: string }) => {
+    const source = sources.length > 1 ? sources.find((s) => s.sourceId === x.sourceId) : undefined;
+    return source ? `${source.name} · ${x.name}` : x.name;
+  };
+  if (figures.robots.length === 0 && figures.conveyors.length === 0) return null;
+  return (
+    <>
+      <h3>Metrics, {windowText(figures)}</h3>
+      <p>
+        Picks <strong>{rate(figures.picksPerMin)}</strong>/min · Missed <strong>{figures.missed}</strong>
+        {figures.missedShare !== undefined && ` (${(figures.missedShare * 100).toFixed(1)} %)`}
+      </p>
+      <table className="metrics">
+        <tbody>
+          {figures.robots.map((r) => (
+            <tr key={`r${r.sourceId}|${r.robotId}`}>
+              <td>{named(r)}</td>
+              <td>{rate(r.picksPerMin)} picks/min</td>
+            </tr>
+          ))}
+          {figures.conveyors.map((c) => (
+            <tr key={`c${c.sourceId}|${c.conveyorId}`}>
+              <td>{named(c)}</td>
+              <td>
+                {rate(c.inPerMin)} in/min
+                {c.missed > 0 && <span className="bad"> · {c.missed} missed</span>}
+                {c.rejected > 0 && <span className="muted"> · {c.rejected} rejected</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
+/** A selected robot's or conveyor's own figures over the last minute. */
+function ComponentMetrics({ figures, sourceId, id }: { figures: MachineMetrics; sourceId: string; id: number }) {
+  const robot = figures.robots.find((r) => r.sourceId === sourceId && r.robotId === id);
+  const conveyor = figures.conveyors.find((c) => c.sourceId === sourceId && c.conveyorId === id);
+  if (!robot && !conveyor) return null;
+  return (
+    <p>
+      <span className="muted">{windowText(figures)}:</span>{" "}
+      {robot && <>{rate(robot.picksPerMin)} picks/min</>}
+      {conveyor && (
+        <>
+          {rate(conveyor.inPerMin)} products in/min · {conveyor.missed} missed · {conveyor.rejected} rejected
+        </>
+      )}
+    </p>
+  );
 }
 
 /** How long ago, e.g. "3.2 s ago" or "2 min 05 s ago". */
@@ -674,11 +735,14 @@ function Inspector(props: {
 }) {
   const { feed, sources, selection, modelRef, faults } = props;
   useTick(200);
+  const activity = feed.productEvents(METRICS_WINDOW_MS);
+  const figures = metrics(activity.events, activity.now, activity.since, sources);
   if (!selection) {
     return (
       <>
         <h2>Inspector</h2>
         <p className="muted">Select a component or product in the tree or the 3D view.</p>
+        <MetricsOverview figures={figures} sources={sources} />
       </>
     );
   }
@@ -742,6 +806,7 @@ function Inspector(props: {
           </p>
         ))}
       {delta && !delta.reachable && <p className="warn">Kinematics: the arms cannot reach the reported TCP.</p>}
+      <ComponentMetrics figures={figures} sourceId={selection.sourceId} id={selection.id} />
       {delta && delta.angles.length > 0 && (
         <p>
           Arm angles computed from TCP: {delta.angles.map((a) => a.toFixed(2)).join(" / ")}°
