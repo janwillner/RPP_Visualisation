@@ -32,18 +32,19 @@ const sources: SourceInfo[] = [
       protocolVersion: PROTOCOL_VERSION,
       configVersion: 1,
       errors: [],
-      components: [conveyor(1, "Infeed"), robot(10, "Delta 1"), robot(11, "Delta 2")],
+      components: [conveyor(1, "Infeed"), robot(10, "Delta 1"), robot(11, "Delta 2"), robot(60, "Vision 1")],
     },
   },
 ];
 
-const event = (at: number, kind: ProductEvent["kind"], robotId = 0, productId = at): ProductEvent => ({
+const event = (at: number, kind: ProductEvent["kind"], robotId = 0, productId = at, detectorId = 0): ProductEvent => ({
   at,
   sourceId: A,
   conveyorId: 1,
   productId,
   kind,
   robotId,
+  detectorId,
 });
 
 describe("metrics", () => {
@@ -75,6 +76,17 @@ describe("metrics", () => {
     expect(m.missedShare).toBeCloseTo(1 / 31);
   });
 
+  it("counts the products each detector latched per minute", () => {
+    const events = [
+      ...Array.from({ length: 20 }, (_, i) => event(41_000 + i * 1000, "entered", 0, i, 60)),
+      ...Array.from({ length: 5 }, (_, i) => event(41_500 + i * 1000, "entered", 0, 100 + i)),
+      event(70_000, "picked", 10, 3, 60),
+    ];
+    expect(metrics(events, 100_000, 0, sources).detectors).toEqual([
+      { sourceId: A, detectorId: 60, name: "Vision 1", detectedPerMin: 20 },
+    ]);
+  });
+
   it("uses the time covered so far while there are not yet 60 s of data", () => {
     const events = Array.from({ length: 15 }, (_, i) => event(1000 + i * 1000, "picked", 10));
     const m = metrics(events, 30_000, 0, sources);
@@ -100,6 +112,7 @@ describe("product history: countable events", () => {
     moverId: 0,
     fingerId: 0,
     productType: 1,
+    detectorId: 0,
   });
   const register = (beltPosition: number, products: Product[]): StateMessage => ({
     kind: "state",
@@ -114,7 +127,7 @@ describe("product history: countable events", () => {
     const history = new ProductHistory();
     // The register is known before: products appearing from now on count.
     history.add(-100, register(0, []), sources[0]);
-    history.add(0, register(0, [product(1, "detected"), product(2, "detected")]), sources[0]);
+    history.add(0, register(0, [{ ...product(1, "detected"), detectorId: 60 }, product(2, "detected")]), sources[0]);
     history.add(100, register(0, [product(1, "assigned", 10), product(2, "rejected")]), sources[0]);
     history.add(200, register(0, [product(1, "picked", 10), product(2, "rejected")]), sources[0]);
     history.add(300, register(0, [product(1, "placed", 10), product(3, "detected")]), sources[0]);
@@ -130,6 +143,8 @@ describe("product history: countable events", () => {
       [400, 3, "missed", 0],
     ]);
     expect(history.events(150, 300).map((e) => e.at)).toEqual([200, 300, 300]);
+    // Every event names the detector that latched the product.
+    expect(history.events(0, 0).map((e) => e.detectorId)).toEqual([60, 0]);
   });
 
   it("does not count what is already in a register when it is first seen as entered or missed", () => {

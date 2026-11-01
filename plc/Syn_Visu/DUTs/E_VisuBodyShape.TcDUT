@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="E_VisuBodyShape" Id="{cef3152e-33d9-4752-a82d-81dbb85c25fd}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_VisuBodyShape :
+(
+	(* Values are part of the gateway contract: append, never renumber. *)
+	BOX := 0,			// box: fLength x fWidth x fHeight
+	CYLINDER := 1,		// cylinder: fLength and fWidth are its two diameters
+	FRUSTUM := 2		// rectangular pyramid stump: bottom fLength x fWidth, top fTopLength x fTopWidth
+) UINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

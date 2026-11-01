@@ -21,8 +21,9 @@ VAR_GLOBAL CONSTANT
 	   7: gripper fingers; tool rotations (Delta rz, IDH C, Cartesian C/A and tool length) removed.
 	   8: faults of components and XTS movers (stFault).
 	   9: zone fCcsOffset, stOriginShift in every config.
-	   10: product type eShape and fCornerRadius. *)
-	VISU_un_PROTOCOL_VERSION			: UINT := 10;
+	   10: product type eShape and fCornerRadius.
+	   11: zones without kind, product nDetectorId, vision system and product sensor (ST_VisuDetector). *)
+	VISU_un_PROTOCOL_VERSION			: UINT := 11;
 	VISU_lr_DEG_TO_RAD					: LREAL := 0.017453292519943295;	// [rad/deg] pi / 180
 END_VAR]]></Declaration>
   </GVL>

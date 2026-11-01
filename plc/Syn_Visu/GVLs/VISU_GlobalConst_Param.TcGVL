@@ -14,9 +14,10 @@ VAR_GLOBAL CONSTANT
 	VISU_un_MAX_MANIFEST_ENTRIES		: UINT := 32;	// [-] components in the manifest
 	VISU_un_MAX_PRODUCTS				: UINT := 128;	// [-] products per conveyor
 	VISU_un_MAX_PRODUCT_TYPES			: UINT := 8;	// [-] product types per conveyor
-	VISU_un_MAX_ZONES					: UINT := 8;	// [-] zones per robot
+	VISU_un_MAX_ZONES					: UINT := 8;	// [-] zones per robot or detector
 	VISU_un_MAX_MOVERS					: UINT := 40;	// [-] movers per XTS gantry or loop
 	VISU_un_MAX_FINGERS					: UINT := 8;	// [-] fingers per gripper
+	VISU_un_MAX_BODIES					: UINT := 16;	// [-] bodies per detector
 END_VAR]]></Declaration>
   </GVL>
 </TcPlcObject>

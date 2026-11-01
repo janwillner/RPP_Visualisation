@@ -12,6 +12,7 @@ STRUCT
 	nMoverId : UDINT; // mover of an XTS gantry or loop carrying the product, 0 = none
 	nFingerId : UDINT; // gripper finger (1-based) the product hangs from while picked, 0 = the gripper flange
 	nProductType : UDINT; // id in the conveyor's aProductTypes
+	nDetectorId : UDINT; // manifest id of the detector (vision system, sensor) that latched it, 0 = none given
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

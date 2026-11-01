@@ -13,9 +13,11 @@ import { InMemoryPlc } from "../src/in-memory-plc";
 import { startServer } from "../src/server";
 import {
   cartesian,
+  body,
   conveyor,
   defineMachine,
   delta,
+  detector,
   fingerStates,
   noFault,
   xtsGantry,
@@ -23,13 +25,15 @@ import {
   type MachineComponent,
 } from "../src/plc-builders";
 import {
+  E_VisuBodyRole,
+  E_VisuBodyShape,
   E_VisuProductShape,
   E_VisuProductState,
-  E_VisuZoneKind,
   MANIFEST_PATH,
   type ST_VisuCartesian,
   type ST_VisuConveyor,
   type ST_VisuDelta,
+  type ST_VisuDetector,
   type ST_VisuManifest,
   type ST_VisuXtsGantry,
   type ST_VisuXtsLoop,
@@ -85,7 +89,7 @@ const robot: MachineComponent = {
     effectorRadius: 50,
     upperArmLength: 350,
     lowerArmLength: 800,
-    zones: [{ nConveyorId: 10, fStart: 1200, fEnd: 1800, eKind: E_VisuZoneKind.PICK }],
+    zones: [{ nConveyorId: 10, fStart: 1200, fEnd: 1800 }],
   }),
 };
 
@@ -98,7 +102,7 @@ const gantry: MachineComponent = {
     pose: { fX: 3000, fY: -500, fZ: 1500 },
     moduleCount: 3,
     moduleLength: 1000,
-    zones: [{ nConveyorId: 10, fStart: 0, fEnd: 800, eKind: E_VisuZoneKind.PICK }],
+    zones: [{ nConveyorId: 10, fStart: 0, fEnd: 800 }],
   }),
 };
 
@@ -111,7 +115,7 @@ const loop: MachineComponent = {
     pose: { fX: 5000, fZ: 900 },
     straightLength: 2000,
     curveRadius: 250,
-    zones: [{ nConveyorId: 10, fStart: 2500, fEnd: 2900, eKind: E_VisuZoneKind.PLACE }],
+    zones: [{ nConveyorId: 10, fStart: 2500, fEnd: 2900 }],
   }),
 };
 
@@ -122,7 +126,7 @@ const portal: MachineComponent = {
   kind: "cartesian",
   value: cartesian({
     pose: { fX: 6000, fY: 100, fZ: 700, fRz: 90 },
-    zones: [{ nConveyorId: 10, fStart: 100, fEnd: 900, eKind: E_VisuZoneKind.PICK }],
+    zones: [{ nConveyorId: 10, fStart: 100, fEnd: 900 }],
   }),
 };
 
@@ -163,7 +167,7 @@ describe("gateway discovery", () => {
         lowerArmLength: 800,
         workingArea: { radius: 600, zMin: -1100, zMax: -600, coneHeight: 0, coneBottomRadius: 0 },
         limitArea: null,
-        zones: [{ conveyorId: 10, start: 1200, end: 1800, kind: "pick", allocationOffset: 0, ccsOffset: 0 }],
+        zones: [{ conveyorId: 10, start: 1200, end: 1800, allocationOffset: 0, ccsOffset: 0 }],
         fingers: [],
         originShift: { x: 0, y: 0, z: 0 },
       },
@@ -176,8 +180,8 @@ describe("gateway discovery", () => {
       value: delta({
         limitArea: { fXMin: -500, fXMax: 500, fYMin: -700, fYMax: 700, fZMin: -1400, fZMax: -600 },
         zones: [
-          { nConveyorId: 10, fStart: 1200, fEnd: 1800, eKind: E_VisuZoneKind.PICK, fAllocationOffset: 250 },
-          { nConveyorId: 10, fStart: 2000, fEnd: 2400, eKind: E_VisuZoneKind.PLACE },
+          { nConveyorId: 10, fStart: 1200, fEnd: 1800, fAllocationOffset: 250 },
+          { nConveyorId: 10, fStart: 2000, fEnd: 2400 },
         ],
       }),
     };
@@ -188,8 +192,8 @@ describe("gateway discovery", () => {
     expect(config).toMatchObject({
       limitArea: { xMin: -500, xMax: 500, yMin: -700, yMax: 700, zMin: -1400, zMax: -600 },
       zones: [
-        { conveyorId: 10, start: 1200, end: 1800, kind: "pick", allocationOffset: 250 },
-        { conveyorId: 10, start: 2000, end: 2400, kind: "place", allocationOffset: 0 },
+        { conveyorId: 10, start: 1200, end: 1800, allocationOffset: 250 },
+        { conveyorId: 10, start: 2000, end: 2400, allocationOffset: 0 },
       ],
     });
   });
@@ -201,8 +205,8 @@ describe("gateway discovery", () => {
       value: delta({
         originShift: { fZ: -700 },
         zones: [
-          { nConveyorId: 10, fStart: 1200, fEnd: 1800, eKind: E_VisuZoneKind.PICK, fCcsOffset: 1350 },
-          { nConveyorId: 10, fStart: 2000, fEnd: 2400, eKind: E_VisuZoneKind.PLACE },
+          { nConveyorId: 10, fStart: 1200, fEnd: 1800, fCcsOffset: 1350 },
+          { nConveyorId: 10, fStart: 2000, fEnd: 2400 },
         ],
       }),
     };
@@ -240,7 +244,7 @@ describe("gateway discovery", () => {
         toolOffsetZ: -400,
         moverLength: 155,
         moverWidth: 80,
-        zones: [{ conveyorId: 10, start: 0, end: 800, kind: "pick", allocationOffset: 0, ccsOffset: 0 }],
+        zones: [{ conveyorId: 10, start: 0, end: 800, allocationOffset: 0, ccsOffset: 0 }],
         fingers: [],
         originShift: { x: 0, y: 0, z: 0 },
       },
@@ -255,7 +259,7 @@ describe("gateway discovery", () => {
         toolOffset: 120,
         moverLength: 100,
         moverWidth: 60,
-        zones: [{ conveyorId: 10, start: 2500, end: 2900, kind: "place", allocationOffset: 0, ccsOffset: 0 }],
+        zones: [{ conveyorId: 10, start: 2500, end: 2900, allocationOffset: 0, ccsOffset: 0 }],
         fingers: [],
         originShift: { x: 0, y: 0, z: 0 },
       },
@@ -281,9 +285,78 @@ describe("gateway discovery", () => {
       zMin: -600,
       zMax: 0,
       railHeight: 1200,
-      zones: [{ conveyorId: 10, start: 100, end: 900, kind: "pick", allocationOffset: 0, ccsOffset: 0 }],
+      zones: [{ conveyorId: 10, start: 100, end: 900, allocationOffset: 0, ccsOffset: 0 }],
       fingers: [],
       originShift: { x: 0, y: 0, z: 0 },
+    });
+  });
+
+  it("publishes a vision system and a product sensor with their zones and the bodies they are drawn from", async () => {
+    const camera: MachineComponent = {
+      id: 60,
+      name: "Vision 1",
+      path: "MAIN.fbVision.vo_Visu",
+      kind: "vision",
+      value: detector({
+        pose: { fX: 500, fY: 200, fZ: 1600 },
+        zones: [{ nConveyorId: 10, fStart: 300, fEnd: 700, fCcsOffset: 500 }],
+        bodies: [
+          body({ fLength: 120, fWidth: 80, fHeight: 150 }),
+          body({
+            eShape: E_VisuBodyShape.FRUSTUM,
+            eRole: E_VisuBodyRole.FIELD_OF_VIEW,
+            stPose: { fX: 0, fY: 0, fZ: -800, fRx: 0, fRy: 0, fRz: 0 },
+            fLength: 400,
+            fWidth: 300,
+            fHeight: 800,
+            fTopLength: 20,
+            fTopWidth: 15,
+          }),
+        ],
+      }),
+    };
+    const barrier: MachineComponent = {
+      id: 61,
+      name: "Sensor 1",
+      path: "MAIN.fbSensor.vo_Visu",
+      kind: "sensor",
+      value: detector({
+        zones: [{ nConveyorId: 10, fStart: 200, fEnd: 200 }],
+        bodies: [body({ eShape: E_VisuBodyShape.CYLINDER, eRole: E_VisuBodyRole.BEAM, fLength: 6, fWidth: 6, fHeight: 500 })],
+      }),
+    };
+    const t = setup([infeed, camera, barrier]);
+    await t.gateway.cycle();
+
+    const [config] = t.configs();
+    expect(config!.errors).toEqual([]);
+    const zero = { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 };
+    expect(config!.components[1]).toEqual({
+      type: "vision",
+      id: 60,
+      sourceId: "plc1",
+      name: "Vision 1",
+      pose: { ...zero, x: 500, y: 200, z: 1600 },
+      zones: [{ conveyorId: 10, start: 300, end: 700, allocationOffset: 0, ccsOffset: 500 }],
+      bodies: [
+        { shape: "box", role: "structure", pose: zero, length: 120, width: 80, height: 150, topLength: 0, topWidth: 0 },
+        {
+          shape: "frustum",
+          role: "fieldOfView",
+          pose: { ...zero, z: -800 },
+          length: 400,
+          width: 300,
+          height: 800,
+          topLength: 20,
+          topWidth: 15,
+        },
+      ],
+      originShift: { x: 0, y: 0, z: 0 },
+    });
+    expect(config!.components[2]).toMatchObject({
+      type: "sensor",
+      zones: [{ conveyorId: 10, start: 200, end: 200 }],
+      bodies: [{ shape: "cylinder", role: "beam", length: 6, width: 6, height: 500 }],
     });
   });
 
@@ -644,6 +717,7 @@ describe("gateway state snapshots", () => {
       nMoverId: 3,
       nFingerId: 2,
       nProductType: 1,
+      nDetectorId: 50,
     };
     state.aProducts[1] = { ...state.aProducts[0], nId: 8, bValid: false };
     // Enumerations objectified by the ADS client.
@@ -662,6 +736,7 @@ describe("gateway state snapshots", () => {
           moverId: 3,
           fingerId: 2,
           productType: 1,
+          detectorId: 50,
         },
         { id: 9, state: "placed" },
       ],
@@ -738,6 +813,27 @@ describe("gateway state snapshots", () => {
       gripperActive: true,
       fingers: [],
       fault: null,
+    });
+  });
+
+  it("publishes one state per configured body of a detector, with its fault", async () => {
+    const barrier: MachineComponent = {
+      id: 61,
+      name: "Sensor 1",
+      path: "MAIN.fbSensor.vo_Visu",
+      kind: "sensor",
+      value: detector({ bodies: [body(), body({ eRole: E_VisuBodyRole.BEAM })], active: [false, true] }),
+    };
+    const t = setup([infeed, barrier]);
+    t.plc.get<ST_VisuDetector>(barrier.path).stState.stFault = { bActive: true, sMessage: "Dirty lens" };
+    await t.gateway.cycle();
+
+    expect(t.states()[0]!.components).toContainEqual({
+      type: "sensor",
+      id: 61,
+      timestamp: "0",
+      bodies: [{ active: false }, { active: true }],
+      fault: { message: "Dirty lens" },
     });
   });
 

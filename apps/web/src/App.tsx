@@ -132,21 +132,29 @@ function MetricsOverview({ figures, sources }: { figures: MachineMetrics; source
               </td>
             </tr>
           ))}
+          {figures.detectors.map((d) => (
+            <tr key={`d${d.sourceId}|${d.detectorId}`}>
+              <td>{named(d)}</td>
+              <td>{rate(d.detectedPerMin)} detected/min</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </>
   );
 }
 
-/** A selected robot's or conveyor's own figures over the last minute. */
+/** A selected robot's, conveyor's or detector's own figures over the last minute. */
 function ComponentMetrics({ figures, sourceId, id }: { figures: MachineMetrics; sourceId: string; id: number }) {
   const robot = figures.robots.find((r) => r.sourceId === sourceId && r.robotId === id);
   const conveyor = figures.conveyors.find((c) => c.sourceId === sourceId && c.conveyorId === id);
-  if (!robot && !conveyor) return null;
+  const detector = figures.detectors.find((d) => d.sourceId === sourceId && d.detectorId === id);
+  if (!robot && !conveyor && !detector) return null;
   return (
     <p>
       <span className="muted">{windowText(figures)}:</span>{" "}
       {robot && <>{rate(robot.picksPerMin)} picks/min</>}
+      {detector && <>{rate(detector.detectedPerMin)} products detected/min</>}
       {conveyor && (
         <>
           {rate(conveyor.inPerMin)} products in/min · {conveyor.missed} missed · {conveyor.rejected} rejected

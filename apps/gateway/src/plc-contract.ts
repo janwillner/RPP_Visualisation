@@ -17,16 +17,30 @@ export const PLC_TYPES = {
   xtsGantry: "ST_VisuXtsGantry",
   xtsLoop: "ST_VisuXtsLoop",
   cartesian: "ST_VisuCartesian",
+  vision: "ST_VisuDetector",
+  sensor: "ST_VisuDetector",
 } as const;
 
 /** E_VisuComponentType */
-export const E_VisuComponentType = { NONE: 0, CONVEYOR: 1, DELTA: 2, XTS_GANTRY: 3, XTS_LOOP: 4, CARTESIAN: 5 } as const;
+export const E_VisuComponentType = {
+  NONE: 0,
+  CONVEYOR: 1,
+  DELTA: 2,
+  XTS_GANTRY: 3,
+  XTS_LOOP: 4,
+  CARTESIAN: 5,
+  VISION: 6,
+  SENSOR: 7,
+} as const;
 
 /** E_VisuProductState */
 export const E_VisuProductState = { DETECTED: 0, ASSIGNED: 1, PICKED: 2, REJECTED: 3, PLACED: 4 } as const;
 
-/** E_VisuZoneKind */
-export const E_VisuZoneKind = { PICK: 1, PLACE: 2 } as const;
+/** E_VisuBodyShape */
+export const E_VisuBodyShape = { BOX: 0, CYLINDER: 1, FRUSTUM: 2 } as const;
+
+/** E_VisuBodyRole */
+export const E_VisuBodyRole = { STRUCTURE: 0, SENSOR: 1, BEAM: 2, FIELD_OF_VIEW: 3 } as const;
 
 /** E_VisuProductShape */
 export const E_VisuProductShape = { BOX: 0, CYLINDER: 1, ROUNDED_BOX: 2 } as const;
@@ -118,6 +132,8 @@ export interface ST_VisuProduct {
   nMoverId: number;
   nFingerId: number;
   nProductType: number;
+  /** Manifest id of the detector that latched it; 0 = none given. */
+  nDetectorId: number;
 }
 
 export interface ST_VisuConveyorState {
@@ -155,7 +171,6 @@ export interface ST_VisuZone {
   nConveyorId: number;
   fStart: number;
   fEnd: number;
-  eKind: PlcEnum;
   fAllocationOffset: number;
   /** mm along the conveyor's local X: the robot's conveyor coordinate system. */
   fCcsOffset: number;
@@ -299,6 +314,44 @@ export interface ST_VisuCartesianState {
 export interface ST_VisuCartesian {
   stConfig: ST_VisuCartesianConfig;
   stState: ST_VisuCartesianState;
+}
+
+/** One solid of a detector: bottom centre at stPose in the component's frame, extending along its local +Z. */
+export interface ST_VisuBody {
+  eShape: PlcEnum;
+  eRole: PlcEnum;
+  stPose: ST_VisuPose;
+  fLength: number;
+  fWidth: number;
+  fHeight: number;
+  /** Top face of a FRUSTUM. */
+  fTopLength: number;
+  fTopWidth: number;
+}
+
+export interface ST_VisuBodyState {
+  bActive: boolean;
+}
+
+/** Vision system and product sensor share one contract structure; the manifest type tells them apart. */
+export interface ST_VisuDetectorConfig {
+  stPose: ST_VisuPose;
+  nZoneCount: number;
+  aZones: ST_VisuZone[];
+  nBodyCount: number;
+  aBodies: ST_VisuBody[];
+  stOriginShift: ST_VisuPosition;
+}
+
+export interface ST_VisuDetectorState {
+  nTimestamp: bigint;
+  aBodyStates: ST_VisuBodyState[];
+  stFault: ST_VisuFault;
+}
+
+export interface ST_VisuDetector {
+  stConfig: ST_VisuDetectorConfig;
+  stState: ST_VisuDetectorState;
 }
 
 export function enumValue(value: PlcEnum): number {

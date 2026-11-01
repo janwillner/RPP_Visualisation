@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="E_VisuBodyRole" Id="{098f8cfe-181b-495b-8461-8c1761723639}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_VisuBodyRole :
+(
+	(* Values are part of the gateway contract: append, never renumber. What a body stands for sets its look. *)
+	STRUCTURE := 0,		// machine part: lit, with shadow
+	SENSOR := 1,		// sensing part, e.g. a lens or a light barrier head: lit, in its own colour
+	BEAM := 2,			// overlay on the zones layer, lights up while active
+	FIELD_OF_VIEW := 3	// overlay on the zones layer, lights up while active
+) UINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

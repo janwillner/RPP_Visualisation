@@ -11,7 +11,9 @@ TYPE E_VisuComponentType :
 	DELTA := 2,
 	XTS_GANTRY := 3,
 	XTS_LOOP := 4,
-	CARTESIAN := 5
+	CARTESIAN := 5,
+	VISION := 6,
+	SENSOR := 7
 ) UINT;
 END_TYPE]]></Declaration>
   </DUT>

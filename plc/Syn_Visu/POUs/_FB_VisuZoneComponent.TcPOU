@@ -1,0 +1,128 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="_FB_VisuZoneComponent" Id="{44cc55de-9160-48be-8b6e-d9ee625a2b51}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Base of every component with zones on conveyors (robots, detectors): m_SetZone and m_ClearZones.<br>
+A derived FB tells where its zones lie in its contract structure through m_Zones. Not used directly.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New: zones shared by robots and detectors, no zone kind<br>
+****************************************************************************************************)
+FUNCTION_BLOCK ABSTRACT _FB_VisuZoneComponent EXTENDS _FB_VisuComponent
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_ClearZones" Id="{8a35656f-0814-4d32-9caf-bb7f92607028}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Removes all zones. TRUE if there were any.<br>
+****************************************************************************************************)
+METHOD m_ClearZones : BOOL
+VAR
+	p_TempCount							: POINTER TO UINT;
+	p_TempZones							: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone;
+	TempEmpty							: ST_VisuZone;
+	un_TempIndex						: UINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ClearZones := FALSE;
+m_Zones(vo_p_Count => p_TempCount, vo_p_Zones => p_TempZones);
+IF p_TempCount = 0 OR p_TempZones = 0 THEN
+	RETURN;
+END_IF
+m_ClearZones := p_TempCount^ > 0;
+FOR un_TempIndex := 0 TO VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1 DO
+	p_TempZones^[un_TempIndex] := TempEmpty;
+END_FOR
+p_TempCount^ := 0;
+IF m_ClearZones THEN
+	m_NotifyConfigChanged();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetZone" Id="{1ef51960-48f7-488f-b3e8-d6434833757a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets zone vi_un_Zone (1-based): a stretch of a conveyor that belongs to this component, e.g. where a<br>
+robot picks or places or where a detector detects. vi_lr_Start = vi_lr_End is a line across the belt.<br>
+The zone count grows to vi_un_Zone; set the zones in order. The config version only changes when a<br>
+value does.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for vi_udn_ConveyorId = 0 or vi_un_Zone outside 1..VISU_GlobalConst_Param.VISU_un_MAX_ZONES.<br>
+****************************************************************************************************)
+METHOD m_SetZone : BOOL
+VAR_INPUT
+	vi_un_Zone							: UINT;	// [-] 1-based
+	vi_udn_ConveyorId					: UDINT;	// [-] manifest id of the conveyor
+	vi_lr_Start							: LREAL;	// [mm] along the conveyor from its origin (belt coordinates, not MCS)
+	vi_lr_End							: LREAL;	// [mm] along the conveyor from its origin
+	vi_lr_AllocationOffset				: LREAL := 0;	// [mm] before vi_lr_End up to which products may be allocated; 0 = no limit
+	vi_lr_CcsOffset						: LREAL := 0;	// [mm] along the conveyor from its origin: the component's conveyor coordinate system
+END_VAR
+VAR
+	p_TempCount							: POINTER TO UINT;
+	p_TempZones							: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone;
+	TempZone							: ST_VisuZone;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetZone := FALSE;
+IF vi_udn_ConveyorId = 0 OR vi_un_Zone = 0 OR vi_un_Zone > VISU_GlobalConst_Param.VISU_un_MAX_ZONES THEN
+	RETURN;
+END_IF
+m_Zones(vo_p_Count => p_TempCount, vo_p_Zones => p_TempZones);
+IF p_TempCount = 0 OR p_TempZones = 0 THEN
+	RETURN;
+END_IF
+TempZone.nConveyorId := vi_udn_ConveyorId;
+TempZone.fStart := vi_lr_Start;
+TempZone.fEnd := vi_lr_End;
+TempZone.fAllocationOffset := vi_lr_AllocationOffset;
+TempZone.fCcsOffset := vi_lr_CcsOffset;
+IF vi_un_Zone > p_TempCount^
+	OR Tc2_System.MEMCMP(ADR(TempZone), ADR(p_TempZones^[vi_un_Zone - 1]), SIZEOF(TempZone)) <> 0
+THEN
+	p_TempZones^[vi_un_Zone - 1] := TempZone;
+	p_TempCount^ := MAX(p_TempCount^, vi_un_Zone);
+	m_NotifyConfigChanged();
+END_IF
+m_SetZone := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Zones" Id="{583b0026-6692-4475-9e05-351ededd0100}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Where the zones lie in the derived FB's contract structure: its nZoneCount and aZones.<br>
+****************************************************************************************************)
+METHOD PROTECTED ABSTRACT m_Zones : BOOL
+VAR_OUTPUT
+	vo_p_Count							: POINTER TO UINT;	// nZoneCount of vo_Visu.stConfig
+	vo_p_Zones							: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone;	// aZones of vo_Visu.stConfig
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

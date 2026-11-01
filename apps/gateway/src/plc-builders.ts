@@ -2,13 +2,17 @@ import { PROTOCOL_VERSION } from "@rpp/protocol";
 import {
   E_VisuComponentType,
   E_VisuProductShape,
+  E_VisuBodyRole,
+  E_VisuBodyShape,
   E_VisuProductState,
-  E_VisuZoneKind,
   MANIFEST_PATH,
   PLC_TYPES,
   type ST_VisuCartesian,
   type ST_VisuCartesianState,
+  type ST_VisuBody,
+  type ST_VisuBodyState,
   type ST_VisuConveyor,
+  type ST_VisuDetector,
   type ST_VisuDelta,
   type ST_VisuFault,
   type ST_VisuFinger,
@@ -35,6 +39,7 @@ export const MAX_PRODUCT_TYPES = 8;
 export const MAX_ZONES = 8;
 export const MAX_MOVERS = 40;
 export const MAX_FINGERS = 8;
+export const MAX_BODIES = 16;
 
 export function noFault(): ST_VisuFault {
   return { bActive: false, sMessage: "" };
@@ -73,11 +78,12 @@ export function emptyProduct(): ST_VisuProduct {
     nMoverId: 0,
     nFingerId: 0,
     nProductType: 0,
+    nDetectorId: 0,
   };
 }
 
 function emptyZone(): ST_VisuZone {
-  return { nConveyorId: 0, fStart: 0, fEnd: 0, eKind: E_VisuZoneKind.PICK, fAllocationOffset: 0, fCcsOffset: 0 };
+  return { nConveyorId: 0, fStart: 0, fEnd: 0, fAllocationOffset: 0, fCcsOffset: 0 };
 }
 
 /** A zone as tests and the simulator write it; the allocation offset defaults to 0. */
@@ -317,6 +323,61 @@ export function cartesian(spec: CartesianSpec = {}): ST_VisuCartesian {
   };
 }
 
+/** A body; a box of 100 mm unless given otherwise. */
+export function body(b: Partial<ST_VisuBody> = {}): ST_VisuBody {
+  return {
+    eShape: E_VisuBodyShape.BOX,
+    eRole: E_VisuBodyRole.STRUCTURE,
+    stPose: pose(),
+    fLength: 100,
+    fWidth: 100,
+    fHeight: 100,
+    fTopLength: 0,
+    fTopWidth: 0,
+    ...b,
+  };
+}
+
+export function bodyStates(states: Partial<ST_VisuBodyState>[] = []): ST_VisuBodyState[] {
+  return padded(
+    states.map((s) => ({ bActive: false, ...s })),
+    MAX_BODIES,
+    () => ({ bActive: false }),
+  );
+}
+
+export interface DetectorSpec {
+  pose?: Partial<ST_VisuPose>;
+  originShift?: Partial<ST_VisuPosition>;
+  zones?: ZoneSpec[];
+  bodies?: ST_VisuBody[];
+  /** Body states; inactive unless given. */
+  active?: boolean[];
+  fault?: ST_VisuFault;
+  timestamp?: bigint;
+}
+
+/** A vision system or product sensor: both share ST_VisuDetector. */
+export function detector(spec: DetectorSpec = {}): ST_VisuDetector {
+  const zones = zoneList(spec);
+  const bodies = spec.bodies ?? [];
+  return {
+    stConfig: {
+      stPose: pose(spec.pose),
+      nZoneCount: zones.length,
+      aZones: padded(zones, MAX_ZONES, emptyZone),
+      nBodyCount: bodies.length,
+      aBodies: padded(bodies, MAX_BODIES, () => body({ fLength: 0, fWidth: 0, fHeight: 0 })),
+      ...originShift(spec),
+    },
+    stState: {
+      nTimestamp: spec.timestamp ?? 0n,
+      aBodyStates: bodyStates((spec.active ?? []).map((bActive) => ({ bActive }))),
+      stFault: spec.fault ?? noFault(),
+    },
+  };
+}
+
 type Entry<K extends keyof typeof PLC_TYPES, V> = { id: number; name: string; path: string; kind: K; value: V };
 
 export type MachineComponent =
@@ -324,7 +385,9 @@ export type MachineComponent =
   | Entry<"delta", ST_VisuDelta>
   | Entry<"xtsGantry", ST_VisuXtsGantry>
   | Entry<"xtsLoop", ST_VisuXtsLoop>
-  | Entry<"cartesian", ST_VisuCartesian>;
+  | Entry<"cartesian", ST_VisuCartesian>
+  | Entry<"vision", ST_VisuDetector>
+  | Entry<"sensor", ST_VisuDetector>;
 
 const MANIFEST_TYPES: Record<MachineComponent["kind"], number> = {
   conveyor: E_VisuComponentType.CONVEYOR,
@@ -332,6 +395,8 @@ const MANIFEST_TYPES: Record<MachineComponent["kind"], number> = {
   xtsGantry: E_VisuComponentType.XTS_GANTRY,
   xtsLoop: E_VisuComponentType.XTS_LOOP,
   cartesian: E_VisuComponentType.CARTESIAN,
+  vision: E_VisuComponentType.VISION,
+  sensor: E_VisuComponentType.SENSOR,
 };
 
 /** Registers a manifest and its components in an in-memory PLC. */

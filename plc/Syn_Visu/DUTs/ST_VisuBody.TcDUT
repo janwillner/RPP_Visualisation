@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuBody" Id="{77269e81-d403-4086-bf58-a193b7f0e425}">
+    <Declaration><![CDATA[TYPE ST_VisuBody :
+STRUCT
+	(* One solid a component is drawn from, so the visualisation needs no code of its own for it. It stands on
+	   its bottom face and extends along its local +Z. *)
+	eShape : E_VisuBodyShape;
+	eRole : E_VisuBodyRole;
+	stPose : ST_VisuPose; // bottom centre in the component's frame (from its stPose), not MCS
+	fLength : LREAL; // mm along the body's local X
+	fWidth : LREAL; // mm along the body's local Y
+	fHeight : LREAL; // mm along the body's local Z
+	fTopLength : LREAL; // mm, top face of a FRUSTUM
+	fTopWidth : LREAL; // mm, top face of a FRUSTUM
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -39,10 +39,12 @@ export const PRODUCT = {
 export const OVERLAY = {
   workingArea: STATUS.accent,
   limitArea: "#ff9800",
-  pickZone: "#5fd39a",
-  placeZone: "#4a9df8",
-  pickAllocation: "#22a86b",
-  placeAllocation: "#2a6fd6",
+  /** Every zone alike, whatever its component does there. */
+  zone: "#5fd39a",
+  allocation: "#22a86b",
+  /** Detector bodies with these roles; they light up when active. */
+  beam: "#ffd54f",
+  fieldOfView: "#4fc3f7",
   /** The conveyor coordinate system line on a belt. */
   ccs: "#f1f4f8",
   setpoint: "#ffee58",
@@ -68,6 +70,8 @@ export const SOLID = {
   module: "#3e4753",
   gripper: "#3d8fe0",
   gripperActive: STATUS.online,
+  /** A detector's sensing part, e.g. a camera lens or a light barrier head. */
+  sensor: "#26c6da",
   /** Fine outline along the edges of solid parts. */
   edge: "#0b0e12",
 } as const;

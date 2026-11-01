@@ -19,7 +19,7 @@
     <Company>Syntegon Group</Company>
     <Released>false</Released>
     <Title>SynVisu</Title>
-    <ProjectVersion>3.5.0.0</ProjectVersion>
+    <ProjectVersion>4.0.0.0</ProjectVersion>
     <DefaultNamespace>SynVisu</DefaultNamespace>
   </PropertyGroup>
   <ItemGroup>
@@ -34,6 +34,12 @@
     </PlaceholderReference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="DUTs\E_VisuBodyRole.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_VisuBodyShape.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="DUTs\E_VisuComponentType.TcDUT">
       <SubType>Code</SubType>
     </Compile>
@@ -43,7 +49,10 @@
     <Compile Include="DUTs\E_VisuProductState.TcDUT">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="DUTs\E_VisuZoneKind.TcDUT">
+    <Compile Include="DUTs\ST_VisuBody.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_VisuBodyState.TcDUT">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="DUTs\ST_VisuCartesian.TcDUT">
@@ -71,6 +80,15 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="DUTs\ST_VisuDeltaState.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_VisuDetector.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_VisuDetectorConfig.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_VisuDetectorState.TcDUT">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="DUTs\ST_VisuFault.TcDUT">
@@ -154,10 +172,25 @@
     <Compile Include="POUs\_FB_VisuDelta.TcPOU">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="POUs\_FB_VisuDetector.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FB_VisuRobot.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FB_VisuSensor.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FB_VisuVision.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="POUs\_FB_VisuXtsGantry.TcPOU">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\_FB_VisuXtsLoop.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FB_VisuZoneComponent.TcPOU">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\_FC_GetVersionSynVisu.TcPOU">

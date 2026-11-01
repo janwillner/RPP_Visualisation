@@ -1,0 +1,121 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="_FB_VisuRobot" Id="{0bd5f5e4-db90-4e90-b84e-7508fb2d03da}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Base of every robot (Delta, XTS gantry, XTS loop, Cartesian): zones plus the gripper fingers,<br>
+m_SetFinger and m_ClearFingers. A derived FB tells where its fingers lie through m_Fingers.<br>
+Not used directly.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New: fingers shared by all robots<br>
+****************************************************************************************************)
+FUNCTION_BLOCK ABSTRACT _FB_VisuRobot EXTENDS _FB_VisuZoneComponent
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_ClearFingers" Id="{c59c54bb-9b8a-4354-8e47-b266be81a7d2}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Removes the gripper definition. TRUE if there was one.<br>
+****************************************************************************************************)
+METHOD m_ClearFingers : BOOL
+VAR
+	p_TempCount							: POINTER TO UINT;
+	p_TempFingers						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFinger;
+	TempEmpty							: ST_VisuFinger;
+	un_TempIndex						: UINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ClearFingers := FALSE;
+m_Fingers(vo_p_Count => p_TempCount, vo_p_Fingers => p_TempFingers);
+IF p_TempCount = 0 OR p_TempFingers = 0 THEN
+	RETURN;
+END_IF
+m_ClearFingers := p_TempCount^ > 0;
+FOR un_TempIndex := 0 TO VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1 DO
+	p_TempFingers^[un_TempIndex] := TempEmpty;
+END_FOR
+p_TempCount^ := 0;
+IF m_ClearFingers THEN
+	m_NotifyConfigChanged();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Fingers" Id="{a244e015-94d6-456e-b723-254a871e0b47}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Where the gripper fingers lie in the derived FB's contract structure: its nFingerCount and aFingers.<br>
+****************************************************************************************************)
+METHOD PROTECTED ABSTRACT m_Fingers : BOOL
+VAR_OUTPUT
+	vo_p_Count							: POINTER TO UINT;	// nFingerCount of vo_Visu.stConfig
+	vo_p_Fingers						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFinger;	// aFingers of vo_Visu.stConfig
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetFinger" Id="{e7ffdbfc-b2ac-4437-abcd-43e830fe868a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Defines gripper finger vi_un_Finger (1-based): a cylinder hanging from the finger's pose along its local -Z.<br>
+For XTS kinematics it is a finger of every mover's gripper. The finger count grows to vi_un_Finger.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE outside 1..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS.<br>
+****************************************************************************************************)
+METHOD m_SetFinger : BOOL
+VAR_INPUT
+	vi_un_Finger						: UINT;	// [-] 1-based, as a product's nFingerId
+	vi_lr_Diameter						: LREAL;	// [mm]
+	vi_lr_Height						: LREAL;	// [mm] along the finger's local -Z
+END_VAR
+VAR
+	p_TempCount							: POINTER TO UINT;
+	p_TempFingers						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFinger;
+	TempFinger							: ST_VisuFinger;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetFinger := FALSE;
+IF vi_un_Finger = 0 OR vi_un_Finger > VISU_GlobalConst_Param.VISU_un_MAX_FINGERS THEN
+	RETURN;
+END_IF
+m_Fingers(vo_p_Count => p_TempCount, vo_p_Fingers => p_TempFingers);
+IF p_TempCount = 0 OR p_TempFingers = 0 THEN
+	RETURN;
+END_IF
+TempFinger.fDiameter := vi_lr_Diameter;
+TempFinger.fHeight := vi_lr_Height;
+IF vi_un_Finger > p_TempCount^
+	OR Tc2_System.MEMCMP(ADR(TempFinger), ADR(p_TempFingers^[vi_un_Finger - 1]), SIZEOF(TempFinger)) <> 0
+THEN
+	p_TempFingers^[vi_un_Finger - 1] := TempFinger;
+	p_TempCount^ := MAX(p_TempCount^, vi_un_Finger);
+	m_NotifyConfigChanged();
+END_IF
+m_SetFinger := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

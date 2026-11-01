@@ -15,7 +15,7 @@ export interface ProductStep {
 
 /**
  * A countable moment of a product, for the metrics: it entered the register, was picked, placed or rejected, or was
- * missed. `robotId` is the robot that picked or placed it, else 0.
+ * missed. `robotId` is the robot that picked or placed it, else 0; `detectorId` the detector that latched it, else 0.
  */
 export interface ProductEvent {
   at: number;
@@ -24,6 +24,7 @@ export interface ProductEvent {
   productId: number;
   kind: "entered" | "picked" | "placed" | "rejected" | "missed";
   robotId: number;
+  detectorId: number;
 }
 
 /** Products followed live by default; the oldest are forgotten beyond this. */
@@ -73,9 +74,13 @@ export class ProductHistory {
         productId: p.id,
         kind,
         robotId: kind === "picked" || kind === "placed" ? p.robotId : 0,
+        detectorId: detectorOf(p),
       });
     const components = source?.config?.components ?? [];
-    const robot = (id: number) => componentName(source, id, `robot #${id}`);
+    const names: Names = {
+      robot: (id) => componentName(source, id, `robot #${id}`),
+      detector: (id) => componentName(source, id, `detector #${id}`),
+    };
     for (const c of message.components) {
       if (c.type !== "conveyor") continue;
       const conveyor = components.find((x) => x.id === c.id);
@@ -95,11 +100,11 @@ export class ProductHistory {
           followed = { steps: [], signature, state: p.state, missed: false, gone: false, earlier };
           this.products.delete(key);
           this.products.set(key, followed);
-          followed.steps.push({ at, kind: p.state, text: `Entered the register (${stateText(p, robot, true)})` });
+          followed.steps.push({ at, kind: p.state, text: `Entered the register (${stateText(p, names, true)})` });
           log(c.id, p, "entered");
         } else if (followed.signature !== signature) {
           followed.signature = signature;
-          followed.steps.push({ at, kind: p.state, text: stateText(p, robot, false) });
+          followed.steps.push({ at, kind: p.state, text: stateText(p, names, false) });
           if (p.state !== followed.state && (p.state === "picked" || p.state === "placed" || p.state === "rejected")) {
             // Picked and placed between two states: the pick still counts.
             if (p.state === "placed" && followed.state !== "picked") log(c.id, p, "picked");
@@ -163,14 +168,22 @@ export class ProductHistory {
 
 const productKey = (sourceId: string, conveyorId: number, productId: number) => `${sourceId}|${conveyorId}|${productId}`;
 
+/** Recordings made before protocol 11 have no detector on their products. */
+const detectorOf = (p: Product) => p.detectorId ?? 0;
+
+interface Names {
+  robot(id: number): string;
+  detector(id: number): string;
+}
+
 /** A register state in words, e.g. "Picked by Delta 1, mover 3, finger 2"; lower case as part of a sentence. */
-function stateText(p: Product, robot: (id: number) => string, inSentence: boolean): string {
-  const by = p.robotId > 0 ? robot(p.robotId) : undefined;
+function stateText(p: Product, names: Names, inSentence: boolean): string {
+  const by = p.robotId > 0 ? names.robot(p.robotId) : undefined;
   const carrier = [p.moverId > 0 && `mover ${p.moverId}`, p.fingerId > 0 && `finger ${p.fingerId}`].filter(Boolean);
   const text = (() => {
     switch (p.state) {
       case "detected":
-        return "Detected";
+        return detectorOf(p) > 0 ? `Detected by ${names.detector(detectorOf(p))}` : "Detected";
       case "assigned":
         return by ? `Assigned to ${by}` : "Assigned";
       case "picked":

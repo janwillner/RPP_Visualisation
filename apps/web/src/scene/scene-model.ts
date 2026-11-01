@@ -1,5 +1,9 @@
 import {
   deltaForward,
+  type Body,
+  type BodyRole,
+  type BodyShape,
+  type BodyState,
   deltaInverse,
   type CartesianConfig,
   type CartesianState,
@@ -25,7 +29,6 @@ import {
   type XtsLoopConfig,
   type XtsLoopState,
   type Zone,
-  type ZoneKind,
 } from "@rpp/protocol";
 import {
   apply,
@@ -137,14 +140,14 @@ export interface SceneWorkingArea {
 }
 
 export interface SceneZone {
-  robotId: number;
+  /** The component the zone belongs to: a robot, a detector. */
+  componentId: number;
   conveyorId: number;
-  kind: ZoneKind;
   /** Centre of the zone on the belt surface; extends along local +X. */
   transform: Transform;
   length: number;
   width: number;
-  /** The robot's conveyor coordinate system (CCS) on the belt's centre line, oriented like the belt; drawn across the zone. */
+  /** The component's conveyor coordinate system (CCS) on the belt's centre line, oriented like the belt; drawn across the zone. */
   ccs: Transform;
   /**
    * Part of the zone in which the robot may still allocate products: from the zone start up to the allocation limit
@@ -250,6 +253,28 @@ export interface SceneCartesian {
   fault: string | null;
 }
 
+/**
+ * One body of a component drawn from what the PLC describes (a detector's housing, beam, field of view), without
+ * knowing what the component is.
+ */
+export interface SceneBody {
+  /** `componentId:index`, stable across frames. */
+  key: string;
+  componentId: number;
+  shape: BodyShape;
+  role: BodyRole;
+  /** Bottom centre; the body extends along local +Y (renderer), MCS local +Z. */
+  transform: Transform;
+  /** Metres; for a cylinder, length and width are its two diameters. */
+  size: Size;
+  /** Metres, a frustum's top face. */
+  top: { length: number; width: number };
+  /** Its state says so, e.g. an interrupted light barrier: an overlay then lights up. */
+  active: boolean;
+  /** Its component is in a fault. */
+  faulted: boolean;
+}
+
 /** One gripper finger: a cylinder hanging from its frame's origin (top centre) along its local −Z. */
 export interface SceneFinger {
   /** `robotId:moverId:finger`, stable across frames. */
@@ -325,6 +350,8 @@ export interface SceneModel {
   limitAreas: SceneBoxArea[];
   loops: SceneLoop[];
   cartesians: SceneCartesian[];
+  /** Bodies of the components drawn from their PLC description, e.g. detectors. */
+  bodies: SceneBody[];
   fingers: SceneFinger[];
   snapPoints: SnapPoint[];
   origins: SceneOrigin[];
@@ -341,7 +368,7 @@ const MM = 1 / 1000;
 type GripperSource = { moverId: number; flange: Frame; states: FingerState[]; faulted: boolean };
 
 /** How far above its anchor a fault label hangs, mm. */
-const LABEL_LIFT = { conveyor: 150, delta: 250, track: 300, gantryMover: 200, loopMover: 150, cartesian: 200 };
+const LABEL_LIFT = { conveyor: 150, delta: 250, track: 300, gantryMover: 200, loopMover: 150, cartesian: 200, body: 150 };
 
 /** The message to show for a fault; the PLC may leave it empty. */
 export function faultText(fault: Fault | null | undefined): string | null {
@@ -544,12 +571,62 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
       fingers: lerpFingers(a.fingers, b.fingers, f),
     }),
   },
+  vision: bodyKit(),
+  sensor: bodyKit(),
 };
+
+/** Roles drawn as overlays: on the zones layer, also for their snap points. */
+const OVERLAY_ROLES: ReadonlySet<BodyRole> = new Set(["beam", "fieldOfView"]);
+
+/** "fieldOfView" → "field of view". */
+const roleText = (role: BodyRole) => role.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+
+/**
+ * A component drawn only from the bodies, zones and fault it reports, e.g. a vision system or a product sensor: the
+ * scene needs to know nothing else about it.
+ */
+function bodyKit<T extends "vision" | "sensor">(): ComponentKit<T> {
+  return { build: buildFromBodies };
+}
+
+function buildFromBodies(
+  c: ConfigOf<"vision" | "sensor">,
+  state: StateOf<"vision" | "sensor"> | undefined,
+  ctx: BuildContext,
+): void {
+  const frame = frameFromPose(c.pose);
+  const fault = faultText(state?.fault);
+  const owner = snapOwner(c, frame);
+  ctx.scene.snapPoints.push(owner.at(`${c.name} · origin`, shiftOf(c)));
+  let top: Vec3 = frame.origin;
+  c.bodies.forEach((b: Body, i) => {
+    const bottom = child(frame, [b.pose.x, b.pose.y, b.pose.z], frameFromPose({ ...b.pose, x: 0, y: 0, z: 0 }).rotation);
+    const bodyState: BodyState | undefined = state?.bodies[i];
+    ctx.scene.bodies.push({
+      key: `${c.id}:${i}`,
+      componentId: c.id,
+      shape: b.shape,
+      role: b.role,
+      transform: toRendererTransform(bottom),
+      size: { length: b.length * MM, width: b.width * MM, height: b.height * MM },
+      top: { length: b.topLength * MM, width: b.topWidth * MM },
+      active: bodyState?.active ?? false,
+      faulted: fault !== null,
+    });
+    const layer = OVERLAY_ROLES.has(b.role) ? "zones" : "structure";
+    ctx.scene.snapPoints.push(owner.atMcs(`${c.name} · body ${i + 1} (${roleText(b.role)})`, bottom.origin, layer));
+    const bodyTop = toMcs(bottom, [0, 0, b.height]);
+    if (bodyTop[2] > top[2]) top = bodyTop;
+  });
+  ctx.addFault(c.id, 0, fault, lifted(top, LABEL_LIFT.body));
+  ctx.addZones(c);
+}
 
 /** The kit of a component type, typed for the whole union: each kit only ever gets configs and states of its type. */
 const kitOf = (type: ComponentType) => KITS[type] as unknown as ComponentKit<ComponentType>;
 
-function emptyScene(): SceneModel {
+/** A scene with nothing in it. */
+export function emptyScene(): SceneModel {
   return {
     conveyors: [],
     products: [],
@@ -561,6 +638,7 @@ function emptyScene(): SceneModel {
     limitAreas: [],
     loops: [],
     cartesians: [],
+    bodies: [],
     fingers: [],
     snapPoints: [],
     origins: [],
@@ -631,7 +709,7 @@ export function buildScene(
       for (const win of c.zones) {
         const belt = conveyorConfigs.get(win.conveyorId);
         if (!belt) {
-          warnings.push(`${c.name}: ${win.kind} zone references unknown conveyor ${win.conveyorId}`);
+          warnings.push(`${c.name}: zone references unknown conveyor ${win.conveyorId}`);
           continue;
         }
         if (hidden.has(belt.id)) continue;
@@ -640,16 +718,15 @@ export function buildScene(
         const along = (beltCoordinate: number) => belt.originShift.x + beltCoordinate;
         const limit = allocationLimit(win);
         const zoneCentre = (win.start + win.end) / 2;
-        const name = `${c.name} ${win.kind} zone on ${belt.name}`;
+        const name = `${c.name} zone on ${belt.name}`;
         if (win.ccsOffset < Math.min(win.start, win.end) || win.ccsOffset > Math.max(win.start, win.end)) {
           warnings.push(
-            `${c.name}: CCS of the ${win.kind} zone on ${belt.name} (${win.ccsOffset} mm) lies outside the zone (${win.start} to ${win.end} mm)`,
+            `${c.name}: CCS of the zone on ${belt.name} (${win.ccsOffset} mm) lies outside the zone (${win.start} to ${win.end} mm)`,
           );
         }
         zones.push({
-          robotId: c.id,
+          componentId: c.id,
           conveyorId: belt.id,
-          kind: win.kind,
           transform: toRendererTransform(child(beltFrame, [along(zoneCentre), 0, 0])),
           length: Math.abs(win.end - win.start) * MM,
           width: belt.width * MM,
@@ -700,6 +777,7 @@ export function buildScene(
     limitAreas: scene.limitAreas.filter((a) => shown(a.robotId)),
     loops: scene.loops.filter((l) => shown(l.id)),
     cartesians: scene.cartesians.filter((c) => shown(c.id)),
+    bodies: scene.bodies.filter((b) => shown(b.componentId)),
     fingers: scene.fingers.filter((f) => shown(f.robotId)),
     snapPoints: snapPoints.filter((p) => shown(p.local.componentId)),
     origins: origins.filter((o) => shown(o.componentId)),

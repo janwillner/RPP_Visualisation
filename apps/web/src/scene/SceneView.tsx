@@ -10,6 +10,7 @@ import type { SceneFeed, SourceInfo } from "../connection";
 import type {
   ProductDisplay,
   SceneAllocation,
+  SceneBody,
   SceneBoxArea,
   SceneCartesian,
   SceneDelta,
@@ -29,7 +30,7 @@ import type {
   SceneFaultLabel,
   SourcedFaults,
 } from "./scene-model";
-import { availableSnapPoints, buildMachineScene } from "./scene-model";
+import { availableSnapPoints, buildMachineScene, emptyScene } from "./scene-model";
 import { isTap, nearestOnScreen, snapRadiusPx, type ScreenPoint } from "./picking";
 import type { ConfigMessage, ProductState } from "@rpp/protocol";
 
@@ -97,24 +98,7 @@ export interface SceneViewProps {
   onFaults: (faults: SourcedFaults[]) => void;
 }
 
-const EMPTY: SceneModel = {
-  conveyors: [],
-  products: [],
-  deltas: [],
-  workingAreas: [],
-  zones: [],
-  gantries: [],
-  boxAreas: [],
-  limitAreas: [],
-  loops: [],
-  cartesians: [],
-  fingers: [],
-  snapPoints: [],
-  origins: [],
-  faultLabels: [],
-  faults: [],
-  warnings: [],
-};
+const EMPTY: SceneModel = emptyScene();
 
 
 const PRODUCT_COLORS: Record<ProductState, string> = PRODUCT;
@@ -297,7 +281,7 @@ function signature(m: SceneModel): string {
     m.conveyors.map((c) => `${c.id}:${c.length}:${c.width}`).join(","),
     m.products.map((p) => `${p.key}:${p.state}`).join(","),
     m.deltas.map((d) => d.id + ":" + d.baseRadius + ":" + d.effectorRadius).join(","),
-    m.zones.map((w) => `${w.robotId}:${w.conveyorId}:${w.kind}`).join(","),
+    m.zones.map((w) => `${w.componentId}:${w.conveyorId}:${w.length}`).join(","),
     m.snapPoints.filter((p) => !p.moving).map((p) => p.key).join(","),
     m.gantries.map((g) => `${g.id}:${g.moduleCount}:${g.moduleLength}:${g.movers.map((x) => x.id).join("/")}`).join(","),
     m.boxAreas.map((a) => `${a.robotId}:${a.size.join("/")}`).join(","),
@@ -306,6 +290,7 @@ function signature(m: SceneModel): string {
     m.loops.map((l) => `${l.id}:${l.straightLength}:${l.curveRadius}:${l.movers.map((x) => x.id).join("/")}`).join(","),
     m.cartesians.map((c) => `${c.id}:${c.parts.map((p) => p.size.join("/")).join("/")}:${c.flange ? 1 : 0}`).join(","),
     m.fingers.map((f) => `${f.key}:${f.diameter}:${f.height}`).join(","),
+    m.bodies.map((b) => `${b.key}:${b.shape}:${b.role}:${b.size.length}/${b.size.width}/${b.size.height}`).join(","),
     // Faults change colours and labels. Every fault of a shown component or mover has exactly one label, so the
     // labels also stand for the red tint of the parts.
     m.faultLabels.map((l) => `${l.key}:${l.message}`).join(","),
@@ -476,6 +461,11 @@ function SourceContent(props: {
       {structure.cartesians.map((c) => (
         <CartesianMesh key={c.id} robot={c} latest={latest} selected={isSelected(c.id)} onSelect={onSelect} />
       ))}
+      {structure.bodies.map((b) =>
+        (b.role === "beam" || b.role === "fieldOfView") && !layers.zones ? null : (
+          <BodyMesh key={b.key} body={b} latest={latest} selected={isSelected(b.componentId)} onSelect={onSelect} />
+        ),
+      )}
       {structure.fingers.map((f) => (
         <FingerMesh key={f.key} finger={f} latest={latest} selected={isSelected(f.robotId)} onSelect={onSelect} />
       ))}
@@ -503,34 +493,34 @@ function SourceContent(props: {
         ))}
       {layers.zones &&
         structure.zones.map((w, i) => (
-          <group key={`${w.robotId}:${i}`} ref={(o) => applyTransform(o, w.transform)}>
+          <group key={`${w.componentId}:${i}`} ref={(o) => applyTransform(o, w.transform)}>
             <mesh
               position={[0, 0.003, 0]}
               renderOrder={OVERLAY_ORDER}
-              userData={{ label: `${w.kind === "pick" ? "Pick" : "Place"} zone (robot #${w.robotId})` }}
+              userData={{ label: `Zone (#${w.componentId})` }}
             >
               <boxGeometry args={[w.length, 0.004, w.width]} />
               <OverlayMaterial
-                color={w.kind === "pick" ? OVERLAY.pickZone : OVERLAY.placeZone}
-                opacity={isSelected(w.robotId) ? 0.55 : 0.3}
+                color={OVERLAY.zone}
+                opacity={isSelected(w.componentId) ? 0.55 : 0.3}
               />
             </mesh>
             <Outline
               points={rectangle(w.length, w.width, 0.007)}
-              color={isSelected(w.robotId) ? SELECT_COLOR : w.kind === "pick" ? OVERLAY.pickZone : OVERLAY.placeZone}
+              color={isSelected(w.componentId) ? SELECT_COLOR : OVERLAY.zone}
             />
             {w.allocation && (
               <AllocationMesh
                 allocation={w.allocation}
                 zone={w}
-                color={w.kind === "pick" ? OVERLAY.pickAllocation : OVERLAY.placeAllocation}
-                selected={isSelected(w.robotId)}
+                color={OVERLAY.allocation}
+                selected={isSelected(w.componentId)}
               />
             )}
           </group>
         ))}
       {layers.zones &&
-        structure.zones.map((w, i) => <CcsLine key={`ccs:${w.robotId}:${i}`} transform={w.ccs} width={w.width} />)}
+        structure.zones.map((w, i) => <CcsLine key={`ccs:${w.componentId}:${i}`} transform={w.ccs} width={w.width} />)}
       {layers.faultLabels && structure.faultLabels.map((l) => <FaultLabel key={l.key} label={l} latest={latest} />)}
     </OfflineScope>
   );
@@ -802,6 +792,88 @@ function ProductMesh(props: {
         </>
       )}
     </mesh>
+  );
+}
+
+/**
+ * A body's solid standing on its bottom centre, local +Y up, +X along its length, +Z across (metres): a box, an
+ * (oval) cylinder whose length and width are its diameters, or a rectangular frustum.
+ */
+function bodyGeometry(b: SceneBody): THREE.BufferGeometry {
+  const { length, width, height } = b.size;
+  if (b.shape === "frustum") {
+    const [x0, z0, x1, z1] = [length / 2, width / 2, b.top.length / 2, b.top.width / 2];
+    // Bottom corners 0–3, top corners 4–7, counter-clockwise seen from above.
+    const corners = [
+      [-x0, 0, z0], [x0, 0, z0], [x0, 0, -z0], [-x0, 0, -z0],
+      [-x1, height, z1], [x1, height, z1], [x1, height, -z1], [-x1, height, -z1],
+    ];
+    const faces = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
+    const positions = faces.flatMap(([a, b, c, d]) => [a, b, c, a, c, d].flatMap((i) => corners[i!]!));
+    const frustum = new THREE.BufferGeometry();
+    frustum.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    frustum.computeVertexNormals();
+    return frustum;
+  }
+  const solid =
+    b.shape === "cylinder" ? new THREE.CylinderGeometry(0.5, 0.5, height, ROUND_SEGMENTS) : new THREE.BoxGeometry(1, height, 1);
+  solid.scale(length, 1, width);
+  solid.translate(0, height / 2, 0);
+  return solid;
+}
+
+const BODY_COLORS = { structure: SOLID.profile, sensor: SOLID.sensor, beam: OVERLAY.beam, fieldOfView: OVERLAY.fieldOfView };
+
+/**
+ * One body a component is drawn from (`role` sets the look): a machine part (structure, sensor head) lit with edge
+ * lines and a shadow, red while its component is faulted; or an overlay (beam, field of view) on the zones layer,
+ * unlit and see-through, lighting up while active. Only machine parts select their component: an overlay would cover
+ * the products inside it.
+ */
+function BodyMesh(props: {
+  body: SceneBody;
+  latest: MutableRefObject<SceneModel>;
+  selected: boolean;
+  onSelect: (s: LocalSelection) => void;
+}) {
+  const { body, latest, selected, onSelect } = props;
+  const overlay = body.role === "beam" || body.role === "fieldOfView";
+  const fill = useRef<THREE.MeshBasicMaterial>(null);
+  const { shape, size, top } = body;
+  const geometry = useMemo(
+    () => bodyGeometry(body),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [shape, size.length, size.width, size.height, top.length, top.width],
+  );
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  useFrame(() => {
+    const active = latest.current.bodies.find((b) => b.key === body.key)?.active ?? false;
+    if (fill.current) fill.current.opacity = active ? 0.55 : body.role === "beam" ? 0.25 : 0.08;
+  });
+  const color = selected ? SELECT_COLOR : BODY_COLORS[body.role];
+  return (
+    <group ref={(o) => applyTransform(o, body.transform)}>
+      {overlay ? (
+        <mesh geometry={geometry} renderOrder={OVERLAY_ORDER} raycast={noRaycast}>
+          <meshBasicMaterial ref={fill} color={color} transparent opacity={0.08} depthWrite={false} toneMapped={false} />
+          <EdgeLines geometry={geometry} color={color} />
+        </mesh>
+      ) : (
+        <FaultScope faulted={body.faulted}>
+          <mesh
+            geometry={geometry}
+            userData={{ label: `#${body.componentId}` }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect({ kind: "component", id: body.componentId });
+            }}
+          >
+            <meshStandardMaterial color={color} roughness={0.6} />
+            <EdgeLines geometry={geometry} />
+          </mesh>
+        </FaultScope>
+      )}
+    </group>
   );
 }
 

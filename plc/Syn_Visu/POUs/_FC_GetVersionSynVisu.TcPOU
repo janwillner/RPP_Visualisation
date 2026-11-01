@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FC_GetVersionSynVisu" Id="{f0cb2bf3-e605-4314-b2f4-2f3e28cbfa2f}" SpecialFunc="None">
+  <POU Name="_FC_GetVersionSynVisu" Id="{6d280a00-c6e9-4b9b-bcfa-0bee5abf3d56}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -16,6 +16,7 @@ Syn_Visu 3.2.0  ¦ 2026-10-31 ¦ J.Willner ¦ _FB_VisuConveyor.m_MoveProduct<br>
 Syn_Visu 3.3.0  ¦ 2026-10-31 ¦ J.Willner ¦ Zone CCS offset, origin shift per component (protocol 9)<br>
 Syn_Visu 3.4.0  ¦ 2026-11-01 ¦ J.Willner ¦ m_LatchProduct: product state and robot (PLACED onto outfeeds)<br>
 Syn_Visu 3.5.0  ¦ 2026-11-01 ¦ J.Willner ¦ Product shapes: box, cylinder, rounded box (protocol 10)<br>
+Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Vision system, product sensor, zones without kind (protocol 11)<br>
 ****************************************************************************************************)
 FUNCTION _FC_GetVersionSynVisu : UINT
 VAR_INPUT
@@ -23,8 +24,8 @@ VAR_INPUT
 END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[CASE vi_n_VersionElement OF
-	1: _FC_GetVersionSynVisu := 3;
-	2: _FC_GetVersionSynVisu := 5;
+	1: _FC_GetVersionSynVisu := 4;
+	2: _FC_GetVersionSynVisu := 0;
 	3: _FC_GetVersionSynVisu := 0;
 ELSE
 	_FC_GetVersionSynVisu := 16#FFFF;

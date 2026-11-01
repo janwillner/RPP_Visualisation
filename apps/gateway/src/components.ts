@@ -5,17 +5,20 @@ import {
   ConveyorStateSchema,
   DeltaConfigSchema,
   DeltaStateSchema,
+  SensorConfigSchema,
+  SensorStateSchema,
+  VisionConfigSchema,
+  VisionStateSchema,
   XtsGantryConfigSchema,
   XtsGantryStateSchema,
   XtsLoopConfigSchema,
   XtsLoopStateSchema,
-  ZoneKindSchema,
   type ComponentConfig,
   type ComponentState,
 } from "@rpp/protocol";
 import type { z } from "zod";
-import { E_VisuComponentType, E_VisuZoneKind, PLC_TYPES } from "./plc-contract";
-import { mapPlc, registerEnumTable } from "./plc-mapping";
+import { E_VisuComponentType, PLC_TYPES } from "./plc-contract";
+import { mapPlc } from "./plc-mapping";
 
 export type ComponentKind = ComponentConfig["type"];
 
@@ -59,9 +62,9 @@ export const COMPONENTS: Record<ComponentKind, ComponentSpec> = {
     config: CartesianConfigSchema,
     state: CartesianStateSchema,
   },
+  vision: { plcValue: E_VisuComponentType.VISION, plcType: PLC_TYPES.vision, config: VisionConfigSchema, state: VisionStateSchema },
+  sensor: { plcValue: E_VisuComponentType.SENSOR, plcType: PLC_TYPES.sensor, config: SensorConfigSchema, state: SensorStateSchema },
 };
-
-registerEnumTable(ZoneKindSchema, { [E_VisuZoneKind.PICK]: "pick", [E_VisuZoneKind.PLACE]: "place" });
 
 /** The component type of a manifest entry's `eType`, undefined when unknown. */
 export function componentKind(plcValue: number): ComponentKind | undefined {
@@ -78,15 +81,25 @@ export function mapConfig(kind: ComponentKind, identity: ComponentIdentity, raw:
   return mapPlc(COMPONENTS[kind].config, raw, { type: kind, ...identity }) as ComponentConfig;
 }
 
-/** Finger states are reported for every possible finger; only the configured ones are kept, also in lists such as movers. */
+/**
+ * The PLC reports a state for every possible finger or body; only as many as the config has are kept, also in the
+ * entries of lists such as movers.
+ */
 export function mapState(config: ComponentConfig, raw: unknown): ComponentState {
   const state = mapPlc(COMPONENTS[config.type].state, raw, { type: config.type, id: config.id }) as ComponentState;
-  return withFingers(state, "fingers" in config ? config.fingers.length : 0);
+  return withConfiguredCounts(state, config);
 }
 
-function withFingers(state: ComponentState, count: number): ComponentState {
+/** Cuts every list of the state named like a list of the config (fingers, bodies) to the config's length. */
+function withConfiguredCounts(state: ComponentState, config: ComponentConfig): ComponentState {
+  const lists = Object.entries(config).filter((e): e is [string, unknown[]] => Array.isArray(e[1]));
   const cut = (v: unknown) => {
-    if (typeof v === "object" && v !== null && "fingers" in v && Array.isArray(v.fingers)) v.fingers = v.fingers.slice(0, count);
+    if (typeof v !== "object" || v === null) return;
+    const entry = v as Record<string, unknown>;
+    for (const [key, list] of lists) {
+      const values = entry[key];
+      if (Array.isArray(values)) entry[key] = values.slice(0, list.length);
+    }
   };
   cut(state);
   for (const v of Object.values(state)) if (Array.isArray(v)) v.forEach(cut);

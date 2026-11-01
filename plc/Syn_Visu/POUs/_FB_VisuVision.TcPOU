@@ -1,0 +1,92 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="_FB_VisuVision" Id="{068031fe-3dc9-4b9d-a7a6-6fd88b888256}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+One visualised vision system: a camera over a conveyor. Typical cycle:<br>
+  fb_Vision.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 60, vi_str_Name := 'Vision 1',<br>
+      vi_str_Path := 'MAIN.fb_Vision.vo_Visu');<br>
+  fb_Vision.m_Configure(vi_Pose := LensPose, vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300,<br>
+      vi_lr_WorkingDistance := 800);<br>
+  fb_Vision.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 1, vi_lr_Start := 800, vi_lr_End := 1200);<br>
+  fb_Infeed.m_LatchProduct(..., vi_udn_DetectorId := fb_Vision.m_Id());<br>
+The pose is the lens, looking along its local -Z. m_Configure describes bodies 1 to 3 (housing, lens,<br>
+field of view down to the working distance); further bodies may be added with m_SetBody.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_VisuVision EXTENDS _FB_VisuDetector
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_ComponentType" Id="{4ec3f266-a561-42b4-a09d-2f9259c883bc}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Manifest type: vision system.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_ComponentType : E_VisuComponentType
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ComponentType := E_VisuComponentType.VISION;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Configure" Id="{aeee7bf6-9f10-4bbd-9d5d-6219b56e76e8}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets the lens pose and describes bodies 1 to 3: the housing above the lens, the lens and the field of<br>
+view, a frustum from the lens down to the working distance, vi_lr_FieldLength x vi_lr_FieldWidth there.<br>
+TRUE if anything changed.<br>
+****************************************************************************************************)
+METHOD m_Configure : BOOL
+VAR_INPUT
+	vi_Pose								: ST_VisuPose;	// MCS, the lens looking along its local -Z
+	vi_lr_FieldLength					: LREAL;	// [mm] field of view at the working distance, along the local X
+	vi_lr_FieldWidth					: LREAL;	// [mm] field of view at the working distance, along the local Y
+	vi_lr_WorkingDistance				: LREAL;	// [mm] from the lens to the field of view, e.g. the belt surface
+END_VAR
+VAR
+	TempBefore							: ST_VisuDetectorConfig;
+	TempPose							: ST_VisuPose;
+	lr_TempDistance						: LREAL;
+END_VAR
+VAR CONSTANT
+	lr_HOUSING_LENGTH					: LREAL := 100;	// [mm]
+	lr_HOUSING_WIDTH					: LREAL := 80;	// [mm]
+	lr_HOUSING_HEIGHT					: LREAL := 140;	// [mm]
+	lr_LENS_DIAMETER					: LREAL := 50;	// [mm]
+	lr_LENS_LENGTH						: LREAL := 60;	// [mm]
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TempBefore := vo_Visu.stConfig;
+lr_TempDistance := MAX(vi_lr_WorkingDistance, 0);
+m_SetPose(vi_Pose);
+TempPose.fZ := lr_LENS_LENGTH;
+m_SetBody(vi_un_Body := 1, vi_e_Shape := E_VisuBodyShape.BOX, vi_e_Role := E_VisuBodyRole.STRUCTURE, vi_Pose := TempPose,
+	vi_lr_Length := lr_HOUSING_LENGTH, vi_lr_Width := lr_HOUSING_WIDTH, vi_lr_Height := lr_HOUSING_HEIGHT);
+TempPose.fZ := 0;
+m_SetBody(vi_un_Body := 2, vi_e_Shape := E_VisuBodyShape.CYLINDER, vi_e_Role := E_VisuBodyRole.SENSOR, vi_Pose := TempPose,
+	vi_lr_Length := lr_LENS_DIAMETER, vi_lr_Width := lr_LENS_DIAMETER, vi_lr_Height := lr_LENS_LENGTH);
+TempPose.fZ := -lr_TempDistance;
+m_SetBody(vi_un_Body := 3, vi_e_Shape := E_VisuBodyShape.FRUSTUM, vi_e_Role := E_VisuBodyRole.FIELD_OF_VIEW,
+	vi_Pose := TempPose, vi_lr_Length := vi_lr_FieldLength, vi_lr_Width := vi_lr_FieldWidth,
+	vi_lr_Height := lr_TempDistance, vi_lr_TopLength := lr_LENS_DIAMETER, vi_lr_TopWidth := lr_LENS_DIAMETER);
+m_Configure := Tc2_System.MEMCMP(ADR(TempBefore), ADR(vo_Visu.stConfig), SIZEOF(TempBefore)) <> 0;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

@@ -3,10 +3,11 @@
   <DUT Name="ST_VisuZone" Id="{0a88d6bc-bd16-493d-b476-096429b44384}">
     <Declaration><![CDATA[TYPE ST_VisuZone :
 STRUCT
+	(* A stretch of a conveyor that belongs to a component: where a robot picks or places, where a detector
+	   detects. The visualisation draws every zone alike; fStart = fEnd is a line across the belt. *)
 	nConveyorId : UDINT; // manifest id of the conveyor
 	fStart : LREAL; // mm along the conveyor's local X (belt coordinates, not MCS)
 	fEnd : LREAL; // mm along the conveyor's local X
-	eKind : E_VisuZoneKind;
 	(* mm before fEnd, against the conveying direction: the robot may allocate products in the zone only up to
 	   fEnd - fAllocationOffset, so it does not move out of the zone while approaching. 0 = no allocation limit. *)
 	fAllocationOffset : LREAL;

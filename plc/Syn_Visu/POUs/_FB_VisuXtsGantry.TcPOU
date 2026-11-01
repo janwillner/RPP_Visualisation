@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuXtsGantry" Id="{a345316d-f1c7-4ce6-9850-50a49a6c0d62}" SpecialFunc="None">
+  <POU Name="_FB_VisuXtsGantry" Id="{8aa8bc8a-1193-45b8-964e-f25a535eba44}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -15,7 +15,7 @@ gripper flange at its end. Typical cycle:<br>
       vi_lr_XMax := 700, vi_lr_ZMin := -100, vi_lr_ZMax := 0, vi_lr_ToolOffsetX := 150, vi_lr_ToolOffsetZ := -350,<br>
       vi_lr_MoverLength := 155, vi_lr_MoverWidth := 80);<br>
   fb_Idh.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 50);<br>
-  fb_Idh.m_SetZone(vi_udn_ConveyorId := 3, vi_e_Kind := E_VisuZoneKind.PICK, vi_lr_Start := 1100, vi_lr_End := 2600);<br>
+  fb_Idh.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 3, vi_lr_Start := 1100, vi_lr_End := 2600);<br>
   fb_Idh.m_SetZPosition(lr_ZAxisActual);<br>
   fb_Idh.m_SetMoverCount(4);<br>
   fb_Idh.m_SetMover(vi_un_Index := 0, vi_udn_Id := 1, vi_lr_Position := ..., vi_lr_X := ..., vi_FingerStates := Mover1Fingers);<br>
@@ -27,8 +27,9 @@ vo_Visu is the contract structure the gateway reads at the path given to m_Regis
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
+Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Zones and fingers from _FB_VisuRobot; m_SetZone by index, no kind<br>
 ****************************************************************************************************)
-FUNCTION_BLOCK _FB_VisuXtsGantry EXTENDS _FB_VisuComponent
+FUNCTION_BLOCK _FB_VisuXtsGantry EXTENDS _FB_VisuRobot
 VAR_OUTPUT
 	vo_Visu								: ST_VisuXtsGantry;	// contract structure read by the gateway
 END_VAR]]></Declaration>
@@ -54,54 +55,6 @@ IF m_ApplyConfig THEN
 	vo_Visu.stConfig := vio_New;
 	m_NotifyConfigChanged();
 END_IF]]></ST>
-      </Implementation>
-    </Method>
-    <Method Name="m_ClearFingers" Id="{7f4df7a1-2362-4afd-aa23-424ede0dc906}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-Removes the gripper definition. TRUE if there was one.<br>
-****************************************************************************************************)
-METHOD m_ClearFingers : BOOL
-VAR
-	TempNew								: ST_VisuXtsGantryConfig;
-	TempEmpty							: ST_VisuFinger;
-	un_TempIndex						: UINT;
-END_VAR]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[TempNew := vo_Visu.stConfig;
-FOR un_TempIndex := 0 TO VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1 DO
-	TempNew.aFingers[un_TempIndex] := TempEmpty;
-END_FOR
-TempNew.nFingerCount := 0;
-m_ClearFingers := m_ApplyConfig(TempNew);]]></ST>
-      </Implementation>
-    </Method>
-    <Method Name="m_ClearZones" Id="{d03ce110-4fb5-45e1-b7c2-06b816354a86}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-Removes all pick and place zones. TRUE if there were any.<br>
-****************************************************************************************************)
-METHOD m_ClearZones : BOOL
-VAR
-	TempNew								: ST_VisuXtsGantryConfig;
-	TempEmpty							: ST_VisuZone;
-	un_TempIndex						: UINT;
-END_VAR]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[TempNew := vo_Visu.stConfig;
-FOR un_TempIndex := 0 TO VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1 DO
-	TempNew.aZones[un_TempIndex] := TempEmpty;
-END_FOR
-TempNew.nZoneCount := 0;
-m_ClearZones := m_ApplyConfig(TempNew);]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_ComponentType" Id="{c3f8ceb9-4b60-46da-b663-f6415f498013}">
@@ -160,6 +113,27 @@ TempNew.fMoverWidth := vi_lr_MoverWidth;
 m_Configure := m_ApplyConfig(TempNew);]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_Fingers" Id="{4f939a57-d71f-49dc-b23d-3e76712448a0}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The fingers of every mover's gripper for _FB_VisuRobot.m_SetFinger and m_ClearFingers.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_Fingers : BOOL
+VAR_OUTPUT
+	vo_p_Count							: POINTER TO UINT;	// nFingerCount of vo_Visu.stConfig
+	vo_p_Fingers						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFinger;	// aFingers of vo_Visu.stConfig
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_p_Count := ADR(vo_Visu.stConfig.nFingerCount);
+vo_p_Fingers := ADR(vo_Visu.stConfig.aFingers);
+m_Fingers := TRUE;]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_SetFault" Id="{a224315d-90cd-4fab-ba72-581b61a07fcb}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -180,41 +154,6 @@ END_VAR]]></Declaration>
         <ST><![CDATA[vo_Visu.stState.stFault.bActive := vi_b_Active;
 vo_Visu.stState.stFault.sMessage := vi_str_Message;
 m_SetFault := TRUE;]]></ST>
-      </Implementation>
-    </Method>
-    <Method Name="m_SetFinger" Id="{24f90d8b-fe9f-449c-b1b3-77e833cb2592}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-Defines finger vi_un_Finger (1-based) of every mover's gripper: a cylinder hanging from the finger's pose along<br>
-its local -Z. The finger count grows to vi_un_Finger.<br>
-*****************************************************************************************************<br>
-OUTPUT VALUES:<br>
-FALSE outside 1..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS.<br>
-****************************************************************************************************)
-METHOD m_SetFinger : BOOL
-VAR_INPUT
-	vi_un_Finger						: UINT;	// [-] 1-based, as a product's nFingerId
-	vi_lr_Diameter						: LREAL;	// [mm]
-	vi_lr_Height						: LREAL;	// [mm] along the finger's local -Z
-END_VAR
-VAR
-	TempNew								: ST_VisuXtsGantryConfig;
-END_VAR]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[m_SetFinger := FALSE;
-IF vi_un_Finger = 0 OR vi_un_Finger > VISU_GlobalConst_Param.VISU_un_MAX_FINGERS THEN
-	RETURN;
-END_IF
-TempNew := vo_Visu.stConfig;
-TempNew.aFingers[vi_un_Finger - 1].fDiameter := vi_lr_Diameter;
-TempNew.aFingers[vi_un_Finger - 1].fHeight := vi_lr_Height;
-TempNew.nFingerCount := MAX(TempNew.nFingerCount, vi_un_Finger);
-m_ApplyConfig(TempNew);
-m_SetFinger := TRUE;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_SetMover" Id="{836cee3d-a740-493b-ba48-ab27074bc414}">
@@ -309,61 +248,6 @@ TempNew.stOriginShift.fZ := vi_lr_Z;
 m_SetOriginShift := m_ApplyConfig(TempNew);]]></ST>
       </Implementation>
     </Method>
-    <Method Name="m_SetZone" Id="{ea11b5bb-98ad-4158-a73d-2766183aafff}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-Adds a pick or place zone, or updates the one for the same conveyor and kind.<br>
-*****************************************************************************************************<br>
-OUTPUT VALUES:<br>
-FALSE for vi_udn_ConveyorId = 0 or a full list.<br>
-****************************************************************************************************)
-METHOD m_SetZone : BOOL
-VAR_INPUT
-	vi_udn_ConveyorId					: UDINT;	// [-] manifest id of the conveyor
-	vi_e_Kind							: E_VisuZoneKind;
-	vi_lr_Start							: LREAL;	// [mm] along the conveyor from its origin (belt coordinates, not MCS)
-	vi_lr_End							: LREAL;	// [mm] along the conveyor from its origin
-	vi_lr_AllocationOffset				: LREAL := 0;	// [mm] before vi_lr_End up to which products may be allocated; 0 = no limit
-	vi_lr_CcsOffset						: LREAL := 0;	// [mm] along the conveyor from its origin: the robot's conveyor coordinate system
-END_VAR
-VAR
-	TempNew								: ST_VisuXtsGantryConfig;
-	un_TempIndex						: UINT;
-END_VAR]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[m_SetZone := FALSE;
-IF vi_udn_ConveyorId = 0 THEN
-	RETURN;
-END_IF
-TempNew := vo_Visu.stConfig;
-un_TempIndex := 0;
-(* ST evaluates both operands of AND: test the index before reading the array. *)
-WHILE un_TempIndex < TempNew.nZoneCount DO
-	IF TempNew.aZones[un_TempIndex].nConveyorId = vi_udn_ConveyorId AND TempNew.aZones[un_TempIndex].eKind = vi_e_Kind THEN
-		EXIT;
-	END_IF
-	un_TempIndex := un_TempIndex + 1;
-END_WHILE
-IF un_TempIndex >= VISU_GlobalConst_Param.VISU_un_MAX_ZONES THEN
-	RETURN;
-END_IF
-IF un_TempIndex = TempNew.nZoneCount THEN
-	TempNew.nZoneCount := TempNew.nZoneCount + 1;
-END_IF
-TempNew.aZones[un_TempIndex].nConveyorId := vi_udn_ConveyorId;
-TempNew.aZones[un_TempIndex].eKind := vi_e_Kind;
-TempNew.aZones[un_TempIndex].fStart := vi_lr_Start;
-TempNew.aZones[un_TempIndex].fEnd := vi_lr_End;
-TempNew.aZones[un_TempIndex].fAllocationOffset := vi_lr_AllocationOffset;
-TempNew.aZones[un_TempIndex].fCcsOffset := vi_lr_CcsOffset;
-m_ApplyConfig(TempNew);
-m_SetZone := TRUE;]]></ST>
-      </Implementation>
-    </Method>
     <Method Name="m_SetZPosition" Id="{0aaac84c-8293-4e8a-9c63-4e9bfc97927a}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -381,6 +265,27 @@ END_VAR]]></Declaration>
         <ST><![CDATA[vo_Visu.stState.fZ := vi_lr_Z;
 vo_Visu.stState.nTimestamp := m_DcTime();
 m_SetZPosition := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Zones" Id="{652e0996-d84b-47cb-b7f2-a52be6480cd0}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The gantry's zones for _FB_VisuZoneComponent.m_SetZone and m_ClearZones.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_Zones : BOOL
+VAR_OUTPUT
+	vo_p_Count							: POINTER TO UINT;	// nZoneCount of vo_Visu.stConfig
+	vo_p_Zones							: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone;	// aZones of vo_Visu.stConfig
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_p_Count := ADR(vo_Visu.stConfig.nZoneCount);
+vo_p_Zones := ADR(vo_Visu.stConfig.aZones);
+m_Zones := TRUE;]]></ST>
       </Implementation>
     </Method>
   </POU>

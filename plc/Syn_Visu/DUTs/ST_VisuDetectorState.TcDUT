@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuDetectorState" Id="{35c3b02e-dfa9-45cc-b473-69194de77248}">
+    <Declaration><![CDATA[TYPE ST_VisuDetectorState :
+STRUCT
+	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (set by _FB_VisuDetector)
+	aBodyStates : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBodyState; // one per configured body
+	stFault : ST_VisuFault; // fault of the detector (set by _FB_VisuDetector.m_SetFault)
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,103 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="_FB_VisuSensor" Id="{b2859c4b-6ebe-4772-a437-9a8b16dec500}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+One visualised product sensor, e.g. a light barrier at the side of a conveyor. Typical cycle:<br>
+  fb_Sensor.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 61, vi_str_Name := 'Sensor 1',<br>
+      vi_str_Path := 'MAIN.fb_Sensor.vo_Visu');<br>
+  fb_Sensor.m_Configure(vi_Pose := HeadPose, vi_lr_BeamLength := 500);<br>
+  fb_Sensor.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 1, vi_lr_Start := 500, vi_lr_End := 500);<br>
+  fb_Sensor.m_SetSignal(vi_b_Signal := b_BeamInterrupted);<br>
+The pose is the sensor head; its beam runs along the local +Y. m_Configure describes body 1 (head) and<br>
+body 2 (beam); further bodies may be added with m_SetBody.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_VisuSensor EXTENDS _FB_VisuDetector
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_ComponentType" Id="{471f3196-5e0f-40d1-ae58-b960173a92ff}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Manifest type: product sensor.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_ComponentType : E_VisuComponentType
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ComponentType := E_VisuComponentType.SENSOR;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Configure" Id="{eb2d4a04-cd5a-40dc-861e-87fc8b62c9c4}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets the head pose and describes body 1, the head, and body 2, the beam: a thin cylinder from the head<br>
+along its local +Y, vi_lr_BeamLength long. TRUE if anything changed.<br>
+****************************************************************************************************)
+METHOD m_Configure : BOOL
+VAR_INPUT
+	vi_Pose								: ST_VisuPose;	// MCS, centre of the head; the beam runs along its local +Y
+	vi_lr_BeamLength					: LREAL;	// [mm] e.g. across the belt to the reflector
+END_VAR
+VAR
+	TempBefore							: ST_VisuDetectorConfig;
+	TempPose							: ST_VisuPose;
+END_VAR
+VAR CONSTANT
+	lr_HEAD_LENGTH						: LREAL := 30;	// [mm] along the local X
+	lr_HEAD_WIDTH						: LREAL := 40;	// [mm] along the local Y, towards the beam
+	lr_HEAD_HEIGHT						: LREAL := 60;	// [mm]
+	lr_BEAM_DIAMETER					: LREAL := 8;	// [mm]
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TempBefore := vo_Visu.stConfig;
+m_SetPose(vi_Pose);
+TempPose.fZ := -lr_HEAD_HEIGHT / 2;
+m_SetBody(vi_un_Body := 1, vi_e_Shape := E_VisuBodyShape.BOX, vi_e_Role := E_VisuBodyRole.SENSOR, vi_Pose := TempPose,
+	vi_lr_Length := lr_HEAD_LENGTH, vi_lr_Width := lr_HEAD_WIDTH, vi_lr_Height := lr_HEAD_HEIGHT);
+(* The beam stands on the head's face, turned so that its local +Z runs along the head's +Y. *)
+TempPose.fY := lr_HEAD_WIDTH / 2;
+TempPose.fZ := 0;
+TempPose.fRx := -90;
+m_SetBody(vi_un_Body := 2, vi_e_Shape := E_VisuBodyShape.CYLINDER, vi_e_Role := E_VisuBodyRole.BEAM, vi_Pose := TempPose,
+	vi_lr_Length := lr_BEAM_DIAMETER, vi_lr_Width := lr_BEAM_DIAMETER, vi_lr_Height := MAX(vi_lr_BeamLength, 0));
+m_Configure := Tc2_System.MEMCMP(ADR(TempBefore), ADR(vo_Visu.stConfig), SIZEOF(TempBefore)) <> 0;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetSignal" Id="{e960eb98-7cc0-4fed-bc80-50574bd1923e}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Reports the sensor's signal: while TRUE, e.g. while a product interrupts the beam, the beam lights up.<br>
+Call once per cycle; it also stamps the state with the cycle's DC time. TRUE.<br>
+****************************************************************************************************)
+METHOD m_SetSignal : BOOL
+VAR_INPUT
+	vi_b_Signal							: BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetSignal := m_SetBodyActive(vi_un_Body := 2, vi_b_Active := vi_b_Signal);]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

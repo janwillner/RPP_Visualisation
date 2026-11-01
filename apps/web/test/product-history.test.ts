@@ -38,6 +38,7 @@ function product(id: number, state: Product["state"], robotId = 0, fingerId = 0)
     moverId: 0,
     fingerId,
     productType: 1,
+    detectorId: 0,
   };
 }
 
@@ -77,6 +78,24 @@ describe("product history", () => {
     // Up to a moment, e.g. during playback.
     expect(history.of(A, 1, 5, 600).map((s) => s.kind)).toEqual(["detected", "assigned", "picked"]);
     expect(history.of(A, 1, 99)).toEqual([]);
+  });
+
+  it("names the detector that latched a product", () => {
+    const withVision: SourceInfo = {
+      ...source,
+      config: {
+        ...config,
+        components: [
+          ...config.components,
+          { ...config.components[0]!, type: "vision", id: 60, name: "Vision 1", zones: [], bodies: [] } as ConfigMessage["components"][number],
+        ],
+      },
+    };
+    const history = new ProductHistory();
+    history.add(0, register(0, [{ ...product(5, "detected"), detectorId: 60 }]), withVision);
+    history.add(0, register(0, [{ ...product(5, "detected"), detectorId: 60 }, { ...product(6, "detected"), detectorId: 61 }]), withVision);
+    expect(history.of(A, 1, 5)[0]!.text).toBe("Entered the register (detected by Vision 1)");
+    expect(history.of(A, 1, 6)[0]!.text).toBe("Entered the register (detected by detector #61)");
   });
 
   it("names the robot from the config, and marks a product that passes the belt end unpicked as missed", () => {

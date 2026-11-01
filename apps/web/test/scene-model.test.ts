@@ -10,7 +10,9 @@ import type {
   Position,
   Product,
   ProductType,
+  SensorConfig,
   StateMessage,
+  VisionConfig,
   XtsGantryConfig,
   XtsLoopConfig,
   Zone,
@@ -101,6 +103,7 @@ function product(overrides: Partial<Product> = {}): Product {
     moverId: 0,
     fingerId: 0,
     productType: 1,
+    detectorId: 0,
     ...overrides,
   };
 }
@@ -413,7 +416,7 @@ describe("scene model: hidden components", () => {
   it("drops a hidden robot's geometry, areas, zones, snap points and origin", () => {
     const belt = conveyorConfig();
     const robot = deltaConfig({
-      zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0, ccsOffset: 0 }],
+      zones: [{ conveyorId: 1, start: 1200, end: 1800, allocationOffset: 0, ccsOffset: 0 }],
       limitArea: { xMin: -500, xMax: 500, yMin: -700, yMax: 700, zMin: -1400, zMax: -600 },
     });
     const scene = buildScene(config(belt, robot), [], 0, new Set([20]));
@@ -429,7 +432,7 @@ describe("scene model: hidden components", () => {
 
   it("drops a hidden conveyor with its products and the zones on it, keeping the robot", () => {
     const belt = conveyorConfig();
-    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0, ccsOffset: 0 }] });
+    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, allocationOffset: 0, ccsOffset: 0 }] });
     const scene = buildScene(config(belt, robot), [snapshot(0, [conveyorState(0, [product()])])], 0, new Set([1]));
 
     expect(scene.conveyors).toEqual([]);
@@ -445,15 +448,15 @@ describe("scene model: working areas and zones", () => {
     const belt = conveyorConfig({ pose: { x: 1000, y: 0, z: 800, rx: 0, ry: 0, rz: 90 }, width: 400 });
     const robot = deltaConfig({
       zones: [
-        { conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0, ccsOffset: 1500 },
-        { conveyorId: 99, start: 0, end: 100, kind: "place", allocationOffset: 0, ccsOffset: 0 },
+        { conveyorId: 1, start: 1200, end: 1800, allocationOffset: 0, ccsOffset: 1500 },
+        { conveyorId: 99, start: 0, end: 100, allocationOffset: 0, ccsOffset: 0 },
       ],
     });
     const scene = buildScene(config(belt, robot), [], 0);
 
     expect(scene.zones).toHaveLength(1);
     const [w] = scene.zones;
-    expect(w).toMatchObject({ robotId: 20, conveyorId: 1, kind: "pick" });
+    expect(w).toMatchObject({ componentId: 20, conveyorId: 1 });
     // Centre at belt x = 1500 along the belt's +X, which points along MCS +Y.
     closeTo(w!.transform.position, [1, 0.8, -1.5]);
     closeTo(rotate(w!.transform.quaternion, [1, 0, 0]), [0, 0, -1]);
@@ -507,8 +510,8 @@ describe("scene model: measure mode", () => {
     const belt = conveyorConfig({ pose: { x: 1000, y: 0, z: 800, rx: 0, ry: 0, rz: 90 }, width: 400 });
     const robot = deltaConfig({
       zones: [
-        { conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 200, ccsOffset: 0 },
-        { conveyorId: 1, start: 2000, end: 2400, kind: "place", allocationOffset: 0, ccsOffset: 0 },
+        { conveyorId: 1, start: 1200, end: 1800, allocationOffset: 200, ccsOffset: 0 },
+        { conveyorId: 1, start: 2000, end: 2400, allocationOffset: 0, ccsOffset: 0 },
       ],
     });
     const scene = buildScene(config(belt, robot), [], 0);
@@ -519,13 +522,13 @@ describe("scene model: measure mode", () => {
     expect(pick!.allocation!.length).toBeCloseTo(0.4);
     expect(pick!.allocation!.limit).toBeCloseTo(0.1);
     expect(place!.allocation).toBeNull();
-    const limit = snap(scene, "Delta 1 pick zone on Infeed · allocation limit, left");
+    const limit = snap(scene, "Delta 1 zone on Infeed · allocation limit, left");
     closeTo(limit.local.point, [1600, 200, 0]);
     expect(limit.layer).toBe("zones");
   });
 
   it("clamps an allocation offset longer than the zone to the zone start", () => {
-    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 900, ccsOffset: 0 }] });
+    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, allocationOffset: 900, ccsOffset: 0 }] });
     const [zone] = buildScene(config(belt, robot), [], 0).zones;
 
     expect(zone!.allocation!.length).toBeCloseTo(0);
@@ -554,8 +557,8 @@ describe("scene model: measure mode", () => {
   });
 
   it("offers the corners of a zone on its conveyor, in belt coordinates", () => {
-    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, kind: "pick", allocationOffset: 0, ccsOffset: 0 }] });
-    const corner = snap(buildScene(config(belt, robot), [], 0), "Delta 1 pick zone on Infeed · start, right");
+    const robot = deltaConfig({ zones: [{ conveyorId: 1, start: 1200, end: 1800, allocationOffset: 0, ccsOffset: 0 }] });
+    const corner = snap(buildScene(config(belt, robot), [], 0), "Delta 1 zone on Infeed · start, right");
     closeTo(corner.mcs, [1200, 1200, 800]);
     expect(corner.local.componentName).toBe("Infeed");
     closeTo(corner.local.point, [1200, -200, 0]);
@@ -657,7 +660,7 @@ describe("scene model: measure mode", () => {
 
   it("does not offer snap points of hidden layers", () => {
     const robot = deltaConfig({
-      zones: [{ conveyorId: 1, start: 0, end: 500, kind: "pick", allocationOffset: 0, ccsOffset: 0 }],
+      zones: [{ conveyorId: 1, start: 0, end: 500, allocationOffset: 0, ccsOffset: 0 }],
       limitArea: { xMin: -500, xMax: 500, yMin: -700, yMax: 700, zMin: -1400, zMax: -600 },
     });
     const points = buildScene(config(belt, robot), [], 0).snapPoints;
@@ -775,11 +778,11 @@ describe("scene model: XTS gantry", () => {
 
   it("resolves its zones onto the referenced conveyor", () => {
     const zoned = buildScene(
-      config(conveyorConfig(), gantryConfig({ zones: [{ conveyorId: 1, start: 0, end: 800, kind: "pick", allocationOffset: 0, ccsOffset: 0 }] })),
+      config(conveyorConfig(), gantryConfig({ zones: [{ conveyorId: 1, start: 0, end: 800, allocationOffset: 0, ccsOffset: 0 }] })),
       [],
       0,
     );
-    expect(zoned.zones).toEqual([expect.objectContaining({ robotId: 30, conveyorId: 1, kind: "pick" })]);
+    expect(zoned.zones).toEqual([expect.objectContaining({ componentId: 30, conveyorId: 1 })]);
   });
 });
 
@@ -1174,7 +1177,6 @@ describe("scene model: conveyor coordinate system and origin shift", () => {
     conveyorId: 1,
     start: 1200,
     end: 1800,
-    kind: "pick",
     allocationOffset: 0,
     ccsOffset: 1500,
     ...overrides,
@@ -1189,7 +1191,7 @@ describe("scene model: conveyor coordinate system and origin shift", () => {
     const scene = buildScene(config(belt, deltaConfig({ zones: [pickZone()] })), [], 0);
 
     closeTo(scene.zones[0]!.ccs.position, [1.5, 0.8, 0]);
-    const ccs = snapAt(scene, "Delta 1 pick zone on Infeed · CCS");
+    const ccs = snapAt(scene, "Delta 1 zone on Infeed · CCS");
     closeTo(ccs.mcs, [1500, 0, 800]);
     expect(ccs.layer).toBe("zones");
     expect(scene.warnings).toEqual([]);
@@ -1198,7 +1200,7 @@ describe("scene model: conveyor coordinate system and origin shift", () => {
   it("warns when a zone's CCS lies outside the zone", () => {
     const scene = buildScene(config(belt, deltaConfig({ zones: [pickZone({ ccsOffset: 2000 })] })), [], 0);
 
-    expect(scene.warnings).toEqual(["Delta 1: CCS of the pick zone on Infeed (2000 mm) lies outside the zone (1200 to 1800 mm)"]);
+    expect(scene.warnings).toEqual(["Delta 1: CCS of the zone on Infeed (2000 mm) lies outside the zone (1200 to 1800 mm)"]);
   });
 
   it("counts a conveyor's belt coordinates from its shifted origin", () => {
@@ -1208,7 +1210,7 @@ describe("scene model: conveyor coordinate system and origin shift", () => {
     // Zone 1200..1800 from the origin 500 mm behind the belt start: centre at 2000 mm from the start.
     closeTo(scene.zones[0]!.transform.position, [2, 0.8, 0]);
     closeTo(scene.zones[0]!.ccs.position, [2, 0.8, 0]);
-    const start = snapAt(scene, "Delta 1 pick zone on Infeed · start, right");
+    const start = snapAt(scene, "Delta 1 zone on Infeed · start, right");
     closeTo(start.mcs, [1700, -200, 800]);
     closeTo(start.local.point, [1200, -200, 0]);
   });
@@ -1228,5 +1230,98 @@ describe("scene model: conveyor coordinate system and origin shift", () => {
     closeTo(scene.conveyors[0]!.transform.position, [0, 0.8, 0]);
     closeTo(scene.deltas[0]!.base.position, [1.5, 1.8, 0]);
     closeTo(scene.workingAreas[0]!.transform.position, [1.5, 1.8, 0]);
+  });
+});
+
+function visionConfig(overrides: Partial<VisionConfig> = {}): VisionConfig {
+  return {
+    type: "vision",
+    id: 60,
+    sourceId: "plc1",
+    name: "Vision 1",
+    // Lens 800 mm above the belt surface (z 800), looking down.
+    pose: { x: 1000, y: 0, z: 1600, rx: 0, ry: 0, rz: 0 },
+    zones: [{ conveyorId: 1, start: 800, end: 1200, allocationOffset: 0, ccsOffset: 1000 }],
+    bodies: [
+      { shape: "box", role: "sensor", pose: { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 }, length: 120, width: 80, height: 150, topLength: 0, topWidth: 0 },
+      {
+        shape: "frustum",
+        role: "fieldOfView",
+        pose: { x: 0, y: 0, z: -800, rx: 0, ry: 0, rz: 0 },
+        length: 400,
+        width: 300,
+        height: 800,
+        topLength: 20,
+        topWidth: 16,
+      },
+    ],
+    originShift: { x: 0, y: 0, z: 0 },
+    ...overrides,
+  };
+}
+
+describe("scene model: detectors drawn from their bodies", () => {
+  it("draws each body at its pose in the component's frame, with its shape, role and size", () => {
+    const scene = buildScene(config(conveyorConfig(), visionConfig({ pose: { x: 1000, y: 0, z: 1600, rx: 0, ry: 0, rz: 90 } })), [], 0);
+    expect(scene.bodies).toHaveLength(2);
+    const [housing, field] = scene.bodies;
+    expect(housing).toMatchObject({ componentId: 60, shape: "box", role: "sensor", active: false, faulted: false });
+    closeTo(housing!.transform.position, [1, 1.6, 0]);
+    closeTo([housing!.size.length, housing!.size.width, housing!.size.height], [0.12, 0.08, 0.15]);
+    expect(field).toMatchObject({ shape: "frustum", role: "fieldOfView" });
+    // Its bottom face lies on the belt surface.
+    closeTo(field!.transform.position, [1, 0.8, 0]);
+    closeTo([field!.top.length, field!.top.width], [0.02, 0.016]);
+    // Turned with the component: its local X along MCS Y.
+    closeTo(rotate(field!.transform.quaternion, [1, 0, 0]), [0, 0, -1]);
+  });
+
+  it("lights the bodies the state reports active and draws a faulted detector's bodies red with its label above them", () => {
+    const scene = buildScene(
+      config(conveyorConfig(), visionConfig()),
+      [snapshot(0, [{ type: "vision", id: 60, timestamp: "0", bodies: [{ active: false }, { active: true }], fault: { message: "No image" } }])],
+      0,
+    );
+    expect(scene.bodies.map((b) => [b.active, b.faulted])).toEqual([
+      [false, true],
+      [true, true],
+    ]);
+    expect(scene.faults).toEqual([{ componentId: 60, messages: ["No image"] }]);
+    // Above the highest body: the housing's top at 1750 mm.
+    expect(scene.faultLabels[0]!.position[1]).toBeGreaterThan(1.75);
+  });
+
+  it("draws a detector's zones like any other and a zone of length 0 as a line across the belt", () => {
+    const sensor: SensorConfig = {
+      ...visionConfig(),
+      type: "sensor",
+      id: 61,
+      name: "Sensor 1",
+      zones: [{ conveyorId: 1, start: 500, end: 500, allocationOffset: 0, ccsOffset: 500 }],
+      bodies: [],
+    };
+    const scene = buildScene(config(conveyorConfig(), visionConfig(), sensor), [], 0);
+    expect(scene.zones.map((z) => [z.componentId, z.length])).toEqual([
+      [60, 0.4],
+      [61, 0],
+    ]);
+    closeTo(scene.zones[1]!.transform.position, [0.5, 0.8, 0]);
+    expect(scene.warnings).toEqual([]);
+  });
+
+  it("offers the origin and each body's bottom centre as snap points, the overlays' on the zones layer", () => {
+    const scene = buildScene(config(conveyorConfig(), visionConfig()), [], 0);
+    const points = scene.snapPoints.filter((p) => p.local.componentId === 60);
+    expect(points.map((p) => [p.label, p.layer, p.mcs])).toEqual([
+      ["Vision 1 · origin", "structure", [1000, 0, 1600]],
+      ["Vision 1 · body 1 (sensor)", "structure", [1000, 0, 1600]],
+      ["Vision 1 · body 2 (field of view)", "zones", [1000, 0, 800]],
+    ]);
+  });
+
+  it("leaves out the bodies of a hidden detector", () => {
+    const scene = buildScene(config(conveyorConfig(), visionConfig()), [], 0, new Set([60]));
+    expect(scene.bodies).toEqual([]);
+    expect(scene.zones).toEqual([]);
   });
 });

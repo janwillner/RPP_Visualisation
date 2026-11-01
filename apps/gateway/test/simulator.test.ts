@@ -63,7 +63,7 @@ describe("simulator", () => {
     expect(cartesianStates.some((c) => c.type === "cartesian" && c.fingers.every((f) => f.active))).toBe(true);
     // Every robot reports one state per configured finger.
     for (const c of config.components) {
-      if (c.type === "conveyor") continue;
+      if (!("fingers" in c)) continue;
       const state = last.find((x) => x.id === c.id)!;
       const reported =
         state.type === "delta" || state.type === "cartesian" ? [state.fingers] : "movers" in state ? state.movers.map((m) => m.fingers) : [];

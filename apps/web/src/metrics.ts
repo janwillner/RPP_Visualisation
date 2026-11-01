@@ -12,6 +12,14 @@ export interface RobotMetrics {
   picksPerMin: number;
 }
 
+export interface DetectorMetrics {
+  sourceId: string;
+  detectorId: number;
+  name: string;
+  /** Products it latched per minute. */
+  detectedPerMin: number;
+}
+
 export interface ConveyorMetrics {
   sourceId: string;
   conveyorId: number;
@@ -36,6 +44,8 @@ export interface MachineMetrics {
   robots: RobotMetrics[];
   /** Every conveyor with products within the window, by source and id. */
   conveyors: ConveyorMetrics[];
+  /** Every detector that latched products within the window, by source and id. */
+  detectors: DetectorMetrics[];
 }
 
 /**
@@ -57,6 +67,7 @@ export function metrics(
     string,
     { sourceId: string; conveyorId: number; entered: number; missed: number; rejected: number }
   >();
+  const detected = new Map<string, { sourceId: string; detectorId: number; count: number }>();
   let picked = 0;
   let missed = 0;
   for (const e of events) {
@@ -67,7 +78,15 @@ export function metrics(
       conveyor = { sourceId: e.sourceId, conveyorId: e.conveyorId, entered: 0, missed: 0, rejected: 0 };
       conveyors.set(conveyorKey, conveyor);
     }
-    if (e.kind === "entered") conveyor.entered++;
+    if (e.kind === "entered") {
+      conveyor.entered++;
+      if (e.detectorId > 0) {
+        const detectorKey = `${e.sourceId}|${e.detectorId}`;
+        const detector = detected.get(detectorKey) ?? { sourceId: e.sourceId, detectorId: e.detectorId, count: 0 };
+        detector.count++;
+        detected.set(detectorKey, detector);
+      }
+    }
     else if (e.kind === "rejected") conveyor.rejected++;
     else if (e.kind === "missed") {
       conveyor.missed++;
@@ -108,5 +127,13 @@ export function metrics(
         rejected: c.rejected,
       }))
       .sort(bySourceThen((c) => c.conveyorId)),
+    detectors: [...detected.values()]
+      .map((d) => ({
+        sourceId: d.sourceId,
+        detectorId: d.detectorId,
+        name: nameOf(d.sourceId, d.detectorId),
+        detectedPerMin: perMin(d.count),
+      }))
+      .sort(bySourceThen((d) => d.detectorId)),
   };
 }

@@ -30,8 +30,9 @@ export function registerEnumTable(schema: z.ZodTypeAny, table: Record<number, st
 
 /** Protocol fields whose PLC member has another name, tried after the conventional one. */
 const ALIASES: Record<string, string> = {
-  /** Live finger states sit next to the config's `aFingers` as `aFingerStates`. */
+  /** Live states of the config's `aFingers` and `aBodies` sit in the state as `aFingerStates` and `aBodyStates`. */
   fingers: "fingerStates",
+  bodies: "bodyStates",
 };
 
 /** `fLength` → `length`, `stOriginShift` → `originShift`. */
@@ -115,6 +116,8 @@ function mapArray(schema: z.ZodArray<z.ZodTypeAny>, raw: unknown, count: unknown
     .map((e, i) => mapValue(schema.element, e, `${path}[${i}]`));
 }
 
+/** `zones` → `zone`, `bodies` → `body`: the count member is named after one entry. */
 function singular(name: string): string {
+  if (name.endsWith("ies")) return `${name.slice(0, -3)}y`;
   return name.endsWith("s") ? name.slice(0, -1) : name;
 }

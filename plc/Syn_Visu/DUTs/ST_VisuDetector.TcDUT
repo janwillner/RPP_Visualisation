@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuDetector" Id="{c9b53f24-1087-4a2e-a3f8-e3fb6b96d78b}">
+    <Declaration><![CDATA[TYPE ST_VisuDetector :
+STRUCT
+	(* One visualised vision system or product sensor. Register the instance's symbol path in the manifest with
+	   eType := E_VisuComponentType.VISION or SENSOR; both share this structure. *)
+	stConfig : ST_VisuDetectorConfig; // read at discovery and after nConfigVersion changes
+	stState : ST_VisuDetectorState; // read every gateway cycle
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

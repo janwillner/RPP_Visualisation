@@ -9,7 +9,7 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 11;
 
 /** Full 6-DOF pose. Rotation order: R = Rz(rz) · Ry(ry) · Rx(rx). */
 export const PoseSchema = z.object({
@@ -145,15 +145,15 @@ export const LimitAreaSchema = z.object({
 });
 export type LimitArea = z.infer<typeof LimitAreaSchema>;
 
-export const ZoneKindSchema = z.enum(["pick", "place"]);
-export type ZoneKind = z.infer<typeof ZoneKindSchema>;
-
+/**
+ * A stretch of a conveyor that belongs to a component: where a robot picks or places, where a detector detects. What
+ * the component does there is its own business; the visualisation draws every zone alike.
+ */
 export const ZoneSchema = z.object({
   conveyorId: z.number().int(),
-  /** Start and end in mm along the referenced conveyor's local X axis (belt coordinates). */
+  /** Start and end in mm along the referenced conveyor's local X axis (belt coordinates); equal for a line. */
   start: z.number(),
   end: z.number(),
-  kind: ZoneKindSchema,
   /**
    * Distance in mm before `end`, against the conveying direction: the robot may allocate products in the zone only
    * up to `end − allocationOffset`. 0 means no allocation limit.
@@ -232,12 +232,61 @@ export const CartesianConfigSchema = robotConfig("cartesian", {
 });
 export type CartesianConfig = z.infer<typeof CartesianConfigSchema>;
 
+export const BodyShapeSchema = z.enum(["box", "cylinder", "frustum"]);
+export type BodyShape = z.infer<typeof BodyShapeSchema>;
+
+/**
+ * What a body stands for, which sets its look: `structure` and `sensor` are machine parts (lit, with shadows; a
+ * sensor head in its own colour), `beam` and `fieldOfView` are overlays on the zones layer.
+ */
+export const BodyRoleSchema = z.enum(["structure", "sensor", "beam", "fieldOfView"]);
+export type BodyRole = z.infer<typeof BodyRoleSchema>;
+
+/**
+ * One solid of a component described by the PLC, so the visualisation draws it without knowing the component: a box,
+ * a cylinder (length and width are its two diameters) or a frustum (a rectangular pyramid stump, e.g. a camera's
+ * field of view), standing on its bottom face.
+ */
+export const BodySchema = z.object({
+  shape: BodyShapeSchema,
+  role: BodyRoleSchema,
+  /** Bottom centre in the component's frame (from its pose); the body extends along its local +Z. */
+  pose: PoseSchema,
+  length: z.number(),
+  width: z.number(),
+  height: z.number(),
+  /** Size of a frustum's top face; ignored for the other shapes. */
+  topLength: z.number(),
+  topWidth: z.number(),
+});
+export type Body = z.infer<typeof BodySchema>;
+
+export const BodyStateSchema = z.object({
+  /** An active beam or field of view lights up, e.g. a sensor whose beam is interrupted. */
+  active: z.boolean(),
+});
+export type BodyState = z.infer<typeof BodyStateSchema>;
+
+/** A detector: it detects products in its zones and is drawn from the bodies the PLC describes. */
+const detectorConfig = { zones: z.array(ZoneSchema), bodies: z.array(BodySchema) };
+const detectorState = { bodies: z.array(BodyStateSchema) };
+
+/** Vision system: a camera over a conveyor; `pose` is its lens, looking along local −Z. */
+export const VisionConfigSchema = componentConfig("vision", detectorConfig);
+export type VisionConfig = z.infer<typeof VisionConfigSchema>;
+
+/** Product sensor, e.g. a light barrier; `pose` is its head at the belt side. */
+export const SensorConfigSchema = componentConfig("sensor", detectorConfig);
+export type SensorConfig = z.infer<typeof SensorConfigSchema>;
+
 export const ComponentConfigSchema = z.discriminatedUnion("type", [
   ConveyorConfigSchema,
   DeltaConfigSchema,
   XtsGantryConfigSchema,
   XtsLoopConfigSchema,
   CartesianConfigSchema,
+  VisionConfigSchema,
+  SensorConfigSchema,
 ]);
 export type ComponentConfig = z.infer<typeof ComponentConfigSchema>;
 
@@ -258,6 +307,8 @@ export const ProductSchema = z.object({
   /** Gripper finger (1-based) the product hangs from while picked; 0 = the gripper flange. */
   fingerId: z.number().int(),
   productType: z.number().int(),
+  /** Manifest id of the detector (vision system, sensor) that latched the product; 0 = none given. */
+  detectorId: z.number().int(),
 });
 export type Product = z.infer<typeof ProductSchema>;
 
@@ -330,12 +381,21 @@ export const CartesianStateSchema = componentState("cartesian", {
 });
 export type CartesianState = z.infer<typeof CartesianStateSchema>;
 
+/** One per configured body. */
+export const VisionStateSchema = componentState("vision", detectorState);
+export type VisionState = z.infer<typeof VisionStateSchema>;
+
+export const SensorStateSchema = componentState("sensor", detectorState);
+export type SensorState = z.infer<typeof SensorStateSchema>;
+
 export const ComponentStateSchema = z.discriminatedUnion("type", [
   ConveyorStateSchema,
   DeltaStateSchema,
   XtsGantryStateSchema,
   XtsLoopStateSchema,
   CartesianStateSchema,
+  VisionStateSchema,
+  SensorStateSchema,
 ]);
 export type ComponentState = z.infer<typeof ComponentStateSchema>;
 
