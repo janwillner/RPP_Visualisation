@@ -1,6 +1,9 @@
 import { PROTOCOL_VERSION, type ConfigMessage, type GatewayMessage, type StateMessage } from "@rpp/protocol";
 import { RENDER_DELAY_MS, type SourceInfo } from "./connection";
 import type { SceneSource } from "./scene/scene-model";
+import { EventTracker, type TimelineEvent } from "./timeline-events";
+
+export { eventTime, type TimelineEvent, type TimelineEventKind } from "./timeline-events";
 
 /**
  * Recording and playback of what the gateway sends, kept in the browser (ADR 0006). The recorder stores every
@@ -126,12 +129,14 @@ export class Recorder {
   /** Previous product registers within the block being filled; every block starts complete. */
   private registers: Registers = new Map();
   private pendingStateSources = new Set<string>();
+  private readonly tracker: EventTracker;
 
   /** `initial`: every source as it is when recording starts (status and config, if any). */
   constructor(initial: readonly SourceInfo[], recordedAt = new Date().toISOString()) {
     this.recordedAt = recordedAt;
     this.initial = initial.map((s) => ({ ...s }));
     for (const s of this.initial) this.sources.set(s.sourceId, { ...s });
+    this.tracker = new EventTracker(this.initial);
   }
 
   /** Length so far, ms. */
@@ -177,6 +182,7 @@ export class Recorder {
     if (message.kind === "config") source.config = message;
     if (message.kind === "state" && this.snapshotTimes.at(-1) !== at) this.snapshotTimes.push(at);
     this.sources.set(message.sourceId, source);
+    this.tracker.add(at, message, source);
     return true;
   }
 
@@ -185,7 +191,7 @@ export class Recorder {
     if (this.pending.length > 0) this.seal();
     this.stopped = true;
     const chunks = await Promise.all(this.chunks);
-    return new Recording(this.initial, chunks, this.lastAt, this.recordedAt, this.snapshotTimes);
+    return new Recording(this.initial, chunks, this.lastAt, this.recordedAt, this.snapshotTimes, this.tracker.events);
   }
 
   private seal(): void {
@@ -229,6 +235,8 @@ export class Recording {
     readonly recordedAt: string,
     /** Moment of every state snapshot, ms, in order: where stepping stops. */
     readonly snapshotTimes: readonly number[],
+    /** Faults, sources going offline and back, missed products, in order; found again when a file is opened. */
+    readonly events: readonly TimelineEvent[],
   ) {}
 
   /** Decompresses what the given moment needs; afterwards `view(t)` answers without waiting. */

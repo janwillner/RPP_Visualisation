@@ -1,7 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { GatewayStore } from "./connection";
 import { Player, usePlayer, type PlayerSnapshot } from "./player";
-import { MAX_RECORDING_MS, Recorder, Recording, RecordingFileError, SPEEDS } from "./recording";
+import {
+  MAX_RECORDING_MS,
+  Recorder,
+  Recording,
+  RecordingFileError,
+  SPEEDS,
+  type TimelineEvent,
+} from "./recording";
 
 export type ViewMode = "live" | "playback";
 
@@ -289,17 +296,26 @@ export function PlayerBar({ controls }: { controls: RecordingControls }) {
       <button title="Next snapshot (→)" aria-label="Next snapshot" disabled={empty} onClick={play((p) => p.step(1))}>
         ▶︎
       </button>
-      <input
-        className="timeline"
-        type="range"
-        min={0}
-        max={durationMs}
-        step={1}
-        value={time}
-        disabled={empty}
-        aria-label="Playback position"
-        onChange={(e) => play((p) => p.seek(Number(e.target.value)))()}
-      />
+      <div className="timeline-wrap">
+        <input
+          className="timeline"
+          type="range"
+          min={0}
+          max={durationMs}
+          step={1}
+          value={time}
+          disabled={empty}
+          aria-label="Playback position"
+          onChange={(e) => play((p) => p.seek(Number(e.target.value)))()}
+        />
+        {player && durationMs > 0 && (
+          <TimelineMarkers
+            events={player.recording.events}
+            durationMs={durationMs}
+            onJump={(at) => play((p) => p.seek(at))()}
+          />
+        )}
+      </div>
       <span className="player-time">
         {formatTime(time)} / {formatTime(durationMs)}
       </span>
@@ -335,7 +351,36 @@ export function PlayerBar({ controls }: { controls: RecordingControls }) {
   );
 }
 
-/** Space, ←/→ and Home/End while playing back. */
+const EVENT_LABELS: Record<TimelineEvent["kind"], string> = {
+  fault: "Fault",
+  offline: "Offline",
+  online: "Back online",
+  missed: "Missed product",
+};
+
+/** A mark on the timeline per event (faults, sources offline and back, missed products); a click jumps there. */
+function TimelineMarkers(props: { events: readonly TimelineEvent[]; durationMs: number; onJump: (at: number) => void }) {
+  const { events, durationMs, onJump } = props;
+  return (
+    <div className="timeline-markers">
+      {events.map((e, i) => {
+        const label = `${formatTime(e.at)} · ${EVENT_LABELS[e.kind]} · ${e.text}`;
+        return (
+          <button
+            key={i}
+            className={`timeline-marker ${e.kind}`}
+            style={{ "--at": e.at / durationMs } as CSSProperties}
+            title={label}
+            aria-label={label}
+            onClick={() => onJump(e.at)}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/** Space, ←/→, PageUp/PageDown (previous / next event) and Home/End while playing back. */
 export function usePlaybackKeys(controls: RecordingControls): void {
   const { player, mode } = controls;
   useEffect(() => {
@@ -353,6 +398,8 @@ export function usePlaybackKeys(controls: RecordingControls): void {
         ArrowRight: () => player.step(1),
         Home: () => player.seek(0),
         End: () => player.seek(player.recording.durationMs),
+        PageUp: () => player.jumpToEvent(-1),
+        PageDown: () => player.jumpToEvent(1),
       };
       const action = keys[e.key];
       if (!action) return;

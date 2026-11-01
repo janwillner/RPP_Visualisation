@@ -943,6 +943,23 @@ function lerpFingers(a: FingerState[], b: FingerState[], f: number): FingerState
   });
 }
 
+/** How far along the belt a product is now, mm from the conveyor's pose along its conveying direction. */
+export function productBeltX(c: ConveyorConfig, state: ConveyorState, p: Product): number {
+  const frame = frameFromPose(c.pose);
+  const direction = apply(frame.rotation, [1, 0, 0]);
+  const travel = state.beltPosition - p.latchBeltPosition;
+  const latch: Vec3 = [p.latchPose.x, p.latchPose.y, p.latchPose.z];
+  return latch.reduce((sum, v, i) => sum + (v - frame.origin[i]!) * direction[i]!, 0) + travel;
+}
+
+/**
+ * A product that has passed the belt end without being picked or placed. Rejected products pass the end on purpose
+ * and are not missed.
+ */
+export function isMissed(c: ConveyorConfig, state: ConveyorState, p: Product): boolean {
+  return p.state !== "picked" && p.state !== "placed" && p.state !== "rejected" && productBeltX(c, state, p) > c.length;
+}
+
 /**
  * Products of one conveyor register, positioned by latch + belt travel, with the display lifecycle:
  * - picked/placed: a placeholder keeps travelling on the belt (until the belt end);
@@ -980,10 +997,7 @@ function conveyorProducts(
     const onBelt = (display: ProductDisplay) =>
       shown(display, { rotation: rotZ(p.latchPose.rz), origin: [bottom[0], bottom[1], bottom[2]] });
 
-    const beltX =
-      (bottom[0] - frame.origin[0]) * direction[0] +
-      (bottom[1] - frame.origin[1]) * direction[1] +
-      (bottom[2] - frame.origin[2]) * direction[2];
+    const beltX = productBeltX(c, state, p);
     const beyondEnd = beltX > c.length;
 
     if (p.state === "picked" || p.state === "placed") {
@@ -1006,9 +1020,8 @@ function conveyorProducts(
     }
     if (!beyondEnd) {
       result.push(onBelt("normal"));
-    } else if (p.state !== "rejected") {
+    } else if (isMissed(c, state, p)) {
       // Unpicked past the end: hold it at the belt end, flagged, until the PLC drops the entry.
-      // Rejected products pass the end on purpose and are not flagged.
       const back = beltX - (c.length - type.length / 2);
       bottom[0] -= direction[0] * back;
       bottom[1] -= direction[1] * back;

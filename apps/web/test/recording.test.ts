@@ -5,6 +5,7 @@ import {
   Recorder,
   Recording,
   RecordingFileError,
+  eventTime,
   playFrom,
   seek,
   step,
@@ -179,6 +180,84 @@ describe("recording: playback at any point in time", () => {
 
     expect(recording.snapshotTimes.slice(0, 3)).toEqual([0, 20, 40]);
     expect(recording.snapshotTimes.at(-1)).toBe(3000);
+  });
+});
+
+describe("recording: timeline events", () => {
+  it("marks where a source went offline and where it came back", async () => {
+    const recording = await threeSeconds([
+      [1000, status(B, false)],
+      [1200, status(B, false)],
+      [2000, status(B, true)],
+    ]);
+    expect(recording.events).toEqual([
+      { at: 1000, kind: "offline", sourceId: B, text: "Outfeed PLC offline" },
+      { at: 2000, kind: "online", sourceId: B, text: "Outfeed PLC online" },
+    ]);
+  });
+
+  it("marks where a fault appears, once while it lasts, for components and XTS movers", async () => {
+    const recorder = new Recorder([{ sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: config(A) }]);
+    const jam = { message: "Belt jammed" };
+    for (let at = 0; at <= 3000; at += 100) {
+      const beltFault = (at >= 1000 && at < 1500) || at >= 2000 ? jam : null;
+      const moverFault = at >= 2500 ? { message: "Collision" } : null;
+      recorder.add(at, {
+        ...state(A, at),
+        components: [
+          { type: "conveyor", id: 1, timestamp: "0", beltPosition: 0, products: [], fault: beltFault },
+          // Not in the config: named by its id.
+          { type: "xtsLoop", id: 7, timestamp: "0", movers: [{ id: 2, position: 0, fingers: [], fault: moverFault }], fault: null },
+        ],
+      });
+    }
+    expect((await recorder.stop()).events).toEqual([
+      { at: 1000, kind: "fault", sourceId: A, text: "Infeed: Belt jammed" },
+      { at: 2000, kind: "fault", sourceId: A, text: "Infeed: Belt jammed" },
+      { at: 2500, kind: "fault", sourceId: A, text: "#7 mover 2: Collision" },
+    ]);
+  });
+
+  it("marks a product that passes the belt end without being picked, once", async () => {
+    const product = (id: number, productState: "detected" | "rejected" | "picked") => ({
+      id,
+      latchPose: { x: 100, y: 0, z: 800, rz: 0 },
+      latchBeltPosition: 0,
+      state: productState,
+      robotId: productState === "picked" ? 10 : 0,
+      moverId: 0,
+      fingerId: 0,
+      productType: 1,
+    });
+    const recorder = new Recorder([{ sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: config(A) }]);
+    // The belt is 3000 mm long and moves 1 mm per ms: a product latched at x = 100 passes the end after 2900 ms.
+    for (let at = 0; at <= 3500; at += 100) {
+      const products = [product(1, "detected"), product(2, "rejected"), product(3, "picked")];
+      recorder.add(at, {
+        ...state(A, at),
+        components: [{ type: "conveyor", id: 1, timestamp: "0", beltPosition: at, products, fault: null }],
+      });
+    }
+    expect((await recorder.stop()).events).toEqual([
+      { at: 3000, kind: "missed", sourceId: A, text: "Infeed: product #1 missed" },
+    ]);
+  });
+
+  it("keeps its events in the file", async () => {
+    const recording = await threeSeconds([
+      [1000, status(B, false)],
+      [2000, status(B, true)],
+    ]);
+    expect((await Recording.fromFile(await recording.toFile())).events).toEqual(recording.events);
+  });
+
+  it("jumps to the next or previous event", () => {
+    const events = [1000, 2000, 3000].map((at) => ({ at, kind: "fault" as const, sourceId: A, text: "" }));
+    expect(eventTime(events, 1500, 1)).toBe(2000);
+    expect(eventTime(events, 2000, 1)).toBe(3000);
+    expect(eventTime(events, 2000, -1)).toBe(1000);
+    expect(eventTime(events, 3000, 1)).toBeUndefined();
+    expect(eventTime(events, 1000, -1)).toBeUndefined();
   });
 });
 

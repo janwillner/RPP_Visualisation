@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type { StateMessage } from "@rpp/protocol";
 import type { SceneFeed, SourceInfo } from "./connection";
-import { playFrom, seek, step, tick, type PlaybackClock, type PlaybackView, type Recording } from "./recording";
+import { eventTime, playFrom, seek, step, tick, type PlaybackClock, type PlaybackView, type Recording } from "./recording";
 import type { SceneSource } from "./scene/scene-model";
 
 /** The player UI re-renders at most this often while playing. */
@@ -71,6 +71,12 @@ export class Player implements SceneFeed {
 
   seek(time: number): void {
     this.set(seek(this.clock, time, this.recording.durationMs));
+  }
+
+  /** Jumps to the next or previous timeline event; stays put if there is none. */
+  jumpToEvent(direction: 1 | -1): void {
+    const at = eventTime(this.recording.events, this.clock.time, direction);
+    if (at !== undefined) this.seek(at);
   }
 
   step(direction: 1 | -1): void {

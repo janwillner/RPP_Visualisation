@@ -184,3 +184,30 @@ test("keeps layers, hidden components and the camera across a reload", async ({ 
   await page.mouse.up();
   await expect.poll(storedCamera).not.toEqual(top);
 });
+
+test("marks faults on the recording's timeline and jumps to them", async ({ page }) => {
+  await openApp(page);
+  await page.getByRole("button", { name: "Show components" }).click();
+  // The simulator puts a mover in a fault every 20 s; one active when recording starts is marked at the start.
+  await expect(page.locator("aside.panel.left .fault-icon").first()).toBeVisible({ timeout: 25_000 });
+  await page.getByRole("button", { name: "Record", exact: true }).click();
+  await page.waitForTimeout(1000);
+  await page.getByRole("button", { name: "Stop recording" }).click();
+
+  const bar = page.getByRole("toolbar", { name: "Playback" });
+  const marker = bar.locator(".timeline-marker.fault").last();
+  await expect(marker).toHaveAttribute("title", /Fault · /);
+  const slider = bar.getByLabel("Playback position");
+  const end = Number(await slider.getAttribute("max"));
+
+  // The slider moves in whole ms; recording times are fractional.
+  await page.keyboard.press("End");
+  await expect.poll(async () => Number(await slider.inputValue())).toBeGreaterThan(end - 1);
+  await page.keyboard.press("PageUp");
+  await expect.poll(async () => Number(await slider.inputValue())).toBeLessThan(end - 1);
+  const atEvent = Number(await slider.inputValue());
+
+  await page.keyboard.press("End");
+  await marker.click();
+  await expect.poll(async () => Number(await slider.inputValue())).toBe(atEvent);
+});
