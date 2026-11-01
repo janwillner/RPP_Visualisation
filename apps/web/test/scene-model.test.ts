@@ -9,6 +9,7 @@ import type {
   FingerState,
   Position,
   Product,
+  ProductType,
   StateMessage,
   XtsGantryConfig,
   XtsLoopConfig,
@@ -42,7 +43,7 @@ function conveyorConfig(overrides: Partial<ConveyorConfig> = {}): ConveyorConfig
     pose: { x: 0, y: 0, z: 800, rx: 0, ry: 0, rz: 0 },
     length: 3000,
     width: 400,
-    productTypes: [{ id: 1, length: 100, width: 80, height: 40 }],
+    productTypes: [{ id: 1, length: 100, width: 80, height: 40, shape: "box", cornerRadius: 0 }],
     originShift: { x: 0, y: 0, z: 0 },
     ...overrides,
   };
@@ -603,6 +604,44 @@ describe("scene model: measure mode", () => {
     expect(frontLeft.local.componentName).toBe("Infeed");
     closeTo(snap(scene, "Product #7 · bottom centre").mcs, [1000, 0, 800]);
     expect(scene.snapPoints.filter((s) => s.label.startsWith("Product #7"))).toHaveLength(5);
+  });
+
+  it("draws round and pouch products with their shape and offers their centre and side points instead of corners", () => {
+    const belt = conveyorConfig({
+      productTypes: [
+        { id: 1, length: 100, width: 80, height: 40, shape: "box", cornerRadius: 0 },
+        { id: 2, length: 90, width: 60, height: 50, shape: "cylinder", cornerRadius: 0 },
+        { id: 3, length: 140, width: 90, height: 40, shape: "roundedBox", cornerRadius: 20 },
+      ],
+    });
+    const can = { ...product({ latchPose: { x: 1000, y: 0, z: 800, rz: 0 } }), id: 7, productType: 2 };
+    const pouch = { ...product({ latchPose: { x: 2000, y: 0, z: 800, rz: 0 } }), id: 8, productType: 3 };
+    const scene = buildScene(config(belt), [snapshot(0, [conveyorState(0, [can, pouch])])], 0);
+
+    expect(scene.products.map((p) => [p.productId, p.shape, p.cornerRadius])).toEqual([
+      [7, "cylinder", 0],
+      [8, "roundedBox", 0.02],
+    ]);
+    // An oval can: 90 mm along the belt, 60 mm across.
+    expect(scene.snapPoints.filter((s) => s.label.startsWith("Product #7")).map((s) => s.label).sort()).toEqual([
+      "Product #7 · back",
+      "Product #7 · bottom centre",
+      "Product #7 · front",
+      "Product #7 · left",
+      "Product #7 · right",
+    ]);
+    closeTo(snap(scene, "Product #7 · front").mcs, [1045, 0, 800]);
+    closeTo(snap(scene, "Product #7 · left").mcs, [1000, 30, 800]);
+    closeTo(snap(scene, "Product #8 · back").mcs, [1930, 0, 800]);
+    closeTo(snap(scene, "Product #8 · right").mcs, [2000, -45, 800]);
+    expect(scene.snapPoints.some((s) => s.label === "Product #8 · front left")).toBe(false);
+  });
+
+  it("draws a product type without a shape, as in recordings made before shapes, as a box", () => {
+    const belt = conveyorConfig({ productTypes: [{ id: 1, length: 100, width: 80, height: 40 } as ProductType] });
+    const scene = buildScene(config(belt), [snapshot(0, [conveyorState(0, [product()])])], 0);
+    expect(scene.products.map((p) => [p.shape, p.cornerRadius])).toEqual([["box", 0]]);
+    expect(scene.snapPoints.some((s) => s.label === "Product #7 · front left")).toBe(true);
   });
 
   it("offers a carried product at the TCP but not its placeholder", () => {

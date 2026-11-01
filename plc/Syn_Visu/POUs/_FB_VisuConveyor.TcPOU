@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuConveyor" Id="{d79b894d-25ab-4c1e-9e3d-a25f9087949a}" SpecialFunc="None">
+  <POU Name="_FB_VisuConveyor" Id="{a3475dcc-c9aa-4f63-9401-280b770b2289}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -22,6 +22,7 @@ vo_Visu is the contract structure the gateway reads at the path given to m_Regis
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
 Syn_Visu 3.4.0  ¦ 2026-11-01 ¦ J.Willner ¦ m_LatchProduct: product state and robot (PLACED onto outfeeds)<br>
+Syn_Visu 3.5.0  ¦ 2026-11-01 ¦ J.Willner ¦ m_SetProductType: shape and corner radius (protocol 10)<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_VisuConveyor EXTENDS _FB_VisuComponent
 VAR_OUTPUT
@@ -541,7 +542,8 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Adds a product type, or updates the one with the same id. FALSE for vi_udn_Id = 0 or a full list.<br>
+Adds a product type, or updates the one with the same id. FALSE for vi_udn_Id = 0 or a full list. A CYLINDER's<br>
+length and width are its diameters (equal: round, different: oval).<br>
 ****************************************************************************************************)
 METHOD m_SetProductType : BOOL
 VAR_INPUT
@@ -549,6 +551,8 @@ VAR_INPUT
 	vi_lr_Length						: LREAL;	// [mm] along the conveying direction
 	vi_lr_Width							: LREAL;	// [mm]
 	vi_lr_Height						: LREAL;	// [mm]
+	vi_e_Shape							: E_VisuProductShape := E_VisuProductShape.BOX;	// [-] solid of the product
+	vi_lr_CornerRadius					: LREAL := 0;	// [mm] rounded vertical edges of a ROUNDED_BOX
 END_VAR
 VAR
 	TempNew								: ST_VisuConveyorConfig;
@@ -578,6 +582,8 @@ TempNew.aProductTypes[un_TempIndex].nId := vi_udn_Id;
 TempNew.aProductTypes[un_TempIndex].fLength := vi_lr_Length;
 TempNew.aProductTypes[un_TempIndex].fWidth := vi_lr_Width;
 TempNew.aProductTypes[un_TempIndex].fHeight := vi_lr_Height;
+TempNew.aProductTypes[un_TempIndex].eShape := vi_e_Shape;
+TempNew.aProductTypes[un_TempIndex].fCornerRadius := vi_lr_CornerRadius;
 m_ApplyConfig(TempNew);
 m_SetProductType := TRUE;]]></ST>
       </Implementation>

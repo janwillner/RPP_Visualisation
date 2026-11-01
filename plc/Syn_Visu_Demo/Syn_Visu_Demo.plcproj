@@ -57,7 +57,7 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <LibraryReference Include="SynVisu,3.4.0.0,Syntegon Group">
+    <LibraryReference Include="SynVisu,3.5.0.0,Syntegon Group">
       <Namespace>SynVisu</Namespace>
     </LibraryReference>
     <LibraryReference Include="Tc3_Module,3.4.5.0,Beckhoff Automation GmbH">

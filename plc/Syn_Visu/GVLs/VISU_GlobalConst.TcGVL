@@ -20,8 +20,9 @@ VAR_GLOBAL CONSTANT
 	   6: Delta limit area, zone allocation offset.
 	   7: gripper fingers; tool rotations (Delta rz, IDH C, Cartesian C/A and tool length) removed.
 	   8: faults of components and XTS movers (stFault).
-	   9: zone fCcsOffset, stOriginShift in every config. *)
-	VISU_un_PROTOCOL_VERSION			: UINT := 9;
+	   9: zone fCcsOffset, stOriginShift in every config.
+	   10: product type eShape and fCornerRadius. *)
+	VISU_un_PROTOCOL_VERSION			: UINT := 10;
 	VISU_lr_DEG_TO_RAD					: LREAL := 0.017453292519943295;	// [rad/deg] pi / 180
 END_VAR]]></Declaration>
   </GVL>

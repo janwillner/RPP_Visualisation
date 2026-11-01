@@ -23,6 +23,7 @@ import {
   type MachineComponent,
 } from "../src/plc-builders";
 import {
+  E_VisuProductShape,
   E_VisuProductState,
   E_VisuZoneKind,
   MANIFEST_PATH,
@@ -65,7 +66,11 @@ const infeed: MachineComponent = {
     pose: { fX: 100, fY: 200, fZ: 800, fRz: 90 },
     length: 3000,
     width: 400,
-    productTypes: [{ nId: 1, fLength: 120, fWidth: 80, fHeight: 40 }],
+    productTypes: [
+      { nId: 1, fLength: 120, fWidth: 80, fHeight: 40 },
+      { nId: 2, fLength: 90, fWidth: 90, fHeight: 60, eShape: E_VisuProductShape.CYLINDER },
+      { nId: 3, fLength: 140, fWidth: 90, fHeight: 40, eShape: E_VisuProductShape.ROUNDED_BOX, fCornerRadius: 20 },
+    ],
   }),
 };
 
@@ -139,7 +144,11 @@ describe("gateway discovery", () => {
         pose: { x: 100, y: 200, z: 800, rx: 0, ry: 0, rz: 90 },
         length: 3000,
         width: 400,
-        productTypes: [{ id: 1, length: 120, width: 80, height: 40 }],
+        productTypes: [
+          { id: 1, length: 120, width: 80, height: 40, shape: "box", cornerRadius: 0 },
+          { id: 2, length: 90, width: 90, height: 60, shape: "cylinder", cornerRadius: 0 },
+          { id: 3, length: 140, width: 90, height: 40, shape: "roundedBox", cornerRadius: 20 },
+        ],
         originShift: { x: 0, y: 0, z: 0 },
       },
       {

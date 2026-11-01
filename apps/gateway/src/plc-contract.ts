@@ -28,6 +28,9 @@ export const E_VisuProductState = { DETECTED: 0, ASSIGNED: 1, PICKED: 2, REJECTE
 /** E_VisuZoneKind */
 export const E_VisuZoneKind = { PICK: 1, PLACE: 2 } as const;
 
+/** E_VisuProductShape */
+export const E_VisuProductShape = { BOX: 0, CYLINDER: 1, ROUNDED_BOX: 2 } as const;
+
 /** Enums are numbers, or `{ name, value }` objects when the ADS client objectifies enumerations. */
 export type PlcEnum = number | { name: string; value: number };
 
@@ -90,6 +93,9 @@ export interface ST_VisuProductType {
   fLength: number;
   fWidth: number;
   fHeight: number;
+  eShape: PlcEnum;
+  /** mm, rounded vertical edges of a ROUNDED_BOX. */
+  fCornerRadius: number;
 }
 
 export interface ST_VisuConveyorConfig {

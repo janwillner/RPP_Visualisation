@@ -69,6 +69,10 @@ _Avoid_: encoder value (when meaning the position itself)
 The PLC's list of products currently tracked on a conveyor.
 _Avoid_: data register, product buffer
 
+**Product type**:
+The size and shape a conveyor's products can have: a box, a cylinder (round, or oval when its two diameters differ) or a rounded box (a box with rounded vertical edges, such as a pouch or flow pack). Every product in a register refers to one.
+_Avoid_: format, article
+
 **Latch**:
 The moment a product is detected on a conveyor. Its pose and the belt position at that moment are stored; the product's current position is the latch pose moved by the belt travel since.
 _Avoid_: trigger, capture

@@ -1,6 +1,7 @@
 import { PROTOCOL_VERSION } from "@rpp/protocol";
 import {
   E_VisuComponentType,
+  E_VisuProductShape,
   E_VisuProductState,
   E_VisuZoneKind,
   MANIFEST_PATH,
@@ -17,6 +18,7 @@ import {
   type ST_VisuPose,
   type ST_VisuPosition,
   type ST_VisuProduct,
+  type ST_VisuProductType,
   type ST_VisuGantryMover,
   type ST_VisuLoopMover,
   type ST_VisuXtsGantry,
@@ -102,15 +104,20 @@ export interface ConveyorSpec {
   originShift?: Partial<ST_VisuPosition>;
   length?: number;
   width?: number;
-  productTypes?: { nId: number; fLength: number; fWidth: number; fHeight: number }[];
+  productTypes?: (Omit<ST_VisuProductType, "eShape" | "fCornerRadius"> & Partial<ST_VisuProductType>)[];
   beltPosition?: number;
   timestamp?: bigint;
   products?: Partial<ST_VisuProduct>[];
   fault?: ST_VisuFault;
 }
 
+/** A product type, a box unless its shape is given. */
+function productType(t: NonNullable<ConveyorSpec["productTypes"]>[number]): ST_VisuProductType {
+  return { eShape: E_VisuProductShape.BOX, fCornerRadius: 0, ...t };
+}
+
 export function conveyor(spec: ConveyorSpec = {}): ST_VisuConveyor {
-  const productTypes = spec.productTypes ?? [{ nId: 1, fLength: 100, fWidth: 80, fHeight: 50 }];
+  const productTypes = (spec.productTypes ?? [{ nId: 1, fLength: 100, fWidth: 80, fHeight: 50 }]).map(productType);
   const products = (spec.products ?? []).map((p) => ({ ...emptyProduct(), bValid: true, ...p }));
   return {
     stConfig: {
@@ -118,7 +125,7 @@ export function conveyor(spec: ConveyorSpec = {}): ST_VisuConveyor {
       fLength: spec.length ?? 2000,
       fWidth: spec.width ?? 400,
       nProductTypeCount: productTypes.length,
-      aProductTypes: padded(productTypes, MAX_PRODUCT_TYPES, () => ({ nId: 0, fLength: 0, fWidth: 0, fHeight: 0 })),
+      aProductTypes: padded(productTypes, MAX_PRODUCT_TYPES, () => productType({ nId: 0, fLength: 0, fWidth: 0, fHeight: 0 })),
       ...originShift(spec),
     },
     stState: {

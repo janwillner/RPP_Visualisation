@@ -12,6 +12,7 @@ import type {
   PlanarPose,
   Position,
   Pose,
+  ProductShape,
   ProductState,
   XtsGantryConfig,
   XtsGantryState,
@@ -21,6 +22,7 @@ import type {
   ZoneKind,
 } from "@rpp/protocol";
 import {
+  E_VisuProductShape,
   E_VisuProductState,
   E_VisuZoneKind,
   enumValue,
@@ -93,10 +95,18 @@ export function mapConveyorConfig(identity: ComponentIdentity, c: ST_VisuConveyo
       length: t.fLength,
       width: t.fWidth,
       height: t.fHeight,
+      shape: PRODUCT_SHAPES[enumValue(t.eShape)] ?? "box",
+      cornerRadius: t.fCornerRadius,
     })),
     originShift: mapPosition(c.stOriginShift),
   };
 }
+
+const PRODUCT_SHAPES: Record<number, ProductShape> = {
+  [E_VisuProductShape.BOX]: "box",
+  [E_VisuProductShape.CYLINDER]: "cylinder",
+  [E_VisuProductShape.ROUNDED_BOX]: "roundedBox",
+};
 
 const ZONE_KINDS: Record<number, ZoneKind> = {
   [E_VisuZoneKind.PICK]: "pick",

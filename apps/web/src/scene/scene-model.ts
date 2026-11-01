@@ -16,6 +16,7 @@ import {
   type Pose,
   type Position,
   type Product,
+  type ProductShape,
   type ProductState,
   type ProductType,
   type StateMessage,
@@ -83,11 +84,15 @@ export interface SceneProduct {
   conveyorId: number;
   display: ProductDisplay;
   state: ProductState;
-  /** Box centre. Local +X along the product length, local +Y up. */
+  /** Centre of the product. Local +X along the product length, local +Y up. */
   transform: Transform;
   /** MCS frame (mm) at the product's bottom centre; local +X along its length, local +Z up through the product. */
   bottom: Frame;
   size: Size;
+  /** Its solid: for a cylinder, length and width are the two diameters. */
+  shape: ProductShape;
+  /** Metres, rounded vertical edges of a rounded box; 0 otherwise. */
+  cornerRadius: number;
   /** Register entry as reported by the PLC. */
   raw: Product;
 }
@@ -347,7 +352,12 @@ export function faultText(fault: Fault | null | undefined): string | null {
 function lifted(p: Vec3, height: number): Vec3 {
   return [p[0], p[1], p[2] + height];
 }
-const DEFAULT_PRODUCT: ProductType = { id: 0, length: 100, width: 100, height: 100 };
+const DEFAULT_PRODUCT: ProductType = { id: 0, length: 100, width: 100, height: 100, shape: "box", cornerRadius: 0 };
+
+/** A product type as recordings made before protocol 10 hold it, without a shape, is a box. */
+function withShape(type: ProductType): ProductType {
+  return { ...type, shape: type.shape ?? "box", cornerRadius: type.cornerRadius ?? 0 };
+}
 
 /**
  * `hidden`: manifest ids of components the user has hidden. A hidden component contributes nothing to the scene:
@@ -743,22 +753,33 @@ function deltaSnapPoints(c: DeltaConfig, state: DeltaState | undefined): SnapPoi
   return points;
 }
 
-/** Bottom corners and bottom centre of a drawn product (not of a placeholder), in belt coordinates. */
+/**
+ * Points on the bottom of a drawn product (not of a placeholder), in belt coordinates: its bottom centre, and the
+ * corners of a box; a cylinder or rounded box has no corners, so its outline's front, back, left and right instead.
+ */
 function productSnapPoints(p: SceneProduct, owner: SnapOwner): SnapPoint[] {
   if (p.display === "placeholder") return [];
   const length = p.size.length / MM;
   const width = p.size.width / MM;
   const bottom = p.bottom;
   const name = `Product #${p.productId}`;
-  const corner = (label: string, x: number, y: number) =>
+  const point = (label: string, x: number, y: number) =>
     owner.atMcs(`${name} · ${label}`, toMcs(bottom, [x, y, 0]), "structure", true);
-  return [
-    corner("front left", length / 2, width / 2),
-    corner("front right", length / 2, -width / 2),
-    corner("back left", -length / 2, width / 2),
-    corner("back right", -length / 2, -width / 2),
-    corner("bottom centre", 0, 0),
-  ];
+  const outline =
+    p.shape === "box"
+      ? [
+          point("front left", length / 2, width / 2),
+          point("front right", length / 2, -width / 2),
+          point("back left", -length / 2, width / 2),
+          point("back right", -length / 2, -width / 2),
+        ]
+      : [
+          point("front", length / 2, 0),
+          point("back", -length / 2, 0),
+          point("left", 0, width / 2),
+          point("right", 0, -width / 2),
+        ];
+  return [...outline, point("bottom centre", 0, 0)];
 }
 
 /** Snap points whose layer is currently shown. */
@@ -976,7 +997,7 @@ function conveyorProducts(
   const direction = apply(frame.rotation, [1, 0, 0]);
   const result: SceneProduct[] = [];
   for (const p of state.products) {
-    const type = c.productTypes.find((t) => t.id === p.productType) ?? DEFAULT_PRODUCT;
+    const type = withShape(c.productTypes.find((t) => t.id === p.productType) ?? DEFAULT_PRODUCT);
     const size = { length: type.length * MM, width: type.width * MM, height: type.height * MM };
     const travel = state.beltPosition - p.latchBeltPosition;
     const bottom: Vec3 = [
@@ -993,6 +1014,8 @@ function conveyorProducts(
       transform: toRendererTransform({ rotation: frame.rotation, origin: toMcs(frame, [0, 0, type.height / 2]) }),
       bottom: frame,
       size,
+      shape: type.shape,
+      cornerRadius: type.cornerRadius * MM,
       raw: p,
     });
     const onBelt = (display: ProductDisplay) =>

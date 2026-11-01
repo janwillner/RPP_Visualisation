@@ -14,6 +14,7 @@ import {
   type ZoneSpec,
 } from "./plc-builders";
 import {
+  E_VisuProductShape,
   E_VisuProductState,
   E_VisuZoneKind,
   type ST_VisuCartesian,
@@ -55,6 +56,8 @@ const CART_OUTFEED = { id: 8, path: "MAIN.stCartesianOutfeed", x: 0, y: 7300, le
 const ROBOT = { id: 10, path: "MAIN.stDelta1", x: 1500, y: 450, z: 1900 };
 const GEOMETRY = { baseRadius: 200, effectorRadius: 50, upperArmLength: 400, lowerArmLength: 950 };
 const PRODUCT = { type: 1, length: 120, width: 80, height: 40 };
+/** A can, the second product type on the Delta infeed: as high as the standard product, so the robot moves alike. */
+const CAN = { type: 2, diameter: 80 };
 const PICK_ZONE = { start: 1100, end: 1900, allocationOffset: 300 };
 const PLACE_X = 1500;
 const SPAWN_INTERVAL_MS = 700;
@@ -229,7 +232,10 @@ function approach(value: number, goal: number, step: number): number {
   return Math.abs(goal - value) <= step ? goal : value + Math.sign(goal - value) * step;
 }
 
-const productTypes = [{ nId: PRODUCT.type, fLength: PRODUCT.length, fWidth: PRODUCT.width, fHeight: PRODUCT.height }];
+const productTypes = [
+  { nId: PRODUCT.type, fLength: PRODUCT.length, fWidth: PRODUCT.width, fHeight: PRODUCT.height },
+  { nId: CAN.type, fLength: CAN.diameter, fWidth: CAN.diameter, fHeight: PRODUCT.height, eShape: E_VisuProductShape.CYLINDER },
+];
 
 const FAULT_PERIOD_MS = 20_000;
 const FAULT_DURATION_MS = 5_000;
@@ -453,6 +459,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     y: number,
     rz: number,
     eState: TrackedProduct["eState"] = E_VisuProductState.DETECTED,
+    productType: number = PRODUCT.type,
   ): void {
     products.push({
       ...emptyProduct(),
@@ -461,7 +468,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       stLatchPose: { fX: x, fY: y, fZ: BELT_Z, fRz: rz },
       fLatchBeltPosition: c.stState.fBeltPosition,
       eState,
-      nProductType: PRODUCT.type,
+      nProductType: productType,
     });
   }
 
@@ -532,7 +539,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         break;
       case "release": {
         remove(infeedProducts, target!);
-        latch(outfeedProducts, outfeed, tcp[0], tcp[1], tcpRz, E_VisuProductState.PLACED);
+        latch(outfeedProducts, outfeed, tcp[0], tcp[1], tcpRz, E_VisuProductState.PLACED, target!.nProductType);
         target = undefined;
         phase = "idle";
         break;
@@ -920,7 +927,9 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       sinceSpawn += dtMs;
       if (sinceSpawn >= SPAWN_INTERVAL_MS) {
         sinceSpawn = 0;
-        latch(infeedProducts, infeed, INFEED.x + 100, INFEED.y + (random() - 0.5) * 240, (random() - 0.5) * 60);
+        // About one product in three on the Delta infeed is a can.
+        const type = random() < 1 / 3 ? CAN.type : PRODUCT.type;
+        latch(infeedProducts, infeed, INFEED.x + 100, INFEED.y + (random() - 0.5) * 240, (random() - 0.5) * 60, E_VisuProductState.DETECTED, type);
       }
       // Irregular gaps on the Fxx infeed: the loop evens them out.
       sinceFxxSpawn += dtMs;

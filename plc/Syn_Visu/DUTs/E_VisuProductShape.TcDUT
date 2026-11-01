@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="E_VisuProductShape" Id="{0e3ca791-a523-4aa0-961b-9b87f86249eb}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_VisuProductShape :
+(
+	(* Values are part of the gateway contract: append, never renumber. *)
+	BOX := 0,			// box: fLength x fWidth x fHeight
+	CYLINDER := 1,		// cylinder: fLength and fWidth are its diameters along and across the conveying direction
+	ROUNDED_BOX := 2	// box with rounded vertical edges of fCornerRadius (pouches, flow packs)
+) UINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

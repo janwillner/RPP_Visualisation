@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoDelta" Id="{d1c56df2-fd44-4d84-a854-03fd02c46e09}" SpecialFunc="None">
+  <POU Name="P_VisuDemoDelta" Id="{ebc824d5-6a38-497c-8ecf-01d27c55d56b}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -13,8 +13,9 @@ onto the outfeed. Some products are deliberately missed. Each Delta has a differ
 - Delta 1: two suction cups beside the flange that turn about Rz; it picks two products and places both at once.<br>
 - Delta 2: one finger that turns about Rz and tilts about Rx while carrying.<br>
 - Delta 3: five fingers around the flange that close when picking and open when placing.<br>
-Products come in three types of different size; Delta 1 picks a pair of one type, Delta 3 closes its fingers<br>
-around the product's corners. A product put down on the outfeed leaves the infeed's register.<br>
+Products come in five types of different size and shape (boxes, a can, an oval, a pouch), mixed on both infeeds;<br>
+Delta 1 picks a pair of one type, Delta 3 closes its fingers around the product's outline. A product put down<br>
+on the outfeed leaves the infeed's register.<br>
 Delta 1 is in a fault now and then. Called by P_VisuDemo.<br>
 ****************************************************************************************************)
 PROGRAM P_VisuDemoDelta
@@ -76,13 +77,18 @@ END_VAR
 VAR CONSTANT
 	lr_BELT_LENGTH						: LREAL := 5000;	// [mm]
 	lr_INFEED_SPEED						: LREAL := 150;	// [mm/s]
-	lr_OUTFEED_SPEED					: LREAL := 120;	// [mm/s]
-	lr_SPAWN_INTERVAL					: LREAL := 0.6;	// [s] per infeed
+	lr_OUTFEED_SPEED					: LREAL := 300;	// [mm/s] two infeeds' products, 150 mm apart
+	lr_SPAWN_INTERVAL					: LREAL := 1.0;	// [s] per infeed: 150 mm apart, the longest product type
 	(* Product types, the same on every belt; type 1 is the standard product of the other demo applications. *)
-	udn_TYPE_COUNT						: UDINT := 3;
-	lr_TYPE_LENGTH						: ARRAY[1..3] OF LREAL := [120, 150, 90];	// [mm] along the conveying direction
-	lr_TYPE_WIDTH						: ARRAY[1..3] OF LREAL := [80, 100, 90];	// [mm]
-	lr_TYPE_HEIGHT						: ARRAY[1..3] OF LREAL := [40, 45, 60];	// [mm] at least lr_RING_HEIGHT
+	(* 1, 2: boxes; 3: a round can; 4: an oval; 5: a pouch with rounded edges. *)
+	udn_TYPE_COUNT						: UDINT := 5;
+	e_TYPE_SHAPE						: ARRAY[1..5] OF E_VisuProductShape := [E_VisuProductShape.BOX, E_VisuProductShape.BOX,
+											E_VisuProductShape.CYLINDER, E_VisuProductShape.CYLINDER,
+											E_VisuProductShape.ROUNDED_BOX];
+	lr_TYPE_LENGTH						: ARRAY[1..5] OF LREAL := [120, 150, 90, 110, 140];	// [mm] along the conveying direction (a cylinder: diameter)
+	lr_TYPE_WIDTH						: ARRAY[1..5] OF LREAL := [80, 100, 90, 70, 90];	// [mm] across (a cylinder: diameter)
+	lr_TYPE_HEIGHT						: ARRAY[1..5] OF LREAL := [40, 45, 60, 45, 40];	// [mm] at least lr_RING_HEIGHT
+	lr_TYPE_CORNER_RADIUS				: ARRAY[1..5] OF LREAL := [0, 0, 0, 0, 20];	// [mm] rounded edges of a rounded box
 	lr_INFEED1_Y						: LREAL := 0;	// [mm]
 	lr_INFEED2_Y						: LREAL := 1000;	// [mm]
 	lr_OUTFEED_Y						: LREAL := 500;	// [mm]
@@ -160,7 +166,8 @@ FOR n_Belt := 0 TO 2 DO
 		vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
 	FOR udn_Type := 1 TO udn_TYPE_COUNT DO
 		fb_RefBelt.m_SetProductType(vi_udn_Id := udn_Type, vi_lr_Length := lr_TYPE_LENGTH[udn_Type],
-			vi_lr_Width := lr_TYPE_WIDTH[udn_Type], vi_lr_Height := lr_TYPE_HEIGHT[udn_Type]);
+			vi_lr_Width := lr_TYPE_WIDTH[udn_Type], vi_lr_Height := lr_TYPE_HEIGHT[udn_Type],
+			vi_e_Shape := e_TYPE_SHAPE[udn_Type], vi_lr_CornerRadius := lr_TYPE_CORNER_RADIUS[udn_Type]);
 	END_FOR
 END_FOR
 fb_Infeed2.m_SetOriginShift(vi_lr_X := lr_INFEED2_ORIGIN_X);
@@ -642,9 +649,16 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 Follows the current target of Delta n_Robot by its id (register indices shift when entries are removed),<br>
-selects its infeed into fb_RefBelt and the finger used for the current pick into n_Finger and Grip.<br>
+selects its infeed into fb_RefBelt and the finger used for the current pick into n_Finger and Grip. Sets the height<br>
+of the product carried or approached and the Delta 3 finger distance closed around it.<br>
 ****************************************************************************************************)
-METHOD PRIVATE m_Target : BOOL]]></Declaration>
+METHOD PRIVATE m_Target : BOOL
+VAR
+	lr_TempHalfLength					: LREAL;	// [mm]
+	lr_TempHalfWidth					: LREAL;	// [mm]
+	lr_TempRadius						: LREAL;	// [mm] corner radius of a rounded box
+	lr_TempOuter						: LREAL;	// [mm] radius of the circle around the product's outline
+END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[(* Current target *)
 b_Found := FALSE;
@@ -682,9 +696,21 @@ ELSE
 	udn_Type := 1;
 END_IF
 lr_HeldHeight := lr_TYPE_HEIGHT[udn_Type];
-(* Delta 3 closes its fingers on a circle just beyond the product's corners. *)
-lr_SpreadClosed := SQRT(lr_TYPE_LENGTH[udn_Type] * lr_TYPE_LENGTH[udn_Type] + lr_TYPE_WIDTH[udn_Type] * lr_TYPE_WIDTH[udn_Type])
-					/ 2.0 + lr_RING_CLEARANCE;
+(* Delta 3 closes its fingers on a circle just around the product's outline: around a box's corners, a cylinder's
+   larger radius, or a rounded box's corner arcs. *)
+lr_TempHalfLength := lr_TYPE_LENGTH[udn_Type] / 2.0;
+lr_TempHalfWidth := lr_TYPE_WIDTH[udn_Type] / 2.0;
+CASE e_TYPE_SHAPE[udn_Type] OF
+	E_VisuProductShape.CYLINDER:
+		lr_TempOuter := MAX(lr_TempHalfLength, lr_TempHalfWidth);
+	E_VisuProductShape.ROUNDED_BOX:
+		lr_TempRadius := MIN(lr_TYPE_CORNER_RADIUS[udn_Type], MIN(lr_TempHalfLength, lr_TempHalfWidth));
+		lr_TempOuter := SQRT((lr_TempHalfLength - lr_TempRadius) * (lr_TempHalfLength - lr_TempRadius)
+							+ (lr_TempHalfWidth - lr_TempRadius) * (lr_TempHalfWidth - lr_TempRadius)) + lr_TempRadius;
+ELSE
+	lr_TempOuter := SQRT(lr_TempHalfLength * lr_TempHalfLength + lr_TempHalfWidth * lr_TempHalfWidth);
+END_CASE
+lr_SpreadClosed := lr_TempOuter + lr_RING_CLEARANCE;
 
 (* Finger used for the current pick: Delta 1 fills its cups one after the other, Delta 3 carries at the flange
    between its fingers. *)

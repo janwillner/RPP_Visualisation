@@ -123,14 +123,21 @@ const SELECT_COLOR = STATUS.select;
 /** Faulted components and movers glow in this colour; a selection highlight stays visible underneath. */
 const FAULT_COLOR = STATUS.fault;
 
-/** The fine outline along the edges of a solid part; it fades with its source like everything else. */
-function EdgeLines({ geometry }: { geometry: THREE.BufferGeometry }) {
+/**
+ * The fine outline along the edges of a solid part; it fades with its source like everything else. With `color`, it is
+ * the whole drawing of an outline-only object (a placeholder): in that colour, unlit and not tone mapped.
+ */
+function EdgeLines({ geometry, color }: { geometry: THREE.BufferGeometry; color?: string }) {
   // Only edges where faces meet at a clear angle: no lines along the facets of a round part.
   const edges = useMemo(() => new THREE.EdgesGeometry(geometry, 30), [geometry]);
   useEffect(() => () => edges.dispose(), [edges]);
   return (
     <lineSegments geometry={edges} raycast={noRaycast}>
-      <lineBasicMaterial color={SOLID.edge} transparent opacity={0.55} />
+      {color ? (
+        <lineBasicMaterial color={color} transparent opacity={0.9} toneMapped={false} />
+      ) : (
+        <lineBasicMaterial color={SOLID.edge} transparent opacity={0.55} />
+      )}
     </lineSegments>
   );
 }
@@ -713,6 +720,38 @@ function FingerMesh(props: {
   );
 }
 
+/** Segments of a round product's outline: smooth enough up close, cheap for many products. */
+const ROUND_SEGMENTS = 40;
+
+/**
+ * A product's solid, centred, with local +X along its length, +Y up and +Z across (metres): a box, an (oval)
+ * cylinder whose length and width are its diameters, or a box with rounded vertical edges.
+ */
+function productGeometry(p: SceneProduct): THREE.BufferGeometry {
+  const { length, width, height } = p.size;
+  if (p.shape === "cylinder") {
+    const cylinder = new THREE.CylinderGeometry(0.5, 0.5, height, ROUND_SEGMENTS);
+    cylinder.scale(length, 1, width);
+    return cylinder;
+  }
+  const r = Math.min(p.cornerRadius, length / 2, width / 2);
+  if (p.shape === "roundedBox" && r > 0) {
+    // Outline in the shape's (x, y) plane, extruded along its z: turned so that z becomes up and y becomes −Z.
+    const x = length / 2 - r;
+    const y = width / 2 - r;
+    const outline = new THREE.Shape();
+    outline.absarc(x, y, r, 0, Math.PI / 2, false);
+    outline.absarc(-x, y, r, Math.PI / 2, Math.PI, false);
+    outline.absarc(-x, -y, r, Math.PI, (3 * Math.PI) / 2, false);
+    outline.absarc(x, -y, r, (3 * Math.PI) / 2, 2 * Math.PI, false);
+    const solid = new THREE.ExtrudeGeometry(outline, { depth: height, bevelEnabled: false, curveSegments: 6 });
+    solid.rotateX(-Math.PI / 2);
+    solid.translate(0, -height / 2, 0);
+    return solid;
+  }
+  return new THREE.BoxGeometry(length, height, width);
+}
+
 function ProductMesh(props: {
   product: SceneProduct;
   selected: boolean;
@@ -724,7 +763,13 @@ function ProductMesh(props: {
   useFrame(() => applyTransform(ref.current, lookup(product.key)?.transform));
   const display: ProductDisplay = product.display;
   const color = selected ? SELECT_COLOR : display === "missed" ? MISSED_COLOR : PRODUCT_COLORS[product.state];
-  const geometry = useBox(product.size.length, product.size.height, product.size.width);
+  const { shape, cornerRadius, size } = product;
+  const geometry = useMemo(
+    () => productGeometry(product),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [shape, cornerRadius, size.length, size.width, size.height],
+  );
+  useEffect(() => () => geometry.dispose(), [geometry]);
   return (
     <mesh
       ref={(m) => {
@@ -739,8 +784,12 @@ function ProductMesh(props: {
       }}
     >
       {display === "placeholder" ? (
-        // Not yet confirmed: an outline only, unlit like the other overlays.
-        <meshBasicMaterial color={color} wireframe transparent opacity={0.8} toneMapped={false} />
+        // Where the picked product lay: its outline only, unlit like the other overlays; the hidden fill keeps it
+        // clickable.
+        <>
+          <meshBasicMaterial visible={false} />
+          <EdgeLines geometry={geometry} color={color} />
+        </>
       ) : (
         <>
           <meshStandardMaterial

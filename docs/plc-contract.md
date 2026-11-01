@@ -1,4 +1,4 @@
-# PLC contract (library `Syn_Visu`, protocol version 9)
+# PLC contract (library `Syn_Visu`, protocol version 10)
 
 This is the PLC side of the contract the gateway reads. It is implemented by the TwinCAT library project in
 `plc/Syn_Visu` (solution `plc/RPP_Visu.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
@@ -84,6 +84,7 @@ unqualified).
 - Protocol version 7 added gripper fingers (`ST_VisuFinger`, `ST_VisuFingerState`, `nFingerCount`, `aFingers`, `aFingerStates`, the product's `nFingerId`) and removed the tool rotations: the Delta's `bHasRotationAxis` and TCP `fRz` (the TCP is now an `ST_VisuPosition`), the XTS gantry's `fCMin`/`fCMax` and mover `fC`, and the Cartesian robot's `fCMin`/`fCMax`/`fAMin`/`fAMax`/`fToolLength` and `fC`/`fA`.
 - Protocol version 8 added faults (`ST_VisuFault`, `stFault` in every component state and every XTS mover).
 - Protocol version 9 added the zones' `fCcsOffset` and `stOriginShift` in every config.
+- Protocol version 10 added the product type's `eShape` (`E_VisuProductShape`) and `fCornerRadius`.
 
 ## What the library contains
 
@@ -99,7 +100,7 @@ the FBs fill them in their output `vo_Visu`, so application code does not write 
 | `_FB_VisuCartesian` | One Cartesian robot (methods below) |
 | `_FB_VisuComponent` | Abstract base of all: `m_Register`, `m_Id`, config version and DC timestamps |
 | `ST_VisuManifest`, `ST_VisuManifestEntry`, `E_VisuComponentType` | Discovery: which components exist and where |
-| `ST_VisuConveyor` (`stConfig` / `stState`), `ST_VisuProduct`, `ST_VisuProductType`, `E_VisuProductState` | Conveyor contract structure (`_FB_VisuConveyor.vo_Visu`) |
+| `ST_VisuConveyor` (`stConfig` / `stState`), `ST_VisuProduct`, `ST_VisuProductType` (size, `eShape`, `fCornerRadius`), `E_VisuProductState`, `E_VisuProductShape` | Conveyor contract structure (`_FB_VisuConveyor.vo_Visu`) |
 | `ST_VisuDelta` (`stConfig`: geometry, working area, limit area, zones, fingers / `stState`: actual and setpoint TCP, finger states), `ST_VisuWorkingArea`, `ST_VisuLimitArea`, `ST_VisuZone`, `E_VisuZoneKind` | Delta contract structure (`_FB_VisuDelta.vo_Visu`) |
 | `ST_VisuXtsGantry` (`stConfig`: track, strokes, gripper offsets, mover size, zones, fingers / `stState`: Z and movers with finger states), `ST_VisuGantryMover` | XTS gantry contract structure (`_FB_VisuXtsGantry.vo_Visu`) |
 | `ST_VisuXtsLoop` (`stConfig`: straight length, curve radius, tool offset, mover size, zones, fingers / `stState`: movers with finger states), `ST_VisuLoopMover` | XTS loop contract structure (`_FB_VisuXtsLoop.vo_Visu`) |
@@ -142,7 +143,7 @@ All robot FBs (Delta, XTS gantry, XTS loop, Cartesian):
 | Method | Purpose |
 | --- | --- |
 | `m_Configure(vi_Pose, vi_lr_Length, vi_lr_Width)` | Pose of the belt start and size |
-| `m_SetProductType(vi_udn_Id, vi_lr_Length, vi_lr_Width, vi_lr_Height)` | Adds or updates a product type |
+| `m_SetProductType(vi_udn_Id, vi_lr_Length, vi_lr_Width, vi_lr_Height, vi_e_Shape := BOX, vi_lr_CornerRadius := 0)` | Adds or updates a product type: a box, a cylinder (length and width are its diameters along and across the conveying direction: equal for round, different for oval products) or a box with rounded vertical edges (pouches, flow packs) |
 | `m_SetBeltPosition(vi_lr_Position)` | Belt position (continuous, mm) and state timestamp; call once per cycle |
 | `m_SetModuloBeltPosition(vi_lr_ModuloPosition, vi_lr_ModuloPeriod, vi_b_Reset)` | Same for a modulo axis; unwraps to a continuous position |
 | `m_LatchProduct(vi_udn_Id, vi_LatchPose, vi_udn_ProductType, vi_e_State := DETECTED, vi_udn_RobotId := 0)` | Adds a product at the current belt position (or at `vi_lr_LatchBeltPosition` with `vi_b_UseLatchBeltPosition`): `DETECTED` where it arrives, `PLACED` with the robot's id where a robot puts it down |
@@ -219,6 +220,8 @@ fb_Delta1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 10, vi_st
 
 fb_Infeed.m_Configure(vi_Pose := InfeedPose, vi_lr_Length := 5000, vi_lr_Width := 400);
 fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40);
+fb_Infeed.m_SetProductType(vi_udn_Id := 2, vi_lr_Length := 90, vi_lr_Width := 90, vi_lr_Height := 60,
+	vi_e_Shape := E_VisuProductShape.CYLINDER);
 fb_Infeed.m_SetModuloBeltPosition(vi_lr_ModuloPosition := <axis modulo position>, vi_lr_ModuloPeriod := <modulo period>,
 	vi_b_Reset := FALSE);
 IF b_Latched THEN
@@ -258,6 +261,7 @@ It then reads `<sPath>.stConfig` once. Every cycle it sum-reads `GVL_Visu.stMani
 | `E_VisuComponentType` (UINT) | `NONE` 0, `CONVEYOR` 1, `DELTA` 2, `XTS_GANTRY` 3, `XTS_LOOP` 4, `CARTESIAN` 5 |
 | `E_VisuProductState` (UINT) | `DETECTED` 0, `ASSIGNED` 1, `PICKED` 2, `REJECTED` 3, `PLACED` 4 |
 | `E_VisuZoneKind` (UINT) | `PICK` 1, `PLACE` 2 |
+| `E_VisuProductShape` (UINT) | `BOX` 0, `CYLINDER` 1, `ROUNDED_BOX` 2 |
 
 Values are part of the contract: append, never renumber.
 

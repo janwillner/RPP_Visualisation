@@ -19,7 +19,7 @@
     <Company>Syntegon Group</Company>
     <Released>false</Released>
     <Title>SynVisu</Title>
-    <ProjectVersion>3.4.0.0</ProjectVersion>
+    <ProjectVersion>3.5.0.0</ProjectVersion>
     <DefaultNamespace>SynVisu</DefaultNamespace>
   </PropertyGroup>
   <ItemGroup>
@@ -35,6 +35,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="DUTs\E_VisuComponentType.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_VisuProductShape.TcDUT">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="DUTs\E_VisuProductState.TcDUT">

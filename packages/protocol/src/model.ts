@@ -9,7 +9,7 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 10;
 
 /** Full 6-DOF pose. Rotation order: R = Rz(rz) · Ry(ry) · Rx(rx). */
 export const PoseSchema = z.object({
@@ -66,11 +66,21 @@ export type PlanarPose = z.infer<typeof PlanarPoseSchema>;
 /** PLC timestamp (DC time, ns) as decimal string: 64-bit values exceed JS number precision. */
 export const TimestampSchema = z.string().regex(/^\d+$/);
 
+/**
+ * A product type's solid: a box; a cylinder whose length and width are its two diameters along and across the
+ * conveying direction (equal: round, different: oval); a box with rounded vertical edges of `cornerRadius`.
+ */
+export const ProductShapeSchema = z.enum(["box", "cylinder", "roundedBox"]);
+export type ProductShape = z.infer<typeof ProductShapeSchema>;
+
 export const ProductTypeSchema = z.object({
   id: z.number().int(),
   length: z.number(),
   width: z.number(),
   height: z.number(),
+  shape: ProductShapeSchema,
+  /** mm, rounded vertical edges of a `roundedBox`; 0 for the other shapes. */
+  cornerRadius: z.number(),
 });
 export type ProductType = z.infer<typeof ProductTypeSchema>;
 
