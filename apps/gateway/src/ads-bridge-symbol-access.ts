@@ -62,7 +62,11 @@ export class AdsBridgeSymbolAccess implements SymbolAccess {
     const id = this.nextId++;
     const response = await new Promise<Response>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
-      child.stdin.write(`${JSON.stringify({ id, ...body })}\n`);
+      // A bridge that has just died fails the write (EPIPE); the request fails, the next one starts a new bridge.
+      child.stdin.write(`${JSON.stringify({ id, ...body })}\n`, (error) => {
+        if (!error || !this.pending.delete(id)) return;
+        reject(new Error(`ADS bridge is not reachable: ${error.message}`));
+      });
     });
     if (response.ok) return response.value;
     if (response.notFound) throw new SymbolNotFoundError(path);
@@ -94,6 +98,11 @@ export class AdsBridgeSymbolAccess implements SymbolAccess {
       this.pending.clear();
       if (this.child === child) this.child = undefined;
     };
+    // Without a listener a failed write to a dead bridge (EPIPE) would end the whole gateway.
+    child.stdin.on("error", (e) => {
+      fail(`ADS bridge input failed: ${e.message}`);
+      child.kill();
+    });
     child.on("error", (e) => fail(`ADS bridge could not start (${[command, ...args].join(" ")}): ${e.message}`));
     child.on("exit", (code) => fail(`ADS bridge exited with code ${code}${stderr ? `: ${stderr.trim()}` : ""}`));
     this.child = child;

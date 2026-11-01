@@ -4,9 +4,12 @@ import { createServer, type Server } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { MessageSource } from "./gateway";
+import { watchHealth } from "./health";
 
 /** WebSocket path the web app connects to. */
 export const WS_PATH = "/ws";
+/** Health of every source as JSON; 200 while all are connected, else 503. */
+export const HEALTH_PATH = "/health";
 
 /** Above this many queued bytes, state snapshots to that client are dropped until it catches up. */
 const MAX_BUFFERED_BYTES = 1_000_000;
@@ -34,8 +37,15 @@ export interface ServerOptions {
 /** One HTTP port serving the built web app plus the read-only WebSocket fan-out. */
 export function startServer({ gateway, port, host, staticDir }: ServerOptions): Promise<Server> {
   const root = staticDir ? resolve(staticDir) : undefined;
+  const health = watchHealth(gateway);
 
   const server = createServer((req, res) => {
+    if (req.method === "GET" && new URL(req.url ?? "/", "http://localhost").pathname === HEALTH_PATH) {
+      const report = health();
+      res.writeHead(report.ok ? 200 : 503, { "content-type": MIME[".json"], "cache-control": "no-store" });
+      res.end(JSON.stringify(report));
+      return;
+    }
     serveStatic(req.url ?? "/", res).catch(() => {
       if (!res.headersSent) res.writeHead(500);
       res.end();

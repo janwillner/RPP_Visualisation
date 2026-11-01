@@ -20,7 +20,9 @@ their Beckhoff-style names, because the gateway reads them.
 
 Releasing a version: bump `_FC_GetVersionSynVisu` and the project version (Properties → Common), build, export it with
 "Save as library and install" to `plc/library/Syn_Visu_<version>.library`, update the demo's reference and build again.
-The library is installed under the title `SynVisu` from `Syntegon Group`.
+The library is installed under the title `SynVisu` from `Syntegon Group`; its namespace is `SynVisu` too, so machine
+projects qualify library objects as `SynVisu._FB_VisuConveyor`, `SynVisu.ST_VisuPose` and so on (the demo uses them
+unqualified).
 
 ## Conventions
 
@@ -199,15 +201,15 @@ symbol path of their `vo_Visu` goes into the manifest.
 {attribute 'qualified_only'}
 VAR_GLOBAL
 	(* GVL_Visu (application project) *)
-	stManifest							: Syn_Visu.ST_VisuManifest;
+	stManifest							: SynVisu.ST_VisuManifest;
 END_VAR
 ```
 
 ```st
 PROGRAM MAIN
 VAR
-	fb_Infeed							: Syn_Visu._FB_VisuConveyor;
-	fb_Delta1							: Syn_Visu._FB_VisuDelta;
+	fb_Infeed							: SynVisu._FB_VisuConveyor;
+	fb_Delta1							: SynVisu._FB_VisuDelta;
 END_VAR
 
 fb_Infeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed',
@@ -228,7 +230,7 @@ fb_Delta1.m_Configure(vi_Pose := DeltaBase, vi_lr_BaseRadius := 200, vi_lr_Effec
 fb_Delta1.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 50);
 fb_Delta1.m_SetLimitArea(vi_lr_XMin := -500, vi_lr_XMax := 500, vi_lr_YMin := -750, vi_lr_YMax := 750,
 	vi_lr_ZMin := -1500, vi_lr_ZMax := -700);
-fb_Delta1.m_SetZone(vi_udn_ConveyorId := fb_Infeed.m_Id(), vi_e_Kind := Syn_Visu.E_VisuZoneKind.PICK,
+fb_Delta1.m_SetZone(vi_udn_ConveyorId := fb_Infeed.m_Id(), vi_e_Kind := SynVisu.E_VisuZoneKind.PICK,
 	vi_lr_Start := 1100, vi_lr_End := 1900, vi_lr_AllocationOffset := 300);
 fb_Delta1.m_SetTcp(vi_ActualTcp := Tcp, vi_SetpointTcp := TcpSetpoint);
 (* The cup below the flange, turned by the 4th axis: absolute in the MCS. *)
@@ -245,7 +247,7 @@ tilting, and five fingers closing when picking and opening when placing.
 The gateway reads `GVL_Visu.stManifest` and refuses to continue when `nProtocolVersion` differs from its own; it keeps
 watching the version and recovers as soon as it matches. For each
 of the first `nCount` entries it checks that the symbol at `sPath` has the data type `ST_VisuConveyor`, `ST_VisuDelta`,
-`ST_VisuXtsGantry`, `ST_VisuXtsLoop` or `ST_VisuCartesian` according to `eType`. Names qualified with the library namespace, such as `Syn_Visu.ST_VisuDelta`, are accepted too.
+`ST_VisuXtsGantry`, `ST_VisuXtsLoop` or `ST_VisuCartesian` according to `eType`. Names qualified with the library namespace, such as `SynVisu.ST_VisuDelta`, are accepted too.
 It then reads `<sPath>.stConfig` once. Every cycle it sum-reads `GVL_Visu.stManifest.nProtocolVersion`,
 `GVL_Visu.stManifest.nConfigVersion` and all `<sPath>.stState`, and rediscovers when either version changes.
 

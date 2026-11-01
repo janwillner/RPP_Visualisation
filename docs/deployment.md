@@ -131,6 +131,13 @@ To update, run `install.ps1` from the newer zip. To roll back, run it from the o
 
 This removes all services, the program files and the firewall rules. `C:\ProgramData\RPP_Visualisation\` is kept unless you pass `-RemoveData`. To remove only one additional instance, pass `-Instance 852`.
 
+## Monitoring
+
+`GET http://<host>:<port>/health` returns the state of every PLC source as JSON: `ok`, `protocolVersion` and per
+source `sourceId`, `name`, `plcConnected`, `lastError` and `lastStateAt` (time of the newest state snapshot). The HTTP
+status is 200 while every source is connected and 503 otherwise, so a monitoring system can check it without reading
+the body.
+
 ## Troubleshooting
 
 | Symptom | Check |

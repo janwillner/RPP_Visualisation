@@ -5,7 +5,7 @@ import { AdsBridgeSymbolAccess } from "./ads-bridge-symbol-access";
 import { AdsSymbolAccess } from "./ads-symbol-access";
 import { combineGateways, createGateway, type Gateway } from "./gateway";
 import { OptionsError, resolveGatewayOptions, type GatewayOptions } from "./options";
-import { startServer, WS_PATH } from "./server";
+import { HEALTH_PATH, startServer, WS_PATH } from "./server";
 import { createSimulator } from "./simulator";
 import type { SymbolAccess } from "./symbol-access";
 
@@ -103,7 +103,7 @@ const server = await startServer({
 });
 console.log(
   `Gateway (${options.driver}) listening on http://${options.host ?? "localhost"}:${options.port}` +
-    ` – WebSocket ${WS_PATH}${options.staticDir ? `, serving ${options.staticDir}` : ", no static web app"}`,
+    ` – WebSocket ${WS_PATH}, health ${HEALTH_PATH}${options.staticDir ? `, serving ${options.staticDir}` : ", no static web app"}`,
 );
 console.log(`Sources: ${runtimes.map((r) => `${r.name} (${r.gateway.sourceId})`).join(", ")}`);
 

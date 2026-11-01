@@ -1,3 +1,4 @@
+import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import {
   GatewayMessageSchema,
@@ -9,6 +10,7 @@ import {
 } from "@rpp/protocol";
 import { RECONNECT_MS, combineGateways, createGateway } from "../src/gateway";
 import { InMemoryPlc } from "../src/in-memory-plc";
+import { startServer } from "../src/server";
 import {
   cartesian,
   conveyor,
@@ -549,6 +551,36 @@ describe("gateway with several PLC sources", () => {
     await t.cycleAll();
     expect(configsOf(t.messages, "ads:5.1.2.4.1.1:851")).toHaveLength(2);
     expect(statesOf(t.messages, "ads:5.1.2.4.1.1:851").length).toBe(2);
+  });
+
+  it("reports every source's health at /health: 200 while all are connected, 503 once one is not", async () => {
+    const t = twoSources();
+    const server = await startServer({ gateway: combineGateways(t.gateways), port: 0, host: "127.0.0.1" });
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/health`;
+    try {
+      await t.cycleAll();
+      const healthy = await fetch(url);
+      expect(healthy.status).toBe(200);
+      expect(await healthy.json()).toMatchObject({
+        ok: true,
+        protocolVersion: PROTOCOL_VERSION,
+        sources: [
+          { sourceId: "ads:5.1.2.3.1.1:851", name: "Infeed PLC", plcConnected: true },
+          { sourceId: "ads:5.1.2.4.1.1:851", name: "Outfeed PLC", plcConnected: true },
+        ],
+      });
+
+      t.b.setOnline(false);
+      await t.cycleAll();
+      const degraded = await fetch(url);
+      expect(degraded.status).toBe(503);
+      const body = (await degraded.json()) as { ok: boolean; sources: { plcConnected: boolean; lastError?: string }[] };
+      expect(body.ok).toBe(false);
+      expect(body.sources.map((s) => s.plcConnected)).toEqual([true, false]);
+      expect(body.sources[1]!.lastError).toBeTruthy();
+    } finally {
+      server.close();
+    }
   });
 });
 
