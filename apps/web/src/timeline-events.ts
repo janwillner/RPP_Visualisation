@@ -1,4 +1,5 @@
 import type { Fault, GatewayMessage } from "@rpp/protocol";
+import { componentName } from "./component-name";
 import type { SourceInfo } from "./connection";
 import { faultText, isMissed } from "./scene/scene-model";
 
@@ -44,13 +45,15 @@ export class EventTracker {
       this.connected.set(message.sourceId, now);
       // A source first heard of while connected has not come back from anywhere.
       if (before === now || (before === undefined && now)) return;
+      // Nothing is known about its faults while it is away: one still active when it comes back is marked again.
+      if (!now) this.faults.delete(message.sourceId);
       push(now ? "online" : "offline", `${source.name} ${now ? "online" : "offline"}`);
       return;
     }
     if (message.kind !== "state") return;
 
     const components = source.config?.components ?? [];
-    const nameOf = (id: number) => components.find((c) => c.id === id)?.name ?? `#${id}`;
+    const nameOf = (id: number) => componentName(source, id);
     const faults = new Set<string>();
     const missed = new Set<string>();
     const wasFaulted = this.faults.get(message.sourceId);

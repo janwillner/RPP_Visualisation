@@ -218,6 +218,25 @@ describe("recording: timeline events", () => {
     ]);
   });
 
+  it("marks a fault again when its source comes back with it still active", async () => {
+    const recorder = new Recorder([{ sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: config(A) }]);
+    const faulted = (at: number): StateMessage => ({
+      ...state(A, at),
+      components: [{ type: "conveyor", id: 1, timestamp: "0", beltPosition: 0, products: [], fault: { message: "Belt jammed" } }],
+    });
+    for (let at = 0; at < 1000; at += 100) recorder.add(at, faulted(at));
+    recorder.add(1000, status(A, false));
+    recorder.add(2000, status(A, true));
+    for (let at = 2000; at <= 2500; at += 100) recorder.add(at, faulted(at));
+
+    expect((await recorder.stop()).events.map((e) => [e.at, e.kind])).toEqual([
+      [0, "fault"],
+      [1000, "offline"],
+      [2000, "online"],
+      [2000, "fault"],
+    ]);
+  });
+
   it("marks a product that passes the belt end without being picked, once", async () => {
     const product = (id: number, productState: "detected" | "rejected" | "picked") => ({
       id,

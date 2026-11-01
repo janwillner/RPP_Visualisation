@@ -24,6 +24,18 @@ _Avoid_: log, trace, history
 Showing a recording in the 3D view instead of the live machine, at any speed or moment.
 _Avoid_: replay, simulation (the simulator is something else)
 
+**Timeline event**:
+A moment of a recording worth finding again, marked on its timeline: a fault appears, a source goes offline or comes back, a product is missed.
+_Avoid_: alarm, bookmark
+
+**Product history**:
+What happened to one product while the visualisation watched it: when it entered its conveyor's register, was assigned, picked by which robot, placed or rejected, missed, and when it left the register.
+_Avoid_: product trace, tracking log
+
+**Metrics**:
+Figures of the last minute counted from what happened to the products: picks per minute per robot, products entering each conveyor per minute, missed and rejected products, and the share of missed products.
+_Avoid_: KPIs, OEE (the visualisation does not know the machine's availability or quality)
+
 **Source**:
 One PLC runtime the visualisation reads, identified by its AmsNetId and ADS port. A machine may span several sources; all of them report in the same MCS, and component ids are unique only within one source.
 _Avoid_: connection, target, IPC (an IPC may run several sources)

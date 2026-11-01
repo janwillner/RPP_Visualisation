@@ -15,3 +15,4 @@ The live data is large: about 30 states per second of roughly 60 KB JSON each, m
 - A recording lives only in its browser tab; it is lost on reload unless saved. The page warns before closing while a recording is unsaved.
 - The recording file (`.rpprec`) is gzip-compressed JSON lines with a format and protocol version. Files of another version are refused; there is no conversion.
 - Embedded in TwinCAT HMI, the browser control may block downloads; saving then works only in a normal browser.
+- While recording, the browser also derives the timeline events and the product history (with the product events the metrics count) from the messages. They are kept uncompressed next to the blocks, a few hundred bytes per product, and are not part of the file: opening a file derives them again from its messages, so older files get them too.

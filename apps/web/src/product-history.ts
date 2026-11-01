@@ -1,4 +1,5 @@
 import type { GatewayMessage, Product } from "@rpp/protocol";
+import { componentName } from "./component-name";
 import type { SourceInfo } from "./connection";
 import { isMissed } from "./scene/scene-model";
 
@@ -36,6 +37,8 @@ interface Followed {
   state: Product["state"];
   missed: boolean;
   gone: boolean;
+  /** An earlier product with the same id, which left the register before this one entered. */
+  earlier?: Followed;
 }
 
 /**
@@ -72,7 +75,7 @@ export class ProductHistory {
         robotId: kind === "picked" || kind === "placed" ? p.robotId : 0,
       });
     const components = source?.config?.components ?? [];
-    const robot = (id: number) => components.find((c) => c.id === id)?.name ?? `robot #${id}`;
+    const robot = (id: number) => componentName(source, id, `robot #${id}`);
     for (const c of message.components) {
       if (c.type !== "conveyor") continue;
       const conveyor = components.find((x) => x.id === c.id);
@@ -86,8 +89,10 @@ export class ProductHistory {
         const signature = `${p.state}:${p.robotId}:${p.moverId}:${p.fingerId}`;
         let followed = this.products.get(key);
         if (!followed || followed.gone) {
-          // A product id seen again after it left starts a new history.
-          followed = { steps: [], signature, state: p.state, missed: false, gone: false };
+          // A product id seen again after it left starts a new history. A recording (no product limit) keeps the
+          // earlier one for earlier moments; live, only the newest is ever asked for.
+          const earlier = this.maxProducts === Infinity ? followed : undefined;
+          followed = { steps: [], signature, state: p.state, missed: false, gone: false, earlier };
           this.products.delete(key);
           this.products.set(key, followed);
           followed.steps.push({ at, kind: p.state, text: `Entered the register (${stateText(p, robot, true)})` });
@@ -121,8 +126,10 @@ export class ProductHistory {
 
   /** The steps of one product up to `until`, oldest first; empty for a product never seen (or forgotten). */
   of(sourceId: string, conveyorId: number, productId: number, until = Infinity): ProductStep[] {
-    const steps = this.products.get(productKey(sourceId, conveyorId, productId))?.steps ?? [];
-    return steps.filter((s) => s.at <= until);
+    let followed = this.products.get(productKey(sourceId, conveyorId, productId));
+    // In playback before a reused id came back: the earlier product's history.
+    while (followed && followed.steps[0]!.at > until) followed = followed.earlier;
+    return (followed?.steps ?? []).filter((s) => s.at <= until);
   }
 
   /** Product events from `from` to `until` (both included), in time order. */

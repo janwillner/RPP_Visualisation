@@ -1,3 +1,4 @@
+import { componentName } from "./component-name";
 import type { SourceInfo } from "./connection";
 import type { ProductEvent } from "./product-history";
 
@@ -49,8 +50,7 @@ export function metrics(
 ): MachineMetrics {
   const windowMs = Math.max(1, Math.min(METRICS_WINDOW_MS, now - since));
   const perMin = (count: number) => (count * 60_000) / windowMs;
-  const nameOf = (sourceId: string, id: number) =>
-    sources.find((s) => s.sourceId === sourceId)?.config?.components.find((c) => c.id === id)?.name ?? `#${id}`;
+  const nameOf = (sourceId: string, id: number) => componentName(sources.find((s) => s.sourceId === sourceId), id);
 
   const picks = new Map<string, { sourceId: string; robotId: number; count: number }>();
   const conveyors = new Map<

@@ -100,6 +100,21 @@ describe("product history", () => {
     ]);
   });
 
+  it("keeps the history of an earlier product with the same id for the moments before it came back", () => {
+    // As in a recording, which follows every product.
+    const history = new ProductHistory(Infinity);
+    history.add(0, register(0, [product(5, "detected")]), source);
+    history.add(100, register(0, []), source);
+    history.add(200, register(0, [product(5, "assigned", 10)]), source);
+
+    expect(history.of(A, 1, 5, 150).map((s) => [s.at, s.kind])).toEqual([
+      [0, "detected"],
+      [100, "gone"],
+    ]);
+    expect(history.of(A, 1, 5, 250).map((s) => [s.at, s.kind])).toEqual([[200, "assigned"]]);
+    expect(history.of(A, 1, 5).map((s) => s.at)).toEqual([200]);
+  });
+
   it("forgets the oldest products beyond its limit", () => {
     const history = new ProductHistory(2);
     history.add(0, register(0, [product(1, "detected")]), source);
