@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoSpacing" Id="{5ce40ca6-def1-404e-af16-e5346f466c13}" SpecialFunc="None">
+  <POU Name="P_VisuDemoSpacing" Id="{6dd8a801-0190-4d7b-a281-29232c231876}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -283,8 +283,9 @@ FOR n_TempK := 1 TO n_SPC_MOVERS DO
 		(* At the pitch behind the product ahead (or at the end of the release area): the belt takes it on. Only the
 		   front mover lets go, so a returning mover never overtakes one that still pushes. *)
 		IF n_TempK = 1 AND lr_TempX >= lr_SPC_RELEASE_MIN_X AND ABS(lr_TempTarget - lr_TempX) < 0.5 THEN
-			fb_SpcBelt.m_SetProductState(vi_udn_Id := udn_SpcProduct[n_TempNext], vi_e_State := E_VisuProductState.DETECTED,
-				vi_udn_RobotId := 0);
+			(* Put back onto the belt by the loop: PLACED, so it does not count as missed at the belt end. *)
+			fb_SpcBelt.m_SetProductState(vi_udn_Id := udn_SpcProduct[n_TempNext], vi_e_State := E_VisuProductState.PLACED,
+				vi_udn_RobotId := fb_Spc.m_Id());
 			udn_SpcLastReleased := udn_SpcProduct[n_TempNext];
 			udn_SpcProduct[n_TempNext] := 0;
 			n_SpcMode[n_TempNext] := n_SPC_RETURN;

@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoDelta" Id="{5c094f36-695b-4cab-8f29-a7473b8d640f}" SpecialFunc="None">
+  <POU Name="P_VisuDemoDelta" Id="{ecc8680e-a5ad-447a-a309-250e51c45487}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -604,7 +604,7 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 			(* A product carried at a finger keeps the finger's turn; one at the flange is turned with the base. *)
 			LatchPose.fRz := SEL(n_Robot = 2, lr_ToolRz[n_Robot], 0);
 			IF fb_Outfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := LatchPose,
-				vi_udn_ProductType := 1)
+				vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_RobotId := fb_RefRobot.m_Id())
 			THEN
 				DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 			END_IF

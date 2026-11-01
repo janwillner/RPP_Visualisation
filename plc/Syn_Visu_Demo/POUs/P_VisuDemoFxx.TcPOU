@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoFxx" Id="{de1e4bb0-6350-48fd-865e-c7e904ac30cc}" SpecialFunc="None">
+  <POU Name="P_VisuDemoFxx" Id="{0ad5cd73-39e7-4830-acec-95a4256c8e3a}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -334,7 +334,7 @@ FOR n_TempI := 0 TO n_LOOP_MOVERS - 1 DO
 				TempLatch.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 				TempLatch.fRz := lr_TempRz;
 				IF fb_FxxOutfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := TempLatch,
-					vi_udn_ProductType := 1)
+					vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_RobotId := fb_Fxx.m_Id())
 				THEN
 					DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 				END_IF

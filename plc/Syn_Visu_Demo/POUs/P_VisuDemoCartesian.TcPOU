@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoCartesian" Id="{13cffabc-f95c-4fa8-b77d-0fb864510be7}" SpecialFunc="None">
+  <POU Name="P_VisuDemoCartesian" Id="{cbbc138e-43af-4cbe-9137-ccd40da0f965}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -361,7 +361,7 @@ CASE n_CartPhase OF
 		TempPlacePose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 		TempPlacePose.fRz := -90 + lr_CartC;
 		IF fb_CartOutfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := TempPlacePose,
-			vi_udn_ProductType := 1)
+			vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_RobotId := fb_Cartesian.m_Id())
 		THEN
 			DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 		END_IF

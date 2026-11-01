@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoIdh" Id="{c605b929-9f81-4ebb-99c9-6224424c5f71}" SpecialFunc="None">
+  <POU Name="P_VisuDemoIdh" Id="{b0bfa371-7172-483b-9954-256eb387d6cf}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -329,7 +329,7 @@ CASE n_GantryPhase OF
 					TempLatch.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 					TempLatch.fRz := 0;
 					IF fb_IdhTray.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := TempLatch,
-						vi_udn_ProductType := 1)
+						vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_RobotId := fb_Idh.m_Id())
 					THEN
 						DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 					END_IF
