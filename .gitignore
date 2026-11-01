@@ -25,3 +25,7 @@ apps/ads-bridge/obj/
 
 # Packaging download cache
 .cache/
+
+# Playwright output
+apps/web/test-results/
+apps/web/playwright-report/

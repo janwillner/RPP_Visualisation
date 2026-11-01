@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build:bridge": "dotnet build apps/ads-bridge -c Release",
-    "package": "node scripts/package.mjs"
+    "package": "node scripts/package.mjs",
+    "test:e2e": "pnpm --filter @rpp/web test:e2e"
   },
   "devDependencies": {
     "esbuild": "0.28.2",
