@@ -7,6 +7,8 @@ import {
   DeltaStateSchema,
   SensorConfigSchema,
   SensorStateSchema,
+  StationConfigSchema,
+  StationStateSchema,
   VisionConfigSchema,
   VisionStateSchema,
   XtsGantryConfigSchema,
@@ -64,6 +66,12 @@ export const COMPONENTS: Record<ComponentKind, ComponentSpec> = {
   },
   vision: { plcValue: E_VisuComponentType.VISION, plcType: PLC_TYPES.vision, config: VisionConfigSchema, state: VisionStateSchema },
   sensor: { plcValue: E_VisuComponentType.SENSOR, plcType: PLC_TYPES.sensor, config: SensorConfigSchema, state: SensorStateSchema },
+  station: {
+    plcValue: E_VisuComponentType.STATION,
+    plcType: PLC_TYPES.station,
+    config: StationConfigSchema,
+    state: StationStateSchema,
+  },
 };
 
 /** The component type of a manifest entry's `eType`, undefined when unknown. */

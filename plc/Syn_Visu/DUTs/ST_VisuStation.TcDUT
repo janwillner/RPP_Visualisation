@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuStation" Id="{caa877bf-3613-4095-b747-1fa9c26c66d1}">
+    <Declaration><![CDATA[TYPE ST_VisuStation :
+STRUCT
+	(* One visualised station. Register the instance's symbol path in the manifest with
+	   eType := E_VisuComponentType.STATION. *)
+	stConfig : ST_VisuStationConfig; // read at discovery and after nConfigVersion changes
+	stState : ST_VisuStationState; // read every gateway cycle
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

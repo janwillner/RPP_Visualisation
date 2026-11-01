@@ -15,7 +15,8 @@ export interface ProductStep {
 
 /**
  * A countable moment of a product, for the metrics: it entered the register, was picked, placed or rejected, or was
- * missed. `robotId` is the robot that picked or placed it, else 0; `detectorId` the detector that latched it, else 0.
+ * missed. `clientId` is the client that made it happen (0 = none given, always for missed); `state` the product's
+ * state afterwards, which tells how a product entered: detected, or placed there by a robot.
  */
 export interface ProductEvent {
   at: number;
@@ -23,8 +24,18 @@ export interface ProductEvent {
   conveyorId: number;
   productId: number;
   kind: "entered" | "picked" | "placed" | "rejected" | "missed";
-  robotId: number;
-  detectorId: number;
+  clientId: number;
+  state: Product["state"];
+}
+
+/** What a client did with a product, as the metrics count it. */
+export type ClientAction = "detected" | "picked" | "placed" | "rejected";
+
+/** The client's part in an event: a detector detected, a robot picked or placed, a station rejected; else none. */
+export function clientAction(e: ProductEvent): ClientAction | undefined {
+  if (e.kind === "missed") return undefined;
+  const action = e.kind === "entered" ? e.state : e.kind;
+  return action === "assigned" ? undefined : action;
 }
 
 /** Products followed live by default; the oldest are forgotten beyond this. */
@@ -32,7 +43,7 @@ const DEFAULT_MAX_PRODUCTS = 5000;
 
 interface Followed {
   steps: ProductStep[];
-  /** State, robot, mover and finger of the previous state: a change in any of them is a step. */
+  /** State, client, mover and finger of the previous state: a change in any of them is a step. */
   signature: string;
   /** Register state of the previous state: a change into picked, placed or rejected is an event. */
   state: Product["state"];
@@ -44,7 +55,7 @@ interface Followed {
 
 /**
  * Follows every product through the gateway messages, for the inspector: when it entered the register, was assigned,
- * picked (by which robot, mover, finger), placed or rejected, missed, and when it left the register.
+ * picked (by which robot, mover, finger), placed or rejected (by which client), missed, and when it left the register.
  */
 export class ProductHistory {
   private readonly products = new Map<string, Followed>();
@@ -60,12 +71,12 @@ export class ProductHistory {
     private readonly retainMs = Infinity,
   ) {}
 
-  /** `source`: the message's source with this message applied, for the conveyor geometry and robot names. */
+  /** `source`: the message's source with this message applied, for the conveyor geometry and client names. */
   add(at: number, message: GatewayMessage, source: SourceInfo | undefined): void {
     if (message.kind !== "state") return;
     this.forgetEventsBefore(at - this.retainMs);
     let counting = false;
-    const log = (conveyorId: number, p: Product, kind: ProductEvent["kind"]) =>
+    const log = (conveyorId: number, p: Product, kind: ProductEvent["kind"], state: Product["state"] = p.state) =>
       counting &&
       this.log.push({
         at,
@@ -73,14 +84,11 @@ export class ProductHistory {
         conveyorId,
         productId: p.id,
         kind,
-        robotId: kind === "picked" || kind === "placed" ? p.robotId : 0,
-        detectorId: detectorOf(p),
+        clientId: kind === "missed" ? 0 : p.lastClientId,
+        state,
       });
     const components = source?.config?.components ?? [];
-    const names: Names = {
-      robot: (id) => componentName(source, id, `robot #${id}`),
-      detector: (id) => componentName(source, id, `detector #${id}`),
-    };
+    const nameOf = (id: number) => componentName(source, id, `client #${id}`);
     for (const c of message.components) {
       if (c.type !== "conveyor") continue;
       const conveyor = components.find((x) => x.id === c.id);
@@ -91,7 +99,7 @@ export class ProductHistory {
       for (const p of c.products) {
         const key = productKey(message.sourceId, c.id, p.id);
         present.add(key);
-        const signature = `${p.state}:${p.robotId}:${p.moverId}:${p.fingerId}`;
+        const signature = `${p.state}:${p.lastClientId}:${p.moverId}:${p.fingerId}`;
         let followed = this.products.get(key);
         if (!followed || followed.gone) {
           // A product id seen again after it left starts a new history. A recording (no product limit) keeps the
@@ -100,14 +108,14 @@ export class ProductHistory {
           followed = { steps: [], signature, state: p.state, missed: false, gone: false, earlier };
           this.products.delete(key);
           this.products.set(key, followed);
-          followed.steps.push({ at, kind: p.state, text: `Entered the register (${stateText(p, names, true)})` });
+          followed.steps.push({ at, kind: p.state, text: `Entered the register (${stateText(p, nameOf, true)})` });
           log(c.id, p, "entered");
         } else if (followed.signature !== signature) {
           followed.signature = signature;
-          followed.steps.push({ at, kind: p.state, text: stateText(p, names, false) });
+          followed.steps.push({ at, kind: p.state, text: stateText(p, nameOf, false) });
           if (p.state !== followed.state && (p.state === "picked" || p.state === "placed" || p.state === "rejected")) {
             // Picked and placed between two states: the pick still counts.
-            if (p.state === "placed" && followed.state !== "picked") log(c.id, p, "picked");
+            if (p.state === "placed" && followed.state !== "picked") log(c.id, p, "picked", "picked");
             log(c.id, p, p.state);
           }
           followed.state = p.state;
@@ -168,22 +176,19 @@ export class ProductHistory {
 
 const productKey = (sourceId: string, conveyorId: number, productId: number) => `${sourceId}|${conveyorId}|${productId}`;
 
-/** Recordings made before protocol 11 have no detector on their products. */
-const detectorOf = (p: Product) => p.detectorId ?? 0;
-
-interface Names {
-  robot(id: number): string;
-  detector(id: number): string;
-}
-
-/** A register state in words, e.g. "Picked by Delta 1, mover 3, finger 2"; lower case as part of a sentence. */
-function stateText(p: Product, names: Names, inSentence: boolean): string {
-  const by = p.robotId > 0 ? names.robot(p.robotId) : undefined;
+/**
+ * A register state in words, naming the client that changed it, e.g. "Picked by Delta 1, mover 3, finger 2" or
+ * "Rejected by Reject unit"; lower case as part of a sentence.
+ */
+function stateText(p: Product, nameOf: (id: number) => string, inSentence: boolean): string {
+  const by = p.lastClientId > 0 ? nameOf(p.lastClientId) : undefined;
   const carrier = [p.moverId > 0 && `mover ${p.moverId}`, p.fingerId > 0 && `finger ${p.fingerId}`].filter(Boolean);
   const text = (() => {
     switch (p.state) {
       case "detected":
-        return detectorOf(p) > 0 ? `Detected by ${names.detector(detectorOf(p))}` : "Detected";
+        // Back to detected after it was assigned: the client gave it up.
+        if (p.previousState !== "detected") return by ? `Released by ${by}` : "Released";
+        return by ? `Detected by ${by}` : "Detected";
       case "assigned":
         return by ? `Assigned to ${by}` : "Assigned";
       case "picked":
@@ -191,7 +196,7 @@ function stateText(p: Product, names: Names, inSentence: boolean): string {
       case "placed":
         return by ? `Placed by ${by}` : "Placed";
       case "rejected":
-        return "Rejected";
+        return by ? `Rejected by ${by}` : "Rejected";
     }
   })();
   return inSentence ? text.charAt(0).toLowerCase() + text.slice(1) : text;

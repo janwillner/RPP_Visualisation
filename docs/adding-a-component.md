@@ -5,7 +5,8 @@ What a new kind of machine part needs, from the PLC to the 3D view. First decide
 - **Drawn from bodies.** Anything the visualisation only has to show where it is, with its zones and a fault: a
   vision system, a sensor, a printer, a scale, a reject gate. It describes itself as bodies (boxes, cylinders,
   frustums with a role), and the web app draws it without knowing it. This needs no web code at all and is the
-  first choice whenever it is enough.
+  first choice whenever it is enough. Often no new type is needed: a part that works on products at a conveyor is a
+  **station** (`_FB_VisuStation`), described by the application's own `m_SetBody` calls.
 - **Own drawing.** Anything whose look follows from real logic the visualisation has to compute: kinematics (the Delta's
   arms from its TCP), movers along a track, a product register. It gets its own scene kit and mesh.
 
@@ -13,18 +14,22 @@ ADR 0007 explains the split.
 
 ## Drawn from bodies
 
-Example: the vision system and the product sensor, which share everything except their `m_Configure`.
+Examples: the vision system and the product sensor, which share everything except their `m_Configure`, and the
+station, which has its own structure with the same members.
 
 1. **PLC library** (`plc/Syn_Visu`, edited only through the TwinCAT MCP tools):
    - a value in `E_VisuComponentType` (append, never renumber);
-   - a function block `EXTENDS _FB_VisuDetector` with `m_ComponentType` and an `m_Configure` that describes its bodies
-     with `m_SetBody` (and, if something lights up, a method that calls `m_SetBodyActive`);
-   - it reuses `ST_VisuDetector`, so there is no new structure.
-2. **Protocol** (`packages/protocol/src/model.ts`): `componentConfig("<type>", detectorConfig)` and
-   `componentState("<type>", detectorState)`, added to both unions.
-3. **Gateway**: the `E_VisuComponentType` value in `plc-contract.ts` and its `PLC_TYPES` entry (`ST_VisuDetector`), one
-   entry in `COMPONENTS` (`components.ts`), and for tests the `MachineComponent` entry in `plc-builders.ts`.
-4. **Web**: one line in `KITS` (`scene-model.ts`): `<type>: bodyKit()`.
+   - a function block `EXTENDS _FB_VisuDetector` (a detector) or `EXTENDS _FB_VisuBodyComponent` (anything else) with
+     `m_ComponentType` and an `m_Configure` that describes its bodies with `m_SetBody` (and, if something lights up, a
+     method that calls `m_SetBodyActive`); bodies, zones, fault and origin shift come with the base, which only needs
+     to know where they lie (`m_Parts`, `m_Zones`);
+   - a detector reuses `ST_VisuDetector`; a type of its own gets a structure with the same members, like
+     `ST_VisuStation`.
+2. **Protocol** (`packages/protocol/src/model.ts`): `componentConfig("<type>", bodyComponentConfig)` and
+   `componentState("<type>", bodyComponentState)`, added to both unions.
+3. **Gateway**: the `E_VisuComponentType` value in `plc-contract.ts` and its `PLC_TYPES` entry, one entry in
+   `COMPONENTS` (`components.ts`), and for tests the `MachineComponent` entry in `plc-builders.ts`.
+4. **Web**: one line in `KITS` (`scene-model.ts`): `<type>: bodyKit()`, and the type in `BodyComponentType`.
 5. **Tests**: a gateway test that the config and state arrive (`gateway.test.ts`).
 6. **Docs**: `docs/plc-contract.md`, `GLOSSARY.md` for the new term, and `CLAUDE.md` when the architecture summary
    changes.

@@ -818,8 +818,8 @@ const BODY_COLORS = { structure: SOLID.profile, sensor: SOLID.sensor, beam: OVER
 
 /**
  * One body a component is drawn from (`role` sets the look): a machine part (structure, sensor head) lit with edge
- * lines and a shadow, red while its component is faulted; or an overlay (beam, field of view) on the zones layer,
- * unlit and see-through, lighting up while active. Only machine parts select their component: an overlay would cover
+ * lines, in the active colour while active (e.g. a pusher at work) and red while its component is faulted; or an
+ * overlay (beam, field of view) on the zones layer, unlit and see-through, lighting up while active. Only machine parts select their component: an overlay would cover
  * the products inside it.
  */
 function BodyMesh(props: {
@@ -831,6 +831,7 @@ function BodyMesh(props: {
   const { body, latest, selected, onSelect } = props;
   const overlay = body.role === "beam" || body.role === "fieldOfView";
   const fill = useRef<THREE.MeshBasicMaterial>(null);
+  const solid = useRef<THREE.MeshStandardMaterial>(null);
   const { shape, size, top } = body;
   const geometry = useMemo(
     () => bodyGeometry(body),
@@ -841,6 +842,8 @@ function BodyMesh(props: {
   useFrame(() => {
     const active = latest.current.bodies.find((b) => b.key === body.key)?.active ?? false;
     if (fill.current) fill.current.opacity = active ? 0.55 : body.role === "beam" ? 0.25 : 0.08;
+    // A faulted part keeps its red tint, a selected one the selection colour.
+    if (solid.current && !body.faulted && !selected) solid.current.color.set(active ? SOLID.bodyActive : BODY_COLORS[body.role]);
   });
   const color = selected ? SELECT_COLOR : BODY_COLORS[body.role];
   return (
@@ -860,7 +863,7 @@ function BodyMesh(props: {
               onSelect({ kind: "component", id: body.componentId });
             }}
           >
-            <meshStandardMaterial color={color} roughness={0.6} />
+            <meshStandardMaterial ref={solid} color={color} roughness={0.6} />
             <EdgeLines geometry={geometry} />
           </mesh>
         </FaultScope>

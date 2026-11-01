@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuStationConfig" Id="{3c119141-19e8-44c3-b372-b47e50144695}">
+    <Declaration><![CDATA[TYPE ST_VisuStationConfig :
+STRUCT
+	(* A station (reject unit, labeller, printer, check weigher): its zones on the conveyors and the bodies it is
+	   drawn from. *)
+	stPose : ST_VisuPose; // MCS, the station's origin; its bodies are placed relative to it
+	nZoneCount : UINT;
+	aZones : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone; // where it works on products
+	nBodyCount : UINT;
+	aBodies : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBody;
+	(* mm in the local frame from stPose: origin of the station's coordinate system as shown (origin triad, local
+	   measuring coordinates). The bodies stay relative to stPose. *)
+	stOriginShift : ST_VisuPosition;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

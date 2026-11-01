@@ -9,7 +9,7 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 12;
+export const PROTOCOL_VERSION = 13;
 
 /** Full 6-DOF pose. Rotation order: R = Rz(rz) · Ry(ry) · Rx(rx). */
 export const PoseSchema = z.object({
@@ -282,22 +282,32 @@ export const BodySchema = z.object({
 export type Body = z.infer<typeof BodySchema>;
 
 export const BodyStateSchema = z.object({
-  /** An active beam or field of view lights up, e.g. a sensor whose beam is interrupted. */
+  /** An active body lights up, e.g. a sensor's interrupted beam or a reject unit's pusher while it rejects. */
   active: z.boolean(),
 });
 export type BodyState = z.infer<typeof BodyStateSchema>;
 
-/** A detector: it detects products in its zones and is drawn from the bodies the PLC describes. */
-const detectorConfig = { zones: z.array(ZoneSchema), bodies: z.array(BodySchema) };
-const detectorState = { bodies: z.array(BodyStateSchema) };
+/**
+ * A component drawn from the bodies the PLC describes, with zones on conveyors: detectors (vision system, sensor)
+ * detect products in their zones, a station works on them.
+ */
+const bodyComponentConfig = { zones: z.array(ZoneSchema), bodies: z.array(BodySchema) };
+const bodyComponentState = { bodies: z.array(BodyStateSchema) };
 
 /** Vision system: a camera over a conveyor; `pose` is its lens, looking along local −Z. */
-export const VisionConfigSchema = componentConfig("vision", detectorConfig);
+export const VisionConfigSchema = componentConfig("vision", bodyComponentConfig);
 export type VisionConfig = z.infer<typeof VisionConfigSchema>;
 
 /** Product sensor, e.g. a light barrier; `pose` is its head at the belt side. */
-export const SensorConfigSchema = componentConfig("sensor", detectorConfig);
+export const SensorConfigSchema = componentConfig("sensor", bodyComponentConfig);
 export type SensorConfig = z.infer<typeof SensorConfigSchema>;
+
+/**
+ * Station: a client at a conveyor that works on the products in its zones (reject unit, labeller, printer, check
+ * weigher), drawn from its bodies; `pose` is its origin.
+ */
+export const StationConfigSchema = componentConfig("station", bodyComponentConfig);
+export type StationConfig = z.infer<typeof StationConfigSchema>;
 
 export const ComponentConfigSchema = z.discriminatedUnion("type", [
   ConveyorConfigSchema,
@@ -307,6 +317,7 @@ export const ComponentConfigSchema = z.discriminatedUnion("type", [
   CartesianConfigSchema,
   VisionConfigSchema,
   SensorConfigSchema,
+  StationConfigSchema,
 ]);
 export type ComponentConfig = z.infer<typeof ComponentConfigSchema>;
 
@@ -320,15 +331,18 @@ export const ProductSchema = z.object({
   /** Belt position at the moment of the latch. */
   latchBeltPosition: z.number(),
   state: ProductStateSchema,
-  /** Manifest id of the robot the product is assigned to; 0 = none. */
-  robotId: z.number().int(),
-  /** Mover of an XTS gantry or loop that carries the product; 0 = none. */
+  /** The state before the last change; equals `state` until the first change after the latch. */
+  previousState: ProductStateSchema,
+  /**
+   * Manifest id of the client that made the last change: the detector or station that latched it, the robot it is
+   * assigned to, picked by or placed by, the station that rejected it; 0 = none given.
+   */
+  lastClientId: z.number().int(),
+  /** Mover of an XTS gantry or loop that carries the product, when the last client is one; 0 = none. */
   moverId: z.number().int(),
   /** Gripper finger (1-based) the product hangs from while picked; 0 = the gripper flange. */
   fingerId: z.number().int(),
   productType: z.number().int(),
-  /** Manifest id of the detector (vision system, sensor) that latched the product; 0 = none given. */
-  detectorId: z.number().int(),
 });
 export type Product = z.infer<typeof ProductSchema>;
 
@@ -406,11 +420,14 @@ export const CartesianStateSchema = componentState("cartesian", {
 export type CartesianState = z.infer<typeof CartesianStateSchema>;
 
 /** One per configured body. */
-export const VisionStateSchema = componentState("vision", detectorState);
+export const VisionStateSchema = componentState("vision", bodyComponentState);
 export type VisionState = z.infer<typeof VisionStateSchema>;
 
-export const SensorStateSchema = componentState("sensor", detectorState);
+export const SensorStateSchema = componentState("sensor", bodyComponentState);
 export type SensorState = z.infer<typeof SensorStateSchema>;
+
+export const StationStateSchema = componentState("station", bodyComponentState);
+export type StationState = z.infer<typeof StationStateSchema>;
 
 export const ComponentStateSchema = z.discriminatedUnion("type", [
   ConveyorStateSchema,
@@ -420,6 +437,7 @@ export const ComponentStateSchema = z.discriminatedUnion("type", [
   CartesianStateSchema,
   VisionStateSchema,
   SensorStateSchema,
+  StationStateSchema,
 ]);
 export type ComponentState = z.infer<typeof ComponentStateSchema>;
 

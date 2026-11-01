@@ -1,0 +1,120 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="_FB_VisuStation" Id="{212ed1ce-bd83-4ccc-aa14-f23790819578}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+One visualised station: a client at a conveyor that works on the products in its zones, e.g. a reject<br>
+unit, a labeller, a printer or a check weigher. It is drawn only from the bodies it describes. Typical cycle<br>
+of a reject unit:<br>
+  fb_Reject.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 70, vi_str_Name := 'Reject unit',<br>
+      vi_str_Path := 'MAIN.fb_Reject.vo_Visu');<br>
+  fb_Reject.m_Configure(vi_Pose := StationPose);<br>
+  fb_Reject.m_SetBody(vi_un_Body := 1, ...);   // housing<br>
+  fb_Reject.m_SetBody(vi_un_Body := 2, ...);   // pusher<br>
+  fb_Reject.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 2, vi_lr_Start := 2400, vi_lr_End := 2400);<br>
+  fb_Reject.m_SetBodyActive(vi_un_Body := 2, vi_b_Active := b_Pushing);<br>
+and on the conveyor, when it rejects a product:<br>
+  fb_Outfeed.m_SetProductState(vi_udn_Id := udn_Product, vi_e_State := E_VisuProductState.REJECTED,<br>
+      vi_udn_ClientId := fb_Reject.m_Id());<br>
+A station may also latch products (m_LatchProduct with vi_udn_ClientId := its id), e.g. a check weigher.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+vo_Visu is the contract structure the gateway reads at the path given to m_Register. Do not write it.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 6.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_VisuStation EXTENDS _FB_VisuBodyComponent
+VAR_OUTPUT
+	vo_Visu								: ST_VisuStation;	// contract structure read by the gateway
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_ComponentType" Id="{12d14a53-811c-44e7-9fcc-26bebf53d159}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Manifest type: station.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_ComponentType : E_VisuComponentType]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ComponentType := E_VisuComponentType.STATION;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Configure" Id="{5cb050e2-520e-4dfe-8158-3dde48150c06}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets the station's pose; its bodies (m_SetBody) are placed relative to it. TRUE if it changed.<br>
+****************************************************************************************************)
+METHOD m_Configure : BOOL
+VAR_INPUT
+	vi_Pose								: ST_VisuPose;	// MCS, the station's origin, e.g. at the belt side on the floor
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Configure := m_SetPose(vi_Pose);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Parts" Id="{5b03d293-5683-4f61-819f-4032dba30448}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The station's pose, origin shift, bodies, body states, timestamp and fault for _FB_VisuBodyComponent.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_Parts : BOOL
+VAR_OUTPUT
+	vo_p_Pose							: POINTER TO ST_VisuPose;
+	vo_p_OriginShift					: POINTER TO ST_VisuPosition;
+	vo_p_BodyCount						: POINTER TO UINT;
+	vo_p_Bodies							: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBody;
+	vo_p_BodyStates						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBodyState;
+	vo_p_Timestamp						: POINTER TO ULINT;
+	vo_p_Fault							: POINTER TO ST_VisuFault;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_p_Pose := ADR(vo_Visu.stConfig.stPose);
+vo_p_OriginShift := ADR(vo_Visu.stConfig.stOriginShift);
+vo_p_BodyCount := ADR(vo_Visu.stConfig.nBodyCount);
+vo_p_Bodies := ADR(vo_Visu.stConfig.aBodies);
+vo_p_BodyStates := ADR(vo_Visu.stState.aBodyStates);
+vo_p_Timestamp := ADR(vo_Visu.stState.nTimestamp);
+vo_p_Fault := ADR(vo_Visu.stState.stFault);
+m_Parts := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Zones" Id="{b6cb2f4b-03eb-43f5-87bf-619efd9233ca}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The station's zones for _FB_VisuZoneComponent.m_SetZone and m_ClearZones.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_Zones : BOOL
+VAR_OUTPUT
+	vo_p_Count							: POINTER TO UINT;
+	vo_p_Zones							: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_p_Count := ADR(vo_Visu.stConfig.nZoneCount);
+vo_p_Zones := ADR(vo_Visu.stConfig.aZones);
+m_Zones := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

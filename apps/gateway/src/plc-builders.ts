@@ -13,6 +13,7 @@ import {
   type ST_VisuBodyState,
   type ST_VisuConveyor,
   type ST_VisuDetector,
+  type ST_VisuStation,
   type ST_VisuDelta,
   type ST_VisuFault,
   type ST_VisuFinger,
@@ -97,11 +98,11 @@ export function emptyProduct(): ST_VisuProduct {
     stLatchPose: { fX: 0, fY: 0, fZ: 0, fRz: 0 },
     fLatchBeltPosition: 0,
     eState: E_VisuProductState.DETECTED,
-    nRobotId: 0,
+    ePreviousState: E_VisuProductState.DETECTED,
+    nLastClientId: 0,
     nMoverId: 0,
     nFingerId: 0,
     nProductType: 0,
-    nDetectorId: 0,
   };
 }
 
@@ -415,6 +416,11 @@ export function detector(spec: DetectorSpec = {}): ST_VisuDetector {
   };
 }
 
+/** A station (reject unit, labeller, ...): bodies and zones like a detector, in its own ST_VisuStation. */
+export function station(spec: DetectorSpec = {}): ST_VisuStation {
+  return detector(spec);
+}
+
 type Entry<K extends keyof typeof PLC_TYPES, V> = { id: number; name: string; path: string; kind: K; value: V };
 
 export type MachineComponent =
@@ -424,7 +430,8 @@ export type MachineComponent =
   | Entry<"xtsLoop", ST_VisuXtsLoop>
   | Entry<"cartesian", ST_VisuCartesian>
   | Entry<"vision", ST_VisuDetector>
-  | Entry<"sensor", ST_VisuDetector>;
+  | Entry<"sensor", ST_VisuDetector>
+  | Entry<"station", ST_VisuStation>;
 
 
 /** Registers a manifest and its components in an in-memory PLC. */

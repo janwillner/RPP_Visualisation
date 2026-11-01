@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoIdh" Id="{02bcdaf8-5041-4990-8e9e-23008dc24e9e}" SpecialFunc="None">
+  <POU Name="P_VisuDemoIdh" Id="{bb1980e9-8a88-4f89-87e8-6fbb56cebd5b}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -254,7 +254,7 @@ CASE n_GantryPhase OF
 					EXIT;
 				END_IF
 				fb_IdhInfeed.m_SetProductState(vi_udn_Id := udn_TempBest, vi_e_State := E_VisuProductState.ASSIGNED,
-					vi_udn_RobotId := fb_Idh.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempI + 1));
+					vi_udn_ClientId := fb_Idh.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempI + 1));
 				udn_GantryProduct[n_TempI] := udn_TempBest;
 			END_IF
 		END_FOR
@@ -282,7 +282,7 @@ CASE n_GantryPhase OF
 			FOR n_TempI := 0 TO 3 DO
 				IF udn_GantryProduct[n_TempI] <> 0 AND NOT b_TempSynced[n_TempI] THEN
 					fb_IdhInfeed.m_SetProductState(vi_udn_Id := udn_GantryProduct[n_TempI],
-						vi_e_State := E_VisuProductState.DETECTED, vi_udn_RobotId := 0);
+						vi_e_State := E_VisuProductState.DETECTED, vi_udn_ClientId := fb_Idh.m_Id());
 					udn_GantryProduct[n_TempI] := 0;
 				END_IF
 			END_FOR
@@ -297,7 +297,7 @@ CASE n_GantryPhase OF
 				IF udn_GantryProduct[n_TempI] <> 0 THEN
 					b_GantryGrip[n_TempI] := TRUE;
 					fb_IdhInfeed.m_SetProductState(vi_udn_Id := udn_GantryProduct[n_TempI], vi_e_State := E_VisuProductState.PICKED,
-						vi_udn_RobotId := fb_Idh.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempI + 1), vi_udn_FingerId := 1);
+						vi_udn_ClientId := fb_Idh.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempI + 1), vi_udn_FingerId := 1);
 				END_IF
 			END_FOR
 			n_GantryPhase := n_GANTRY_PICK_UP;
@@ -333,7 +333,7 @@ CASE n_GantryPhase OF
 					TempLatch.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 					TempLatch.fRz := -90 + lr_GantryC[n_TempI];	// as the cup holds it
 					IF fb_IdhTray.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := TempLatch,
-						vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_RobotId := fb_Idh.m_Id())
+						vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_ClientId := fb_Idh.m_Id())
 					THEN
 						DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 					END_IF

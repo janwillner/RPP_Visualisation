@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoSpacing" Id="{3fcfbb48-98ae-44b8-9c28-c13940475af5}" SpecialFunc="None">
+  <POU Name="P_VisuDemoSpacing" Id="{18fa1a6b-df96-4a4b-a009-3056040cc366}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -233,7 +233,7 @@ IF b_TempReady THEN
 		AND lr_TempMinPush - lr_TempWait - lr_TempX >= lr_SPC_SLOT
 		THEN
 			fb_SpcBelt.m_SetProductState(vi_udn_Id := TempProduct.nId, vi_e_State := E_VisuProductState.ASSIGNED,
-				vi_udn_RobotId := fb_Spc.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempHead + 1));
+				vi_udn_ClientId := fb_Spc.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempHead + 1));
 			udn_SpcProduct[n_TempHead] := TempProduct.nId;
 			lr_SpcS[n_TempHead] := lr_TempWait + lr_TempX;
 			n_SpcMode[n_TempHead] := n_SPC_PUSH;
@@ -296,7 +296,7 @@ FOR n_TempK := 1 TO n_SPC_MOVERS DO
 		IF n_TempK = 1 AND lr_TempX >= lr_SPC_RELEASE_MIN_X AND ABS(lr_TempTarget - lr_TempX) < 0.5 THEN
 			(* Put back onto the belt by the loop: PLACED, so it does not count as missed at the belt end. *)
 			fb_SpcBelt.m_SetProductState(vi_udn_Id := udn_SpcProduct[n_TempNext], vi_e_State := E_VisuProductState.PLACED,
-				vi_udn_RobotId := fb_Spc.m_Id());
+				vi_udn_ClientId := fb_Spc.m_Id());
 			udn_SpcLastReleased := udn_SpcProduct[n_TempNext];
 			udn_SpcProduct[n_TempNext] := 0;
 			n_SpcMode[n_TempNext] := n_SPC_RETURN;

@@ -19,6 +19,7 @@ export const PLC_TYPES = {
   cartesian: "ST_VisuCartesian",
   vision: "ST_VisuDetector",
   sensor: "ST_VisuDetector",
+  station: "ST_VisuStation",
 } as const;
 
 /** E_VisuComponentType */
@@ -31,6 +32,7 @@ export const E_VisuComponentType = {
   CARTESIAN: 5,
   VISION: 6,
   SENSOR: 7,
+  STATION: 8,
 } as const;
 
 /** E_VisuProductState */
@@ -133,12 +135,13 @@ export interface ST_VisuProduct {
   stLatchPose: ST_VisuPlanarPose;
   fLatchBeltPosition: number;
   eState: PlcEnum;
-  nRobotId: number;
+  /** E_VisuProductState before the last change. */
+  ePreviousState: PlcEnum;
+  /** Manifest id of the client (robot, detector, station) that made the last change; 0 = none given. */
+  nLastClientId: number;
   nMoverId: number;
   nFingerId: number;
   nProductType: number;
-  /** Manifest id of the detector that latched it; 0 = none given. */
-  nDetectorId: number;
 }
 
 export interface ST_VisuConveyorState {
@@ -373,6 +376,27 @@ export interface ST_VisuDetectorState {
 export interface ST_VisuDetector {
   stConfig: ST_VisuDetectorConfig;
   stState: ST_VisuDetectorState;
+}
+
+/** A station has its own contract structure, with the same members as a detector's. */
+export interface ST_VisuStationConfig {
+  stPose: ST_VisuPose;
+  nZoneCount: number;
+  aZones: ST_VisuZone[];
+  nBodyCount: number;
+  aBodies: ST_VisuBody[];
+  stOriginShift: ST_VisuPosition;
+}
+
+export interface ST_VisuStationState {
+  nTimestamp: bigint;
+  aBodyStates: ST_VisuBodyState[];
+  stFault: ST_VisuFault;
+}
+
+export interface ST_VisuStation {
+  stConfig: ST_VisuStationConfig;
+  stState: ST_VisuStationState;
 }
 
 export function enumValue(value: PlcEnum): number {

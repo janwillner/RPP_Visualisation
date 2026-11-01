@@ -71,7 +71,9 @@ says so in its status.
 
 | Library `SynVisu` | Protocol version | Gateway |
 | --- | --- | --- |
-| 5.0.x | 12 | releases from protocol 12 on (XTS tracks of motor modules) |
+| 6.0.x | 13 | releases from protocol 13 on (generic product client, station) |
+| 5.1.x | 12 | protocol 12; the status bar also shows the library version |
+| 5.0.x | 12 | protocol 12 (XTS tracks of motor modules) |
 | 4.0.x | 11 | protocol 11 (vision system, product sensor) |
 
 The protocol version is `SynVisu.VISU_GlobalConst.VISU_un_PROTOCOL_VERSION`; the manifest is initialised with it.
@@ -133,9 +135,9 @@ fb_Infeed.m_SetBeltPosition(lr_InfeedBeltPosition);
 ### 3.1 Ids
 
 - Every component needs an id (`vi_udn_Id`) that is unique within the PLC and greater than 0.
-- Components refer to each other by these ids: a zone names its conveyor, a product names its robot and its
-  detector. Use `fb_Other.m_Id()` instead of repeating the number.
-- Plan the ids once per machine, e.g. conveyors 1–19, Deltas 10–29, XTS 30–39, detectors 50–59, and keep them in
+- Components refer to each other by these ids: a zone names its conveyor, a product names the client that changed
+  it last (robot, detector, station). Use `fb_Other.m_Id()` instead of repeating the number.
+- Plan the ids once per machine, e.g. conveyors 1–19, Deltas 10–29, XTS 30–39, detectors 50–59, stations 60–69, and keep them in
   constants. Ids are shown in the component tree and stored in recordings, so do not change them between
   versions of a machine without reason.
 
@@ -211,12 +213,13 @@ drives how it is drawn.
 
 | Moment | Call | Shown as |
 | --- | --- | --- |
-| Product detected on the belt | `m_LatchProduct(vi_udn_Id, vi_LatchPose, vi_udn_ProductType, vi_udn_DetectorId := fb_Vision.m_Id())` | `DETECTED`, travelling with the belt |
-| A robot takes the product over | `m_SetProductState(vi_udn_Id, ASSIGNED, vi_udn_RobotId := fb_Delta.m_Id())` | `ASSIGNED`, coloured as allocated |
-| The robot picks it | `m_SetProductState(vi_udn_Id, PICKED, vi_udn_RobotId, vi_udn_MoverId := 0, vi_udn_FingerId := 1)` | Hangs from the robot's finger; a placeholder outline stays on the belt |
-| The robot puts it down on another belt | `fb_Infeed.m_RemoveProduct(vi_udn_Id)` and `fb_Outfeed.m_LatchProduct(..., vi_e_State := PLACED, vi_udn_RobotId := fb_Delta.m_Id())` | `PLACED` on the outfeed |
-| Put back onto the same belt | `m_SetProductState(vi_udn_Id, PLACED, vi_udn_RobotId)` | `PLACED` |
-| Rejected (bad product) | `m_SetProductState(vi_udn_Id, REJECTED, 0)` | `REJECTED`, passes the belt end on purpose |
+| Product detected on the belt | `m_LatchProduct(vi_udn_Id, vi_LatchPose, vi_udn_ProductType, vi_udn_ClientId := fb_Vision.m_Id())` | `DETECTED`, travelling with the belt |
+| A robot takes the product over | `m_SetProductState(vi_udn_Id, ASSIGNED, vi_udn_ClientId := fb_Delta.m_Id())` | `ASSIGNED`, coloured as allocated |
+| The robot gives it up again | `m_SetProductState(vi_udn_Id, DETECTED, vi_udn_ClientId := fb_Delta.m_Id())` | `DETECTED`; the history says "released by" the robot |
+| The robot picks it | `m_SetProductState(vi_udn_Id, PICKED, vi_udn_ClientId := fb_Delta.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := 1)` | Hangs from the robot's finger; a placeholder outline stays on the belt |
+| The robot puts it down on another belt | `fb_Infeed.m_RemoveProduct(vi_udn_Id)` and `fb_Outfeed.m_LatchProduct(..., vi_e_State := PLACED, vi_udn_ClientId := fb_Delta.m_Id())` | `PLACED` on the outfeed |
+| Put back onto the same belt | `m_SetProductState(vi_udn_Id, PLACED, vi_udn_ClientId := fb_Delta.m_Id())` | `PLACED` |
+| Rejected (bad product), e.g. by a reject unit | `m_SetProductState(vi_udn_Id, REJECTED, vi_udn_ClientId := fb_RejectUnit.m_Id())` | `REJECTED`, passes the belt end on purpose |
 | Housekeeping, every cycle | `m_RemoveProductsBeyond(vi_lr_BeltX := Length + 300)` | Drops products beyond the belt end; keeps `ASSIGNED` and `PICKED` |
 
 Rules:
@@ -229,8 +232,11 @@ Rules:
   products pass the end on purpose.
 - **Placing turned products:** when placing, set the new latch pose's `fRz` to the finger's MCS rotation about Z, so
   the product keeps its orientation on the outfeed.
-- **Detectors:** pass the detecting vision system's or sensor's id in `vi_udn_DetectorId`. The product history in the
-  inspector then says which detector saw it, and the metrics count per detector.
+- **The client:** every call that latches or changes a product names the client that does it in `vi_udn_ClientId`:
+  the vision system, sensor or station that latched it, the robot that is assigned to, picks, places or releases it,
+  the station that rejects it. The product keeps it as `nLastClientId`, with the state before the change as
+  `ePreviousState`. The inspector's product history then says who did what ("detected by Vision 1", "picked by
+  Delta 1", "rejected by Reject unit"), and the metrics count per client.
 - **Reading the register:** `m_ProductCount()`, `m_GetProduct(vi_un_Index, vo_Product =>, vo_Pose =>)` (with the
   product's current MCS pose), `m_FindProduct(vi_udn_Id)`. Useful when the machine's own data does not hold the
   product's position, e.g. to match a pick to the nearest mover.
@@ -254,7 +260,7 @@ IF b_ProductLatched THEN
 	LatchPose.fZ := InfeedPose.fZ;
 	LatchPose.fRz := lr_LatchRz;
 	fb_Infeed.m_LatchProduct(vi_udn_Id := udn_ProductId, vi_LatchPose := LatchPose, vi_udn_ProductType := 1,
-		vi_udn_DetectorId := fb_Vision1.m_Id());
+		vi_udn_ClientId := fb_Vision1.m_Id());
 END_IF
 fb_Infeed.m_RemoveProductsBeyond(3000 + 300);
 ```
@@ -262,7 +268,7 @@ fb_Infeed.m_RemoveProductsBeyond(3000 + 300);
 ## 6. Zones
 
 A zone is a stretch of a conveyor that belongs to a component: where a robot picks or places, where a detector
-detects. All robots and detectors have zones; the visualisation draws them alike.
+detects, where a station works. All robots, detectors and stations have zones; the visualisation draws them alike.
 
 ```st
 fb_Delta1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(),
@@ -296,7 +302,7 @@ always drawn as a cylinder: a suction cup, a jaw, a pin. Picked products hang fr
   the finger's orientation.
 - **Rotations:** a tool rotation (a Delta's 4th axis, an IDH's C, a Cartesian's C and A) is shown only through the
   finger poses. Turn the finger frame by that rotation.
-- **Which finger carries a product:** `m_SetProductState(..., PICKED, vi_udn_RobotId, vi_udn_MoverId, vi_udn_FingerId)`.
+- **Which finger carries a product:** `m_SetProductState(..., PICKED, vi_udn_ClientId, vi_udn_MoverId, vi_udn_FingerId)`.
   With `vi_udn_FingerId := 0` the product hangs at the gripper flange instead.
 - **Without fingers:** the flange is drawn as a plate, green while `vi_b_GripperActive` (Cartesian, XTS gantry) is
   TRUE.
@@ -469,11 +475,11 @@ END_FOR
 - A loop under a belt (e.g. a spacing loop) is the same loop turned by `fRz := 180` and placed below the belt; see
   `P_VisuDemoSpacing` in the demo.
 
-## 13. Vision system and product sensor
+## 13. Vision system, product sensor and station
 
-Detectors detect products in their zones. The application latches what they detect on the conveyor itself (with
-`vi_udn_DetectorId`); the detector FB only shows where it is, its zone and, for a sensor, its signal. Detectors are
-drawn from simple bodies the library describes, so no web code is needed for them.
+Detectors detect products in their zones, stations work on them. The application latches or changes the products on
+the conveyor itself (with `vi_udn_ClientId` := the detector's or station's id); the FB only shows where the part is,
+its zone and which of its bodies is active. They are drawn from simple bodies, so no web code is needed for them.
 
 ### 13.1 Vision system
 
@@ -509,8 +515,43 @@ fb_Barrier1.m_SetSignal(b_BeamInterrupted);	// every cycle: the beam lights up w
 `m_SetBody(vi_un_Body, vi_e_Shape, vi_e_Role, vi_Pose, vi_lr_Length, vi_lr_Width, vi_lr_Height, ...)` adds solids,
 e.g. a bracket. The vision system uses bodies 1–3 and the sensor bodies 1–2, so start at 4 or 3. The pose is the
 body's bottom centre in the detector's frame; the body extends along its local +Z. Shapes: `BOX`, `CYLINDER`
-(length and width are its diameters), `FRUSTUM` (with a top size). Roles: `STRUCTURE` and `SENSOR` are machine parts;
-`BEAM` and `FIELD_OF_VIEW` are overlays that light up with `m_SetBodyActive(vi_un_Body, TRUE)`.
+(length and width are its diameters), `FRUSTUM` (with a top size). Roles: `STRUCTURE` and `SENSOR` are machine parts
+that turn the active colour with `m_SetBodyActive(vi_un_Body, TRUE)`; `BEAM` and `FIELD_OF_VIEW` are overlays that
+light up with it.
+
+### 13.4 Station (e.g. reject unit, labeller, printer, check weigher)
+
+FB: `SynVisu._FB_VisuStation`. Anything at a conveyor that works on products and has no kinematics of its own. It has
+no default bodies: describe all of them. Example: a reject unit at the right belt edge whose pusher shoves every bad
+product off the belt.
+
+```st
+(* Origin on the floor at the belt side, local +Y across the belt *)
+StationPose.fX := 4500;
+StationPose.fY := OutfeedPose.fY - 230;
+StationPose.fZ := 0;
+fb_RejectUnit.m_Configure(vi_Pose := StationPose);
+BodyPose.fY := -70;	// housing beside the belt, up to 120 mm above the belt surface
+fb_RejectUnit.m_SetBody(vi_un_Body := 1, vi_e_Shape := SynVisu.E_VisuBodyShape.BOX,
+	vi_e_Role := SynVisu.E_VisuBodyRole.STRUCTURE, vi_Pose := BodyPose, vi_lr_Length := 160, vi_lr_Width := 140,
+	vi_lr_Height := OutfeedPose.fZ + 120);
+BodyPose.fY := 15;	// pusher plate at the belt edge, just above the belt
+BodyPose.fZ := OutfeedPose.fZ + 10;
+fb_RejectUnit.m_SetBody(vi_un_Body := 2, vi_e_Shape := SynVisu.E_VisuBodyShape.BOX,
+	vi_e_Role := SynVisu.E_VisuBodyRole.STRUCTURE, vi_Pose := BodyPose, vi_lr_Length := 120, vi_lr_Width := 30,
+	vi_lr_Height := 50);
+fb_RejectUnit.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Outfeed.m_Id(), vi_lr_Start := 3000, vi_lr_End := 3000);
+
+(* Every cycle: the pusher lights up while it pushes *)
+fb_RejectUnit.m_SetBodyActive(vi_un_Body := 2, vi_b_Active := b_PusherOut);
+(* When it rejects a product, and once the product is off the belt *)
+fb_Outfeed.m_SetProductState(vi_udn_Id := udn_Bad, vi_e_State := SynVisu.E_VisuProductState.REJECTED,
+	vi_udn_ClientId := fb_RejectUnit.m_Id());
+fb_Outfeed.m_RemoveProduct(udn_Bad);
+```
+
+A station that measures or marks products without taking them off (a check weigher, a printer) can latch them like a
+detector or leave them as they are; only state changes are shown. See `P_VisuDemoDelta.m_RejectUnit` in the demo.
 
 ## 14. Faults
 
@@ -560,10 +601,10 @@ The array sizes are library parameters (`SynVisu.VISU_GlobalConst_Param`):
 | `VISU_un_MAX_MANIFEST_ENTRIES` | 32 | PLC (components) |
 | `VISU_un_MAX_PRODUCTS` | 128 | conveyor |
 | `VISU_un_MAX_PRODUCT_TYPES` | 8 | conveyor |
-| `VISU_un_MAX_ZONES` | 8 | robot or detector |
+| `VISU_un_MAX_ZONES` | 8 | robot, detector or station |
 | `VISU_un_MAX_MOVERS` | 40 | XTS gantry or loop |
 | `VISU_un_MAX_FINGERS` | 8 | gripper |
-| `VISU_un_MAX_BODIES` | 16 | detector |
+| `VISU_un_MAX_BODIES` | 16 | detector or station |
 | `VISU_un_MAX_MODULES` | 64 | XTS track |
 
 Methods that would exceed a limit return FALSE and change nothing. A machine with more than 32 components can split

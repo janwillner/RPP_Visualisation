@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoDelta" Id="{242f19e8-02de-4a30-a88f-6c9a956ae34c}" SpecialFunc="None">
+  <POU Name="P_VisuDemoDelta" Id="{205b80b1-4de6-4a5b-a74b-bcd3f89d0e01}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -18,6 +18,8 @@ Delta 1 picks a pair of one type, Delta 3 closes its fingers around the product'
 on the outfeed leaves the infeed's register.<br>
 A vision system over infeed 1 detects its products in the middle of its field of view; a light barrier on<br>
 infeed 2 detects them at their front edge, its beam lighting up while a product interrupts it.<br>
+A reject unit (station) at the outfeed rejects every fifth product passing it: its pusher lights up and the<br>
+product is off the belt shortly after.<br>
 Delta 1 is in a fault now and then. Called by P_VisuDemo.<br>
 ****************************************************************************************************)
 PROGRAM P_VisuDemoDelta
@@ -30,6 +32,12 @@ VAR
 	fb_Delta3							: _FB_VisuDelta;
 	fb_Vision1							: _FB_VisuVision;	// over infeed 1
 	fb_Barrier2							: _FB_VisuSensor;	// light barrier on infeed 2
+	fb_RejectUnit						: _FB_VisuStation;	// at the outfeed
+
+	(* Reject unit *)
+	un_RejectPassed						: UINT;	// [-] products that passed the reject unit
+	udn_RejectPushing					: UDINT;	// [-] product being pushed off, 0 = none
+	lr_RejectLeft						: LREAL;	// [s] until the product being pushed is off the belt
 
 	(* Conveyors *)
 	lr_Dt								: LREAL;	// [s] cycle time
@@ -109,6 +117,10 @@ VAR CONSTANT
 	lr_BARRIER_X						: LREAL := 300;	// [mm] beam across infeed 2
 	lr_BARRIER_HEIGHT					: LREAL := 20;	// [mm] beam above the belt
 	lr_BARRIER_BEAM						: LREAL := 500;	// [mm] from the head at the belt edge across the belt
+	(* Reject unit, behind the last robot *)
+	lr_REJECT_X							: LREAL := 4500;	// [mm] MCS X of its pusher
+	un_REJECT_EVERY						: UINT := 5;	// [-] every n-th product is rejected
+	lr_REJECT_PUSH_TIME					: LREAL := 0.3;	// [s] the pusher pushes a product off the belt
 	lr_ROBOT1_X							: LREAL := 1500;	// [mm]
 	lr_ROBOT_PITCH						: LREAL := 1000;	// [mm] distance between robots along X
 	lr_ROBOT_Y							: LREAL := 500;	// [mm]
@@ -165,6 +177,8 @@ fb_Vision1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 50, vi_s
 	vi_str_Path := 'P_VisuDemoDelta.fb_Vision1.vo_Visu');
 fb_Barrier2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 51, vi_str_Name := 'Light barrier 2',
 	vi_str_Path := 'P_VisuDemoDelta.fb_Barrier2.vo_Visu');
+fb_RejectUnit.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 60, vi_str_Name := 'Reject unit',
+	vi_str_Path := 'P_VisuDemoDelta.fb_RejectUnit.vo_Visu');
 
 
 (****************************************************************************************************)
@@ -244,7 +258,7 @@ FOR n_Belt := 0 TO 1 DO
 			LatchPose.fX := lr_BARRIER_X - lr_TYPE_LENGTH[udn_Type] / 2;
 		END_IF
 		IF fb_RefBelt.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := LatchPose,
-			vi_udn_ProductType := udn_Type, vi_udn_DetectorId := SEL(n_Belt = 0, fb_Barrier2.m_Id(), fb_Vision1.m_Id()))
+			vi_udn_ProductType := udn_Type, vi_udn_ClientId := SEL(n_Belt = 0, fb_Barrier2.m_Id(), fb_Vision1.m_Id()))
 		THEN
 			DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 		END_IF
@@ -276,6 +290,7 @@ WHILE un_Index < fb_Infeed2.m_ProductCount() DO
 	un_Index := un_Index + 1;
 END_WHILE
 fb_Barrier2.m_SetSignal(vi_b_Signal := b_BeamInterrupted);
+m_RejectUnit();
 
 
 (****************************************************************************************************)
@@ -317,7 +332,7 @@ METHOD PRIVATE m_Allocate : BOOL]]></Declaration>
 		AND ProductPose.fX <= lr_BaseX + lr_PICK_HALF_ZONE - lr_ALLOCATION_OFFSET
 		THEN
 			fb_RefBelt.m_SetProductState(vi_udn_Id := Product.nId, vi_e_State := E_VisuProductState.ASSIGNED,
-				vi_udn_RobotId := fb_RefRobot.m_Id());
+				vi_udn_ClientId := fb_RefRobot.m_Id());
 			udn_TargetId[n_Robot] := Product.nId;
 			n_TargetBelt[n_Robot] := n_Belt;
 			n_Phase[n_Robot] := n_PHASE_APPROACH;
@@ -531,6 +546,89 @@ ELSE
 END_IF]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_RejectUnit" Id="{8dedf384-7c94-4843-81de-1a1bdc2e33c2}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Reject unit at the right edge of the outfeed: describes its housing and pusher and its zone, a line across<br>
+the belt at lr_REJECT_X. Every un_REJECT_EVERY-th product passing it is set REJECTED by the reject unit;<br>
+the pusher lights up and the product leaves the register after lr_REJECT_PUSH_TIME.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RejectUnit : BOOL
+VAR
+	TempPose							: ST_VisuPose;
+	TempProduct							: ST_VisuProduct;
+	TempProductPose						: ST_VisuPlanarPose;
+	un_TempIndex						: UINT;
+END_VAR
+VAR CONSTANT
+	lr_GAP								: LREAL := 30;	// [mm] between the belt edge and the pusher's back
+	lr_HOUSING_LENGTH					: LREAL := 160;	// [mm] along the belt
+	lr_HOUSING_WIDTH					: LREAL := 140;	// [mm]
+	lr_HOUSING_ABOVE_BELT				: LREAL := 120;	// [mm] its top above the belt surface
+	lr_PUSHER_LENGTH					: LREAL := 120;	// [mm] along the belt
+	lr_PUSHER_WIDTH						: LREAL := 30;	// [mm]
+	lr_PUSHER_HEIGHT					: LREAL := 50;	// [mm]
+	lr_PUSHER_ABOVE_BELT				: LREAL := 10;	// [mm] its bottom above the belt surface
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(****************************************************************************************************)
+(* CONFIGURATION: origin on the floor at the right belt edge, local +Y across the belt               *)
+(****************************************************************************************************)
+TempPose.fX := lr_REJECT_X;
+TempPose.fY := lr_OUTFEED_Y - DEMO_GlobalConst.DEMO_lr_BELT_WIDTH / 2 - lr_GAP;
+TempPose.fZ := 0;
+fb_RejectUnit.m_Configure(vi_Pose := TempPose);
+TempPose.fX := 0;
+TempPose.fY := -lr_HOUSING_WIDTH / 2;
+TempPose.fZ := 0;
+fb_RejectUnit.m_SetBody(vi_un_Body := 1, vi_e_Shape := E_VisuBodyShape.BOX, vi_e_Role := E_VisuBodyRole.STRUCTURE,
+	vi_Pose := TempPose, vi_lr_Length := lr_HOUSING_LENGTH, vi_lr_Width := lr_HOUSING_WIDTH,
+	vi_lr_Height := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_HOUSING_ABOVE_BELT);
+TempPose.fY := lr_PUSHER_WIDTH / 2;
+TempPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_PUSHER_ABOVE_BELT;
+fb_RejectUnit.m_SetBody(vi_un_Body := 2, vi_e_Shape := E_VisuBodyShape.BOX, vi_e_Role := E_VisuBodyRole.STRUCTURE,
+	vi_Pose := TempPose, vi_lr_Length := lr_PUSHER_LENGTH, vi_lr_Width := lr_PUSHER_WIDTH, vi_lr_Height := lr_PUSHER_HEIGHT);
+(* The outfeed counts from its shifted origin. *)
+fb_RejectUnit.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Outfeed.m_Id(), vi_lr_Start := lr_REJECT_X - lr_OUTFEED_ORIGIN_X,
+	vi_lr_End := lr_REJECT_X - lr_OUTFEED_ORIGIN_X, vi_lr_CcsOffset := lr_REJECT_X - lr_OUTFEED_ORIGIN_X);
+
+
+(****************************************************************************************************)
+(* PUSHING                                                                                          *)
+(****************************************************************************************************)
+IF udn_RejectPushing <> 0 THEN
+	lr_RejectLeft := lr_RejectLeft - lr_Dt;
+	IF lr_RejectLeft <= 0 THEN
+		fb_Outfeed.m_RemoveProduct(udn_RejectPushing);
+		udn_RejectPushing := 0;
+	END_IF
+END_IF
+
+(* A product passes the pusher in the cycle its centre crosses lr_REJECT_X. *)
+un_TempIndex := 0;
+WHILE un_TempIndex < fb_Outfeed.m_ProductCount() DO
+	fb_Outfeed.m_GetProduct(vi_un_Index := un_TempIndex, vo_Product => TempProduct, vo_Pose => TempProductPose);
+	IF TempProduct.eState = E_VisuProductState.PLACED AND TempProductPose.fX >= lr_REJECT_X
+		AND TempProductPose.fX - lr_OUTFEED_SPEED * lr_Dt < lr_REJECT_X
+	THEN
+		un_RejectPassed := un_RejectPassed + 1;
+		IF un_RejectPassed MOD un_REJECT_EVERY = 0 AND udn_RejectPushing = 0 THEN
+			fb_Outfeed.m_SetProductState(vi_udn_Id := TempProduct.nId, vi_e_State := E_VisuProductState.REJECTED,
+				vi_udn_ClientId := fb_RejectUnit.m_Id());
+			udn_RejectPushing := TempProduct.nId;
+			lr_RejectLeft := lr_REJECT_PUSH_TIME;
+		END_IF
+	END_IF
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE
+fb_RejectUnit.m_SetBodyActive(vi_un_Body := 2, vi_b_Active := udn_RejectPushing <> 0);
+m_RejectUnit := TRUE;]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_Report" Id="{ed987379-5fc1-4418-9fdd-db3d344b67b8}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -595,7 +693,7 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 		IF lr_X - lr_LEAD > lr_BaseX + lr_PICK_HALF_ZONE THEN
 			(* Product left the zone: hand it back, a downstream robot may still catch it. *)
 			fb_RefBelt.m_SetProductState(vi_udn_Id := udn_TargetId[n_Robot], vi_e_State := E_VisuProductState.DETECTED,
-				vi_udn_RobotId := 0);
+				vi_udn_ClientId := fb_RefRobot.m_Id());
 			udn_TargetId[n_Robot] := 0;
 			n_Phase[n_Robot] := n_PHASE_IDLE;
 		ELSE
@@ -616,7 +714,7 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 		THEN
 			n_Slot := n_HeldCount[n_Robot];
 			fb_RefBelt.m_SetProductState(vi_udn_Id := udn_TargetId[n_Robot], vi_e_State := E_VisuProductState.PICKED,
-				vi_udn_RobotId := fb_RefRobot.m_Id(), vi_udn_FingerId := INT_TO_UDINT(n_Finger));
+				vi_udn_ClientId := fb_RefRobot.m_Id(), vi_udn_FingerId := INT_TO_UDINT(n_Finger));
 			udn_Held[n_Robot, n_Slot] := udn_TargetId[n_Robot];
 			n_HeldBelt[n_Robot, n_Slot] := n_TargetBelt[n_Robot];
 			udn_HeldType[n_Robot, n_Slot] := Product.nProductType;
@@ -685,7 +783,7 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 			LatchPose.fRz := SEL(n_Robot = 2, lr_ToolRz[n_Robot], 0);
 			IF fb_Outfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := LatchPose,
 				vi_udn_ProductType := udn_HeldType[n_Robot, n_Slot], vi_e_State := E_VisuProductState.PLACED,
-				vi_udn_RobotId := fb_RefRobot.m_Id())
+				vi_udn_ClientId := fb_RefRobot.m_Id())
 			THEN
 				DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 			END_IF

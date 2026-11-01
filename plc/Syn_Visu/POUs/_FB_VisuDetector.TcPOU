@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuDetector" Id="{3968a0c3-0d88-43ca-9b44-8a1b40723aef}" SpecialFunc="None">
+  <POU Name="_FB_VisuDetector" Id="{58895edc-e638-472b-81d8-e4022f8d53c4}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -8,252 +8,53 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 Base of a detector (_FB_VisuVision, _FB_VisuSensor): a component that detects products in its zones<br>
-and is drawn from the bodies it describes (m_SetBody), so the visualisation needs no code of its own<br>
-for it. The application latches the products on the conveyor itself (_FB_VisuConveyor.m_LatchProduct<br>
-with vi_udn_DetectorId := this detector's id). m_Register, called every cycle, also stamps the state.<br>
-Not used directly.<br>
+and is drawn from the bodies it describes (m_SetBody of _FB_VisuBodyComponent), so the visualisation<br>
+needs no code of its own for it. The application latches the products on the conveyor itself<br>
+(_FB_VisuConveyor.m_LatchProduct with vi_udn_ClientId := this detector's id). m_Register, called every<br>
+cycle, also stamps the state. Not used directly.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
 vo_Visu is the contract structure the gateway reads at the path given to m_Register. Do not write it.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New<br>
+Syn_Visu 6.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Body handling moved to the base _FB_VisuBodyComponent<br>
 ****************************************************************************************************)
-FUNCTION_BLOCK ABSTRACT _FB_VisuDetector EXTENDS _FB_VisuZoneComponent
+FUNCTION_BLOCK ABSTRACT _FB_VisuDetector EXTENDS _FB_VisuBodyComponent
 VAR_OUTPUT
 	vo_Visu								: ST_VisuDetector;	// contract structure read by the gateway
-END_VAR
-]]></Declaration>
+END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[]]></ST>
     </Implementation>
-    <Method Name="m_ApplyConfig" Id="{9785b8b8-8ac7-42e9-8392-76d867cb04c7}">
+    <Method Name="m_Parts" Id="{8d12bb70-188e-4b03-b6fa-77946935db72}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Takes over vio_New and increments the config version if it differs from the current config. TRUE if changed.<br>
+The detector's pose, origin shift, bodies, body states, timestamp and fault for _FB_VisuBodyComponent.<br>
 ****************************************************************************************************)
-METHOD PRIVATE m_ApplyConfig : BOOL
-VAR_IN_OUT
-	vio_New								: ST_VisuDetectorConfig;
-END_VAR
-]]></Declaration>
+METHOD PROTECTED m_Parts : BOOL
+VAR_OUTPUT
+	vo_p_Pose							: POINTER TO ST_VisuPose;
+	vo_p_OriginShift					: POINTER TO ST_VisuPosition;
+	vo_p_BodyCount						: POINTER TO UINT;
+	vo_p_Bodies							: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBody;
+	vo_p_BodyStates						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBodyState;
+	vo_p_Timestamp						: POINTER TO ULINT;
+	vo_p_Fault							: POINTER TO ST_VisuFault;
+END_VAR]]></Declaration>
       <Implementation>
-        <ST><![CDATA[m_ApplyConfig := Tc2_System.MEMCMP(ADR(vio_New), ADR(vo_Visu.stConfig), SIZEOF(vio_New)) <> 0;
-IF m_ApplyConfig THEN
-	vo_Visu.stConfig := vio_New;
-	m_NotifyConfigChanged();
-END_IF]]></ST>
-      </Implementation>
-    </Method>
-    <Method Name="m_ClearBodies" Id="{d921250c-b660-487c-92f1-a5a5f3915438}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-Removes all bodies, also those m_Configure described. TRUE if there were any.<br>
-****************************************************************************************************)
-METHOD m_ClearBodies : BOOL
-VAR
-	TempNew								: ST_VisuDetectorConfig;
-	TempEmpty							: ST_VisuBody;
-	un_TempIndex						: UINT;
-END_VAR
-]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[TempNew := vo_Visu.stConfig;
-FOR un_TempIndex := 0 TO VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1 DO
-	TempNew.aBodies[un_TempIndex] := TempEmpty;
-	vo_Visu.stState.aBodyStates[un_TempIndex].bActive := FALSE;
-END_FOR
-TempNew.nBodyCount := 0;
-m_ClearBodies := m_ApplyConfig(TempNew);]]></ST>
-      </Implementation>
-    </Method>
-    <Method Name="m_Register" Id="{84968efe-0d3a-4fea-8d56-9bde5487c42c}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-As _FB_VisuComponent.m_Register; since a detector has no cyclic value of its own to report, this call,<br>
-made every cycle, also stamps its state with the cycle's DC time.<br>
-*****************************************************************************************************<br>
-OUTPUT VALUES:<br>
-FALSE for vi_udn_Id = 0, an id already used by a different entry, or a full manifest.<br>
-****************************************************************************************************)
-METHOD m_Register : BOOL
-VAR_IN_OUT
-	vio_Manifest						: ST_VisuManifest;	// GVL_Visu.stManifest of the application
-END_VAR
-VAR_INPUT
-	vi_udn_Id							: UDINT;	// [-] unique, > 0
-	vi_str_Name							: STRING(80);	// display name
-	vi_str_Path							: STRING(255);	// symbol path of this instance's vo_Visu, e.g. 'MAIN.fb_Vision.vo_Visu'
-END_VAR
-]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[m_Register := SUPER^.m_Register(vio_Manifest := vio_Manifest, vi_udn_Id := vi_udn_Id, vi_str_Name := vi_str_Name,
-	vi_str_Path := vi_str_Path);
-vo_Visu.stState.nTimestamp := m_DcTime();]]></ST>
-      </Implementation>
-    </Method>
-    <Method Name="m_SetBody" Id="{a0ae4e55-d72a-4008-be5f-1d0a8c183860}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-Describes body vi_un_Body (1-based), a solid the detector is drawn from: standing on its bottom centre<br>
-vi_Pose in the detector's frame and extending along its local +Z. The body count grows to vi_un_Body.<br>
-m_Configure of _FB_VisuVision and _FB_VisuSensor sets the first bodies; further ones may be added,<br>
-e.g. a bracket. TRUE if set; the config version only changes when a value does.<br>
-*****************************************************************************************************<br>
-OUTPUT VALUES:<br>
-FALSE outside 1..VISU_GlobalConst_Param.VISU_un_MAX_BODIES.<br>
-****************************************************************************************************)
-METHOD m_SetBody : BOOL
-VAR_INPUT
-	vi_un_Body							: UINT;	// [-] 1-based
-	vi_e_Shape							: E_VisuBodyShape;
-	vi_e_Role							: E_VisuBodyRole;	// sets its look
-	vi_Pose								: ST_VisuPose;	// bottom centre in the detector's frame, not MCS
-	vi_lr_Length						: LREAL;	// [mm] along the body's local X; a cylinder's diameter
-	vi_lr_Width							: LREAL;	// [mm] along the body's local Y; a cylinder's diameter
-	vi_lr_Height						: LREAL;	// [mm] along the body's local Z
-	vi_lr_TopLength						: LREAL := 0;	// [mm] top face of a FRUSTUM
-	vi_lr_TopWidth						: LREAL := 0;	// [mm] top face of a FRUSTUM
-END_VAR
-VAR
-	TempNew								: ST_VisuDetectorConfig;
-END_VAR
-]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[m_SetBody := FALSE;
-IF vi_un_Body = 0 OR vi_un_Body > VISU_GlobalConst_Param.VISU_un_MAX_BODIES THEN
-	RETURN;
-END_IF
-TempNew := vo_Visu.stConfig;
-TempNew.aBodies[vi_un_Body - 1].eShape := vi_e_Shape;
-TempNew.aBodies[vi_un_Body - 1].eRole := vi_e_Role;
-TempNew.aBodies[vi_un_Body - 1].stPose := vi_Pose;
-TempNew.aBodies[vi_un_Body - 1].fLength := vi_lr_Length;
-TempNew.aBodies[vi_un_Body - 1].fWidth := vi_lr_Width;
-TempNew.aBodies[vi_un_Body - 1].fHeight := vi_lr_Height;
-TempNew.aBodies[vi_un_Body - 1].fTopLength := vi_lr_TopLength;
-TempNew.aBodies[vi_un_Body - 1].fTopWidth := vi_lr_TopWidth;
-TempNew.nBodyCount := MAX(TempNew.nBodyCount, vi_un_Body);
-m_ApplyConfig(TempNew);
-m_SetBody := TRUE;]]></ST>
-      </Implementation>
-    </Method>
-    <Method Name="m_SetBodyActive" Id="{db4ed851-3042-4cfe-a03b-14658417baa9}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-Reports whether body vi_un_Body (1-based) is active: a BEAM or FIELD_OF_VIEW then lights up. Also<br>
-stamps the state with the cycle's DC time.<br>
-*****************************************************************************************************<br>
-OUTPUT VALUES:<br>
-FALSE outside 1..VISU_GlobalConst_Param.VISU_un_MAX_BODIES.<br>
-****************************************************************************************************)
-METHOD m_SetBodyActive : BOOL
-VAR_INPUT
-	vi_un_Body							: UINT;	// [-] 1-based
-	vi_b_Active							: BOOL;
-END_VAR
-]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[m_SetBodyActive := FALSE;
-IF vi_un_Body = 0 OR vi_un_Body > VISU_GlobalConst_Param.VISU_un_MAX_BODIES THEN
-	RETURN;
-END_IF
-vo_Visu.stState.aBodyStates[vi_un_Body - 1].bActive := vi_b_Active;
-vo_Visu.stState.nTimestamp := m_DcTime();
-m_SetBodyActive := TRUE;]]></ST>
-      </Implementation>
-    </Method>
-    <Method Name="m_SetFault" Id="{34683e46-a53a-4b0e-85c1-82cba6a51f25}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-Sets or clears the fault of the detector: drawn red with the message while active. The fault stays until<br>
-it is cleared with m_SetFault(vi_b_Active := FALSE, vi_str_Message := ''). TRUE.<br>
-****************************************************************************************************)
-METHOD m_SetFault : BOOL
-VAR_INPUT
-	vi_b_Active							: BOOL;	// TRUE: fault active
-	vi_str_Message						: STRING(80);	// shown to the operator; empty shows 'Fault'
-END_VAR
-]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[vo_Visu.stState.stFault.bActive := vi_b_Active;
-vo_Visu.stState.stFault.sMessage := vi_str_Message;
-m_SetFault := TRUE;]]></ST>
-      </Implementation>
-    </Method>
-    <Method Name="m_SetOriginShift" Id="{61a9422d-d06f-4879-940a-df02464e3b4e}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-Moves the detector's shown coordinate system (origin triad, local measuring coordinates) away from its<br>
-pose, in its local frame. The bodies stay relative to the pose. TRUE if anything changed.<br>
-****************************************************************************************************)
-METHOD m_SetOriginShift : BOOL
-VAR_INPUT
-	vi_lr_X								: LREAL;	// [mm] along the detector's local X
-	vi_lr_Y								: LREAL := 0;	// [mm] along the detector's local Y
-	vi_lr_Z								: LREAL := 0;	// [mm] along the detector's local Z
-END_VAR
-VAR
-	TempNew								: ST_VisuDetectorConfig;
-END_VAR
-]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[TempNew := vo_Visu.stConfig;
-TempNew.stOriginShift.fX := vi_lr_X;
-TempNew.stOriginShift.fY := vi_lr_Y;
-TempNew.stOriginShift.fZ := vi_lr_Z;
-m_SetOriginShift := m_ApplyConfig(TempNew);]]></ST>
-      </Implementation>
-    </Method>
-    <Method Name="m_SetPose" Id="{959c1a96-dd9e-47b2-88f9-42ebc62f751f}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-Sets the detector's pose, for m_Configure of the derived FB. TRUE if it changed.<br>
-****************************************************************************************************)
-METHOD PROTECTED m_SetPose : BOOL
-VAR_INPUT
-	vi_Pose								: ST_VisuPose;	// MCS
-END_VAR
-VAR
-	TempNew								: ST_VisuDetectorConfig;
-END_VAR
-]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[TempNew := vo_Visu.stConfig;
-TempNew.stPose := vi_Pose;
-m_SetPose := m_ApplyConfig(TempNew);]]></ST>
+        <ST><![CDATA[vo_p_Pose := ADR(vo_Visu.stConfig.stPose);
+vo_p_OriginShift := ADR(vo_Visu.stConfig.stOriginShift);
+vo_p_BodyCount := ADR(vo_Visu.stConfig.nBodyCount);
+vo_p_Bodies := ADR(vo_Visu.stConfig.aBodies);
+vo_p_BodyStates := ADR(vo_Visu.stState.aBodyStates);
+vo_p_Timestamp := ADR(vo_Visu.stState.nTimestamp);
+vo_p_Fault := ADR(vo_Visu.stState.stFault);
+m_Parts := TRUE;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_Zones" Id="{be8c390a-8b08-45c9-aa83-3cfba2221116}">

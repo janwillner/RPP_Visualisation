@@ -246,7 +246,12 @@ test("shows the machine's metrics in the inspector while nothing is selected", a
   const inspector = page.locator("aside.panel.right");
   await expect(inspector.getByRole("heading", { name: /^Metrics, last \d+ s$/ })).toBeVisible({ timeout: 20_000 });
   await expect(inspector.locator("table.metrics")).toContainText("in/min");
-  await expect(inspector.locator("table.metrics")).toContainText("picks/min", { timeout: 20_000 });
+  // Per client: what each robot, detector and station did.
+  await expect(inspector.locator("table.metrics")).toContainText("picked/min", { timeout: 20_000 });
+  await expect(inspector.locator("table.metrics")).toContainText("detected/min");
+  await expect(inspector.locator("table.metrics tr", { hasText: "Reject unit" })).toContainText("rejected/min", {
+    timeout: 30_000,
+  });
 });
 
 test("loads the app in parts, none over 800 KB", async ({ request }) => {

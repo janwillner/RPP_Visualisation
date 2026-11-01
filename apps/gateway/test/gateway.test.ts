@@ -18,6 +18,7 @@ import {
   defineMachine,
   delta,
   detector,
+  station,
   fingerStates,
   noFault,
   trackModule,
@@ -752,11 +753,11 @@ describe("gateway state snapshots", () => {
       stLatchPose: { fX: 150, fY: 210, fZ: 800, fRz: 15 },
       fLatchBeltPosition: 40,
       eState: E_VisuProductState.PICKED,
-      nRobotId: 20,
+      ePreviousState: E_VisuProductState.ASSIGNED,
+      nLastClientId: 20,
       nMoverId: 3,
       nFingerId: 2,
       nProductType: 1,
-      nDetectorId: 50,
     };
     state.aProducts[1] = { ...state.aProducts[0], nId: 8, bValid: false };
     // Enumerations objectified by the ADS client.
@@ -771,11 +772,11 @@ describe("gateway state snapshots", () => {
           latchPose: { x: 150, y: 210, z: 800, rz: 15 },
           latchBeltPosition: 40,
           state: "picked",
-          robotId: 20,
+          previousState: "assigned",
+          lastClientId: 20,
           moverId: 3,
           fingerId: 2,
           productType: 1,
-          detectorId: 50,
         },
         { id: 9, state: "placed" },
       ],
@@ -855,6 +856,58 @@ describe("gateway state snapshots", () => {
       fingers: [],
       fault: null,
     });
+  });
+
+  it("publishes a station from its own structure: zones, bodies and a lit body while it works", async () => {
+    const rejectUnit: MachineComponent = {
+      id: 70,
+      name: "Reject unit",
+      path: "MAIN.fbReject.vo_Visu",
+      kind: "station",
+      value: station({
+        pose: { fX: 900, fY: -300, fZ: 800 },
+        zones: [{ nConveyorId: 10, fStart: 900, fEnd: 900 }],
+        bodies: [body({ fLength: 200, fWidth: 150, fHeight: 300 }), body({ fLength: 60, fWidth: 100, fHeight: 40 })],
+        active: [false, true],
+      }),
+    };
+    const t = setup([infeed, rejectUnit]);
+    await t.gateway.cycle();
+
+    const [config] = t.configs();
+    expect(config!.errors).toEqual([]);
+    expect(config!.components[1]).toMatchObject({
+      type: "station",
+      id: 70,
+      name: "Reject unit",
+      pose: { x: 900, y: -300, z: 800 },
+      zones: [{ conveyorId: 10, start: 900, end: 900 }],
+      bodies: [
+        { shape: "box", role: "structure", length: 200, width: 150, height: 300 },
+        { shape: "box", role: "structure", length: 60, width: 100, height: 40 },
+      ],
+    });
+    expect(t.states()[0]!.components).toContainEqual({
+      type: "station",
+      id: 70,
+      timestamp: "0",
+      bodies: [{ active: false }, { active: true }],
+      fault: null,
+    });
+  });
+
+  it("refuses a station symbol of another data type", async () => {
+    const wrong: MachineComponent = { id: 70, name: "Reject unit", path: "MAIN.fbReject.vo_Visu", kind: "station", value: station() };
+    const plc = new InMemoryPlc();
+    defineMachine(plc, [infeed, wrong]);
+    // E.g. an application that put a detector where its manifest names a station.
+    plc.define(wrong.path, "ST_VisuDetector", station());
+    const gateway = createGateway({ plc, sourceId: "plc1" });
+    const configs: ConfigMessage[] = [];
+    gateway.subscribe((m) => m.kind === "config" && configs.push(m));
+    await gateway.cycle();
+    expect(configs[0]!.components.map((c) => c.id)).toEqual([10]);
+    expect(configs[0]!.errors[0]).toMatchObject({ componentId: 70, message: expect.stringMatching(/ST_VisuStation/) });
   });
 
   it("publishes one state per configured body of a detector, with its fault", async () => {

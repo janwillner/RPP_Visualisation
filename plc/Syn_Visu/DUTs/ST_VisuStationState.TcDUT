@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuStationState" Id="{2c658328-7d99-4aea-a8be-23a6c37e8180}">
+    <Declaration><![CDATA[TYPE ST_VisuStationState :
+STRUCT
+	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (set by _FB_VisuStation)
+	aBodyStates : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBodyState; // one per configured body; an active body lights up
+	stFault : ST_VisuFault; // fault of the station (set by _FB_VisuStation.m_SetFault)
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

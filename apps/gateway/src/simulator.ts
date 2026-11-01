@@ -10,6 +10,7 @@ import {
   defineMachine,
   delta,
   detector,
+  station,
   emptyProduct,
   fingerStates,
   loopModules,
@@ -28,6 +29,7 @@ import {
   type ST_VisuConveyor,
   type ST_VisuDelta,
   type ST_VisuDetector,
+  type ST_VisuStation,
   type ST_VisuFingerState,
   type ST_VisuProduct,
   type ST_VisuXtsGantry,
@@ -73,6 +75,11 @@ const PICK_ZONE = { start: 1100, end: 1900, allocationOffset: 300 };
 const VISION = { id: 50, path: "MAIN.fbVision.vo_Visu", x: 300, field: 400, distance: 800 };
 /** Light barrier at the side of the Cartesian infeed, its beam across the belt 20 mm above it. */
 const SENSOR = { id: 51, path: "MAIN.fbSensor.vo_Visu", x: 300, beam: 500, height: 20 };
+/**
+ * Reject unit at the side of the Delta outfeed (a station): every `every`-th product reaching `x` is rejected, its
+ * pusher lights up and the product is off the belt after `pushMs`.
+ */
+const REJECT = { id: 60, path: "MAIN.fbRejectUnit.vo_Visu", x: 2400, every: 5, pushMs: 300 };
 const PLACE_X = 1500;
 const SPAWN_INTERVAL_MS = 700;
 const TCP_SPEED = 2500; // mm/s
@@ -284,6 +291,17 @@ function sensorBodies(beam: number) {
   ];
 }
 
+/**
+ * Reject unit, its origin at the belt side 30 mm off the edge, on the floor below the belt: a housing beside the belt
+ * and the pusher plate at the belt edge, just above the belt surface (local +Y points across the belt).
+ */
+function rejectUnitBodies() {
+  return [
+    body({ stPose: { fX: 0, fY: -70, fZ: 0, fRx: 0, fRy: 0, fRz: 0 }, fLength: 160, fWidth: 140, fHeight: BELT_Z + 120 }),
+    body({ stPose: { fX: 0, fY: 15, fZ: BELT_Z + 10, fRx: 0, fRy: 0, fRz: 0 }, fLength: 120, fWidth: 30, fHeight: 50 }),
+  ];
+}
+
 /** The simulated robots keep their conveyor coordinate system (CCS) in the middle of each zone. */
 function centred(zones: ZoneSpec[]): ZoneSpec[] {
   return zones.map((z) => ({ ...z, fCcsOffset: (z.fStart + z.fEnd) / 2 }));
@@ -297,6 +315,18 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   defineMachine(plc, [
     { id: INFEED.id, name: "Infeed", path: INFEED.path, kind: "conveyor", value: belt(INFEED) },
     { id: OUTFEED.id, name: "Outfeed", path: OUTFEED.path, kind: "conveyor", value: belt(OUTFEED) },
+    {
+      id: REJECT.id,
+      name: "Reject unit",
+      path: REJECT.path,
+      kind: "station",
+      value: station({
+        // At the right belt edge (local −Y of the belt), pushing across the belt towards +Y.
+        pose: { fX: OUTFEED.x + REJECT.x, fY: OUTFEED.y - 230 },
+        zones: [{ nConveyorId: OUTFEED.id, fStart: REJECT.x, fEnd: REJECT.x, fCcsOffset: REJECT.x }],
+        bodies: rejectUnitBodies(),
+      }),
+    },
     { id: FXX_INFEED.id, name: "Fxx infeed", path: FXX_INFEED.path, kind: "conveyor", value: belt(FXX_INFEED) },
     { id: FXX_OUTFEED.id, name: "Fxx outfeed", path: FXX_OUTFEED.path, kind: "conveyor", value: belt(FXX_OUTFEED) },
     { id: IDH_INFEED.id, name: "IDH infeed", path: IDH_INFEED.path, kind: "conveyor", value: belt(IDH_INFEED) },
@@ -430,6 +460,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   const cart = plc.get<ST_VisuCartesian>(CART.path);
   const lightBarrier = plc.get<ST_VisuDetector>(SENSOR.path);
   const vision = plc.get<ST_VisuDetector>(VISION.path);
+  const rejectUnit = plc.get<ST_VisuStation>(REJECT.path);
   const robot = plc.get<ST_VisuDelta>(ROBOT.path);
   robot.stConfig.stWorkingArea = { fRadius: 700, fZMin: -1300, fZMax: -700, fConeHeight: 200, fConeBottomRadius: 400 };
   const loop = plc.get<ST_VisuXtsLoop>(LOOP.path);
@@ -460,6 +491,10 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   let now = BigInt(Date.UTC(2026, 0, 1) - Date.UTC(2000, 0, 1)) * 1_000_000n;
   let nextId = 1;
   let sinceSpawn = SPAWN_INTERVAL_MS;
+  /** Products on the outfeed that reached the reject unit, and the one being pushed off with the time it has left. */
+  let passedRejectUnit = 0;
+  let pushing: { product: TrackedProduct; leftMs: number } | undefined;
+  const checkedByRejectUnit = new Set<number>();
   let sinceFxxSpawn = 0;
   let fxxSpawnInterval = 600;
   let sinceIdhSpawn = 0;
@@ -516,6 +551,13 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     if (i >= 0) products.splice(i, 1);
   }
 
+  /** Changes a product's state as the library does: the state before and the client that changed it are kept. */
+  function change(p: TrackedProduct, eState: TrackedProduct["eState"], clientId: number): void {
+    p.ePreviousState = p.eState;
+    p.eState = eState;
+    p.nLastClientId = clientId;
+  }
+
   /**
    * Enters a product into a conveyor's register: DETECTED where it arrives, PLACED where a robot puts it down, as the
    * contract asks (an outfeed product past the belt end is otherwise shown as missed).
@@ -528,7 +570,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     rz: number,
     eState: TrackedProduct["eState"] = E_VisuProductState.DETECTED,
     productType: number = PRODUCT.type,
-    detectorId = 0,
+    clientId = 0,
   ): void {
     products.push({
       ...emptyProduct(),
@@ -538,7 +580,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       fLatchBeltPosition: c.stState.fBeltPosition,
       eState,
       nProductType: productType,
-      nDetectorId: detectorId,
+      nLastClientId: clientId,
     });
   }
 
@@ -569,8 +611,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
           return p.eState === E_VisuProductState.DETECTED && x >= PICK_ZONE.start && x <= PICK_ZONE.end - PICK_ZONE.allocationOffset;
         });
         if (target) {
-          target.eState = E_VisuProductState.ASSIGNED;
-          target.nRobotId = ROBOT.id;
+          change(target!, E_VisuProductState.ASSIGNED, ROBOT.id);
           phase = "approach";
         } else {
           moveToward(home, dtS);
@@ -581,8 +622,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         const t = top(target!);
         if (t[0] - INFEED.x > PICK_ZONE.end) {
           // Product left the zone: give up, it will be missed.
-          target!.eState = E_VisuProductState.DETECTED;
-          target!.nRobotId = 0;
+          change(target!, E_VisuProductState.DETECTED, ROBOT.id);
           phase = "idle";
         } else if (moveToward(ahead(t, t[2] + HOVER), dtS)) phase = "descend";
         tcpRz += (target!.stLatchPose.fRz - tcpRz) * Math.min(1, dtS * 10);
@@ -590,7 +630,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       }
       case "descend":
         if (moveToward(ahead(top(target!), top(target!)[2]), dtS)) {
-          target!.eState = E_VisuProductState.PICKED;
+          change(target!, E_VisuProductState.PICKED, ROBOT.id);
           target!.nFingerId = 1;
           phase = "lift";
         }
@@ -609,7 +649,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         break;
       case "release": {
         remove(infeedProducts, target!);
-        latch(outfeedProducts, outfeed, tcp[0], tcp[1], tcpRz, E_VisuProductState.PLACED, target!.nProductType);
+        latch(outfeedProducts, outfeed, tcp[0], tcp[1], tcpRz, E_VisuProductState.PLACED, target!.nProductType, ROBOT.id);
         target = undefined;
         phase = "idle";
         break;
@@ -640,8 +680,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
           lastTracked - outfeedX(p) >= LOOP.slot,
       );
       if (next) {
-        next.eState = E_VisuProductState.ASSIGNED;
-        next.nRobotId = LOOP.id;
+        change(next!, E_VisuProductState.ASSIGNED, LOOP.id);
         next.nMoverId = head.id;
         head.product = next;
         head.mode = "track";
@@ -652,7 +691,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         case "track": {
           m.s = outfeedX(m.product!);
           if (m.s >= LOOP.grip) {
-            m.product!.eState = E_VisuProductState.PICKED;
+            change(m.product!, E_VisuProductState.PICKED, LOOP.id);
             m.product!.nFingerId = 1;
           }
           if (m.s >= LOOP.release) m.mode = "deliver";
@@ -669,6 +708,8 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
               FXX_OUTFEED.y,
               m.product!.stLatchPose.fRz,
               E_VisuProductState.PLACED,
+              PRODUCT.type,
+              LOOP.id,
             );
             m.product = undefined;
             m.mode = "return";
@@ -714,8 +755,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
             .filter((p) => p.eState === E_VisuProductState.DETECTED && trackPos(p) < m.position && trackPos(p) > -500)
             .sort((a, b) => trackPos(b) - trackPos(a))[0];
           if (!next) break;
-          next.eState = E_VisuProductState.ASSIGNED;
-          next.nRobotId = GANTRY.id;
+          change(next!, E_VisuProductState.ASSIGNED, GANTRY.id);
           next.nMoverId = m.id;
           m.product = next;
         }
@@ -726,8 +766,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         if ((assigned.length === gantryMovers.length && assigned.every(synced)) || (nearEnd && assigned.some(synced))) {
           for (const m of assigned) {
             if (synced(m)) continue;
-            m.product!.eState = E_VisuProductState.DETECTED;
-            m.product!.nRobotId = 0;
+            change(m.product!, E_VisuProductState.DETECTED, GANTRY.id);
             m.product!.nMoverId = 0;
             m.product = undefined;
           }
@@ -742,7 +781,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
           for (const m of gantryMovers) {
             if (!m.product) continue;
             m.gripper = true;
-            m.product.eState = E_VisuProductState.PICKED;
+            change(m.product, E_VisuProductState.PICKED, GANTRY.id);
             m.product.nFingerId = 1;
           }
           gantryPhase = "pickUp";
@@ -769,7 +808,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
             if (!m.product) continue;
             remove(idhInfeedProducts, m.product);
             // Turned by −90°: the gripper is at MCS x = track start + position, y = pose y − (X + offset).
-            latch(trayProducts, tray, GANTRY.x + m.position, GANTRY.y - (m.x + GANTRY.toolOffsetX), -90 + m.c, E_VisuProductState.PLACED);
+            latch(trayProducts, tray, GANTRY.x + m.position, GANTRY.y - (m.x + GANTRY.toolOffsetX), -90 + m.c, E_VisuProductState.PLACED, PRODUCT.type, GANTRY.id);
             m.product = undefined;
             m.gripper = false;
           }
@@ -821,8 +860,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
           (p) => p.eState === E_VisuProductState.DETECTED && productY(p) >= 100 && productY(p) <= 600,
         );
         if (cartTarget) {
-          cartTarget.eState = E_VisuProductState.ASSIGNED;
-          cartTarget.nRobotId = CART.id;
+          change(cartTarget!, E_VisuProductState.ASSIGNED, CART.id);
           cartPhase = "descend";
         } else {
           move({ x: CART.xInfeed, y: CART.yHome, z: CART.zTravel, c: 0, a: 0 });
@@ -833,8 +871,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         const y = productY(cartTarget!);
         if (y > 1000) {
           // Out of reach: give up, it will be missed.
-          cartTarget!.eState = E_VisuProductState.DETECTED;
-          cartTarget!.nRobotId = 0;
+          change(cartTarget!, E_VisuProductState.DETECTED, CART.id);
           cartTarget = undefined;
           cartPhase = "rise";
           break;
@@ -842,7 +879,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         // Lowers only once above the product with the gripper turned onto it.
         const above = move({ x: CART.xInfeed, y, c: pickC(cartTarget!) });
         if (above && move({ z: CART.zPick })) {
-          cartTarget!.eState = E_VisuProductState.PICKED;
+          change(cartTarget!, E_VisuProductState.PICKED, CART.id);
           cartTarget!.nFingerId = 1;
           axes.gripper = true;
           cartPhase = "lift";
@@ -864,7 +901,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       case "release": {
         remove(cartInfeedProducts, cartTarget!);
         // Turned by −90°: the TCP (A = 0) is at MCS x = origin + Y, y = origin − X; the product keeps the gripper turn.
-        latch(cartOutfeedProducts, cartOutfeed, CART.x + axes.y, CART.y - axes.x, -90 + axes.c, E_VisuProductState.PLACED);
+        latch(cartOutfeedProducts, cartOutfeed, CART.x + axes.y, CART.y - axes.x, -90 + axes.c, E_VisuProductState.PLACED, PRODUCT.type, CART.id);
         cartTarget = undefined;
         axes.gripper = false;
         cartPhase = "rise";
@@ -909,6 +946,30 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     ]);
     robot.stState.stFault = fault(faultWindow(4_000), "Drive 2: overtemperature");
     robot.stState.nTimestamp = now;
+  }
+
+  /** Every REJECT.every-th product reaching the reject unit is rejected and pushed off the belt. */
+  function stepRejectUnit(dtMs: number): void {
+    if (pushing) {
+      pushing.leftMs -= dtMs;
+      if (pushing.leftMs <= 0) {
+        remove(outfeedProducts, pushing.product);
+        pushing = undefined;
+      }
+    }
+    for (const p of outfeedProducts) {
+      if (checkedByRejectUnit.has(p.nId) || p.eState !== E_VisuProductState.PLACED) continue;
+      if (productPosition(p, outfeed.stState.fBeltPosition)[0] - OUTFEED.x < REJECT.x) continue;
+      checkedByRejectUnit.add(p.nId);
+      passedRejectUnit += 1;
+      if (passedRejectUnit % REJECT.every !== 0 || pushing) continue;
+      change(p, E_VisuProductState.REJECTED, REJECT.id);
+      pushing = { product: p, leftMs: REJECT.pushMs };
+    }
+    // Ids of products gone from the register are not needed any more.
+    for (const id of checkedByRejectUnit) if (!outfeedProducts.some((p) => p.nId === id)) checkedByRejectUnit.delete(id);
+    rejectUnit.stState.aBodyStates[1]!.bActive = pushing !== undefined;
+    rejectUnit.stState.nTimestamp = now;
   }
 
   /** The light barrier's beam is interrupted while a product on the belt covers it; both report every cycle. */
@@ -1045,6 +1106,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       stepLoop(dtS);
       stepGantry(dtS);
       writeRegister(infeed, infeedProducts, INFEED.x, INFEED.length);
+      stepRejectUnit(dtMs);
       writeRegister(outfeed, outfeedProducts, OUTFEED.x, OUTFEED.length);
       writeRegister(fxxInfeed, fxxInfeedProducts, FXX_INFEED.x, FXX_INFEED.length);
       writeRegister(fxxOutfeed, fxxOutfeedProducts, FXX_OUTFEED.x, FXX_OUTFEED.length);

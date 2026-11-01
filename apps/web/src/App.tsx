@@ -22,7 +22,7 @@ import {
   type SourcedFaults,
   type Vec3,
 } from "./scene/scene-model";
-import { METRICS_WINDOW_MS, metrics, type MachineMetrics } from "./metrics";
+import { CLIENT_ACTIONS, METRICS_WINDOW_MS, metrics, type ClientMetrics, type MachineMetrics } from "./metrics";
 import { stateRows } from "./state-rows";
 import { loadViewSettings, saveViewSettings, type CameraPose, type ViewSettings } from "./view-settings";
 import { PRODUCT, STATUS } from "./palette";
@@ -106,7 +106,7 @@ function MetricsOverview({ figures, sources }: { figures: MachineMetrics; source
     const source = sources.length > 1 ? sources.find((s) => s.sourceId === x.sourceId) : undefined;
     return source ? `${source.name} · ${x.name}` : x.name;
   };
-  if (figures.robots.length === 0 && figures.conveyors.length === 0) return null;
+  if (figures.clients.length === 0 && figures.conveyors.length === 0) return null;
   return (
     <>
       <h3>Metrics, {windowText(figures)}</h3>
@@ -116,10 +116,10 @@ function MetricsOverview({ figures, sources }: { figures: MachineMetrics; source
       </p>
       <table className="metrics">
         <tbody>
-          {figures.robots.map((r) => (
-            <tr key={`r${r.sourceId}|${r.robotId}`}>
-              <td>{named(r)}</td>
-              <td>{rate(r.picksPerMin)} picks/min</td>
+          {figures.clients.map((c) => (
+            <tr key={`k${c.sourceId}|${c.clientId}`}>
+              <td>{named(c)}</td>
+              <td>{clientRates(c)}</td>
             </tr>
           ))}
           {figures.conveyors.map((c) => (
@@ -132,29 +132,27 @@ function MetricsOverview({ figures, sources }: { figures: MachineMetrics; source
               </td>
             </tr>
           ))}
-          {figures.detectors.map((d) => (
-            <tr key={`d${d.sourceId}|${d.detectorId}`}>
-              <td>{named(d)}</td>
-              <td>{rate(d.detectedPerMin)} detected/min</td>
-            </tr>
-          ))}
         </tbody>
       </table>
     </>
   );
 }
 
-/** A selected robot's, conveyor's or detector's own figures over the last minute. */
+/** What a client did per minute, e.g. "30.0 picked/min · 30.0 placed/min". */
+const clientRates = (c: ClientMetrics) =>
+  CLIENT_ACTIONS.filter((a) => c.perMin[a] !== undefined)
+    .map((a) => `${rate(c.perMin[a]!)} ${a}/min`)
+    .join(" · ");
+
+/** A selected client's (robot, detector, station) or conveyor's own figures over the last minute. */
 function ComponentMetrics({ figures, sourceId, id }: { figures: MachineMetrics; sourceId: string; id: number }) {
-  const robot = figures.robots.find((r) => r.sourceId === sourceId && r.robotId === id);
+  const client = figures.clients.find((c) => c.sourceId === sourceId && c.clientId === id);
   const conveyor = figures.conveyors.find((c) => c.sourceId === sourceId && c.conveyorId === id);
-  const detector = figures.detectors.find((d) => d.sourceId === sourceId && d.detectorId === id);
-  if (!robot && !conveyor && !detector) return null;
+  if (!client && !conveyor) return null;
   return (
     <p>
       <span className="muted">{windowText(figures)}:</span>{" "}
-      {robot && <>{rate(robot.picksPerMin)} picks/min</>}
-      {detector && <>{rate(detector.detectedPerMin)} products detected/min</>}
+      {client && <>{clientRates(client)}</>}
       {conveyor && (
         <>
           {rate(conveyor.inPerMin)} products in/min · {conveyor.missed} missed · {conveyor.rejected} rejected

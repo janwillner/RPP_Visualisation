@@ -1,23 +1,20 @@
 import { componentName } from "./component-name";
 import type { SourceInfo } from "./connection";
-import type { ProductEvent } from "./product-history";
+import { clientAction, type ClientAction, type ProductEvent } from "./product-history";
 
 /** The metrics look back this far. */
 export const METRICS_WINDOW_MS = 60_000;
 
-export interface RobotMetrics {
-  sourceId: string;
-  robotId: number;
-  name: string;
-  picksPerMin: number;
-}
+/** The order in which a client's figures are listed. */
+export const CLIENT_ACTIONS: readonly ClientAction[] = ["detected", "picked", "placed", "rejected"];
 
-export interface DetectorMetrics {
+/** What one client (robot, detector, station) did with products, per minute. */
+export interface ClientMetrics {
   sourceId: string;
-  detectorId: number;
+  clientId: number;
   name: string;
-  /** Products it latched per minute. */
-  detectedPerMin: number;
+  /** Only the actions it did within the window. */
+  perMin: Partial<Record<ClientAction, number>>;
 }
 
 export interface ConveyorMetrics {
@@ -40,12 +37,10 @@ export interface MachineMetrics {
   missed: number;
   /** Missed of all products picked or missed, 0…1; undefined while there are none. */
   missedShare: number | undefined;
-  /** Every robot that picked within the window, by source and id. */
-  robots: RobotMetrics[];
+  /** Every client that did something with products within the window, by source and id. */
+  clients: ClientMetrics[];
   /** Every conveyor with products within the window, by source and id. */
   conveyors: ConveyorMetrics[];
-  /** Every detector that latched products within the window, by source and id. */
-  detectors: DetectorMetrics[];
 }
 
 /**
@@ -62,12 +57,11 @@ export function metrics(
   const perMin = (count: number) => (count * 60_000) / windowMs;
   const nameOf = (sourceId: string, id: number) => componentName(sources.find((s) => s.sourceId === sourceId), id);
 
-  const picks = new Map<string, { sourceId: string; robotId: number; count: number }>();
   const conveyors = new Map<
     string,
     { sourceId: string; conveyorId: number; entered: number; missed: number; rejected: number }
   >();
-  const detected = new Map<string, { sourceId: string; detectorId: number; count: number }>();
+  const clients = new Map<string, { sourceId: string; clientId: number; counts: Partial<Record<ClientAction, number>> }>();
   let picked = 0;
   let missed = 0;
   for (const e of events) {
@@ -78,25 +72,19 @@ export function metrics(
       conveyor = { sourceId: e.sourceId, conveyorId: e.conveyorId, entered: 0, missed: 0, rejected: 0 };
       conveyors.set(conveyorKey, conveyor);
     }
-    if (e.kind === "entered") {
-      conveyor.entered++;
-      if (e.detectorId > 0) {
-        const detectorKey = `${e.sourceId}|${e.detectorId}`;
-        const detector = detected.get(detectorKey) ?? { sourceId: e.sourceId, detectorId: e.detectorId, count: 0 };
-        detector.count++;
-        detected.set(detectorKey, detector);
-      }
-    }
+    if (e.kind === "entered") conveyor.entered++;
     else if (e.kind === "rejected") conveyor.rejected++;
     else if (e.kind === "missed") {
       conveyor.missed++;
       missed++;
-    } else if (e.kind === "picked") {
-      picked++;
-      const robotKey = `${e.sourceId}|${e.robotId}`;
-      const robot = picks.get(robotKey) ?? { sourceId: e.sourceId, robotId: e.robotId, count: 0 };
-      robot.count++;
-      picks.set(robotKey, robot);
+    } else if (e.kind === "picked") picked++;
+
+    const action = clientAction(e);
+    if (action && e.clientId > 0) {
+      const clientKey = `${e.sourceId}|${e.clientId}`;
+      const client = clients.get(clientKey) ?? { sourceId: e.sourceId, clientId: e.clientId, counts: {} };
+      client.counts[action] = (client.counts[action] ?? 0) + 1;
+      clients.set(clientKey, client);
     }
   }
 
@@ -109,14 +97,16 @@ export function metrics(
     picksPerMin: perMin(picked),
     missed,
     missedShare: picked + missed > 0 ? missed / (picked + missed) : undefined,
-    robots: [...picks.values()]
-      .map((r) => ({
-        sourceId: r.sourceId,
-        robotId: r.robotId,
-        name: nameOf(r.sourceId, r.robotId),
-        picksPerMin: perMin(r.count),
+    clients: [...clients.values()]
+      .map((c) => ({
+        sourceId: c.sourceId,
+        clientId: c.clientId,
+        name: nameOf(c.sourceId, c.clientId),
+        perMin: Object.fromEntries(
+          Object.entries(c.counts).map(([action, count]) => [action, perMin(count)]),
+        ) as Partial<Record<ClientAction, number>>,
       }))
-      .sort(bySourceThen((r) => r.robotId)),
+      .sort(bySourceThen((c) => c.clientId)),
     conveyors: [...conveyors.values()]
       .map((c) => ({
         sourceId: c.sourceId,
@@ -127,13 +117,5 @@ export function metrics(
         rejected: c.rejected,
       }))
       .sort(bySourceThen((c) => c.conveyorId)),
-    detectors: [...detected.values()]
-      .map((d) => ({
-        sourceId: d.sourceId,
-        detectorId: d.detectorId,
-        name: nameOf(d.sourceId, d.detectorId),
-        detectedPerMin: perMin(d.count),
-      }))
-      .sort(bySourceThen((d) => d.detectorId)),
   };
 }

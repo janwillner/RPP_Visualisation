@@ -28,17 +28,23 @@ const config: ConfigMessage = {
 };
 const source: SourceInfo = { sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config };
 
-function product(id: number, state: Product["state"], robotId = 0, fingerId = 0): Product {
+function product(
+  id: number,
+  state: Product["state"],
+  lastClientId = 0,
+  fingerId = 0,
+  previousState: Product["state"] = "detected",
+): Product {
   return {
     id,
     latchPose: { x: 100, y: 0, z: 800, rz: 0 },
     latchBeltPosition: 0,
     state,
-    robotId,
+    previousState,
+    lastClientId,
     moverId: 0,
     fingerId,
     productType: 1,
-    detectorId: 0,
   };
 }
 
@@ -70,9 +76,9 @@ describe("product history", () => {
 
     expect(history.of(A, 1, 5)).toEqual([
       { at: 0, kind: "detected", text: "Entered the register (detected)" },
-      { at: 200, kind: "assigned", text: "Assigned to robot #10" },
-      { at: 600, kind: "picked", text: "Picked by robot #10, finger 2" },
-      { at: 900, kind: "placed", text: "Placed by robot #10" },
+      { at: 200, kind: "assigned", text: "Assigned to client #10" },
+      { at: 600, kind: "picked", text: "Picked by client #10, finger 2" },
+      { at: 900, kind: "placed", text: "Placed by client #10" },
       { at: 1000, kind: "gone", text: "Left the register" },
     ]);
     // Up to a moment, e.g. during playback.
@@ -80,11 +86,30 @@ describe("product history", () => {
     expect(history.of(A, 1, 99)).toEqual([]);
   });
 
-  it("reads products of recordings made before protocol 11, which name no detector", () => {
-    const { detectorId: _, ...old } = product(5, "detected");
+  it("names the client that changed a product: a station that rejected it, a robot that released it", () => {
+    const withClients: SourceInfo = {
+      ...source,
+      config: {
+        ...config,
+        components: [
+          ...config.components,
+          { ...config.components[0]!, id: 10, name: "Delta 1" },
+          { ...config.components[0]!, type: "station", id: 70, name: "Reject unit", zones: [], bodies: [] } as ConfigMessage["components"][number],
+        ],
+      },
+    };
     const history = new ProductHistory();
-    history.add(0, register(0, [old as Product]), source);
-    expect(history.of(A, 1, 5)[0]!.text).toBe("Entered the register (detected)");
+    history.add(0, register(0, [product(5, "detected"), product(6, "detected")]), withClients);
+    history.add(100, register(0, [product(5, "assigned", 10), product(6, "rejected", 70)]), withClients);
+    // The robot gives the product up: back to detected, the state before was assigned.
+    history.add(200, register(0, [product(5, "detected", 10, 0, "assigned"), product(6, "rejected", 70)]), withClients);
+
+    expect(history.of(A, 1, 5).map((s) => s.text)).toEqual([
+      "Entered the register (detected)",
+      "Assigned to Delta 1",
+      "Released by Delta 1",
+    ]);
+    expect(history.of(A, 1, 6).map((s) => s.text)).toEqual(["Entered the register (detected)", "Rejected by Reject unit"]);
   });
 
   it("names the detector that latched a product", () => {
@@ -99,10 +124,10 @@ describe("product history", () => {
       },
     };
     const history = new ProductHistory();
-    history.add(0, register(0, [{ ...product(5, "detected"), detectorId: 60 }]), withVision);
-    history.add(0, register(0, [{ ...product(5, "detected"), detectorId: 60 }, { ...product(6, "detected"), detectorId: 61 }]), withVision);
+    history.add(0, register(0, [product(5, "detected", 60)]), withVision);
+    history.add(0, register(0, [product(5, "detected", 60), product(6, "detected", 61)]), withVision);
     expect(history.of(A, 1, 5)[0]!.text).toBe("Entered the register (detected by Vision 1)");
-    expect(history.of(A, 1, 6)[0]!.text).toBe("Entered the register (detected by detector #61)");
+    expect(history.of(A, 1, 6)[0]!.text).toBe("Entered the register (detected by client #61)");
   });
 
   it("names the robot from the config, and marks a product that passes the belt end unpicked as missed", () => {
@@ -162,7 +187,7 @@ describe("product history", () => {
     for (const opened of [recording, await Recording.fromFile(await recording.toFile())]) {
       expect(opened.products.of(A, 1, 5, 600).map((s) => s.text)).toEqual([
         "Entered the register (detected)",
-        "Picked by robot #10",
+        "Picked by client #10",
       ]);
     }
   });

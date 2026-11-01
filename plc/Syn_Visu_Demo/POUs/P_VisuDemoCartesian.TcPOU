@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoCartesian" Id="{9e500c46-b805-441c-a815-3807729778a4}" SpecialFunc="None">
+  <POU Name="P_VisuDemoCartesian" Id="{962bd043-8439-470a-b5d0-59471fffd826}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -289,7 +289,7 @@ CASE n_CartPhase OF
 			AND TempProductPose.fX - lr_CART_X <= 600
 			THEN
 				fb_CartInfeed.m_SetProductState(vi_udn_Id := TempProduct.nId, vi_e_State := E_VisuProductState.ASSIGNED,
-					vi_udn_RobotId := fb_Cartesian.m_Id());
+					vi_udn_ClientId := fb_Cartesian.m_Id());
 				udn_CartProduct := TempProduct.nId;
 				(* The gripper's +X in the MCS is pose rz (-90 deg) + C. *)
 				lr_CartPickC := TempProductPose.fRz + 90;
@@ -309,7 +309,7 @@ CASE n_CartPhase OF
 		ELSIF lr_TempProductY > 1000 THEN
 			(* Out of reach: hand it back, it will be missed. *)
 			fb_CartInfeed.m_SetProductState(vi_udn_Id := udn_CartProduct, vi_e_State := E_VisuProductState.DETECTED,
-				vi_udn_RobotId := 0);
+				vi_udn_ClientId := fb_Cartesian.m_Id());
 			udn_CartProduct := 0;
 			n_CartPhase := n_CART_RISE;
 		ELSIF m_Move(vi_lr_X := lr_CART_X_INFEED, vi_lr_Y := lr_TempProductY, vi_lr_Z := lr_CartZ,
@@ -320,7 +320,7 @@ CASE n_CartPhase OF
 				vi_lr_C := lr_CartPickC, vi_lr_A := 0)
 			THEN
 				fb_CartInfeed.m_SetProductState(vi_udn_Id := udn_CartProduct, vi_e_State := E_VisuProductState.PICKED,
-					vi_udn_RobotId := fb_Cartesian.m_Id(), vi_udn_FingerId := 1);
+					vi_udn_ClientId := fb_Cartesian.m_Id(), vi_udn_FingerId := 1);
 				b_CartGrip := TRUE;
 				n_CartPhase := n_CART_LIFT;
 			END_IF
@@ -361,7 +361,7 @@ CASE n_CartPhase OF
 		TempPlacePose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 		TempPlacePose.fRz := -90 + lr_CartC;
 		IF fb_CartOutfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := TempPlacePose,
-			vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_RobotId := fb_Cartesian.m_Id())
+			vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_ClientId := fb_Cartesian.m_Id())
 		THEN
 			DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 		END_IF

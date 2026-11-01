@@ -23,11 +23,12 @@ VAR_GLOBAL CONSTANT
 	   9: zone fCcsOffset, stOriginShift in every config.
 	   10: product type eShape and fCornerRadius.
 	   11: zones without kind, product nDetectorId, vision system and product sensor (ST_VisuDetector).
-	   12: XTS tracks as chains of track modules (straight, quarter curves) with a fault per module. *)
-	VISU_un_PROTOCOL_VERSION			: UINT := 12;
+	   12: XTS tracks as chains of track modules (straight, quarter curves) with a fault per module.
+	   13: product nLastClientId and ePreviousState instead of nRobotId and nDetectorId; station (ST_VisuStation). *)
+	VISU_un_PROTOCOL_VERSION			: UINT := 13;
 	(* Version of this library as the visualisation shows it (manifest sLibraryVersion). Bump together with
 	   _FC_GetVersionSynVisu and the project version. *)
-	VISU_str_LIBRARY_VERSION			: STRING(15) := '5.1.0';
+	VISU_str_LIBRARY_VERSION			: STRING(15) := '6.0.0';
 	VISU_lr_DEG_TO_RAD					: LREAL := 0.017453292519943295;	// [rad/deg] pi / 180
 	VISU_lr_XTS_MODULE_LENGTH			: LREAL := 250;	// [mm] length of an XTS motor module along the track, straight or curve
 END_VAR]]></Declaration>

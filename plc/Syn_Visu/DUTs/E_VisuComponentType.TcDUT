@@ -13,7 +13,8 @@ TYPE E_VisuComponentType :
 	XTS_LOOP := 4,
 	CARTESIAN := 5,
 	VISION := 6,
-	SENSOR := 7
+	SENSOR := 7,
+	STATION := 8
 ) UINT;
 END_TYPE]]></Declaration>
   </DUT>

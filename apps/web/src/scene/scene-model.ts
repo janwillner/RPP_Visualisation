@@ -624,7 +624,11 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
   },
   vision: bodyKit(),
   sensor: bodyKit(),
+  station: bodyKit(),
 };
+
+/** Component types drawn only from the bodies they describe. */
+type BodyComponentType = "vision" | "sensor" | "station";
 
 /** Roles drawn as overlays: on the zones layer, also for their snap points. */
 const OVERLAY_ROLES: ReadonlySet<BodyRole> = new Set(["beam", "fieldOfView"]);
@@ -633,16 +637,16 @@ const OVERLAY_ROLES: ReadonlySet<BodyRole> = new Set(["beam", "fieldOfView"]);
 const roleText = (role: BodyRole) => role.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
 
 /**
- * A component drawn only from the bodies, zones and fault it reports, e.g. a vision system or a product sensor: the
- * scene needs to know nothing else about it.
+ * A component drawn only from the bodies, zones and fault it reports, e.g. a vision system, a product sensor or a
+ * station: the scene needs to know nothing else about it.
  */
-function bodyKit<T extends "vision" | "sensor">(): ComponentKit<T> {
+function bodyKit<T extends BodyComponentType>(): ComponentKit<T> {
   return { build: buildFromBodies };
 }
 
 function buildFromBodies(
-  c: ConfigOf<"vision" | "sensor">,
-  state: StateOf<"vision" | "sensor"> | undefined,
+  c: ConfigOf<BodyComponentType>,
+  state: StateOf<BodyComponentType> | undefined,
   ctx: BuildContext,
 ): void {
   const frame = frameFromPose(c.pose);
@@ -1207,11 +1211,11 @@ function conveyorProducts(
 
     if (p.state === "picked") {
       if (!beyondEnd) result.push(onBelt("placeholder"));
-      const flange = carriers.get(`${p.robotId}:${p.moverId}`);
-      let carrier = p.fingerId > 0 ? carriers.get(`${p.robotId}:${p.moverId}:${p.fingerId}`) : flange;
+      const flange = carriers.get(`${p.lastClientId}:${p.moverId}`);
+      let carrier = p.fingerId > 0 ? carriers.get(`${p.lastClientId}:${p.moverId}:${p.fingerId}`) : flange;
       if (!carrier && flange) {
         // An unknown finger: hang it at the flange so it stays visible.
-        warn(`${c.name}: product #${p.id} hangs from finger ${p.fingerId}, which robot #${p.robotId} does not have`);
+        warn(`${c.name}: product #${p.id} hangs from finger ${p.fingerId}, which robot #${p.lastClientId} does not have`);
         carrier = flange;
       }
       if (carrier) {

@@ -129,11 +129,11 @@ describe("recording: playback at any point in time", () => {
       latchPose: { x: 100, y: 0, z: 800, rz: 0 },
       latchBeltPosition: 0,
       state,
-      robotId: state === "picked" ? 10 : 0,
+      previousState: "detected" as const,
+      lastClientId: state === "picked" ? 10 : 0,
       moverId: 0,
       fingerId: 0,
       productType: 1,
-      detectorId: 0,
     });
     const register = (at: number, products: ReturnType<typeof product>[]): StateMessage => ({
       ...state(A, at),
@@ -253,11 +253,11 @@ describe("recording: timeline events", () => {
       latchPose: { x: 100, y: 0, z: 800, rz: 0 },
       latchBeltPosition: 0,
       state: productState,
-      robotId: productState === "picked" ? 10 : 0,
+      previousState: "detected" as const,
+      lastClientId: productState === "picked" ? 10 : 0,
       moverId: 0,
       fingerId: 0,
       productType: 1,
-      detectorId: 0,
     });
     const recorder = new Recorder([{ sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: config(A) }]);
     // The belt is 3000 mm long and moves 1 mm per ms: a product latched at x = 100 passes the end after 2900 ms.

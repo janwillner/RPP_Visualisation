@@ -19,7 +19,7 @@
     <Company>Syntegon Group</Company>
     <Released>false</Released>
     <Title>SynVisu</Title>
-    <ProjectVersion>5.1.0.0</ProjectVersion>
+    <ProjectVersion>6.0.0.0</ProjectVersion>
     <DefaultNamespace>SynVisu</DefaultNamespace>
   </PropertyGroup>
   <ItemGroup>
@@ -133,6 +133,15 @@
     <Compile Include="DUTs\ST_VisuProductType.TcDUT">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="DUTs\ST_VisuStation.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_VisuStationConfig.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_VisuStationState.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="DUTs\ST_VisuTrackModule.TcDUT">
       <SubType>Code</SubType>
     </Compile>
@@ -169,6 +178,9 @@
     <Compile Include="GVLs\VISU_GlobalConst_Param.TcGVL">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="POUs\_FB_VisuBodyComponent.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="POUs\_FB_VisuCartesian.TcPOU">
       <SubType>Code</SubType>
     </Compile>
@@ -188,6 +200,9 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\_FB_VisuSensor.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FB_VisuStation.TcPOU">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\_FB_VisuVision.TcPOU">

@@ -1,0 +1,367 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="_FB_VisuBodyComponent" Id="{ba86e829-5142-4a10-8513-effb836f98af}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Base of every component drawn from the bodies it describes, with zones on conveyors: detectors<br>
+(_FB_VisuVision, _FB_VisuSensor) and stations (_FB_VisuStation). The visualisation needs no code of its<br>
+own for them. Bodies: m_SetBody, m_SetBodyActive, m_ClearBodies; also the fault (m_SetFault) and the<br>
+origin shift (m_SetOriginShift). m_Register, called every cycle, also stamps the state. A derived FB<br>
+tells where these lie in its contract structure through m_Parts. Not used directly.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 6.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New: body handling of _FB_VisuDetector, shared with stations<br>
+****************************************************************************************************)
+FUNCTION_BLOCK ABSTRACT _FB_VisuBodyComponent EXTENDS _FB_VisuZoneComponent]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_ClearBodies" Id="{0bc19751-14cc-4aee-8e54-e825df983aaf}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Removes all bodies, also those m_Configure described. TRUE if there were any.<br>
+****************************************************************************************************)
+METHOD m_ClearBodies : BOOL
+VAR
+	p_TempPose							: POINTER TO ST_VisuPose;
+	p_TempShift							: POINTER TO ST_VisuPosition;
+	p_TempCount							: POINTER TO UINT;
+	p_TempBodies						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBody;
+	p_TempStates						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBodyState;
+	p_TempTimestamp						: POINTER TO ULINT;
+	p_TempFault							: POINTER TO ST_VisuFault;
+	TempEmpty							: ST_VisuBody;
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ClearBodies := FALSE;
+m_Parts(vo_p_Pose => p_TempPose, vo_p_OriginShift => p_TempShift, vo_p_BodyCount => p_TempCount,
+	vo_p_Bodies => p_TempBodies, vo_p_BodyStates => p_TempStates, vo_p_Timestamp => p_TempTimestamp,
+	vo_p_Fault => p_TempFault);
+IF p_TempCount = 0 OR p_TempBodies = 0 OR p_TempStates = 0 THEN
+	RETURN;
+END_IF
+m_ClearBodies := p_TempCount^ > 0;
+FOR un_TempIndex := 0 TO VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1 DO
+	p_TempBodies^[un_TempIndex] := TempEmpty;
+	p_TempStates^[un_TempIndex].bActive := FALSE;
+END_FOR
+p_TempCount^ := 0;
+IF m_ClearBodies THEN
+	m_NotifyConfigChanged();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Parts" Id="{c16ef92f-e016-42ac-aa51-a88c228e691d}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Where the pose, origin shift, bodies, body states, timestamp and fault lie in the derived FB's contract<br>
+structure (stConfig.stPose, stConfig.stOriginShift, stConfig.nBodyCount, stConfig.aBodies,<br>
+stState.aBodyStates, stState.nTimestamp, stState.stFault).<br>
+****************************************************************************************************)
+METHOD PROTECTED ABSTRACT m_Parts : BOOL
+VAR_OUTPUT
+	vo_p_Pose							: POINTER TO ST_VisuPose;
+	vo_p_OriginShift					: POINTER TO ST_VisuPosition;
+	vo_p_BodyCount						: POINTER TO UINT;
+	vo_p_Bodies							: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBody;
+	vo_p_BodyStates						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBodyState;
+	vo_p_Timestamp						: POINTER TO ULINT;
+	vo_p_Fault							: POINTER TO ST_VisuFault;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Register" Id="{421b7a7d-27c2-47e0-9fef-8cbd38e20148}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+As _FB_VisuComponent.m_Register; since such a component may have no cyclic value of its own to report,<br>
+this call, made every cycle, also stamps its state with the cycle's DC time.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for vi_udn_Id = 0, an id already used by a different entry, or a full manifest.<br>
+****************************************************************************************************)
+METHOD m_Register : BOOL
+VAR_IN_OUT
+	vio_Manifest						: ST_VisuManifest;	// GVL_Visu.stManifest of the application
+END_VAR
+VAR_INPUT
+	vi_udn_Id							: UDINT;	// [-] unique, > 0
+	vi_str_Name							: STRING(80);	// display name
+	vi_str_Path							: STRING(255);	// symbol path of this instance's vo_Visu, e.g. 'MAIN.fb_Vision.vo_Visu'
+END_VAR
+VAR
+	p_TempPose							: POINTER TO ST_VisuPose;
+	p_TempShift							: POINTER TO ST_VisuPosition;
+	p_TempCount							: POINTER TO UINT;
+	p_TempBodies						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBody;
+	p_TempStates						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBodyState;
+	p_TempTimestamp						: POINTER TO ULINT;
+	p_TempFault							: POINTER TO ST_VisuFault;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Register := SUPER^.m_Register(vio_Manifest := vio_Manifest, vi_udn_Id := vi_udn_Id, vi_str_Name := vi_str_Name,
+	vi_str_Path := vi_str_Path);
+m_Parts(vo_p_Pose => p_TempPose, vo_p_OriginShift => p_TempShift, vo_p_BodyCount => p_TempCount,
+	vo_p_Bodies => p_TempBodies, vo_p_BodyStates => p_TempStates, vo_p_Timestamp => p_TempTimestamp,
+	vo_p_Fault => p_TempFault);
+IF p_TempTimestamp <> 0 THEN
+	p_TempTimestamp^ := m_DcTime();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetBody" Id="{e0f17dde-edca-42f4-91b3-17df33cec88b}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Describes body vi_un_Body (1-based), a solid the component is drawn from: standing on its bottom centre<br>
+vi_Pose in the component's frame and extending along its local +Z. The body count grows to vi_un_Body.<br>
+m_Configure of _FB_VisuVision and _FB_VisuSensor sets the first bodies; further ones may be added,<br>
+e.g. a bracket. A station describes all of its bodies with this. TRUE if set; the config version only<br>
+changes when a value does.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE outside 1..VISU_GlobalConst_Param.VISU_un_MAX_BODIES.<br>
+****************************************************************************************************)
+METHOD m_SetBody : BOOL
+VAR_INPUT
+	vi_un_Body							: UINT;	// [-] 1-based
+	vi_e_Shape							: E_VisuBodyShape;
+	vi_e_Role							: E_VisuBodyRole;	// sets its look
+	vi_Pose								: ST_VisuPose;	// bottom centre in the component's frame, not MCS
+	vi_lr_Length						: LREAL;	// [mm] along the body's local X; a cylinder's diameter
+	vi_lr_Width							: LREAL;	// [mm] along the body's local Y; a cylinder's diameter
+	vi_lr_Height						: LREAL;	// [mm] along the body's local Z
+	vi_lr_TopLength						: LREAL := 0;	// [mm] top face of a FRUSTUM
+	vi_lr_TopWidth						: LREAL := 0;	// [mm] top face of a FRUSTUM
+END_VAR
+VAR
+	p_TempPose							: POINTER TO ST_VisuPose;
+	p_TempShift							: POINTER TO ST_VisuPosition;
+	p_TempCount							: POINTER TO UINT;
+	p_TempBodies						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBody;
+	p_TempStates						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBodyState;
+	p_TempTimestamp						: POINTER TO ULINT;
+	p_TempFault							: POINTER TO ST_VisuFault;
+	b_TempChanged						: BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetBody := FALSE;
+IF vi_un_Body = 0 OR vi_un_Body > VISU_GlobalConst_Param.VISU_un_MAX_BODIES THEN
+	RETURN;
+END_IF
+m_Parts(vo_p_Pose => p_TempPose, vo_p_OriginShift => p_TempShift, vo_p_BodyCount => p_TempCount,
+	vo_p_Bodies => p_TempBodies, vo_p_BodyStates => p_TempStates, vo_p_Timestamp => p_TempTimestamp,
+	vo_p_Fault => p_TempFault);
+IF p_TempCount = 0 OR p_TempBodies = 0 THEN
+	RETURN;
+END_IF
+
+(* Member by member: a memory compare would also see the padding of the structure. *)
+b_TempChanged := vi_un_Body > p_TempCount^
+	OR p_TempBodies^[vi_un_Body - 1].eShape <> vi_e_Shape
+	OR p_TempBodies^[vi_un_Body - 1].eRole <> vi_e_Role
+	OR Tc2_System.MEMCMP(ADR(p_TempBodies^[vi_un_Body - 1].stPose), ADR(vi_Pose), SIZEOF(vi_Pose)) <> 0
+	OR p_TempBodies^[vi_un_Body - 1].fLength <> vi_lr_Length
+	OR p_TempBodies^[vi_un_Body - 1].fWidth <> vi_lr_Width
+	OR p_TempBodies^[vi_un_Body - 1].fHeight <> vi_lr_Height
+	OR p_TempBodies^[vi_un_Body - 1].fTopLength <> vi_lr_TopLength
+	OR p_TempBodies^[vi_un_Body - 1].fTopWidth <> vi_lr_TopWidth;
+IF b_TempChanged THEN
+	p_TempBodies^[vi_un_Body - 1].eShape := vi_e_Shape;
+	p_TempBodies^[vi_un_Body - 1].eRole := vi_e_Role;
+	p_TempBodies^[vi_un_Body - 1].stPose := vi_Pose;
+	p_TempBodies^[vi_un_Body - 1].fLength := vi_lr_Length;
+	p_TempBodies^[vi_un_Body - 1].fWidth := vi_lr_Width;
+	p_TempBodies^[vi_un_Body - 1].fHeight := vi_lr_Height;
+	p_TempBodies^[vi_un_Body - 1].fTopLength := vi_lr_TopLength;
+	p_TempBodies^[vi_un_Body - 1].fTopWidth := vi_lr_TopWidth;
+	p_TempCount^ := MAX(p_TempCount^, vi_un_Body);
+	m_NotifyConfigChanged();
+END_IF
+m_SetBody := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetBodyActive" Id="{78590352-c05e-4d03-95c4-ffa9dc85b141}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Reports whether body vi_un_Body (1-based) is active: it then lights up, e.g. an interrupted beam, a field<br>
+of view while the camera triggers, a reject unit's pusher while it rejects. Also stamps the state with the<br>
+cycle's DC time.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE outside 1..VISU_GlobalConst_Param.VISU_un_MAX_BODIES.<br>
+****************************************************************************************************)
+METHOD m_SetBodyActive : BOOL
+VAR_INPUT
+	vi_un_Body							: UINT;	// [-] 1-based
+	vi_b_Active							: BOOL;
+END_VAR
+VAR
+	p_TempPose							: POINTER TO ST_VisuPose;
+	p_TempShift							: POINTER TO ST_VisuPosition;
+	p_TempCount							: POINTER TO UINT;
+	p_TempBodies						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBody;
+	p_TempStates						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBodyState;
+	p_TempTimestamp						: POINTER TO ULINT;
+	p_TempFault							: POINTER TO ST_VisuFault;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetBodyActive := FALSE;
+IF vi_un_Body = 0 OR vi_un_Body > VISU_GlobalConst_Param.VISU_un_MAX_BODIES THEN
+	RETURN;
+END_IF
+m_Parts(vo_p_Pose => p_TempPose, vo_p_OriginShift => p_TempShift, vo_p_BodyCount => p_TempCount,
+	vo_p_Bodies => p_TempBodies, vo_p_BodyStates => p_TempStates, vo_p_Timestamp => p_TempTimestamp,
+	vo_p_Fault => p_TempFault);
+IF p_TempStates = 0 OR p_TempTimestamp = 0 THEN
+	RETURN;
+END_IF
+p_TempStates^[vi_un_Body - 1].bActive := vi_b_Active;
+p_TempTimestamp^ := m_DcTime();
+m_SetBodyActive := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetFault" Id="{6bfe764c-90ab-43ff-aa12-2a188026bc50}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets or clears the fault of the component: drawn red with the message while active. The fault stays until<br>
+it is cleared with m_SetFault(vi_b_Active := FALSE, vi_str_Message := ''). TRUE if set.<br>
+****************************************************************************************************)
+METHOD m_SetFault : BOOL
+VAR_INPUT
+	vi_b_Active							: BOOL;	// TRUE: fault active
+	vi_str_Message						: STRING(80);	// shown to the operator; empty shows 'Fault'
+END_VAR
+VAR
+	p_TempPose							: POINTER TO ST_VisuPose;
+	p_TempShift							: POINTER TO ST_VisuPosition;
+	p_TempCount							: POINTER TO UINT;
+	p_TempBodies						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBody;
+	p_TempStates						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBodyState;
+	p_TempTimestamp						: POINTER TO ULINT;
+	p_TempFault							: POINTER TO ST_VisuFault;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetFault := FALSE;
+m_Parts(vo_p_Pose => p_TempPose, vo_p_OriginShift => p_TempShift, vo_p_BodyCount => p_TempCount,
+	vo_p_Bodies => p_TempBodies, vo_p_BodyStates => p_TempStates, vo_p_Timestamp => p_TempTimestamp,
+	vo_p_Fault => p_TempFault);
+IF p_TempFault = 0 THEN
+	RETURN;
+END_IF
+p_TempFault^.bActive := vi_b_Active;
+p_TempFault^.sMessage := vi_str_Message;
+m_SetFault := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetOriginShift" Id="{33e94a30-95c3-45bc-a229-458848c33ad9}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Moves the component's shown coordinate system (origin triad, local measuring coordinates) away from its<br>
+pose, in its local frame. The bodies stay relative to the pose. TRUE if anything changed.<br>
+****************************************************************************************************)
+METHOD m_SetOriginShift : BOOL
+VAR_INPUT
+	vi_lr_X								: LREAL;	// [mm] along the component's local X
+	vi_lr_Y								: LREAL := 0;	// [mm] along the component's local Y
+	vi_lr_Z								: LREAL := 0;	// [mm] along the component's local Z
+END_VAR
+VAR
+	p_TempPose							: POINTER TO ST_VisuPose;
+	p_TempShift							: POINTER TO ST_VisuPosition;
+	p_TempCount							: POINTER TO UINT;
+	p_TempBodies						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBody;
+	p_TempStates						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBodyState;
+	p_TempTimestamp						: POINTER TO ULINT;
+	p_TempFault							: POINTER TO ST_VisuFault;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetOriginShift := FALSE;
+m_Parts(vo_p_Pose => p_TempPose, vo_p_OriginShift => p_TempShift, vo_p_BodyCount => p_TempCount,
+	vo_p_Bodies => p_TempBodies, vo_p_BodyStates => p_TempStates, vo_p_Timestamp => p_TempTimestamp,
+	vo_p_Fault => p_TempFault);
+IF p_TempShift = 0 THEN
+	RETURN;
+END_IF
+m_SetOriginShift := p_TempShift^.fX <> vi_lr_X OR p_TempShift^.fY <> vi_lr_Y OR p_TempShift^.fZ <> vi_lr_Z;
+IF m_SetOriginShift THEN
+	p_TempShift^.fX := vi_lr_X;
+	p_TempShift^.fY := vi_lr_Y;
+	p_TempShift^.fZ := vi_lr_Z;
+	m_NotifyConfigChanged();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetPose" Id="{aeb25358-814b-4c79-bac0-9a9ebd94f4e0}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets the component's pose, for m_Configure of the derived FB. TRUE if it changed.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_SetPose : BOOL
+VAR_INPUT
+	vi_Pose								: ST_VisuPose;	// MCS
+END_VAR
+VAR
+	p_TempPose							: POINTER TO ST_VisuPose;
+	p_TempShift							: POINTER TO ST_VisuPosition;
+	p_TempCount							: POINTER TO UINT;
+	p_TempBodies						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBody;
+	p_TempStates						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBodyState;
+	p_TempTimestamp						: POINTER TO ULINT;
+	p_TempFault							: POINTER TO ST_VisuFault;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetPose := FALSE;
+m_Parts(vo_p_Pose => p_TempPose, vo_p_OriginShift => p_TempShift, vo_p_BodyCount => p_TempCount,
+	vo_p_Bodies => p_TempBodies, vo_p_BodyStates => p_TempStates, vo_p_Timestamp => p_TempTimestamp,
+	vo_p_Fault => p_TempFault);
+IF p_TempPose = 0 THEN
+	RETURN;
+END_IF
+(* ST_VisuPose holds LREALs only, so a memory compare sees no padding. *)
+m_SetPose := Tc2_System.MEMCMP(ADR(vi_Pose), p_TempPose, SIZEOF(vi_Pose)) <> 0;
+IF m_SetPose THEN
+	p_TempPose^ := vi_Pose;
+	m_NotifyConfigChanged();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

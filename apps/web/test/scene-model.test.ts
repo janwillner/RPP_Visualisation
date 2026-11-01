@@ -11,6 +11,7 @@ import type {
   Product,
   ProductType,
   SensorConfig,
+  StationConfig,
   StateMessage,
   VisionConfig,
   XtsGantryConfig,
@@ -100,11 +101,11 @@ function product(overrides: Partial<Product> = {}): Product {
     latchPose: { x: 0, y: 0, z: 800, rz: 0 },
     latchBeltPosition: 0,
     state: "detected",
-    robotId: 0,
+    previousState: "detected",
+    lastClientId: 0,
     moverId: 0,
     fingerId: 0,
     productType: 1,
-    detectorId: 0,
     ...overrides,
   };
 }
@@ -303,7 +304,7 @@ describe("scene model: gripper fingers", () => {
   });
 
   it("hangs a product picked with a finger id below that finger's grip point, turned with the finger", () => {
-    const picked = product({ state: "picked", robotId: 20, fingerId: 1, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } });
+    const picked = product({ state: "picked", lastClientId: 20, fingerId: 1, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } });
     const carried = at([fingerAt(1500, 0, 1000, 90)], [picked]).products.find((p) => p.display === "atTcp")!;
 
     // Grip point 50 mm below the finger top, the 40 mm product's centre 20 mm below that.
@@ -312,13 +313,13 @@ describe("scene model: gripper fingers", () => {
   });
 
   it("hangs a product with finger id 0 at the flange", () => {
-    const picked = product({ state: "picked", robotId: 20, fingerId: 0 });
+    const picked = product({ state: "picked", lastClientId: 20, fingerId: 0 });
     const carried = at([fingerAt(1500, 0, 1000)], [picked]).products.find((p) => p.display === "atTcp")!;
     closeTo(carried.transform.position, [1.5, 0.98, 0]);
   });
 
   it("hangs a product from an unknown finger at the flange and warns", () => {
-    const picked = product({ state: "picked", robotId: 20, fingerId: 3 });
+    const picked = product({ state: "picked", lastClientId: 20, fingerId: 3 });
     const scene = at([fingerAt(1500, 0, 1000)], [picked]);
     closeTo(scene.products.find((p) => p.display === "atTcp")!.transform.position, [1.5, 0.98, 0]);
     expect(scene.warnings).toEqual([expect.stringMatching(/finger 3/)]);
@@ -368,7 +369,7 @@ describe("scene model: product lifecycle", () => {
     buildScene(config(belt, robot), [snapshot(0, [conveyorState(beltPosition, [p]), deltaState(tcp)])], 0).products;
 
   it("hangs a picked product below its robot's TCP and leaves a placeholder travelling on the belt", () => {
-    const shown = show(product({ state: "picked", robotId: 20, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } }), 200);
+    const shown = show(product({ state: "picked", lastClientId: 20, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } }), 200);
 
     expect(shown.map((p) => p.display).sort()).toEqual(["atTcp", "placeholder"]);
     // The product's top touches the TCP: centre 20 mm (half of 40 mm) below.
@@ -379,12 +380,12 @@ describe("scene model: product lifecycle", () => {
 
   it("removes the placeholder once it passes the belt end, without flagging it as missed", () => {
     // Latched at belt x = 1000, travelled 2100 mm -> belt x = 3100 beyond the 3000 mm belt.
-    const shown = show(product({ state: "picked", robotId: 20, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } }), 2100);
+    const shown = show(product({ state: "picked", lastClientId: 20, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } }), 2100);
     expect(shown.map((p) => p.display)).toEqual(["atTcp"]);
   });
 
   it("shows a placed product lying on the belt it was put down on, and hides it past the belt end", () => {
-    const placed = product({ state: "placed", robotId: 20, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } });
+    const placed = product({ state: "placed", lastClientId: 20, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } });
     const shown = show(placed, 200);
     expect(shown.map((p) => p.display)).toEqual(["normal"]);
     closeTo(shown[0]!.transform.position, [1.2, 0.82, 0]);
@@ -650,7 +651,7 @@ describe("scene model: measure mode", () => {
 
   it("offers a carried product at the TCP but not its placeholder", () => {
     const robot = deltaConfig();
-    const picked = product({ state: "picked", robotId: 20 });
+    const picked = product({ state: "picked", lastClientId: 20 });
     const tcp = { x: 1500, y: 0, z: 1000 };
     const scene = buildScene(config(conveyorConfig(), robot), [snapshot(0, [conveyorState(0, [picked]), deltaState(tcp)])], 0);
     const productPoints = scene.snapPoints.filter((s) => s.label.startsWith("Product #7"));
@@ -776,7 +777,7 @@ describe("scene model: XTS gantry", () => {
 
   it("hangs a picked product without finger below the gripper flange of its mover", () => {
     const belt = conveyorConfig();
-    const picked = product({ state: "picked", robotId: 30, moverId: 1 });
+    const picked = product({ state: "picked", lastClientId: 30, moverId: 1 });
     const products = buildScene(
       config(belt, gantryConfig()),
       [snapshot(0, [conveyorState(0, [picked]), gantryState(-100, [mover1])])],
@@ -882,7 +883,7 @@ describe("scene model: Cartesian robot", () => {
   });
 
   it("hangs a picked product without finger at the flange", () => {
-    const picked = product({ state: "picked", robotId: 50, moverId: 0 });
+    const picked = product({ state: "picked", lastClientId: 50, moverId: 0 });
     const products = buildScene(
       config(conveyorConfig(), cartesianConfig()),
       [snapshot(0, [conveyorState(0, [picked]), cartesianState()])],
@@ -1032,7 +1033,7 @@ describe("scene model: XTS loop", () => {
   });
 
   it("hangs a picked product below the tool point of its mover", () => {
-    const picked = product({ state: "picked", robotId: 40, moverId: 11 });
+    const picked = product({ state: "picked", lastClientId: 40, moverId: 11 });
     const products = buildScene(
       config(conveyorConfig(), loopConfig()),
       [snapshot(0, [conveyorState(0, [picked]), loopState([{ id: 11, position: 500 }])])],
@@ -1422,5 +1423,53 @@ describe("scene model: detectors drawn from their bodies", () => {
     const scene = buildScene(config(conveyorConfig(), visionConfig()), [], 0, new Set([60]));
     expect(scene.bodies).toEqual([]);
     expect(scene.zones).toEqual([]);
+  });
+});
+
+describe("scene model: stations drawn from their bodies", () => {
+  /** A reject unit beside the belt: a housing and the pusher plate at the belt edge, its zone a line across the belt. */
+  const rejectUnit: StationConfig = {
+    type: "station",
+    id: 70,
+    sourceId: "plc1",
+    name: "Reject unit",
+    pose: { x: 2400, y: -230, z: 0, rx: 0, ry: 0, rz: 0 },
+    zones: [{ conveyorId: 1, start: 2400, end: 2400, allocationOffset: 0, ccsOffset: 2400 }],
+    bodies: [
+      { shape: "box", role: "structure", pose: { x: 0, y: -70, z: 0, rx: 0, ry: 0, rz: 0 }, length: 160, width: 140, height: 920, topLength: 0, topWidth: 0 },
+      { shape: "box", role: "structure", pose: { x: 0, y: 15, z: 810, rx: 0, ry: 0, rz: 0 }, length: 120, width: 30, height: 50, topLength: 0, topWidth: 0 },
+    ],
+    originShift: { x: 0, y: 0, z: 0 },
+  };
+
+  it("draws its bodies, lights the pusher while it works, and draws its zone and snap points like a detector's", () => {
+    const scene = buildScene(
+      config(conveyorConfig(), rejectUnit),
+      [snapshot(0, [{ type: "station", id: 70, timestamp: "0", bodies: [{ active: false }, { active: true }], fault: null }])],
+      0,
+    );
+    expect(scene.bodies.map((b) => [b.componentId, b.role, b.active])).toEqual([
+      [70, "structure", false],
+      [70, "structure", true],
+    ]);
+    closeTo(scene.bodies[1]!.transform.position, [2.4, 0.81, 0.215]);
+    expect(scene.zones.map((z) => [z.componentId, z.length])).toEqual([[70, 0]]);
+    expect(scene.snapPoints.filter((p) => p.local.componentId === 70).map((p) => p.label)).toEqual([
+      "Reject unit · origin",
+      "Reject unit · body 1 (structure)",
+      "Reject unit · body 2 (structure)",
+    ]);
+  });
+
+  it("carries a fault with its label above its highest body", () => {
+    const scene = buildScene(
+      config(conveyorConfig(), rejectUnit),
+      [snapshot(0, [{ type: "station", id: 70, timestamp: "0", bodies: [], fault: { message: "Pusher not in home position" } }])],
+      0,
+    );
+    expect(scene.faults).toEqual([{ componentId: 70, messages: ["Pusher not in home position"] }]);
+    expect(scene.bodies.every((b) => b.faulted)).toBe(true);
+    // Above the housing's top at 920 mm.
+    expect(scene.faultLabels[0]!.position[1]).toBeGreaterThan(0.92);
   });
 });

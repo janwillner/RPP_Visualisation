@@ -13,7 +13,7 @@ Position and orientation of something in the MCS.
 _Avoid_: location, placement
 
 **Component**:
-One visualised part of a machine that the PLC registers: a conveyor, a Delta robot, an XTS gantry, an XTS loop, a Cartesian robot, a vision system or a product sensor.
+One visualised part of a machine that the PLC registers: a conveyor, a Delta robot, an XTS gantry, an XTS loop, a Cartesian robot, a vision system, a product sensor or a station.
 _Avoid_: unit, device, module
 
 **Recording**:
@@ -29,11 +29,11 @@ A moment of a recording worth finding again, marked on its timeline: a fault app
 _Avoid_: alarm, bookmark
 
 **Product history**:
-What happened to one product while the visualisation watched it: when it entered its conveyor's register, was assigned, picked by which robot, placed or rejected, missed, and when it left the register.
+What happened to one product while the visualisation watched it: when it entered its conveyor's register, was assigned, picked, placed, released or rejected and by which client, missed, and when it left the register.
 _Avoid_: product trace, tracking log
 
 **Metrics**:
-Figures of the last minute counted from what happened to the products: picks per minute per robot, products entering each conveyor per minute, missed and rejected products, and the share of missed products.
+Figures of the last minute counted from what happened to the products: what each client did per minute (detected, picked, placed, rejected), products entering each conveyor per minute, missed and rejected products, and the share of missed products.
 _Avoid_: KPIs, OEE (the visualisation does not know the machine's availability or quality)
 
 **Source**:
@@ -69,12 +69,16 @@ _Avoid_: encoder value (when meaning the position itself)
 The PLC's list of products currently tracked on a conveyor.
 _Avoid_: data register, product buffer
 
+**Client**:
+A component that works on the products of a conveyor: a robot, a detector or a station. Every product names the client that changed it last and the state it had before.
+_Avoid_: consumer, handler
+
 **Product type**:
 The size and shape a conveyor's products can have: a box, a cylinder (round, or oval when its two diameters differ) or a rounded box (a box with rounded vertical edges, such as a pouch or flow pack). Every product in a register refers to one.
 _Avoid_: format, article
 
 **Latch**:
-The moment a product is detected on a conveyor, by the detector that saw it if one is named. Its pose and the belt position at that moment are stored; the product's current position is the latch pose moved by the belt travel since.
+The moment a product is detected on a conveyor, by the client that latched it (a detector or a station) if one is named. Its pose and the belt position at that moment are stored; the product's current position is the latch pose moved by the belt travel since.
 _Avoid_: trigger, capture
 
 **Placeholder**:
@@ -191,7 +195,7 @@ _Avoid_: allocation end, reservation limit
 Where a component's coordinate system for one conveyor lies along that conveyor, given per zone as a belt coordinate.
 _Avoid_: client position, tracking origin
 
-## Detectors
+## Detectors and stations
 
 **Detector**:
 A component that detects products on a conveyor in its zones: a vision system or a product sensor. The PLC latches what it detects.
@@ -204,6 +208,10 @@ _Avoid_: camera (when meaning the whole component), scanner
 **Product sensor**:
 A sensor at a conveyor that detects products at one point, e.g. a light barrier whose beam a product interrupts.
 _Avoid_: initiator, photo-eye
+
+**Station**:
+A client at a conveyor that works on the products in its zones without kinematics of its own, e.g. a reject unit, a labeller, a printer or a check weigher. It is drawn from the bodies the PLC describes.
+_Avoid_: generic component, unit, device
 
 **Body**:
 One solid a component is drawn from as its PLC describes it: a box, a cylinder or a frustum with a role (a machine part, a sensing part, a beam, a field of view).

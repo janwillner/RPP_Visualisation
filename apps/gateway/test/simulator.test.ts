@@ -30,6 +30,7 @@ describe("simulator", () => {
       "conveyor",
       "delta",
       "sensor",
+      "station",
       "vision",
       "xtsGantry",
       "xtsLoop",
@@ -38,13 +39,13 @@ describe("simulator", () => {
     const states = messages.filter((m): m is StateMessage => m.kind === "state");
     expect(states).toHaveLength(3000);
     const products = states.flatMap((s) => s.components.flatMap((c) => (c.type === "conveyor" ? c.products : [])));
-    expect(new Set(products.map((p) => p.state))).toEqual(new Set(["detected", "assigned", "picked", "placed"]));
+    expect(new Set(products.map((p) => p.state))).toEqual(new Set(["detected", "assigned", "picked", "placed", "rejected"]));
 
     // The vision system latches the Delta infeed's products, the light barrier the Cartesian infeed's, and its beam
-    // lights up while a product passes it.
+    // lights up while a product passes it. A product nobody changed since its latch names the client that latched it.
     const idOf = (name: string) => config.components.find((c) => c.name === name)!.id;
     const detectors = (belt: string) =>
-      new Set(states.flatMap((s) => s.components.flatMap((c) => (c.id === idOf(belt) && c.type === "conveyor" ? c.products.map((p) => p.detectorId) : []))));
+      new Set(states.flatMap((s) => s.components.flatMap((c) => (c.id === idOf(belt) && c.type === "conveyor" ? c.products.filter((p) => p.state === "detected" && p.previousState === "detected").map((p) => p.lastClientId) : []))));
     expect(detectors("Infeed")).toEqual(new Set([idOf("Vision 1")]));
     expect(detectors("Cartesian infeed")).toEqual(new Set([idOf("Light barrier")]));
     const beam = states.map((s) => s.components.find((c) => c.type === "sensor"));
@@ -54,9 +55,19 @@ describe("simulator", () => {
     const longest = lit.reduce((run, on, i) => (on ? Math.max(run, lit.slice(0, i + 1).reverse().findIndex((x) => !x)) : run), 0);
     expect(longest).toBeGreaterThan(30);
 
+    // The reject unit on the Delta outfeed rejects placed products: the change names it and the state before, and its
+    // pusher lights up while it pushes one off.
+    const rejected = products.filter((p) => p.state === "rejected");
+    expect(rejected.length).toBeGreaterThan(0);
+    expect(new Set(rejected.map((p) => `${p.previousState} by ${p.lastClientId}`))).toEqual(
+      new Set([`placed by ${idOf("Reject unit")}`]),
+    );
+    const pusher = states.map((s) => s.components.find((c) => c.type === "station"));
+    expect(new Set(pusher.map((c) => c?.type === "station" && c.bodies[1]!.active))).toEqual(new Set([true, false]));
+
     // The loop and the gantry carry products on their movers and hand them on to their own outfeeds.
     const byId = new Map(config.components.map((c) => [c.id, c.type]));
-    const carriedBy = new Set(products.filter((p) => p.state === "picked" && p.moverId > 0).map((p) => byId.get(p.robotId)));
+    const carriedBy = new Set(products.filter((p) => p.state === "picked" && p.moverId > 0).map((p) => byId.get(p.lastClientId)));
     expect(carriedBy).toEqual(new Set(["xtsLoop", "xtsGantry"]));
     const last = states.at(-1)!.components;
     const productsOn = (name: string) => {
@@ -71,7 +82,7 @@ describe("simulator", () => {
     // The Cartesian robot carries products at its cup (finger 1, no mover), tilting the gripper while it places them.
     const cartesianId = config.components.find((c) => c.type === "cartesian")!.id;
     expect(
-      products.some((p) => p.state === "picked" && p.robotId === cartesianId && p.moverId === 0 && p.fingerId === 1),
+      products.some((p) => p.state === "picked" && p.lastClientId === cartesianId && p.moverId === 0 && p.fingerId === 1),
     ).toBe(true);
     const cartesianStates = states.flatMap((s) => s.components.filter((c) => c.type === "cartesian"));
     const cupTilt = cartesianStates.map((c) => (c.type === "cartesian" ? c.fingers[0]!.pose.rx : 0));

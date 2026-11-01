@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoFxx" Id="{22918559-f8eb-4c7f-bcc9-42a3db4120ca}" SpecialFunc="None">
+  <POU Name="P_VisuDemoFxx" Id="{0f3a3d58-042c-4930-8408-cdc3fb055b5a}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -303,7 +303,7 @@ IF b_TempHeadReady THEN
 		AND lr_TempMinTrack - lr_TempX >= lr_LOOP_SLOT
 		THEN
 			fb_FxxInfeed.m_SetProductState(vi_udn_Id := TempProduct.nId, vi_e_State := E_VisuProductState.ASSIGNED,
-				vi_udn_RobotId := fb_Fxx.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempHead + 1));
+				vi_udn_ClientId := fb_Fxx.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempHead + 1));
 			udn_LoopProduct[n_TempHead] := TempProduct.nId;
 			n_LoopMode[n_TempHead] := n_LOOP_TRACK;
 		END_IF
@@ -328,7 +328,7 @@ FOR n_TempI := 0 TO n_LOOP_MOVERS - 1 DO
 				lr_LoopS[n_TempI] := TempPose.fX - lr_LOOP_X;
 				IF lr_LoopS[n_TempI] >= lr_LOOP_GRIP AND TempProduct.eState = E_VisuProductState.ASSIGNED THEN
 					fb_FxxInfeed.m_SetProductState(vi_udn_Id := TempProduct.nId, vi_e_State := E_VisuProductState.PICKED,
-						vi_udn_RobotId := fb_Fxx.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempI + 1), vi_udn_FingerId := 1);
+						vi_udn_ClientId := fb_Fxx.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempI + 1), vi_udn_FingerId := 1);
 				END_IF
 				IF lr_LoopS[n_TempI] >= lr_LOOP_RELEASE THEN
 					n_LoopMode[n_TempI] := n_LOOP_DELIVER;
@@ -351,7 +351,7 @@ FOR n_TempI := 0 TO n_LOOP_MOVERS - 1 DO
 				TempLatch.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 				TempLatch.fRz := lr_TempRz;
 				IF fb_FxxOutfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := TempLatch,
-					vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_RobotId := fb_Fxx.m_Id())
+					vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_ClientId := fb_Fxx.m_Id())
 				THEN
 					DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 				END_IF

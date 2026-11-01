@@ -71,6 +71,8 @@ export const SOLID = {
   gripperActive: STATUS.online,
   /** A detector's sensing part, e.g. a camera lens or a light barrier head. */
   sensor: "#26c6da",
+  /** A machine part a component reports as active, e.g. a reject unit's pusher while it rejects. */
+  bodyActive: STATUS.online,
   /** Fine outline along the edges of solid parts. */
   edge: "#0b0e12",
 } as const;

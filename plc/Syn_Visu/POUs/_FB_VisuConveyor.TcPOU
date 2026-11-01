@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuConveyor" Id="{08aba5cf-a8b3-4190-b406-3418712f6385}" SpecialFunc="None">
+  <POU Name="_FB_VisuConveyor" Id="{88ac60b2-4f27-46dc-93cf-590d64787b8a}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -177,9 +177,10 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 Adds a product at the current belt position. Call m_SetBeltPosition first in the cycle,<br>
 or pass the belt position at the latch moment in vi_lr_LatchBeltPosition.<br>
-A product arriving on the conveyor enters as DETECTED (default). A product a robot puts down onto it<br>
-(outfeed, tray, back onto the same belt) enters as PLACED with that robot's id: the visualisation<br>
-shows a DETECTED or ASSIGNED product passing the belt end as missed.<br>
+A product arriving on the conveyor enters as DETECTED (default), naming the client that latched it (vision<br>
+system, sensor, station). A product a robot puts down onto it (outfeed, tray, back onto the same belt)<br>
+enters as PLACED with that robot as client: the visualisation shows a DETECTED or ASSIGNED product passing<br>
+the belt end as missed. Its previous state is the state it enters in.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
 FALSE for vi_udn_Id = 0, an id already in the register, or a full register.<br>
@@ -192,8 +193,7 @@ VAR_INPUT
 	vi_lr_LatchBeltPosition				: LREAL := 0;	// [mm] used only if vi_b_UseLatchBeltPosition
 	vi_b_UseLatchBeltPosition			: BOOL := FALSE;	// FALSE: latch at the current belt position
 	vi_e_State							: E_VisuProductState := E_VisuProductState.DETECTED;	// PLACED for a product put down by a robot
-	vi_udn_RobotId						: UDINT := 0;	// [-] manifest id of the robot that put it down, 0 = none
-	vi_udn_DetectorId					: UDINT := 0;	// [-] manifest id of the vision system or sensor that detected it, 0 = none
+	vi_udn_ClientId						: UDINT := 0;	// [-] manifest id of the client that latched it or put it down, 0 = none
 END_VAR
 VAR
 	un_TempIndex						: UINT;
@@ -213,11 +213,11 @@ ELSE
 	vo_Visu.stState.aProducts[un_TempIndex].fLatchBeltPosition := vo_Visu.stState.fBeltPosition;
 END_IF
 vo_Visu.stState.aProducts[un_TempIndex].eState := vi_e_State;
-vo_Visu.stState.aProducts[un_TempIndex].nRobotId := vi_udn_RobotId;
+vo_Visu.stState.aProducts[un_TempIndex].ePreviousState := vi_e_State;
+vo_Visu.stState.aProducts[un_TempIndex].nLastClientId := vi_udn_ClientId;
 vo_Visu.stState.aProducts[un_TempIndex].nMoverId := 0;
 vo_Visu.stState.aProducts[un_TempIndex].nFingerId := 0;
 vo_Visu.stState.aProducts[un_TempIndex].nProductType := vi_udn_ProductType;
-vo_Visu.stState.aProducts[un_TempIndex].nDetectorId := vi_udn_DetectorId;
 vo_Visu.stState.nProductCount := un_TempIndex + 1;
 vo_Visu.stState.nTimestamp := m_DcTime();
 m_LatchProduct := TRUE;]]></ST>
@@ -513,13 +513,15 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Changes a product's state and assigned robot. FALSE if the product is not in the register.<br>
+Changes a product's state and names the client that changed it: the robot that is assigned to, picks,<br>
+places or releases it, the station that rejects it. The state before is kept as ePreviousState when the<br>
+state changes; calling it again with the same state keeps it. FALSE if the product is not in the register.<br>
 ****************************************************************************************************)
 METHOD m_SetProductState : BOOL
 VAR_INPUT
 	vi_udn_Id							: UDINT;	// [-] product id
 	vi_e_State							: E_VisuProductState;
-	vi_udn_RobotId						: UDINT;	// [-] manifest id of the robot, 0 = none
+	vi_udn_ClientId						: UDINT;	// [-] manifest id of the client making the change, 0 = none
 	vi_udn_MoverId						: UDINT := 0;	// [-] mover of an XTS gantry or loop carrying the product, 0 = none
 	vi_udn_FingerId						: UDINT := 0;	// [-] gripper finger (1-based) the product hangs from while picked, 0 = the flange
 END_VAR
@@ -530,8 +532,11 @@ END_VAR]]></Declaration>
         <ST><![CDATA[n_TempIndex := m_FindProduct(vi_udn_Id);
 m_SetProductState := n_TempIndex >= 0;
 IF m_SetProductState THEN
+	IF vo_Visu.stState.aProducts[n_TempIndex].eState <> vi_e_State THEN
+		vo_Visu.stState.aProducts[n_TempIndex].ePreviousState := vo_Visu.stState.aProducts[n_TempIndex].eState;
+	END_IF
 	vo_Visu.stState.aProducts[n_TempIndex].eState := vi_e_State;
-	vo_Visu.stState.aProducts[n_TempIndex].nRobotId := vi_udn_RobotId;
+	vo_Visu.stState.aProducts[n_TempIndex].nLastClientId := vi_udn_ClientId;
 	vo_Visu.stState.aProducts[n_TempIndex].nMoverId := vi_udn_MoverId;
 	vo_Visu.stState.aProducts[n_TempIndex].nFingerId := vi_udn_FingerId;
 	vo_Visu.stState.nTimestamp := m_DcTime();
