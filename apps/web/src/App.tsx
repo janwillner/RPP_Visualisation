@@ -25,9 +25,9 @@ import {
 } from "./scene/scene-model";
 import { METRICS_WINDOW_MS, metrics, type MachineMetrics } from "./metrics";
 import { loadViewSettings, saveViewSettings, type CameraPose, type ViewSettings } from "./view-settings";
+import { PRODUCT, STATUS } from "./palette";
+import type { Quality, QualitySetting } from "./scene/quality";
 import {
-  MISSED_COLOR,
-  PRODUCT_COLORS,
   SceneView,
   type CameraPreset,
   type Layers,
@@ -184,14 +184,17 @@ export function App() {
   const initialView = useMemo(loadViewSettings, []);
   const view = useRef<ViewSettings>(initialView);
   const [layers, setLayers] = useState<Layers>(initialView.layers);
+  const [quality, setQuality] = useState<QualitySetting>(initialView.quality);
+  // What the 3D view renders with: on auto, low once the device turned out too slow.
+  const [renderedQuality, setRenderedQuality] = useState<Quality>();
   const [faults, setFaults] = useState<SourcedFaults[]>([]);
   const [selection, setSelection] = useState<Selection>();
   // Component keys, and source ids for whole sources.
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set(initialView.hidden));
   useEffect(() => {
-    view.current = { ...view.current, layers, hidden: [...hidden] };
+    view.current = { ...view.current, layers, hidden: [...hidden], quality };
     saveViewSettings(view.current);
-  }, [layers, hidden]);
+  }, [layers, hidden, quality]);
   const rememberCamera = (camera: CameraPose) => {
     view.current = { ...view.current, camera };
     saveViewSettings(view.current);
@@ -273,6 +276,16 @@ export function App() {
           <Toggle label="TCP markers" on={layers.tcpMarkers} onClick={() => toggle("tcpMarkers")} />
           <Toggle label="Fault labels" on={layers.faultLabels} onClick={() => toggle("faultLabels")} />
         </div>
+        <div className="group" role="group" aria-label="Render quality">
+          <span className="muted">Quality</span>
+          <Toggle
+            label={quality === "auto" && renderedQuality === "low" ? "Auto (low)" : "Auto"}
+            on={quality === "auto"}
+            onClick={() => setQuality("auto")}
+          />
+          <Toggle label="High" on={quality === "high"} onClick={() => setQuality("high")} />
+          <Toggle label="Low" on={quality === "low"} onClick={() => setQuality("low")} />
+        </div>
       </header>
       <aside className="panel left" hidden={!leftOpen}>
         <ComponentTree
@@ -295,6 +308,8 @@ export function App() {
           feed={feed}
           sources={shown.sources}
           layers={layers}
+          quality={quality}
+          onQuality={setRenderedQuality}
           selection={selection}
           onSelect={setSelection}
           cameraRequest={cameraRequest}
@@ -590,8 +605,8 @@ function ProductLegend(props: {
   const current = product ? (product.display === "missed" ? "missed" : product.state) : undefined;
   const hasPlaceholder = matches.some((p) => p.display === "placeholder");
   const entries: { key: string; color?: string; outline?: boolean; active: boolean }[] = [
-    ...Object.entries(PRODUCT_COLORS).map(([state, color]) => ({ key: state, color, active: state === current })),
-    { key: "missed", color: MISSED_COLOR, active: current === "missed" },
+    ...Object.entries(PRODUCT).map(([state, color]) => ({ key: state, color, active: state === current })),
+    { key: "missed", color: STATUS.missed, active: current === "missed" },
     { key: "placeholder", outline: true, active: hasPlaceholder },
   ];
   return (

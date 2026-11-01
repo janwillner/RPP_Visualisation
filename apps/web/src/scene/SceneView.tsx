@@ -1,7 +1,10 @@
 import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
-import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
+import { Canvas, useFrame, useThree, type ThreeElements, type ThreeEvent } from "@react-three/fiber";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import * as THREE from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+import { AXES, OVERLAY, PRODUCT, SOLID, STAGE, STATUS } from "../palette";
+import { FrameRateSampler, qualityFor, type Quality, type QualitySetting } from "./quality";
 import type { CameraPose } from "../view-settings";
 import type { SceneFeed, SourceInfo } from "../connection";
 import type {
@@ -16,6 +19,7 @@ import type {
   SceneModel,
   SceneOrigin,
   SceneProduct,
+  SceneWorkingArea,
   SceneZone,
   SnapPoint,
   Transform,
@@ -85,6 +89,10 @@ export interface SceneViewProps {
   measurePoints: MeasurePoint[];
   /** Component keys and source ids hidden by the user. */
   hidden: ReadonlySet<string>;
+  /** Render quality chosen on this device. */
+  quality: QualitySetting;
+  /** Called with the quality actually rendered, whenever it changes (auto may drop to low). */
+  onQuality?: (quality: Quality) => void;
   /** Called whenever the set of active faults changes (hidden components included). */
   onFaults: (faults: SourcedFaults[]) => void;
 }
@@ -109,20 +117,65 @@ const EMPTY: SceneModel = {
 };
 
 
-export const PRODUCT_COLORS: Record<ProductState, string> = {
-  detected: "#8fa8c8",
-  assigned: "#e0a030",
-  picked: "#3cb371",
-  rejected: "#9370db",
-  placed: "#40b0b0",
-};
-export const MISSED_COLOR = "#e53935";
-const SELECT_COLOR = "#ffd54f";
-/** Belt surface: dark blue, so it stands out from the near-black background and the light products. */
-const CONVEYOR_COLOR = "#1f4e9c";
-const CONVEYOR_SELECTED_COLOR = "#3d78d8";
+const PRODUCT_COLORS: Record<ProductState, string> = PRODUCT;
+const MISSED_COLOR = STATUS.missed;
+const SELECT_COLOR = STATUS.select;
 /** Faulted components and movers glow in this colour; a selection highlight stays visible underneath. */
-const FAULT_COLOR = "#e53935";
+const FAULT_COLOR = STATUS.fault;
+
+/** The fine outline along the edges of a solid part; it fades with its source like everything else. */
+function EdgeLines({ geometry }: { geometry: THREE.BufferGeometry }) {
+  // Only edges where faces meet at a clear angle: no lines along the facets of a round part.
+  const edges = useMemo(() => new THREE.EdgesGeometry(geometry, 30), [geometry]);
+  useEffect(() => () => edges.dispose(), [edges]);
+  return (
+    <lineSegments geometry={edges} raycast={noRaycast}>
+      <lineBasicMaterial color={SOLID.edge} transparent opacity={0.55} />
+    </lineSegments>
+  );
+}
+
+/** A box geometry that stays the same object while its size does, for meshes with edge lines. */
+function useBox(x: number, y: number, z: number): THREE.BoxGeometry {
+  const geometry = useMemo(() => new THREE.BoxGeometry(x, y, z), [x, y, z]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  return geometry;
+}
+
+/** A solid box with edge lines; `children` is its material. */
+function SolidBox(props: { size: readonly [number, number, number]; children: ReactNode } & Omit<ThreeElements["mesh"], "args" | "children">) {
+  const { size, children, ...mesh } = props;
+  const geometry = useBox(size[0], size[1], size[2]);
+  return (
+    <mesh geometry={geometry} {...mesh}>
+      {children}
+      <EdgeLines geometry={geometry} />
+    </mesh>
+  );
+}
+
+/** Share of a part's own colour left while it glows red: little, so a light part reads red, not pink. */
+const FAULT_BASE_SHARE = 0.3;
+
+/**
+ * Makes a lit part glow red while `faulted`, its own colour (e.g. the selection) dimmed but still underneath; back
+ * to normal when the fault is gone. Safe to call again and again, also after the colour was set anew.
+ */
+function showFault(material: THREE.MeshStandardMaterial, faulted: boolean): void {
+  const u = material.userData as { faultBaseColor?: number; faultDimmedColor?: number };
+  if (faulted) {
+    if (material.color.getHex() !== u.faultDimmedColor) {
+      u.faultBaseColor = material.color.getHex();
+      material.color.multiplyScalar(FAULT_BASE_SHARE);
+      u.faultDimmedColor = material.color.getHex();
+    }
+  } else if (u.faultDimmedColor !== undefined) {
+    if (material.color.getHex() === u.faultDimmedColor) material.color.setHex(u.faultBaseColor!);
+    u.faultDimmedColor = undefined;
+  }
+  material.emissive.set(faulted ? FAULT_COLOR : "#000000");
+  material.emissiveIntensity = faulted ? 0.9 : 1;
+}
 
 /**
  * Tints every standard material below `root` red while `faulted`, except inside nested fault scopes, which tint
@@ -132,10 +185,7 @@ function tint(root: THREE.Object3D | null, faulted: boolean): void {
   if (!root) return;
   const visit = (o: THREE.Object3D) => {
     const material = (o as THREE.Mesh).material;
-    if (material instanceof THREE.MeshStandardMaterial) {
-      material.emissive.set(faulted ? FAULT_COLOR : "#000000");
-      material.emissiveIntensity = faulted ? 0.9 : 1;
-    }
+    if (material instanceof THREE.MeshStandardMaterial) showFault(material, faulted);
     for (const c of o.children) if (!c.userData.faultScope) visit(c);
   };
   visit(root);
@@ -177,10 +227,16 @@ function fade(root: THREE.Object3D | null, offline: boolean): void {
   });
 }
 
-/** A group whose content is faded while `offline`. Re-applied on every render, so new meshes are covered. */
+/**
+ * A group whose content is faded while `offline`, and whose lit parts cast shadows. Re-applied on every render, so
+ * new meshes are covered.
+ */
 function OfflineScope({ offline, children }: { offline: boolean; children: ReactNode }) {
   const ref = useRef<THREE.Group>(null);
-  useLayoutEffect(() => fade(ref.current, offline));
+  useLayoutEffect(() => {
+    fade(ref.current, offline);
+    castShadows(ref.current);
+  });
   return <group ref={ref}>{children}</group>;
 }
 
@@ -260,7 +316,7 @@ function machineSignature(m: MachineScene): string {
   ].join("|");
 }
 
-function SceneContent(props: SceneViewProps) {
+function SceneContent(props: SceneViewProps & { renderQuality: Quality }) {
   const { feed, sources, layers, selection, modelRef, measureMode, onMeasure, measurePoints, hidden, onFaults } = props;
   // In measure mode a click measures; selecting works only through the component tree.
   const onSelect = measureMode ? () => {} : props.onSelect;
@@ -299,15 +355,7 @@ function SceneContent(props: SceneViewProps) {
       <McsAxes />
       <MeasurePoints points={measurePoints} />
       {measureMode && <MeasureLayer latest={machine} structure={structure} layers={layers} onMeasure={onMeasure} />}
-      <Grid
-        args={[20, 20]}
-        cellSize={0.1}
-        sectionSize={1}
-        cellColor="#3a4250"
-        sectionColor="#5a6577"
-        fadeDistance={30}
-        infiniteGrid
-      />
+      <Stage bounds={bounds} quality={props.renderQuality} />
       {sources.map((source) => (
         <SourceContent
           key={source.sourceId}
@@ -371,7 +419,8 @@ function SourceContent(props: {
       {structure.conveyors.map((c) => (
         <group key={c.id} ref={(o) => applyTransform(o, c.transform)}>
           <FaultScope faulted={c.fault !== null}>
-            <mesh
+            <SolidBox
+              size={[c.length, 0.05, c.width]}
               position={[c.length / 2, -0.025, 0]}
               userData={{ label: c.name }}
               onClick={(e) => {
@@ -379,13 +428,12 @@ function SourceContent(props: {
                 onSelect({ kind: "component", id: c.id });
               }}
             >
-              <boxGeometry args={[c.length, 0.05, c.width]} />
-              <meshStandardMaterial color={isSelected(c.id) ? CONVEYOR_SELECTED_COLOR : CONVEYOR_COLOR} />
-            </mesh>
+              <meshStandardMaterial color={isSelected(c.id) ? SOLID.selectedStructure : SOLID.belt} roughness={0.85} />
+            </SolidBox>
             {/* Conveying direction */}
             <mesh position={[c.length + 0.06, 0, 0]} rotation={[0, 0, -Math.PI / 2]} raycast={noRaycast}>
               <coneGeometry args={[0.04, 0.12, 16]} />
-              <meshStandardMaterial color="#9aa5b5" />
+              <meshStandardMaterial color={SOLID.beltArrow} roughness={0.6} />
             </mesh>
           </FaultScope>
           <Html position={[0, 0.06, -c.width / 2]} className="label" zIndexRange={[10, 0]}>
@@ -426,60 +474,49 @@ function SourceContent(props: {
       ))}
       {layers.workingAreas &&
         structure.boxAreas.map((a) => (
-          <mesh key={`box:${a.robotId}`} ref={(o) => applyTransform(o, a.transform)} raycast={noRaycast}>
-            {/* Renderer local axes: MCS X -> x, MCS Z -> y, MCS Y -> −z. */}
-            <boxGeometry args={[a.size[0], a.size[2], a.size[1]]} />
-            <meshBasicMaterial
-              color={isSelected(a.robotId) ? SELECT_COLOR : "#4fc3f7"}
-              transparent
-              opacity={0.12}
-              side={THREE.DoubleSide}
-              depthWrite={false}
-            />
-          </mesh>
+          <BoxAreaMesh
+            key={`box:${a.robotId}`}
+            area={a}
+            color={isSelected(a.robotId) ? SELECT_COLOR : OVERLAY.workingArea}
+            fillOpacity={0.1}
+          />
         ))}
       {layers.limitAreas &&
         structure.limitAreas.map((a) => (
-          <LimitAreaMesh key={`limit:${a.robotId}`} area={a} selected={isSelected(a.robotId)} />
+          <BoxAreaMesh
+            key={`limit:${a.robotId}`}
+            area={a}
+            color={isSelected(a.robotId) ? SELECT_COLOR : OVERLAY.limitArea}
+            fillOpacity={0.06}
+          />
         ))}
       {layers.workingAreas &&
         structure.workingAreas.map((w) => (
-          <group key={w.robotId} ref={(o) => applyTransform(o, w.transform)}>
-            <mesh position={[0, (w.zMin + w.zMax) / 2, 0]} raycast={noRaycast}>
-              <cylinderGeometry args={[w.radius, w.radius, w.zMax - w.zMin, 48, 1, true]} />
-              <meshBasicMaterial
-                color={isSelected(w.robotId) ? SELECT_COLOR : "#4fc3f7"}
-                transparent
-                opacity={0.12}
-                side={THREE.DoubleSide}
-                depthWrite={false}
-              />
-            </mesh>
-            {w.coneHeight > 0 && (
-              <mesh position={[0, w.zMin - w.coneHeight / 2, 0]} raycast={noRaycast}>
-                <cylinderGeometry args={[w.radius, w.coneBottomRadius, w.coneHeight, 48, 1, true]} />
-                <meshBasicMaterial color="#4fc3f7" transparent opacity={0.12} side={THREE.DoubleSide} depthWrite={false} />
-              </mesh>
-            )}
-          </group>
+          <WorkingAreaMesh key={w.robotId} area={w} color={isSelected(w.robotId) ? SELECT_COLOR : OVERLAY.workingArea} />
         ))}
       {layers.zones &&
         structure.zones.map((w, i) => (
           <group key={`${w.robotId}:${i}`} ref={(o) => applyTransform(o, w.transform)}>
-            <mesh position={[0, 0.003, 0]} userData={{ label: `${w.kind === "pick" ? "Pick" : "Place"} zone (robot #${w.robotId})` }}>
+            <mesh
+              position={[0, 0.003, 0]}
+              renderOrder={OVERLAY_ORDER}
+              userData={{ label: `${w.kind === "pick" ? "Pick" : "Place"} zone (robot #${w.robotId})` }}
+            >
               <boxGeometry args={[w.length, 0.004, w.width]} />
-              <meshBasicMaterial
-                color={w.kind === "pick" ? "#66bb6a" : "#42a5f5"}
-                transparent
+              <OverlayMaterial
+                color={w.kind === "pick" ? OVERLAY.pickZone : OVERLAY.placeZone}
                 opacity={isSelected(w.robotId) ? 0.55 : 0.3}
-                depthWrite={false}
               />
             </mesh>
+            <Outline
+              points={rectangle(w.length, w.width, 0.007)}
+              color={isSelected(w.robotId) ? SELECT_COLOR : w.kind === "pick" ? OVERLAY.pickZone : OVERLAY.placeZone}
+            />
             {w.allocation && (
               <AllocationMesh
                 allocation={w.allocation}
                 zone={w}
-                color={w.kind === "pick" ? "#2e7d32" : "#1565c0"}
+                color={w.kind === "pick" ? OVERLAY.pickAllocation : OVERLAY.placeAllocation}
                 selected={isSelected(w.robotId)}
               />
             )}
@@ -504,36 +541,104 @@ function CcsLine({ transform, width }: { transform: Transform; width: number }) 
           [0, 0.009, -width / 2],
           [0, 0.009, width / 2],
         ]}
-        color="#000000"
+        color={OVERLAY.ccs}
         lineWidth={2}
         dashed
         dashSize={0.03}
         gapSize={0.02}
+        toneMapped={false}
+        renderOrder={OVERLAY_ORDER}
         raycast={noRaycast}
       />
     </group>
   );
 }
 
-const LIMIT_AREA_COLOR = "#ff9800";
+/** Overlays are drawn after the solid parts: transparent areas on a belt then never flicker against it. */
+const OVERLAY_ORDER = 1;
 
-/** Limit area: translucent box with solid edges, so it stays distinguishable from the working area. */
-function LimitAreaMesh({ area, selected }: { area: SceneBoxArea; selected: boolean }) {
-  // Renderer local axes: MCS X -> x, MCS Z -> y, MCS Y -> −z.
-  const edges = useMemo(
-    () => new THREE.EdgesGeometry(new THREE.BoxGeometry(area.size[0], area.size[2], area.size[1])),
-    [area.size[0], area.size[1], area.size[2]],
+/**
+ * The see-through fill of an overlay: unlit and not tone mapped, so it keeps its palette colour however the scene
+ * is lit, and casts no shadow (only lit parts do).
+ */
+function OverlayMaterial({ color, opacity, doubleSided }: { color: string; opacity: number; doubleSided?: boolean }) {
+  return (
+    <meshBasicMaterial
+      color={color}
+      transparent
+      opacity={opacity}
+      side={doubleSided ? THREE.DoubleSide : THREE.FrontSide}
+      depthWrite={false}
+      toneMapped={false}
+    />
   );
-  const color = selected ? SELECT_COLOR : LIMIT_AREA_COLOR;
+}
+
+/** The solid border of an overlay along `points`, so the area stays clear in front of any background. */
+function Outline({ points, color }: { points: Vec3[]; color: string }) {
+  return (
+    <Line points={points} color={color} lineWidth={1.5} toneMapped={false} renderOrder={OVERLAY_ORDER} raycast={noRaycast} />
+  );
+}
+
+/** A closed rectangle lying `height` above the local x-z plane, centred on the origin. */
+function rectangle(length: number, width: number, height: number): Vec3[] {
+  const x = length / 2;
+  const z = width / 2;
+  return [
+    [-x, height, -z],
+    [x, height, -z],
+    [x, height, z],
+    [-x, height, z],
+    [-x, height, -z],
+  ];
+}
+
+/** A closed circle of `radius` at `height` in the local x-z plane. */
+function circle(radius: number, height: number, segments = 64): Vec3[] {
+  return Array.from({ length: segments + 1 }, (_, i) => {
+    const a = (i / segments) * Math.PI * 2;
+    return [Math.cos(a) * radius, height, Math.sin(a) * radius];
+  });
+}
+
+/** A box area (Cartesian working area, Delta limit area): see-through box with solid edges. */
+function BoxAreaMesh({ area, color, fillOpacity }: { area: SceneBoxArea; color: string; fillOpacity: number }) {
+  // Renderer local axes: MCS X -> x, MCS Z -> y, MCS Y -> −z.
+  const geometry = useBox(area.size[0], area.size[2], area.size[1]);
+  const edges = useMemo(() => new THREE.EdgesGeometry(geometry), [geometry]);
+  useEffect(() => () => edges.dispose(), [edges]);
   return (
     <group ref={(o) => applyTransform(o, area.transform)}>
-      <mesh raycast={noRaycast}>
-        <boxGeometry args={[area.size[0], area.size[2], area.size[1]]} />
-        <meshBasicMaterial color={color} transparent opacity={0.06} side={THREE.DoubleSide} depthWrite={false} />
+      <mesh geometry={geometry} raycast={noRaycast} renderOrder={OVERLAY_ORDER}>
+        <OverlayMaterial color={color} opacity={fillOpacity} doubleSided />
       </mesh>
-      <lineSegments geometry={edges} raycast={noRaycast}>
-        <lineBasicMaterial color={color} />
+      <lineSegments geometry={edges} raycast={noRaycast} renderOrder={OVERLAY_ORDER}>
+        <lineBasicMaterial color={color} toneMapped={false} />
       </lineSegments>
+    </group>
+  );
+}
+
+/** A Delta working area: see-through cylinder (and cone below it) with solid rims. */
+function WorkingAreaMesh({ area: w, color }: { area: SceneWorkingArea; color: string }) {
+  const rims = [circle(w.radius, w.zMax), circle(w.radius, w.zMin)];
+  if (w.coneHeight > 0) rims.push(circle(w.coneBottomRadius, w.zMin - w.coneHeight));
+  return (
+    <group ref={(o) => applyTransform(o, w.transform)}>
+      <mesh position={[0, (w.zMin + w.zMax) / 2, 0]} raycast={noRaycast} renderOrder={OVERLAY_ORDER}>
+        <cylinderGeometry args={[w.radius, w.radius, w.zMax - w.zMin, 48, 1, true]} />
+        <OverlayMaterial color={color} opacity={0.1} doubleSided />
+      </mesh>
+      {w.coneHeight > 0 && (
+        <mesh position={[0, w.zMin - w.coneHeight / 2, 0]} raycast={noRaycast} renderOrder={OVERLAY_ORDER}>
+          <cylinderGeometry args={[w.radius, w.coneBottomRadius, w.coneHeight, 48, 1, true]} />
+          <OverlayMaterial color={color} opacity={0.1} doubleSided />
+        </mesh>
+      )}
+      {rims.map((points, i) => (
+        <Outline key={i} points={points} color={color} />
+      ))}
     </group>
   );
 }
@@ -546,19 +651,19 @@ function AllocationMesh(props: { allocation: SceneAllocation; zone: SceneZone; c
   const { allocation, zone, color, selected } = props;
   return (
     <>
-      <mesh position={[allocation.centre, 0.006, 0]} raycast={noRaycast}>
+      <mesh position={[allocation.centre, 0.006, 0]} raycast={noRaycast} renderOrder={OVERLAY_ORDER}>
         <boxGeometry args={[allocation.length, 0.004, zone.width]} />
-        <meshBasicMaterial color={color} transparent opacity={selected ? 0.6 : 0.35} depthWrite={false} />
+        <OverlayMaterial color={color} opacity={selected ? 0.6 : 0.35} />
       </mesh>
-      <mesh position={[allocation.limit, 0.008, 0]} raycast={noRaycast}>
+      <mesh position={[allocation.limit, 0.008, 0]} raycast={noRaycast} renderOrder={OVERLAY_ORDER}>
         <boxGeometry args={[0.012, 0.006, zone.width]} />
-        <meshBasicMaterial color={color} />
+        <meshBasicMaterial color={color} toneMapped={false} />
       </mesh>
     </>
   );
 }
 
-const FINGER_COLORS = { active: "#3cb371", idle: "#8a939e", rod: "#5d6570" };
+const FINGER_COLORS = { active: SOLID.gripperActive, idle: SOLID.aluMid, rod: SOLID.dark };
 
 /**
  * One gripper finger: a cylinder hanging from its top centre (green while it grips), and a thin rod from the gripper
@@ -583,8 +688,7 @@ function FingerMesh(props: {
     placeBetween(rod.current, live?.flange, live?.transform.position);
     material.current?.color.set(selected ? SELECT_COLOR : live?.active ? FINGER_COLORS.active : FINGER_COLORS.idle);
     // Like every faulted part: glowing red, with the selection colour still underneath.
-    material.current?.emissive.set(live?.faulted ? FAULT_COLOR : "#000000");
-    if (material.current) material.current.emissiveIntensity = live?.faulted ? 0.9 : 1;
+    if (material.current) showFault(material.current, Boolean(live?.faulted));
   });
   return (
     <>
@@ -620,23 +724,33 @@ function ProductMesh(props: {
   useFrame(() => applyTransform(ref.current, lookup(product.key)?.transform));
   const display: ProductDisplay = product.display;
   const color = selected ? SELECT_COLOR : display === "missed" ? MISSED_COLOR : PRODUCT_COLORS[product.state];
+  const geometry = useBox(product.size.length, product.size.height, product.size.width);
   return (
     <mesh
       ref={(m) => {
         ref.current = m;
         applyTransform(m, product.transform);
       }}
+      geometry={geometry}
       userData={{ label: `Product #${product.productId} (${product.display})` }}
       onClick={(e: ThreeEvent<MouseEvent>) => {
         e.stopPropagation();
         onSelect({ kind: "product", conveyorId: product.conveyorId, productId: product.productId });
       }}
     >
-      <boxGeometry args={[product.size.length, product.size.height, product.size.width]} />
       {display === "placeholder" ? (
-        <meshBasicMaterial color={color} wireframe transparent opacity={0.7} />
+        // Not yet confirmed: an outline only, unlit like the other overlays.
+        <meshBasicMaterial color={color} wireframe transparent opacity={0.8} toneMapped={false} />
       ) : (
-        <meshStandardMaterial color={color} emissive={display === "missed" ? MISSED_COLOR : "#000"} emissiveIntensity={0.4} />
+        <>
+          <meshStandardMaterial
+            color={color}
+            emissive={display === "missed" ? MISSED_COLOR : "#000"}
+            emissiveIntensity={0.4}
+            roughness={0.6}
+          />
+          <EdgeLines geometry={geometry} />
+        </>
       )}
     </mesh>
   );
@@ -644,16 +758,17 @@ function ProductMesh(props: {
 
 const ARM_AZIMUTHS = [0, 120, 240].map((deg) => (deg * Math.PI) / 180);
 const DELTA_COLORS = {
-  plate: "#b9bec4",
-  arm: "#26282b",
-  motor: "#1c1d1f",
-  gearbox: "#8d949b",
-  rod: "#2e3135",
-  joint: "#c9ced3",
-  effector: "#d5d9dd",
+  plate: SOLID.aluLight,
+  arm: SOLID.dark,
+  motor: SOLID.motor,
+  gearbox: SOLID.aluDark,
+  rod: SOLID.dark,
+  joint: SOLID.aluLight,
+  effector: SOLID.aluLight,
 };
 /** Half the spacing between the two rods of a lower-arm parallelogram, metres. */
 const ROD_HALF_SPACING = 0.035;
+const MOTOR_SIZE = [0.06, 0.11, 0.06] as const;
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
 /**
@@ -674,13 +789,18 @@ function basePlateShape(baseRadius: number): THREE.Shape {
   return new THREE.Shape(points);
 }
 
-function trianglePlateShape(radius: number): THREE.Shape {
-  return new THREE.Shape(
-    [90, 210, 330].map((deg) => {
-      const a = (deg * Math.PI) / 180;
-      return new THREE.Vector2(Math.cos(a), Math.sin(a)).multiplyScalar(radius);
-    }),
-  );
+/**
+ * Effector plate outline in the effector's local MCS plane (x, y), metres: a hexagon whose six corners are the
+ * centres of the lower arms' ball joints (two per arm, `ROD_HALF_SPACING` either side of the arm's joint point at
+ * `radius`), so the plate ends exactly in the ball heads.
+ */
+function effectorPlateShape(radius: number): THREE.Shape {
+  const corners = ARM_AZIMUTHS.flatMap((a) => {
+    const joint = new THREE.Vector2(Math.cos(a), Math.sin(a)).multiplyScalar(radius);
+    const along = new THREE.Vector2(-Math.sin(a), Math.cos(a)).multiplyScalar(ROD_HALF_SPACING);
+    return [joint.clone().sub(along), joint.clone().add(along)];
+  });
+  return new THREE.Shape(corners);
 }
 
 /** Small arrow along +Y of its own frame, for the TCP axis triad. */
@@ -689,11 +809,11 @@ function TriadArrow({ color, quaternion }: { color: string; quaternion: THREE.Qu
     <group quaternion={quaternion}>
       <mesh position={[0, 0.04, 0]} raycast={noRaycast}>
         <cylinderGeometry args={[0.003, 0.003, 0.08, 8]} />
-        <meshBasicMaterial color={color} depthTest={false} transparent />
+        <meshBasicMaterial color={color} depthTest={false} transparent toneMapped={false} />
       </mesh>
       <mesh position={[0, 0.088, 0]} raycast={noRaycast}>
         <coneGeometry args={[0.008, 0.018, 12]} />
-        <meshBasicMaterial color={color} depthTest={false} transparent />
+        <meshBasicMaterial color={color} depthTest={false} transparent toneMapped={false} />
       </mesh>
     </group>
   );
@@ -701,9 +821,9 @@ function TriadArrow({ color, quaternion }: { color: string; quaternion: THREE.Qu
 
 // Triad in the effector's local frame: MCS X -> local +X, MCS Y -> local -Z, MCS Z -> local +Y.
 const TRIAD = [
-  { color: "#ef5350", quaternion: new THREE.Quaternion().setFromUnitVectors(Y_AXIS, new THREE.Vector3(1, 0, 0)) },
-  { color: "#66bb6a", quaternion: new THREE.Quaternion().setFromUnitVectors(Y_AXIS, new THREE.Vector3(0, 0, -1)) },
-  { color: "#42a5f5", quaternion: new THREE.Quaternion() },
+  { color: AXES.x, quaternion: new THREE.Quaternion().setFromUnitVectors(Y_AXIS, new THREE.Vector3(1, 0, 0)) },
+  { color: AXES.y, quaternion: new THREE.Quaternion().setFromUnitVectors(Y_AXIS, new THREE.Vector3(0, 0, -1)) },
+  { color: AXES.z, quaternion: new THREE.Quaternion() },
 ];
 
 function DeltaMesh(props: {
@@ -726,7 +846,7 @@ function DeltaMesh(props: {
   const parts = useMemo(() => {
     const plate = new THREE.ExtrudeGeometry(basePlateShape(baseRadius), { depth: 0.02, bevelEnabled: false });
     plate.rotateX(-Math.PI / 2);
-    const effectorPlate = new THREE.ExtrudeGeometry(trianglePlateShape(effectorRadius * 1.6), {
+    const effectorPlate = new THREE.ExtrudeGeometry(effectorPlateShape(effectorRadius), {
       depth: 0.012,
       bevelEnabled: false,
     });
@@ -797,22 +917,22 @@ function DeltaMesh(props: {
       <FaultScope faulted={delta.fault !== null}>
         <group ref={base}>
           <mesh geometry={parts.plate} onClick={select}>
-            <meshStandardMaterial color={highlight ?? DELTA_COLORS.plate} metalness={0.3} roughness={0.6} />
+            <meshStandardMaterial color={highlight ?? DELTA_COLORS.plate} metalness={0.2} roughness={0.65} />
+            <EdgeLines geometry={parts.plate} />
           </mesh>
           {parts.motors.map((m, i) => (
             <group key={i}>
               <mesh position={m.hub} quaternion={m.quaternion} onClick={select}>
                 <cylinderGeometry args={[0.035, 0.035, 0.05, 20]} />
-                <meshStandardMaterial color={DELTA_COLORS.gearbox} metalness={0.5} roughness={0.4} />
+                <meshStandardMaterial color={DELTA_COLORS.gearbox} metalness={0.3} roughness={0.55} />
               </mesh>
               <mesh position={m.gearbox} quaternion={m.quaternion} onClick={select}>
                 <cylinderGeometry args={[0.03, 0.03, 0.05, 20]} />
-                <meshStandardMaterial color={DELTA_COLORS.gearbox} metalness={0.5} roughness={0.4} />
+                <meshStandardMaterial color={DELTA_COLORS.gearbox} metalness={0.3} roughness={0.55} />
               </mesh>
-              <mesh position={m.motor} quaternion={m.quaternion} onClick={select}>
-                <boxGeometry args={[0.06, 0.11, 0.06]} />
+              <SolidBox size={MOTOR_SIZE} position={m.motor} quaternion={m.quaternion} onClick={select}>
                 <meshStandardMaterial color={DELTA_COLORS.motor} roughness={0.7} />
-              </mesh>
+              </SolidBox>
             </group>
           ))}
           <Html position={[0, 0.1, 0]} className="label" zIndexRange={[10, 0]}>
@@ -828,7 +948,7 @@ function DeltaMesh(props: {
             {[0, 1].map((k) => (
               <mesh key={"bar" + k} ref={setLower(i, k)} onClick={select}>
                 <cylinderGeometry args={[0.006, 0.006, 1, 8]} />
-                <meshStandardMaterial color={DELTA_COLORS.joint} metalness={0.6} roughness={0.3} />
+                <meshStandardMaterial color={DELTA_COLORS.joint} metalness={0.35} roughness={0.5} />
               </mesh>
             ))}
             {[2, 3].map((k) => (
@@ -840,20 +960,21 @@ function DeltaMesh(props: {
             {[4, 5, 6, 7].map((k) => (
               <mesh key={"ball" + k} ref={setLower(i, k)} raycast={noRaycast}>
                 <sphereGeometry args={[0.011, 12, 12]} />
-                <meshStandardMaterial color={DELTA_COLORS.joint} metalness={0.6} roughness={0.3} />
+                <meshStandardMaterial color={DELTA_COLORS.joint} metalness={0.35} roughness={0.5} />
               </mesh>
             ))}
           </group>
         ))}
         <group ref={effector} userData={{ label: name + " TCP" }}>
           <mesh geometry={parts.effectorPlate} onClick={select}>
-            <meshStandardMaterial color={DELTA_COLORS.effector} metalness={0.5} roughness={0.35} />
+            <meshStandardMaterial color={DELTA_COLORS.effector} metalness={0.3} roughness={0.5} />
+            <EdgeLines geometry={parts.effectorPlate} />
           </mesh>
           {showTcp && TRIAD.map((t) => <TriadArrow key={t.color} color={t.color} quaternion={t.quaternion} />)}
         </group>
         <mesh ref={setpoint} userData={{ label: name + " setpoint TCP" }}>
           <octahedronGeometry args={[0.018]} />
-          <meshBasicMaterial color="#ffee58" wireframe depthTest={false} transparent />
+          <meshBasicMaterial color={OVERLAY.setpoint} wireframe depthTest={false} transparent toneMapped={false} />
         </mesh>
       </FaultScope>
     </group>
@@ -865,13 +986,13 @@ function MeasurePoints({ points }: { points: MeasurePoint[] }) {
   return (
     <>
       {points.length > 1 && (
-        <Line points={points.map((p) => p.position)} color={SELECT_COLOR} lineWidth={1.5} depthTest={false} transparent />
+        <Line points={points.map((p) => p.position)} color={SELECT_COLOR} lineWidth={1.5} depthTest={false} transparent toneMapped={false} />
       )}
       {points.map((p) => (
         <group key={p.id} position={p.position}>
           <mesh raycast={noRaycast} renderOrder={10}>
             <sphereGeometry args={[0.012, 12, 12]} />
-            <meshBasicMaterial color={SELECT_COLOR} depthTest={false} transparent />
+            <meshBasicMaterial color={SELECT_COLOR} depthTest={false} transparent toneMapped={false} />
           </mesh>
           <Html className="pin-label" zIndexRange={[20, 10]} style={{ pointerEvents: "none" }}>
             #{p.id}
@@ -1015,13 +1136,13 @@ function MeasureLayer(props: {
       {dots.map((p) => (
         <mesh key={p.key} position={p.position} raycast={noRaycast} renderOrder={5}>
           <sphereGeometry args={[0.006, 10, 10]} />
-          <meshBasicMaterial color="#ffffff" depthTest={false} transparent opacity={0.8} />
+          <meshBasicMaterial color={OVERLAY.snapPoint} depthTest={false} transparent opacity={0.8} toneMapped={false} />
         </mesh>
       ))}
       <group ref={marker} visible={false}>
         <mesh raycast={noRaycast} renderOrder={11}>
           <sphereGeometry args={[0.014, 14, 14]} />
-          <meshBasicMaterial color={SELECT_COLOR} depthTest={false} transparent opacity={0.9} />
+          <meshBasicMaterial color={SELECT_COLOR} depthTest={false} transparent opacity={0.9} toneMapped={false} />
         </mesh>
         {label && (
           <Html
@@ -1044,9 +1165,9 @@ function OriginTriad({ origin }: { origin: SceneOrigin }) {
       // Local renderer axes: MCS local X -> +X, MCS local Y -> −Z, MCS local Z -> +Y.
       (
         [
-          [[1, 0, 0], "#ef5350"],
-          [[0, 0, -1], "#66bb6a"],
-          [[0, 1, 0], "#42a5f5"],
+          [[1, 0, 0], AXES.x],
+          [[0, 0, -1], AXES.y],
+          [[0, 1, 0], AXES.z],
         ] as const
       ).map(([dir, color]) => {
         const arrow = new THREE.ArrowHelper(new THREE.Vector3(...dir), new THREE.Vector3(), 0.3, color, 0.05, 0.025);
@@ -1056,6 +1177,7 @@ function OriginTriad({ origin }: { origin: SceneOrigin }) {
           if (material) {
             material.depthTest = false;
             material.transparent = true;
+            material.toneMapped = false;
           }
         });
         return arrow;
@@ -1075,14 +1197,14 @@ function OriginTriad({ origin }: { origin: SceneOrigin }) {
 }
 
 const XTS_COLORS = {
-  beam: "#3a3f46",
-  module: "#1c1f23",
-  mover: "#c9ced3",
-  arm: "#26282b",
-  cup: "#2f7fd6",
-  cupActive: "#66bb6a",
-  track: "#3a3f46",
-  tool: "#ffb74d",
+  beam: SOLID.profile,
+  module: SOLID.module,
+  mover: SOLID.aluLight,
+  arm: SOLID.dark,
+  cup: SOLID.gripper,
+  cupActive: SOLID.gripperActive,
+  track: SOLID.profile,
+  tool: OVERLAY.xtsTool,
 };
 
 /**
@@ -1139,10 +1261,9 @@ function GantryMesh(props: {
       <FaultScope faulted={gantryFaulted}>
         <group ref={track}>
           {/* Beam above the movers along the track (MCS local +Y is renderer local −Z). */}
-          <mesh position={[0, 0.06, -trackLength / 2]} onClick={select}>
-            <boxGeometry args={[moverWidth + 0.04, 0.12, trackLength]} />
-            <meshStandardMaterial color={selected ? "#5c6b3a" : XTS_COLORS.beam} metalness={0.4} roughness={0.5} />
-          </mesh>
+          <SolidBox size={[moverWidth + 0.04, 0.12, trackLength]} position={[0, 0.06, -trackLength / 2]} onClick={select}>
+            <meshStandardMaterial color={selected ? SOLID.selectedStructure : XTS_COLORS.beam} metalness={0.25} roughness={0.6} />
+          </SolidBox>
           {Array.from({ length: moduleCount + 1 }, (_, k) => (
             <mesh key={k} position={[0, 0.06, -k * moduleLength]} raycast={noRaycast}>
               <boxGeometry args={[moverWidth + 0.05, 0.125, 0.006]} />
@@ -1156,10 +1277,9 @@ function GantryMesh(props: {
         {gantry.movers.map((m, i) => (
           <FaultScope key={m.id} faulted={gantryFaulted || m.fault !== null}>
             <group ref={(o) => (carriages.current[i] = o)}>
-              <mesh position={[0, -0.02, 0]} onClick={select}>
-                <boxGeometry args={[moverWidth, 0.04, moverLength]} />
-                <meshStandardMaterial color={selected ? SELECT_COLOR : XTS_COLORS.mover} metalness={0.4} roughness={0.4} />
-              </mesh>
+              <SolidBox size={[moverWidth, 0.04, moverLength]} position={[0, -0.02, 0]} onClick={select}>
+                <meshStandardMaterial color={selected ? SELECT_COLOR : XTS_COLORS.mover} metalness={0.25} roughness={0.55} />
+              </SolidBox>
               <Html position={[0, -0.05, 0]} className="label" zIndexRange={[10, 0]}>
                 {m.id}
               </Html>
@@ -1259,7 +1379,8 @@ function LoopMesh(props: {
       <FaultScope faulted={loopFaulted}>
         <group ref={base}>
           <mesh geometry={band} onClick={select}>
-            <meshStandardMaterial color={selected ? "#5c6b3a" : XTS_COLORS.track} metalness={0.4} roughness={0.5} />
+            <meshStandardMaterial color={selected ? SOLID.selectedStructure : XTS_COLORS.track} metalness={0.25} roughness={0.6} />
+            <EdgeLines geometry={band} />
           </mesh>
           <Html position={[straightLength / 2, curveRadius, 0]} className="label" zIndexRange={[10, 0]}>
             {name}
@@ -1269,17 +1390,16 @@ function LoopMesh(props: {
           <FaultScope key={m.id} faulted={loopFaulted || m.fault !== null}>
             <group ref={(o) => (movers.current[i] = o)}>
               {/* Outwards is the mover's local −Y (MCS −Z). */}
-              <mesh position={[0, -0.03, 0]} onClick={select}>
-                <boxGeometry args={[moverLength, 0.04, moverWidth]} />
-                <meshStandardMaterial color={selected ? SELECT_COLOR : XTS_COLORS.mover} metalness={0.4} roughness={0.4} />
-              </mesh>
+              <SolidBox size={[moverLength, 0.04, moverWidth]} position={[0, -0.03, 0]} onClick={select}>
+                <meshStandardMaterial color={selected ? SELECT_COLOR : XTS_COLORS.mover} metalness={0.25} roughness={0.55} />
+              </SolidBox>
               <Html position={[0, -0.07, moverWidth / 2]} className="label" zIndexRange={[10, 0]}>
                 {m.id}
               </Html>
             </group>
             <mesh ref={(o) => (tools.current[i] = o)} raycast={noRaycast}>
               <sphereGeometry args={[0.008, 10, 10]} />
-              <meshBasicMaterial color={XTS_COLORS.tool} />
+              <meshBasicMaterial color={XTS_COLORS.tool} toneMapped={false} />
             </mesh>
           </FaultScope>
         ))}
@@ -1289,11 +1409,11 @@ function LoopMesh(props: {
 }
 
 const CARTESIAN_COLORS: Record<SceneCartesian["parts"][number]["key"], string> = {
-  "rail left": "#3a3f46",
-  "rail right": "#3a3f46",
-  bridge: "#5d6570",
-  carriage: "#c9ced3",
-  column: "#8a939e",
+  "rail left": SOLID.profile,
+  "rail right": SOLID.profile,
+  bridge: SOLID.aluDark,
+  carriage: SOLID.aluLight,
+  column: SOLID.aluMid,
 };
 
 /**
@@ -1333,15 +1453,21 @@ function CartesianMesh(props: {
     <group userData={{ label: name }}>
       <FaultScope faulted={robot.fault !== null}>
         {robot.parts.map((p, i) => (
-          <mesh key={p.key} ref={(o) => (parts.current[i] = o)} onClick={select}>
-            {/* Renderer local axes: MCS X -> x, MCS Z -> y, MCS Y -> −z. */}
-            <boxGeometry args={[p.size[0], p.size[2], p.size[1]]} />
+          <SolidBox
+            key={p.key}
+            size={[p.size[0], p.size[2], p.size[1]]}
+            ref={(o: THREE.Mesh | null) => {
+              parts.current[i] = o;
+            }}
+            onClick={select}
+          >
+            {/* Renderer local axes: MCS X -> x, MCS Z -> y, MCS Y -> −z (see size). */}
             <meshStandardMaterial
-              color={selected ? (p.key === "carriage" ? SELECT_COLOR : "#5c6b3a") : CARTESIAN_COLORS[p.key]}
-              metalness={0.4}
-              roughness={0.5}
+              color={selected ? (p.key === "carriage" ? SELECT_COLOR : SOLID.selectedStructure) : CARTESIAN_COLORS[p.key]}
+              metalness={0.25}
+              roughness={0.6}
             />
-          </mesh>
+          </SolidBox>
         ))}
         {rail && (
           <Html position={rail.transform.position} className="label" zIndexRange={[10, 0]}>
@@ -1364,10 +1490,14 @@ function McsAxes() {
   const axes = useMemo(() => {
     const make = (dir: Vec3, color: string) => {
       const arrow = new THREE.ArrowHelper(new THREE.Vector3(...dir), new THREE.Vector3(0, 0, 0), 0.5, color, 0.08, 0.04);
+      arrow.traverse((o) => {
+        const material = (o as THREE.Mesh).material as THREE.Material | undefined;
+        if (material) material.toneMapped = false;
+      });
       return arrow;
     };
     // MCS X -> renderer +X, MCS Y -> renderer −Z, MCS Z -> renderer +Y.
-    return [make([1, 0, 0], "#ef5350"), make([0, 0, -1], "#66bb6a"), make([0, 1, 0], "#42a5f5")];
+    return [make([1, 0, 0], AXES.x), make([0, 0, -1], AXES.y), make([0, 1, 0], AXES.z)];
   }, []);
   return (
     <group>
@@ -1390,13 +1520,32 @@ interface OrbitControlsLike {
   removeEventListener(type: "change", listener: () => void): void;
 }
 
+
+/** The parts that give the machine its extent: conveyors and Delta bases of all sources. */
+interface MachineBounds {
+  conveyors: SceneConveyor[];
+  deltas: SceneDelta[];
+}
+
+/** The box around the machine in renderer coordinates; a 2 m cube at the origin while nothing is known. */
+function machineBox(structure: MachineBounds): THREE.Box3 {
+  const box = new THREE.Box3();
+  for (const c of structure.conveyors) {
+    box.expandByPoint(new THREE.Vector3(...c.transform.position));
+    const end = new THREE.Vector3(c.length, 0, 0).applyQuaternion(new THREE.Quaternion(...c.transform.quaternion));
+    box.expandByPoint(new THREE.Vector3(...c.transform.position).add(end));
+  }
+  for (const d of structure.deltas) box.expandByPoint(new THREE.Vector3(...d.base.position));
+  if (box.isEmpty()) box.set(new THREE.Vector3(-1, 0, -1), new THREE.Vector3(1, 1, 1));
+  return box;
+}
 /** Quiet time after the last camera movement before it is reported as the camera's new place. */
 const CAMERA_SETTLE_MS = 400;
 
 /** Frames the conveyors and Delta bases of all sources. */
 function CameraRig(props: {
   request: { action: CameraPreset; seq: number };
-  structure: { conveyors: SceneConveyor[]; deltas: SceneDelta[] };
+  structure: MachineBounds;
   initial: CameraPose | undefined;
   onChange: ((pose: CameraPose) => void) | undefined;
 }) {
@@ -1430,14 +1579,7 @@ function CameraRig(props: {
   }, [controls]);
 
   const frame = (preset: CameraPreset) => {
-    const box = new THREE.Box3();
-    for (const c of structure.conveyors) {
-      box.expandByPoint(new THREE.Vector3(...c.transform.position));
-      const end = new THREE.Vector3(c.length, 0, 0).applyQuaternion(new THREE.Quaternion(...c.transform.quaternion));
-      box.expandByPoint(new THREE.Vector3(...c.transform.position).add(end));
-    }
-    for (const d of structure.deltas) box.expandByPoint(new THREE.Vector3(...d.base.position));
-    if (box.isEmpty()) box.set(new THREE.Vector3(-1, 0, -1), new THREE.Vector3(1, 1, 1));
+    const box = machineBox(structure);
     const centre = box.getCenter(new THREE.Vector3());
     const size = Math.max(box.getSize(new THREE.Vector3()).length(), 1);
     const offsets: Record<CameraPreset, THREE.Vector3> = {
@@ -1483,6 +1625,135 @@ function CameraRig(props: {
   return null;
 }
 
+
+/** Lit parts cast and receive shadows; overlays, which are unlit, never do. */
+function castShadows(root: THREE.Object3D | null): void {
+  root?.traverse((o) => {
+    if (!(o as THREE.Mesh).isMesh) return;
+    const lit = (o as THREE.Mesh).material instanceof THREE.MeshStandardMaterial;
+    o.castShadow = lit;
+    o.receiveShadow = lit;
+  });
+}
+
+/** A soft round spot, white in the middle and transparent at the rim, for the floor to fade into the stage. */
+function fadeTexture(): THREE.Texture {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, "#fff");
+  gradient.addColorStop(0.55, "#fff");
+  gradient.addColorStop(1, "#000");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(canvas);
+}
+
+/** Map size of the key light's shadow, in pixels per side. */
+const SHADOW_MAP_SIZE = 2048;
+
+/**
+ * Everything around the machine: a neutral studio light without any download (generated, so it works on IPCs
+ * without internet), a key light whose soft shadow covers the machine (high quality only), the floor at MCS Z = 0
+ * that takes the shadows and fades into the background, and the measuring grid on it.
+ */
+function Stage({ bounds, quality }: { bounds: MachineBounds; quality: Quality }) {
+  const { gl, scene } = useThree();
+  useEffect(() => {
+    const pmrem = new THREE.PMREMGenerator(gl);
+    const room = new RoomEnvironment();
+    const environment = pmrem.fromScene(room, 0.04).texture;
+    scene.environment = environment;
+    scene.environmentIntensity = 0.5;
+    room.dispose();
+    pmrem.dispose();
+    return () => {
+      scene.environment = null;
+      environment.dispose();
+    };
+  }, [gl, scene]);
+
+  const floorFade = useMemo(fadeTexture, []);
+  useEffect(() => () => floorFade.dispose(), [floorFade]);
+
+  const light = useRef<THREE.DirectionalLight>(null);
+  const { centre, radius } = useMemo(() => {
+    const box = machineBox(bounds);
+    return { centre: box.getCenter(new THREE.Vector3()), radius: Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1) };
+  }, [bounds]);
+  useLayoutEffect(() => {
+    const l = light.current;
+    if (!l) return;
+    // Nearly from above: a shadow stays under its part; seen from above it must not look like a second part.
+    l.position.copy(centre).add(new THREE.Vector3(0.15, 1, 0.2).multiplyScalar(radius * 2));
+    l.target.position.copy(centre);
+    l.target.updateMatrixWorld();
+    const margin = radius + 1;
+    Object.assign(l.shadow.camera, { left: -margin, right: margin, top: margin, bottom: -margin, near: 0.1, far: radius * 6 });
+    l.shadow.camera.updateProjectionMatrix();
+  }, [centre, radius]);
+
+  const floorRadius = radius * 1.6 + 4;
+  return (
+    <>
+      <hemisphereLight args={["#dfe8f5", "#2a2f36", 0.55]} />
+      <directionalLight
+        ref={light}
+        intensity={1.6}
+        castShadow={quality === "high"}
+        shadow-mapSize={[SHADOW_MAP_SIZE, SHADOW_MAP_SIZE]}
+        shadow-bias={-0.0004}
+        shadow-normalBias={0.02}
+        shadow-intensity={0.55}
+      />
+      {/* A little below the grid, so the grid lines are never hidden by the floor. */}
+      <mesh position={[centre.x, -0.002, centre.z]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow raycast={noRaycast} renderOrder={-1}>
+        <circleGeometry args={[floorRadius, 64]} />
+        <meshStandardMaterial color={STAGE.floor} roughness={1} alphaMap={floorFade} transparent depthWrite={false} />
+      </mesh>
+      <Grid
+        args={[20, 20]}
+        cellSize={0.1}
+        sectionSize={1}
+        cellColor={STAGE.gridCell}
+        sectionColor={STAGE.gridSection}
+        cellThickness={0.6}
+        sectionThickness={1}
+        fadeDistance={30}
+        fadeStrength={1.5}
+        infiniteGrid
+      />
+    </>
+  );
+}
+
+/** Low quality renders at most at this resolution, in device pixels per CSS pixel. */
+const LOW_DPR = 1;
+
+/**
+ * Measures the frame rate and reports the quality to render with whenever it changes.
+ */
+function QualityControl({ setting, onQuality }: { setting: QualitySetting; onQuality: (q: Quality) => void }) {
+  const sampler = useRef(new FrameRateSampler());
+  const current = useRef<Quality | undefined>(undefined);
+  const report = () => {
+    const q = qualityFor(setting, sampler.current.samples);
+    if (q === current.current) return;
+    current.current = q;
+    onQuality(q);
+  };
+  useEffect(report, [setting]);
+  useFrame((_, delta) => {
+    // Once low on auto, nothing more to measure: it stays low.
+    if (setting !== "auto" || current.current === "low") return;
+    const before = sampler.current.samples.length;
+    sampler.current.frame(delta);
+    if (sampler.current.samples.length !== before) report();
+  });
+  return null;
+}
 /** Upper limit of the render resolution in device pixels per CSS pixel, for weak panel PC graphics. */
 const MAX_DPR = 1.5;
 
@@ -1533,10 +1804,16 @@ export function SceneView(props: SceneViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // High until the quality control has measured otherwise.
+  const [quality, setQuality] = useState<Quality>("high");
+
   return (
     <Canvas
       camera={{ position: [4, 3, 4], fov: 45, near: 0.01, far: 200 }}
-      dpr={[1, MAX_DPR]}
+      dpr={[1, quality === "high" ? MAX_DPR : LOW_DPR]}
+      shadows="soft"
+      // Neutral tone mapping keeps the palette colours of lit parts close to what they are.
+      gl={{ toneMapping: THREE.NeutralToneMapping }}
       onPointerDown={(e) => {
         if (pointersDown.current.size > 0 && press.current) press.current.multi = true;
         else {
@@ -1546,10 +1823,14 @@ export function SceneView(props: SceneViewProps) {
         pointersDown.current.add(e.pointerId);
       }}
     >
-      <color attach="background" args={["#1d2128"]} />
-      <ambientLight intensity={0.6} />
-      <directionalLight position={[5, 10, 5]} intensity={1.2} />
-      <SceneContent {...props} onSelect={onSelect} />
+      <QualityControl
+        setting={props.quality}
+        onQuality={(q) => {
+          setQuality(q);
+          props.onQuality?.(q);
+        }}
+      />
+      <SceneContent {...props} onSelect={onSelect} renderQuality={quality} />
       {/* One finger orbits, two pinch and pan; in measure mode one finger picks a point instead. */}
       <OrbitControls
         makeDefault
