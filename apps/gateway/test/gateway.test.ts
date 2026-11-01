@@ -20,6 +20,7 @@ import {
   detector,
   fingerStates,
   noFault,
+  trackModule,
   xtsGantry,
   xtsLoop,
   type MachineComponent,
@@ -27,6 +28,7 @@ import {
 import {
   E_VisuBodyRole,
   E_VisuBodyShape,
+  E_VisuModuleKind,
   E_VisuProductShape,
   E_VisuProductState,
   MANIFEST_PATH,
@@ -100,8 +102,7 @@ const gantry: MachineComponent = {
   kind: "xtsGantry",
   value: xtsGantry({
     pose: { fX: 3000, fY: -500, fZ: 1500 },
-    moduleCount: 3,
-    moduleLength: 1000,
+    modules: [trackModule(), trackModule(), trackModule()],
     zones: [{ nConveyorId: 10, fStart: 0, fEnd: 800 }],
   }),
 };
@@ -113,8 +114,13 @@ const loop: MachineComponent = {
   kind: "xtsLoop",
   value: xtsLoop({
     pose: { fX: 5000, fZ: 900 },
-    straightLength: 2000,
-    curveRadius: 250,
+    modules: [
+      trackModule(),
+      trackModule(E_VisuModuleKind.CURVE_LEFT),
+      trackModule(E_VisuModuleKind.CURVE_LEFT),
+      trackModule(),
+      trackModule(E_VisuModuleKind.CURVE_RIGHT, 300),
+    ],
     zones: [{ nConveyorId: 10, fStart: 2500, fEnd: 2900 }],
   }),
 };
@@ -234,8 +240,11 @@ describe("gateway discovery", () => {
         sourceId: "plc1",
         name: "IDH",
         pose: { x: 3000, y: -500, z: 1500, rx: 0, ry: 0, rz: 0 },
-        moduleCount: 3,
-        moduleLength: 1000,
+        modules: [
+          { kind: "straight", length: 250 },
+          { kind: "straight", length: 250 },
+          { kind: "straight", length: 250 },
+        ],
         xMin: -50,
         xMax: 300,
         zMin: -200,
@@ -254,8 +263,13 @@ describe("gateway discovery", () => {
         sourceId: "plc1",
         name: "Fxx",
         pose: { x: 5000, y: 0, z: 900, rx: 0, ry: 0, rz: 0 },
-        straightLength: 2000,
-        curveRadius: 250,
+        modules: [
+          { kind: "straight", length: 250 },
+          { kind: "curveLeft", length: 250 },
+          { kind: "curveLeft", length: 250 },
+          { kind: "straight", length: 250 },
+          { kind: "curveRight", length: 300 },
+        ],
         toolOffset: 120,
         moverLength: 100,
         moverWidth: 60,
@@ -773,6 +787,7 @@ describe("gateway state snapshots", () => {
         { id: 1, position: 250, x: 80, gripperActive: true, fingers: [], fault: null },
         { id: 3, position: 900, x: -20, gripperActive: false, fingers: [], fault: null },
       ],
+      modules: [{ fault: null }, { fault: null }, { fault: null }],
       fault: null,
     });
   });
@@ -793,6 +808,7 @@ describe("gateway state snapshots", () => {
         { id: 11, position: 120, fingers: [], fault: null },
         { id: 12, position: 2600, fingers: [], fault: null },
       ],
+      modules: [{ fault: null }, { fault: null }, { fault: null }, { fault: null }, { fault: null }],
       fault: null,
     });
   });
@@ -899,6 +915,26 @@ describe("gateway state snapshots", () => {
       null,
     ]);
     expect(components.find((c) => c.type === "conveyor")?.fault).toBeNull();
+  });
+
+  it("publishes one state per configured track module, with its fault", async () => {
+    const faulted: MachineComponent = {
+      ...loop,
+      value: xtsLoop({
+        modules: [trackModule(), trackModule(), trackModule(E_VisuModuleKind.CURVE_LEFT)],
+        moduleFaults: [undefined, { bActive: true, sMessage: "Overtemperature" }, { bActive: false, sMessage: "old" }],
+      }),
+    };
+    const t = setup([infeed, faulted]);
+    await t.gateway.cycle();
+
+    const state = t.states()[0]!.components.find((c) => c.type === "xtsLoop");
+    // The PLC reports a state for every possible module; only the three configured ones are kept.
+    expect(state?.type === "xtsLoop" && state.modules).toEqual([
+      { fault: null },
+      { fault: { message: "Overtemperature" } },
+      { fault: null },
+    ]);
   });
 
   it("publishes the fault of an XTS loop's mover", async () => {

@@ -1,4 +1,4 @@
-# PLC contract (library `Syn_Visu`, protocol version 11)
+# PLC contract (library `Syn_Visu`, protocol version 12)
 
 This is the PLC side of the contract the gateway reads. It is implemented by the TwinCAT library project in
 `plc/Syn_Visu` (solution `plc/RPP_Visu.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
@@ -47,7 +47,7 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
 - Pose rotation order: R = Rz(fRz) · Ry(fRy) · Rx(fRx).
 - `nTimestamp`: distributed-clock time in ns since 2000-01-01 of the cycle that wrote the state. The component FBs set it.
 - Cross-references (`nRobotId`, `nDetectorId`, `nConveyorId`) use manifest `nId` values, never symbol paths; `nMoverId` uses the mover ids an XTS gantry or loop reports.
-- Fault: every component state and every XTS mover carries `stFault : ST_VisuFault` (`bActive`, `sMessage` STRING(80)). While `bActive` is TRUE the visualisation draws the component, or only that mover, red and shows `sMessage` ("Fault" if empty) above it, in the component list and in the inspector. There is one fault per component or mover at a time and no severity. Faults are live state: they are read every cycle and not interpolated.
+- Fault: every component state, every XTS mover and every track module (`aModuleStates[i]`) carries `stFault : ST_VisuFault` (`bActive`, `sMessage` STRING(80)). While `bActive` is TRUE the visualisation draws the component, or only that mover or module, red and shows `sMessage` ("Fault" if empty) above it, in the component list, in the inspector and as a mark on the recording's timeline. There is one fault per component, mover or module at a time and no severity. Faults are live state: they are read every cycle and not interpolated.
 - `fBeltPosition` is a continuous position in mm (no modulo). For modulo axes use `_FB_VisuConveyor.m_SetModuloBeltPosition`.
 - Product latch pose = bottom centre of the product on the belt surface when it was latched.
 - Delta: the PLC reports only the **TCP** (effector centre, the gripper flange) as a position in the MCS. The
@@ -72,14 +72,23 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   `fStart`, `fEnd` and `fCcsOffset` are measured along the belt from `stOriginShift.fX` (its Y and Z move only the
   shown origin). For robots only the shown origin moves; geometry, working and limit area, axis values and mover
   positions stay relative to `stPose`. MCS values (latch poses, finger poses, TCP) are not affected.
-- XTS gantry (e.g. IDH): local frame at the track start on top of the movers with Z = 0; the track runs along local +Y,
-  each mover's X axis along local +X, the common Z axis along local +Z. Gripper flange of a mover in the local frame:
+- XTS track (XTS gantry and XTS loop): a chain of track modules (`nModuleCount`, `aModules`, at most
+  `VISU_GlobalConst_Param.VISU_un_MAX_MODULES`) in the order the movers run along it, each starting where the one
+  before it ends. A module is `STRAIGHT` or a quarter curve (`CURVE_LEFT`, `CURVE_RIGHT`: 90° to the left or right
+  of the direction the track runs in), `fLength` long along the track: `VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH`
+  (250 mm) for a Beckhoff XTS motor module. A curve module is drawn as a quarter circle of that length (radius
+  2 · 250 / π ≈ 159.2 mm), so mover positions on it are exact along the track. Track positions count from the start
+  of module 1. The visualisation draws every module on its own, with a joint between modules, and red while its
+  `aModuleStates[i].stFault` is active (`m_SetModuleFault`).
+- XTS gantry (e.g. IDH): local frame at the track start on top of the movers with Z = 0; the track runs along local +Y
+  (a curve would turn in the local X-Y plane), each mover's X axis along local +X, the common Z axis along local +Z. Gripper flange of a mover in the local frame:
   (X + `fToolOffsetX`, position, Z + `fToolOffsetZ`). Only actual values are reported; a gripper rotation (C) shows
   only through the finger poses.
-- XTS loop (e.g. Fxx): local frame at the start of the lower straight, which runs along local +X; the loop stands in the
-  local X-Z plane with the upper straight at +2R. Mover positions run from there in the conveying direction over the far
-  curve and back along the upper straight (0..2L + 2πR). The curves are drawn as semicircles. A mover's gripper flange (tool
-  point) lies `fToolOffset` outwards from the track.
+- XTS loop (e.g. Fxx): local frame at the start of module 1, which runs along local +X; the loop stands in the local
+  X-Z plane and a left curve turns up towards +Z. A usual loop is a straight of n modules, two `CURVE_LEFT`, n
+  straight modules back and two `CURVE_LEFT` down to the start. Mover positions run from 0 to `m_TrackLength()` in the
+  conveying direction. The chain should close: if its end lies more than 1 mm from its start the visualisation warns.
+  A mover's gripper flange (tool point) lies `fToolOffset` outwards (to the right of its travel) from the track.
 - Cartesian robot: two fixed rails along local +Y with their top at `fRailHeight`, a bridge travelling in Y on them, a
   carriage on the bridge travelling in X and a vertical column (Z) ending at the gripper flange. Local frame: origin at
   axis X = Y = 0, Z up; the flange is at (X, Y, Z). Only actual values are reported; gripper rotations (e.g. C and A)
@@ -117,6 +126,9 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
 - Protocol version 11 removed the zone kind (`ST_VisuZone.eKind`, `E_VisuZoneKind`), added the product's `nDetectorId`
   and the vision system and product sensor (`ST_VisuDetector`, `ST_VisuBody`, `ST_VisuBodyState`, `E_VisuBodyShape`,
   `E_VisuBodyRole`, `E_VisuComponentType.VISION` and `SENSOR`).
+- Protocol version 12 made XTS tracks chains of track modules: `nModuleCount` and `aModules` (`ST_VisuTrackModule`,
+  `E_VisuModuleKind`) replace the gantry's `nModuleCount`/`fModuleLength` and the loop's `fStraightLength`/
+  `fCurveRadius`; the states gained `aModuleStates` (`ST_VisuTrackModuleState`) with a fault per module.
 
 ## What the library contains
 
@@ -135,20 +147,22 @@ the FBs fill them in their output `vo_Visu`, so application code does not write 
 | `_FB_VisuComponent` | Abstract base of all: `m_Register`, `m_Id`, config version and DC timestamps |
 | `_FB_VisuZoneComponent` | Abstract base of every component with zones: `m_SetZone`, `m_ClearZones`; the derived FB tells where its zones lie (`m_Zones`) |
 | `_FB_VisuRobot` | Abstract base of the robots: zones plus `m_SetFinger`, `m_ClearFingers` (`m_Fingers`) |
+| `_FB_VisuXtsTrack` | Abstract base of the XTS kinematics: a robot plus its track of modules (`m_SetModule`, `m_ClearModules`, `m_SetModuleFault`, `m_TrackLength`; `m_Modules`) |
 | `_FB_VisuDetector` | Abstract base of the detectors: zones plus bodies (`m_SetBody`, `m_ClearBodies`, `m_SetBodyActive`) |
 | `ST_VisuManifest`, `ST_VisuManifestEntry`, `E_VisuComponentType` | Discovery: which components exist and where |
 | `ST_VisuConveyor` (`stConfig` / `stState`), `ST_VisuProduct`, `ST_VisuProductType` (size, `eShape`, `fCornerRadius`), `E_VisuProductState`, `E_VisuProductShape` | Conveyor contract structure (`_FB_VisuConveyor.vo_Visu`) |
 | `ST_VisuDelta` (`stConfig`: geometry, working area, limit area, zones, fingers / `stState`: actual and setpoint TCP, finger states), `ST_VisuWorkingArea`, `ST_VisuLimitArea`, `ST_VisuZone` | Delta contract structure (`_FB_VisuDelta.vo_Visu`) |
-| `ST_VisuXtsGantry` (`stConfig`: track, strokes, gripper offsets, mover size, zones, fingers / `stState`: Z and movers with finger states), `ST_VisuGantryMover` | XTS gantry contract structure (`_FB_VisuXtsGantry.vo_Visu`) |
-| `ST_VisuXtsLoop` (`stConfig`: straight length, curve radius, tool offset, mover size, zones, fingers / `stState`: movers with finger states), `ST_VisuLoopMover` | XTS loop contract structure (`_FB_VisuXtsLoop.vo_Visu`) |
+| `ST_VisuXtsGantry` (`stConfig`: track modules, strokes, gripper offsets, mover size, zones, fingers / `stState`: Z, movers with finger states, module states), `ST_VisuGantryMover` | XTS gantry contract structure (`_FB_VisuXtsGantry.vo_Visu`) |
+| `ST_VisuXtsLoop` (`stConfig`: track modules, tool offset, mover size, zones, fingers / `stState`: movers with finger states, module states), `ST_VisuLoopMover` |
+| `ST_VisuTrackModule`, `ST_VisuTrackModuleState`, `E_VisuModuleKind` | One module of an XTS track (kind, length) and its live fault | XTS loop contract structure (`_FB_VisuXtsLoop.vo_Visu`) |
 | `ST_VisuCartesian` (`stConfig`: X/Y/Z strokes, rail height, zones, fingers / `stState`: X, Y, Z, gripper, finger states) | Cartesian robot contract structure (`_FB_VisuCartesian.vo_Visu`) |
 | `ST_VisuDetector` (`stConfig`: pose, zones, bodies / `stState`: body states), `ST_VisuBody`, `ST_VisuBodyState`, `E_VisuBodyShape`, `E_VisuBodyRole` | Contract structure of a vision system or product sensor (`_FB_VisuDetector.vo_Visu`) |
-| `ST_VisuFault` | Fault of a component or a mover: `bActive`, `sMessage` |
+| `ST_VisuFault` | Fault of a component, a mover or a track module: `bActive`, `sMessage` |
 | `ST_VisuFinger`, `ST_VisuFingerState` | Gripper finger (cylinder size) and its live MCS pose and grip state |
 | `ST_VisuPose`, `ST_VisuPlanarPose`, `ST_VisuPosition` | MCS poses and positions |
-| `VISU_GlobalConst` | `VISU_un_PROTOCOL_VERSION` (contract version; `ST_VisuManifest` initialises to it), `VISU_lr_DEG_TO_RAD` |
-| `VISU_GlobalConst_Param` | Array sizes: `VISU_un_MAX_MANIFEST_ENTRIES` (32), `VISU_un_MAX_PRODUCTS` (128), `VISU_un_MAX_PRODUCT_TYPES` (8), `VISU_un_MAX_ZONES` (8), `VISU_un_MAX_MOVERS` (40), `VISU_un_MAX_FINGERS` (8, per gripper), `VISU_un_MAX_BODIES` (16, per detector) |
-| `_FC_GetVersionSynVisu` | Library version at runtime (4.0.0) |
+| `VISU_GlobalConst` | `VISU_un_PROTOCOL_VERSION` (contract version; `ST_VisuManifest` initialises to it), `VISU_lr_DEG_TO_RAD`, `VISU_lr_XTS_MODULE_LENGTH` (250 mm) |
+| `VISU_GlobalConst_Param` | Array sizes: `VISU_un_MAX_MANIFEST_ENTRIES` (32), `VISU_un_MAX_PRODUCTS` (128), `VISU_un_MAX_PRODUCT_TYPES` (8), `VISU_un_MAX_ZONES` (8), `VISU_un_MAX_MOVERS` (40), `VISU_un_MAX_FINGERS` (8, per gripper), `VISU_un_MAX_BODIES` (16, per detector), `VISU_un_MAX_MODULES` (64, per XTS track) |
+| `_FC_GetVersionSynVisu` | Library version at runtime (5.0.0) |
 
 ### Methods
 
@@ -180,6 +194,15 @@ All robot FBs (Delta, XTS gantry, XTS loop, Cartesian; `_FB_VisuRobot`):
 | --- | --- |
 | `m_SetFinger(vi_un_Finger, vi_lr_Diameter, vi_lr_Height)` | Defines finger `vi_un_Finger` (1-based) of the gripper (for XTS kinematics: of every mover's gripper); the finger count grows to it |
 | `m_ClearFingers()` | Removes the gripper definition |
+
+Both XTS FBs (XTS gantry, XTS loop; `_FB_VisuXtsTrack`):
+
+| Method | Purpose |
+| --- | --- |
+| `m_SetModule(vi_un_Module, vi_e_Kind, vi_lr_Length := VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH)` | Sets track module `vi_un_Module` (1-based, in the order the movers run; set them in order, the count grows to it) |
+| `m_ClearModules()` | Removes all track modules |
+| `m_SetModuleFault(vi_un_Module, vi_b_Fault, vi_str_FaultMessage := '')` | Reports a module's fault; call every cycle with its current state |
+| `m_TrackLength()` | Length of the track along its modules, mm: the range of track positions (on a loop its perimeter) |
 
 All detector FBs (vision system, product sensor; `_FB_VisuDetector`). `m_Register`, called every cycle, also stamps
 the detector's state.
@@ -234,7 +257,7 @@ the detector's state.
 
 | Method | Purpose |
 | --- | --- |
-| `m_Configure(vi_Pose, vi_un_ModuleCount, vi_lr_ModuleLength, vi_lr_XMin, vi_lr_XMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ToolOffsetX, vi_lr_ToolOffsetZ, vi_lr_MoverLength, vi_lr_MoverWidth)` | Pose, track, strokes, gripper offsets, mover size |
+| `m_Configure(vi_Pose, vi_lr_XMin, vi_lr_XMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ToolOffsetX, vi_lr_ToolOffsetZ, vi_lr_MoverLength, vi_lr_MoverWidth)` | Pose, strokes, gripper offsets, mover size; the track from `m_SetModule` |
 | `m_SetZPosition(vi_lr_Z)` | Common Z axis and state timestamp; call once per cycle |
 | `m_SetMoverCount(vi_un_Count)` | Number of mover entries evaluated; entries beyond are invalidated |
 | `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_lr_X, vi_b_GripperActive, vi_FingerStates, vi_b_Fault := FALSE, vi_str_FaultMessage := '')` | One mover's actual values, finger states and fault |
@@ -243,10 +266,9 @@ the detector's state.
 
 | Method | Purpose |
 | --- | --- |
-| `m_Configure(vi_Pose, vi_lr_StraightLength, vi_lr_CurveRadius, vi_lr_ToolOffset, vi_lr_MoverLength, vi_lr_MoverWidth)` | Pose, track geometry, tool offset, mover size |
+| `m_Configure(vi_Pose, vi_lr_ToolOffset, vi_lr_MoverLength, vi_lr_MoverWidth)` | Pose, tool offset, mover size; the track from `m_SetModule` |
 | `m_SetMoverCount(vi_un_Count)` | Number of mover entries evaluated; entries beyond are invalidated |
 | `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_FingerStates, vi_b_Fault := FALSE, vi_str_FaultMessage := '')` | One mover's position along the loop, finger states and fault |
-| `m_Perimeter()` | Loop length as the visualisation computes it, mm |
 
 `_FB_VisuCartesian`:
 
@@ -339,6 +361,7 @@ It then reads `<sPath>.stConfig` once. Every cycle it sum-reads `GVL_Visu.stMani
 | `E_VisuProductShape` (UINT) | `BOX` 0, `CYLINDER` 1, `ROUNDED_BOX` 2 |
 | `E_VisuBodyShape` (UINT) | `BOX` 0, `CYLINDER` 1, `FRUSTUM` 2 |
 | `E_VisuBodyRole` (UINT) | `STRUCTURE` 0, `SENSOR` 1, `BEAM` 2, `FIELD_OF_VIEW` 3 |
+| `E_VisuModuleKind` (UINT) | `STRAIGHT` 0, `CURVE_LEFT` 1, `CURVE_RIGHT` 2 |
 
 Values are part of the contract: append, never renumber. The gateway reads a value as the index of the protocol's
 option, so they count from 0 without gaps.

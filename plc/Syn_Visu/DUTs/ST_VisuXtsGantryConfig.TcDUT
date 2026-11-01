@@ -3,12 +3,12 @@
   <DUT Name="ST_VisuXtsGantryConfig" Id="{c8acad2a-492e-4cce-85fd-045c31f861e2}">
     <Declaration><![CDATA[TYPE ST_VisuXtsGantryConfig :
 STRUCT
-	(* Straight XTS track of equal modules, carried by a common Z axis; every mover carries an X axis with a
+	(* Straight XTS track of track modules, carried by a common Z axis; every mover carries an X axis with a
 	   gripper flange at its end. Local frame: origin at the track start on top of the movers with Z = 0; the track runs
 	   along local +Y, the X axes along local +X, the Z axis along local +Z (up). *)
 	stPose : ST_VisuPose; // MCS
-	nModuleCount : UINT; // track modules in a row
-	fModuleLength : LREAL; // mm, length of one module
+	nModuleCount : UINT; // entries [0..nModuleCount-1] are evaluated
+	aModules : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF ST_VisuTrackModule; // from the track start along local +Y
 	fXMin : LREAL; // mm, X stroke
 	fXMax : LREAL; // mm
 	fZMin : LREAL; // mm, Z stroke

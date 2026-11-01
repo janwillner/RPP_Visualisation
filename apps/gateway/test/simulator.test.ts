@@ -98,7 +98,7 @@ describe("simulator", () => {
     }
   }, 30_000);
 
-  it("puts a Fxx mover, an IDH mover and the Delta into a fault now and then and clears it again", async () => {
+  it("puts a Fxx mover, an IDH mover, a Fxx track module and the Delta into a fault now and then and clears it again", async () => {
     const sim = createSimulator({ seed: 1 });
     const gateway = createGateway({ plc: sim.plc, sourceId: "sim" });
     const states: StateMessage[] = [];
@@ -126,6 +126,13 @@ describe("simulator", () => {
       expect(series.some((f) => f.movers.length === 0)).toBe(true);
       expect(series.every((f) => f.movers.length <= 1 && f.component === null)).toBe(true);
     }
+    const moduleFaults = states.map((s) => {
+      const c = s.components.find((x) => x.type === "xtsLoop");
+      return c?.type === "xtsLoop" ? c.modules.flatMap((m, i) => (m.fault ? [i + 1] : [])) : [];
+    });
+    // The first curve module after the lower straight of ten modules.
+    expect(moduleFaults.some((m) => m.length === 1 && m[0] === 11)).toBe(true);
+    expect(moduleFaults.some((m) => m.length === 0)).toBe(true);
     const deltaFaults = faultsOf("delta").map((f) => f.component);
     expect(deltaFaults.some((f) => f !== null && f.message.length > 0)).toBe(true);
     expect(deltaFaults.some((f) => f === null)).toBe(true);

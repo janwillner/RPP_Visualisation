@@ -86,7 +86,7 @@ A product that reached the end of its conveyor without being picked. Products pl
 _Avoid_: lost product
 
 **Fault**:
-A condition the PLC reports for a component or a single mover, with a message for the operator, until it clears it. A faulted component or mover is drawn red.
+A condition the PLC reports for a component, a single mover or a single track module, with a message for the operator, until it clears it. A faulted component, mover or track module is drawn red.
 _Avoid_: error (for the display), alarm, warning
 
 ## Robots
@@ -104,7 +104,7 @@ A straight track of XTS linear motor modules on a common Z axis; every mover car
 _Avoid_: IDH (when meaning the kinematics), linear XTS
 
 **XTS loop**:
-A closed XTS track of two straights joined by two curves on which movers circulate, take products over, change their spacing and hand them on. Example: Fxx.
+A closed XTS track, usually two straights joined at each end by two curve modules, on which movers circulate, take products over, change their spacing and hand them on. Example: Fxx.
 _Avoid_: Fxx (when meaning the kinematics), oval, carousel
 
 **Cartesian robot**:
@@ -147,12 +147,20 @@ _Avoid_: TCP (the TCP is the flange of a Delta)
 A carriage driven along an XTS track.
 _Avoid_: shuttle, slider
 
+**Track**:
+The path movers run along on an XTS gantry or an XTS loop: a chain of track modules, joined end to start. An XTS loop's track closes on itself.
+_Avoid_: rail, guide
+
 **Track module**:
-One XTS motor module; an XTS gantry's track is a row of equal modules.
+One XTS motor module, 250 mm long along the track: a straight module or a curve module. Each can report its own fault.
 _Avoid_: segment, motor (when meaning the module)
 
+**Curve module**:
+A track module that turns the track by a quarter circle (90°) to the left or right. Two in a row make the half turn at the end of an XTS loop.
+_Avoid_: bend, arc module
+
 **Track position**:
-How far along its track a mover is, in mm: from the track start on an XTS gantry, from the start of the lower straight in the conveying direction on an XTS loop.
+How far along its track a mover is, in mm, from the start of the first track module.
 _Avoid_: mover encoder
 
 **Working area**:

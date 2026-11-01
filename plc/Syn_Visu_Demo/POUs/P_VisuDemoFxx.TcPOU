@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoFxx" Id="{b2af5188-ce65-4f7b-be0a-d48b3186bc4c}" SpecialFunc="None">
+  <POU Name="P_VisuDemoFxx" Id="{22918559-f8eb-4c7f-bcc9-42a3db4120ca}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -8,7 +8,8 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 DEMO ONLY: Fxx application (Y = 2500). Products arrive irregularly on the Fxx infeed; an XTS loop above the belts<br>
-takes them over and puts them onto the Fxx outfeed with an even spacing. Mover 3 is in a fault now and then.<br>
+takes them over and puts them onto the Fxx outfeed with an even spacing. Mover 3 and the first far curve module<br>
+are in a fault now and then.<br>
 Called by P_VisuDemo.<br>
 ****************************************************************************************************)
 PROGRAM P_VisuDemoFxx
@@ -34,6 +35,8 @@ VAR
 	n_LoopMode							: ARRAY[0..11] OF INT;
 	udn_LoopProduct						: ARRAY[0..11] OF UDINT;	// [-] product id on the Fxx infeed
 	MoverFingers						: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;	// the mover's cup
+	un_Module							: UINT;	// [-] track module being set
+	e_ModuleKind						: E_VisuModuleKind;
 END_VAR
 VAR CONSTANT
 	lr_FXX_Y							: LREAL := 2500;	// [mm]
@@ -43,8 +46,9 @@ VAR CONSTANT
 	lr_FXX_OUTFEED_LENGTH				: LREAL := 3000;	// [mm]
 	lr_FXX_OUTFEED_SPEED				: LREAL := 300;	// [mm/s]
 	lr_LOOP_X							: LREAL := 1000;	// [mm] start of the lower straight above the Fxx infeed
-	lr_LOOP_STRAIGHT					: LREAL := 2400;	// [mm]
-	lr_LOOP_RADIUS						: LREAL := 250;	// [mm]
+	un_LOOP_STRAIGHT_MODULES			: UINT := 10;	// [-] straight XTS modules per side, joined at each end by two left curve modules
+	lr_LOOP_STRAIGHT					: LREAL := 2500;	// [mm] un_LOOP_STRAIGHT_MODULES * 250
+	lr_LOOP_RADIUS						: LREAL := 159.15494309189535;	// [mm] two 250 mm quarter curves: 2 * 250 / pi
 	lr_LOOP_TOOL_OFFSET					: LREAL := 120;	// [mm]
 	n_LOOP_MOVERS						: INT := 12;	// [-] size of the lr_LoopS, n_LoopMode and udn_LoopProduct arrays
 	lr_LOOP_SLOT						: LREAL := 130;	// [mm] queue spacing
@@ -54,6 +58,7 @@ VAR CONSTANT
 	lr_LOOP_DELIVER_SPEED				: LREAL := 700;	// [mm/s]
 	lr_LOOP_RETURN_SPEED				: LREAL := 900;	// [mm/s]
 	lr_FAULT_START						: LREAL := 10;	// [s] start of the mover 3 fault in the fault period
+	lr_MODULE_FAULT_START				: LREAL := 15;	// [s] start of the fault of the first far curve module
 	n_LOOP_QUEUE						: INT := 0;
 	n_LOOP_TRACK						: INT := 1;
 	n_LOOP_DELIVER						: INT := 2;
@@ -127,9 +132,21 @@ XtsPose.fY := lr_FXX_Y;
 XtsPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT + lr_LOOP_TOOL_OFFSET;
 XtsPose.fRz := 0;
 (* The flange sits one cup height closer to the track, so the cup's grip point is at the products' tops. *)
-fb_Fxx.m_Configure(vi_Pose := XtsPose, vi_lr_StraightLength := lr_LOOP_STRAIGHT, vi_lr_CurveRadius := lr_LOOP_RADIUS,
-	vi_lr_ToolOffset := lr_LOOP_TOOL_OFFSET - DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT, vi_lr_MoverLength := 100,
-	vi_lr_MoverWidth := 60);
+fb_Fxx.m_Configure(vi_Pose := XtsPose, vi_lr_ToolOffset := lr_LOOP_TOOL_OFFSET - DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT,
+	vi_lr_MoverLength := 100, vi_lr_MoverWidth := 60);
+(* Track: per side the straight modules, then two left curve modules turning up and back. *)
+FOR un_Module := 1 TO 2 * (un_LOOP_STRAIGHT_MODULES + 2) DO
+	IF (un_Module - 1) MOD (un_LOOP_STRAIGHT_MODULES + 2) < un_LOOP_STRAIGHT_MODULES THEN
+		e_ModuleKind := E_VisuModuleKind.STRAIGHT;
+	ELSE
+		e_ModuleKind := E_VisuModuleKind.CURVE_LEFT;
+	END_IF
+	fb_Fxx.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := e_ModuleKind);
+END_FOR
+fb_Fxx.m_SetModuleFault(vi_un_Module := un_LOOP_STRAIGHT_MODULES + 1,
+	vi_b_Fault := DEMO_GlobalVar.DEMO_lr_FaultPhase >= lr_MODULE_FAULT_START
+					AND DEMO_GlobalVar.DEMO_lr_FaultPhase < lr_MODULE_FAULT_START + DEMO_GlobalConst.DEMO_lr_FAULT_DURATION,
+	vi_str_FaultMessage := 'Overtemperature');
 fb_Fxx.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER,
 	vi_lr_Height := DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT);
 fb_Fxx.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_FxxInfeed.m_Id(), vi_lr_Start := lr_LOOP_X,
@@ -235,7 +252,7 @@ END_VAR]]></Declaration>
         <ST><![CDATA[(****************************************************************************************************)
 (* QUEUE AND TAKE-OVER                                                                              *)
 (****************************************************************************************************)
-lr_TempPerimeter := fb_Fxx.m_Perimeter();
+lr_TempPerimeter := fb_Fxx.m_TrackLength();
 IF NOT b_LoopInitialised THEN
 	FOR n_TempI := 0 TO n_LOOP_MOVERS - 1 DO
 		lr_LoopS[n_TempI] := lr_TempPerimeter - INT_TO_LREAL(n_TempI) * lr_LOOP_SLOT;

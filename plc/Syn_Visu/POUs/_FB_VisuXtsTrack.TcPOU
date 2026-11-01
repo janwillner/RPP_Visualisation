@@ -1,0 +1,196 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="_FB_VisuXtsTrack" Id="{5469c6c2-1ba8-4f7d-b21e-953aeec2fd48}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Base of the XTS kinematics (XTS gantry, XTS loop): a robot whose movers run along a track of XTS motor<br>
+modules, m_SetModule, m_ClearModules, m_SetModuleFault and m_TrackLength. The track is a chain of modules in the order the movers<br>
+run along it, each starting where the one before it ends: STRAIGHT, or a quarter curve CURVE_LEFT or CURVE_RIGHT.<br>
+A derived FB tells where its modules lie through m_Modules. Not used directly.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 5.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New: XTS tracks of track modules, a fault per module<br>
+****************************************************************************************************)
+FUNCTION_BLOCK ABSTRACT _FB_VisuXtsTrack EXTENDS _FB_VisuRobot
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_ClearModules" Id="{13217753-2453-4e6d-a609-d7b6bba2aded}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Removes all track modules. TRUE if there were any.<br>
+****************************************************************************************************)
+METHOD m_ClearModules : BOOL
+VAR
+	p_TempCount							: POINTER TO UINT;
+	p_TempModules						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF ST_VisuTrackModule;
+	TempEmpty							: ST_VisuTrackModule;
+	un_TempIndex						: UINT;
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ClearModules := FALSE;
+m_Modules(vo_p_Count => p_TempCount, vo_p_Modules => p_TempModules);
+IF p_TempCount = 0 OR p_TempModules = 0 THEN
+	RETURN;
+END_IF
+m_ClearModules := p_TempCount^ > 0;
+FOR un_TempIndex := 0 TO VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1 DO
+	p_TempModules^[un_TempIndex] := TempEmpty;
+END_FOR
+p_TempCount^ := 0;
+IF m_ClearModules THEN
+	m_NotifyConfigChanged();
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Modules" Id="{e95cf002-fa29-45b8-be2e-dc395028d41f}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Where the track modules lie in the derived FB's contract structure: vo_p_Count points to its nModuleCount,<br>
+vo_p_Modules to its aModules, vo_p_States to its state's aModuleStates.<br>
+****************************************************************************************************)
+METHOD PROTECTED ABSTRACT m_Modules : BOOL
+VAR_OUTPUT
+	vo_p_Count							: POINTER TO UINT;
+	vo_p_Modules						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF ST_VisuTrackModule;
+	vo_p_States							: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF ST_VisuTrackModuleState;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetModule" Id="{4566c4a8-e939-44fa-b47f-20f67add2c91}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets track module vi_un_Module (1-based, in the order the movers run along the track): it starts where module<br>
+vi_un_Module - 1 ends. The module count grows to vi_un_Module; set the modules in order. Track positions count<br>
+from the start of module 1. The config version only changes when a value does.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for vi_un_Module outside 1..VISU_GlobalConst_Param.VISU_un_MAX_MODULES.<br>
+****************************************************************************************************)
+METHOD m_SetModule : BOOL
+VAR_INPUT
+	vi_un_Module						: UINT;	// [-] 1-based
+	vi_e_Kind							: E_VisuModuleKind;	// straight, or a quarter curve to the left or right
+	vi_lr_Length						: LREAL := VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH;	// [mm] along the track
+END_VAR
+VAR
+	p_TempCount							: POINTER TO UINT;
+	p_TempModules						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF ST_VisuTrackModule;
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetModule := FALSE;
+IF vi_un_Module = 0 OR vi_un_Module > VISU_GlobalConst_Param.VISU_un_MAX_MODULES THEN
+	RETURN;
+END_IF
+m_Modules(vo_p_Count => p_TempCount, vo_p_Modules => p_TempModules);
+IF p_TempCount = 0 OR p_TempModules = 0 THEN
+	RETURN;
+END_IF
+(* Compared member by member: the padding after eKind is not part of the value. *)
+IF vi_un_Module > p_TempCount^
+OR p_TempModules^[vi_un_Module - 1].eKind <> vi_e_Kind
+OR p_TempModules^[vi_un_Module - 1].fLength <> vi_lr_Length
+THEN
+	p_TempModules^[vi_un_Module - 1].eKind := vi_e_Kind;
+	p_TempModules^[vi_un_Module - 1].fLength := vi_lr_Length;
+	p_TempCount^ := MAX(p_TempCount^, vi_un_Module);
+	m_NotifyConfigChanged();
+END_IF
+m_SetModule := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetModuleFault" Id="{348d4997-f98b-4d3f-a32e-391b77c69334}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Reports the fault of track module vi_un_Module (1-based, as in m_SetModule), e.g. an overtemperature of that<br>
+motor module. The visualisation draws the module red with the message above it. Call it every cycle with the<br>
+module's current state; vi_b_Fault = FALSE clears it.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for vi_un_Module outside 1..VISU_GlobalConst_Param.VISU_un_MAX_MODULES.<br>
+****************************************************************************************************)
+METHOD m_SetModuleFault : BOOL
+VAR_INPUT
+	vi_un_Module						: UINT;	// [-] 1-based
+	vi_b_Fault							: BOOL;	// TRUE: this module is in a fault
+	vi_str_FaultMessage					: STRING(80) := '';	// shown to the operator; empty shows 'Fault'
+END_VAR
+VAR
+	p_TempCount							: POINTER TO UINT;
+	p_TempModules						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF ST_VisuTrackModule;
+	p_TempStates						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF ST_VisuTrackModuleState;
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetModuleFault := FALSE;
+IF vi_un_Module = 0 OR vi_un_Module > VISU_GlobalConst_Param.VISU_un_MAX_MODULES THEN
+	RETURN;
+END_IF
+m_Modules(vo_p_Count => p_TempCount, vo_p_Modules => p_TempModules, vo_p_States => p_TempStates);
+IF p_TempStates = 0 THEN
+	RETURN;
+END_IF
+p_TempStates^[vi_un_Module - 1].stFault.bActive := vi_b_Fault;
+p_TempStates^[vi_un_Module - 1].stFault.sMessage := vi_str_FaultMessage;
+m_SetModuleFault := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_TrackLength" Id="{c771ab10-a096-4a3f-ba07-0f70a3bfba01}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Length of the track along its modules, [mm]: the range of track positions (on an XTS loop the perimeter).<br>
+****************************************************************************************************)
+METHOD m_TrackLength : LREAL
+VAR
+	p_TempCount							: POINTER TO UINT;
+	p_TempModules						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF ST_VisuTrackModule;
+	un_TempIndex						: UINT;
+END_VAR
+
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_TrackLength := 0;
+m_Modules(vo_p_Count => p_TempCount, vo_p_Modules => p_TempModules);
+IF p_TempCount = 0 OR p_TempModules = 0 THEN
+	RETURN;
+END_IF
+FOR un_TempIndex := 1 TO MIN(p_TempCount^, VISU_GlobalConst_Param.VISU_un_MAX_MODULES) DO
+	m_TrackLength := m_TrackLength + p_TempModules^[un_TempIndex - 1].fLength;
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

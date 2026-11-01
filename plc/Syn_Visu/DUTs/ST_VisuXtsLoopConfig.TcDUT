@@ -3,12 +3,12 @@
   <DUT Name="ST_VisuXtsLoopConfig" Id="{2c040c9d-8608-4a3d-a9ac-0693e5ee6642}">
     <Declaration><![CDATA[TYPE ST_VisuXtsLoopConfig :
 STRUCT
-	(* Closed XTS loop: two straights joined by two 180 deg curves (drawn as semicircles), standing in the local X-Z
-	   plane. Local frame: origin at the start of the lower straight, which runs along local +X in the conveying
-	   direction; the upper straight lies at +2 * fCurveRadius in Z. *)
+	(* Closed XTS loop of track modules standing in the local X-Z plane, e.g. two straights joined at each end by two
+	   CURVE_LEFT modules. Local frame: origin at the start of the first module, which runs along local +X in the
+	   conveying direction; a left curve turns up towards +Z. *)
 	stPose : ST_VisuPose; // MCS
-	fStraightLength : LREAL; // mm
-	fCurveRadius : LREAL; // mm
+	nModuleCount : UINT; // entries [0..nModuleCount-1] are evaluated
+	aModules : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF ST_VisuTrackModule; // the chain should end where it starts
 	fToolOffset : LREAL; // mm, gripper flange (tool point) of a mover outwards from the track
 	fMoverLength : LREAL; // mm, along the track
 	fMoverWidth : LREAL; // mm

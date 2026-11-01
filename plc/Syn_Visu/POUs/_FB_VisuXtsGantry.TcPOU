@@ -1,19 +1,21 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuXtsGantry" Id="{15e51e44-cdf0-41c3-a441-e86fe2332022}" SpecialFunc="None">
+  <POU Name="_FB_VisuXtsGantry" Id="{e258240d-815f-404f-8267-99bc35d2d4eb}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-One visualised XTS gantry (e.g. IDH): a straight XTS track on a common Z axis, each mover with an X axis and a<br>
-gripper flange at its end. Typical cycle:<br>
+One visualised XTS gantry (e.g. IDH): a straight track of XTS motor modules on a common Z axis, each mover<br>
+with an X axis and a gripper flange at its end. Typical cycle:<br>
   fb_Idh.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 30, vi_str_Name := 'IDH',<br>
       vi_str_Path := 'MAIN.fb_Idh.vo_Visu');<br>
-  fb_Idh.m_Configure(vi_Pose := TrackPose, vi_un_ModuleCount := 6, vi_lr_ModuleLength := 250, vi_lr_XMin := 0,<br>
-      vi_lr_XMax := 700, vi_lr_ZMin := -100, vi_lr_ZMax := 0, vi_lr_ToolOffsetX := 150, vi_lr_ToolOffsetZ := -350,<br>
+  fb_Idh.m_Configure(vi_Pose := TrackPose, vi_lr_XMin := 0, vi_lr_XMax := 700, vi_lr_ZMin := -100, vi_lr_ZMax := 0, vi_lr_ToolOffsetX := 150, vi_lr_ToolOffsetZ := -350,<br>
       vi_lr_MoverLength := 155, vi_lr_MoverWidth := 80);<br>
+  FOR un_Module := 1 TO 6 DO<br>
+      fb_Idh.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := E_VisuModuleKind.STRAIGHT);<br>
+  END_FOR<br>
   fb_Idh.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 50);<br>
   fb_Idh.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 3, vi_lr_Start := 1100, vi_lr_End := 2600);<br>
   fb_Idh.m_SetZPosition(lr_ZAxisActual);<br>
@@ -28,8 +30,9 @@ vo_Visu is the contract structure the gateway reads at the path given to m_Regis
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Zones and fingers from _FB_VisuRobot; m_SetZone by index, no kind<br>
+Syn_Visu 5.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Track of modules from _FB_VisuXtsTrack (m_SetModule)<br>
 ****************************************************************************************************)
-FUNCTION_BLOCK _FB_VisuXtsGantry EXTENDS _FB_VisuRobot
+FUNCTION_BLOCK _FB_VisuXtsGantry EXTENDS _FB_VisuXtsTrack
 VAR_OUTPUT
 	vo_Visu								: ST_VisuXtsGantry;	// contract structure read by the gateway
 END_VAR]]></Declaration>
@@ -78,13 +81,11 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Sets pose, track, strokes, gripper offsets and mover size. TRUE if anything changed.<br>
+Sets pose, strokes, gripper offsets and mover size; the track comes from m_SetModule. TRUE if anything changed.<br>
 ****************************************************************************************************)
 METHOD m_Configure : BOOL
 VAR_INPUT
 	vi_Pose								: ST_VisuPose;	// MCS, track start on top of the movers with Z = 0
-	vi_un_ModuleCount					: UINT;	// [-] track modules in a row
-	vi_lr_ModuleLength					: LREAL;	// [mm]
 	vi_lr_XMin							: LREAL;	// [mm]
 	vi_lr_XMax							: LREAL;	// [mm]
 	vi_lr_ZMin							: LREAL;	// [mm]
@@ -100,8 +101,6 @@ END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[TempNew := vo_Visu.stConfig;
 TempNew.stPose := vi_Pose;
-TempNew.nModuleCount := vi_un_ModuleCount;
-TempNew.fModuleLength := vi_lr_ModuleLength;
 TempNew.fXMin := vi_lr_XMin;
 TempNew.fXMax := vi_lr_XMax;
 TempNew.fZMin := vi_lr_ZMin;
@@ -132,6 +131,29 @@ END_VAR
         <ST><![CDATA[vo_p_Count := ADR(vo_Visu.stConfig.nFingerCount);
 vo_p_Fingers := ADR(vo_Visu.stConfig.aFingers);
 m_Fingers := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Modules" Id="{dd17074c-cb31-4c60-a29a-76adc2de14db}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The gantry's track modules for _FB_VisuXtsTrack.m_SetModule and m_ClearModules.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_Modules : BOOL
+VAR_OUTPUT
+	vo_p_Count							: POINTER TO UINT;
+	vo_p_Modules						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF ST_VisuTrackModule;
+	vo_p_States							: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF ST_VisuTrackModuleState;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_p_Count := ADR(vo_Visu.stConfig.nModuleCount);
+vo_p_Modules := ADR(vo_Visu.stConfig.aModules);
+vo_p_States := ADR(vo_Visu.stState.aModuleStates);
+m_Modules := TRUE;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_SetFault" Id="{a224315d-90cd-4fab-ba72-581b61a07fcb}">

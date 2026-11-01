@@ -9,7 +9,7 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 11;
+export const PROTOCOL_VERSION = 12;
 
 /** Full 6-DOF pose. Rotation order: R = Rz(rz) · Ry(ry) · Rx(rx). */
 export const PoseSchema = z.object({
@@ -47,7 +47,7 @@ export const FingerStateSchema = z.object({
 });
 export type FingerState = z.infer<typeof FingerStateSchema>;
 
-/** An active fault of a component or an XTS mover, reported live by the PLC. */
+/** An active fault of a component, an XTS mover or a track module, reported live by the PLC. */
 export const FaultSchema = z.object({
   /** As the PLC reports it; may be empty. */
   message: z.string(),
@@ -182,13 +182,33 @@ export const DeltaConfigSchema = robotConfig("delta", {
 export type DeltaConfig = z.infer<typeof DeltaConfigSchema>;
 
 /**
+ * What a track module is: a straight one, or a curve module that turns the track by a quarter circle (90°) to the left
+ * or the right of the direction it runs in.
+ */
+export const TrackModuleKindSchema = z.enum(["straight", "curveLeft", "curveRight"]);
+export type TrackModuleKind = z.infer<typeof TrackModuleKindSchema>;
+
+/** One XTS motor module of a track, in the order the movers run along it. */
+export const TrackModuleSchema = z.object({
+  kind: TrackModuleKindSchema,
+  /** mm along the track (track positions); a curve module is drawn as a quarter circle of this length. */
+  length: z.number(),
+});
+export type TrackModule = z.infer<typeof TrackModuleSchema>;
+
+/** Live state of a track module: its active fault, null = none. */
+export const TrackModuleStateSchema = z.object({
+  fault: FaultSchema.nullable(),
+});
+export type TrackModuleState = z.infer<typeof TrackModuleStateSchema>;
+
+/**
  * Straight XTS track carried by a common Z axis; every mover carries an X axis with a gripper flange at its end.
  * Local frame: origin at the track start on top of the movers with Z = 0; track along +Y, X axes along +X, Z up.
  */
 export const XtsGantryConfigSchema = robotConfig("xtsGantry", {
-  moduleCount: z.number().int(),
-  /** Length of one track module; the track is moduleCount × moduleLength long. */
-  moduleLength: z.number(),
+  /** From the track start along +Y; straight modules only in practice, curves turn in the local X-Y plane. */
+  modules: z.array(TrackModuleSchema),
   xMin: z.number(),
   xMax: z.number(),
   zMin: z.number(),
@@ -202,13 +222,13 @@ export const XtsGantryConfigSchema = robotConfig("xtsGantry", {
 export type XtsGantryConfig = z.infer<typeof XtsGantryConfigSchema>;
 
 /**
- * Closed XTS loop: two straights joined by two semicircles, standing in the local X-Z plane.
- * Local frame: origin at the start of the lower straight, which runs along +X; the upper straight is at +2R.
+ * Closed XTS loop standing in the local X-Z plane, e.g. two straights joined at each end by two left curve modules.
+ * Local frame: origin at the start of the first module, which runs along +X; a left curve turns up towards +Z.
  */
 export const XtsLoopConfigSchema = robotConfig("xtsLoop", {
-  straightLength: z.number(),
-  curveRadius: z.number(),
-  /** Distance of a mover's gripper flange (tool point) from the track, outwards. */
+  /** In the conveying direction from the origin; the chain should end where it starts. */
+  modules: z.array(TrackModuleSchema),
+  /** Distance of a mover's gripper flange (tool point) from the track, outwards (to the right of its travel). */
   toolOffset: z.number(),
   moverLength: z.number(),
   moverWidth: z.number(),
@@ -349,6 +369,8 @@ export const XtsGantryStateSchema = componentState("xtsGantry", {
   z: z.number(),
   /** Valid movers only. */
   movers: z.array(GantryMoverSchema),
+  /** One per configured track module. */
+  modules: z.array(TrackModuleStateSchema),
 });
 export type XtsGantryState = z.infer<typeof XtsGantryStateSchema>;
 
@@ -366,6 +388,8 @@ export type LoopMover = z.infer<typeof LoopMoverSchema>;
 export const XtsLoopStateSchema = componentState("xtsLoop", {
   /** Valid movers only. */
   movers: z.array(LoopMoverSchema),
+  /** One per configured track module. */
+  modules: z.array(TrackModuleStateSchema),
 });
 export type XtsLoopState = z.infer<typeof XtsLoopStateSchema>;
 

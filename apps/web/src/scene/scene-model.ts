@@ -24,6 +24,15 @@ import {
   type ProductState,
   type ProductType,
   type StateMessage,
+  type TrackModule,
+  type TrackModuleState,
+  alongModule,
+  curveCentre,
+  moduleStarts,
+  moduleTurn,
+  curveRadius,
+  trackLength,
+  trackPoint,
   type XtsGantryConfig,
   type XtsGantryState,
   type XtsLoopConfig,
@@ -33,15 +42,17 @@ import {
 import {
   apply,
   child,
+  mul,
   frameFromPose,
   fromRenderer,
-  rotY,
+  rotX,
   rotZ,
   toLocal,
   toMcs,
   toRenderer,
   toRendererTransform,
   type Frame,
+  type Mat3,
   type Transform,
   type Vec3,
 } from "./frames";
@@ -179,14 +190,36 @@ export interface SceneGantryMover {
   fault: string | null;
 }
 
+/**
+ * One track module of an XTS gantry or loop, drawn inside its component's track group (the gantry's `track`, the
+ * loop's `base`). Module frame: origin at the module's start on the track line, local MCS +X along the track,
+ * +Y to its left, +Z the normal of the track's plane.
+ */
+export interface SceneTrackModule {
+  key: string;
+  /** 1-based, in the order movers run along the track. */
+  index: number;
+  /** Relative to the track group. */
+  transform: Transform;
+  /** Metres along the track line. */
+  length: number;
+  /** Radius of a curve module's track line, metres; 0 for a straight one. */
+  radius: number;
+  /** +1 curves to the left (local +Y), −1 to the right, 0 straight. */
+  turn: number;
+  /** Cross-section in the module frame, metres: from–to across the track (local Y) and along the normal (local Z). */
+  across: [number, number];
+  depth: [number, number];
+  /** Fault message of this module, null = none. */
+  fault: string | null;
+}
+
 export interface SceneGantry {
   id: number;
   name: string;
   /** Track start at the current Z position; the track runs along local MCS +Y (renderer local −Z). */
   track: Transform;
-  trackLength: number;
-  moduleLength: number;
-  moduleCount: number;
+  modules: SceneTrackModule[];
   moverLength: number;
   moverWidth: number;
   movers: SceneGantryMover[];
@@ -216,10 +249,11 @@ export interface SceneLoopMover {
 export interface SceneLoop {
   id: number;
   name: string;
-  /** Start of the lower straight; the loop lies in the local X-Z plane. */
+  /** Start of the first module; the loop lies in the local X-Z plane. */
   base: Transform;
-  straightLength: number;
-  curveRadius: number;
+  modules: SceneTrackModule[];
+  /** Where the name label hangs, relative to `base`: the middle of the loop. */
+  label: Vec3;
   moverLength: number;
   moverWidth: number;
   movers: SceneLoopMover[];
@@ -321,18 +355,18 @@ export interface SceneOrigin {
   transform: Transform;
 }
 
-/** A fault message drawn above a faulted component or mover. */
+/** A fault message drawn above a faulted component, mover or track module. */
 export interface SceneFaultLabel {
   key: string;
   componentId: number;
-  /** 0 for the component itself. */
-  moverId: number;
+  /** The faulted part, e.g. "Mover 2" or "Module 9"; null for the component itself. */
+  part: string | null;
   message: string;
   /** Renderer frame, metres: where the label hangs. */
   position: Vec3;
 }
 
-/** Active faults of one component (its own first, then its movers'), for the component list. */
+/** Active faults of one component (its own first, then its movers' and track modules'), for the component list. */
 export interface ComponentFaults {
   componentId: number;
   messages: string[];
@@ -368,7 +402,16 @@ const MM = 1 / 1000;
 type GripperSource = { moverId: number; flange: Frame; states: FingerState[]; faulted: boolean };
 
 /** How far above its anchor a fault label hangs, mm. */
-const LABEL_LIFT = { conveyor: 150, delta: 250, track: 300, gantryMover: 200, loopMover: 150, cartesian: 200, body: 150 };
+const LABEL_LIFT = {
+  conveyor: 150,
+  delta: 250,
+  track: 300,
+  gantryMover: 200,
+  loopMover: 150,
+  module: 150,
+  cartesian: 200,
+  body: 150,
+};
 
 /** The message to show for a fault; the PLC may leave it empty. */
 export function faultText(fault: Fault | null | undefined): string | null {
@@ -380,6 +423,11 @@ function lifted(p: Vec3, height: number): Vec3 {
   return [p[0], p[1], p[2] + height];
 }
 const DEFAULT_PRODUCT: ProductType = { id: 0, length: 100, width: 100, height: 100, shape: "box", cornerRadius: 0 };
+
+/** An XTS component as recordings made before protocol 12 hold it, without track modules: drawn without a track. */
+function withModules<T extends { modules: TrackModule[] }>(c: T): T {
+  return c.modules ? c : { ...c, modules: [] };
+}
 
 /** A product type as recordings made before protocol 10 hold it, without a shape, is a box. */
 function withShape(type: ProductType): ProductType {
@@ -400,8 +448,11 @@ interface BuildContext {
    * rotation orients the product and whose local −Z points to the product.
    */
   carriers: Map<string, Frame>;
-  /** A label for a component (moverId 0) or a mover at an MCS anchor, and its line in the component list. */
-  addFault(componentId: number, moverId: number, message: string | null, anchor: Vec3): void;
+  /**
+   * A label at an MCS anchor for a component (`part` null) or one of its parts (e.g. "Mover 2"), and its line in the
+   * component list.
+   */
+  addFault(componentId: number, part: string | null, message: string | null, anchor: Vec3): void;
   /** Fingers of one robot's grippers (one per mover), their grip points as carriers and snap points. */
   addGripper(
     robot: { id: number; name: string; pose: Pose; fingers: Finger[]; originShift: Position },
@@ -442,7 +493,7 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
         width: c.width * MM,
         fault,
       });
-      ctx.addFault(c.id, 0, fault, lifted(toMcs(frame, [c.length / 2, 0, 0]), LABEL_LIFT.conveyor));
+      ctx.addFault(c.id, null, fault, lifted(toMcs(frame, [c.length / 2, 0, 0]), LABEL_LIFT.conveyor));
       const owner = snapOwner(c, frame);
       const snapPoints = ctx.scene.snapPoints;
       snapPoints.push(owner.at(`${c.name} · origin`, shiftOf(c)));
@@ -466,7 +517,7 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
       const frame = frameFromPose(c.pose);
       const delta = buildDelta(c, state);
       ctx.scene.deltas.push(delta);
-      ctx.addFault(c.id, 0, delta.fault, lifted(frame.origin, LABEL_LIFT.delta));
+      ctx.addFault(c.id, null, delta.fault, lifted(frame.origin, LABEL_LIFT.delta));
       if (state) {
         // The flange is the effector centre, turned with the base.
         const flange: Frame = { rotation: frame.rotation, origin: positionToMcs(state.actualTcp) };
@@ -505,12 +556,12 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
   },
   xtsGantry: {
     build(c, state, ctx) {
-      const built = buildGantry(c, state);
+      const built = buildGantry(withModules(c), state);
       ctx.scene.gantries.push(built.gantry);
       ctx.scene.boxAreas.push(built.area);
       ctx.scene.snapPoints.push(...built.snapPoints);
       for (const [moverId, frame] of built.carriers) ctx.carriers.set(`${c.id}:${moverId}`, frame);
-      for (const f of built.faults) ctx.addFault(c.id, f.moverId, f.message, f.anchor);
+      for (const f of built.faults) ctx.addFault(c.id, f.part, f.message, f.anchor);
       ctx.addGripper(c, built.grippers);
       ctx.addZones(c);
     },
@@ -530,16 +581,16 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
   },
   xtsLoop: {
     build(c, state, ctx) {
-      const built = buildLoop(c, state);
+      const built = buildLoop(withModules(c), state, ctx.warn);
       ctx.scene.loops.push(built.loop);
       ctx.scene.snapPoints.push(...built.snapPoints);
       for (const [moverId, frame] of built.carriers) ctx.carriers.set(`${c.id}:${moverId}`, frame);
-      for (const f of built.faults) ctx.addFault(c.id, f.moverId, f.message, f.anchor);
+      for (const f of built.faults) ctx.addFault(c.id, f.part, f.message, f.anchor);
       ctx.addGripper(c, built.grippers);
       ctx.addZones(c);
     },
     interpolate(a, b, f, c) {
-      const perimeter = loopPerimeter(c);
+      const perimeter = trackLength(withModules(c).modules);
       const next = new Map(b.movers.map((m) => [m.id, m]));
       return {
         ...a,
@@ -559,7 +610,7 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
       ctx.scene.boxAreas.push(built.area);
       ctx.scene.snapPoints.push(...built.snapPoints);
       if (built.carrier) ctx.carriers.set(`${c.id}:0`, built.carrier);
-      ctx.addFault(c.id, 0, built.cartesian.fault, built.faultAnchor);
+      ctx.addFault(c.id, null, built.cartesian.fault, built.faultAnchor);
       ctx.addGripper(c, built.grippers);
       ctx.addZones(c);
     },
@@ -618,7 +669,7 @@ function buildFromBodies(
     const bodyTop = toMcs(bottom, [0, 0, b.height]);
     if (bodyTop[2] > top[2]) top = bodyTop;
   });
-  ctx.addFault(c.id, 0, fault, lifted(top, LABEL_LIFT.body));
+  ctx.addFault(c.id, null, fault, lifted(top, LABEL_LIFT.body));
   ctx.addZones(c);
 }
 
@@ -670,12 +721,12 @@ export function buildScene(
     scene,
     carriers: new Map(),
     warn: (message) => warnings.push(message),
-    addFault(componentId, moverId, message, anchor) {
+    addFault(componentId, part, message, anchor) {
       if (message === null) return;
-      faultLabels.push({ key: `${componentId}:${moverId}`, componentId, moverId, message, position: toRenderer(anchor) });
+      faultLabels.push({ key: `${componentId}:${part ?? ""}`, componentId, part, message, position: toRenderer(anchor) });
       let entry = faults.find((f) => f.componentId === componentId);
       if (!entry) faults.push((entry = { componentId, messages: [] }));
-      entry.messages.push(moverId ? `Mover ${moverId}: ${message}` : message);
+      entry.messages.push(part ? `${part}: ${message}` : message);
     },
     addGripper(robot, grippers) {
       const owner = snapOwner(robot, frameFromPose(robot.pose));
@@ -1183,56 +1234,136 @@ function conveyorProducts(
   return result;
 }
 
-/** Mover frames of an XTS gantry, its reachable volume, snap points and the frames products hang from. */
+/**
+ * The plane an XTS track lies in, as a rotation in its component's frame taking the track's u (where the first module
+ * starts to run), v (to its left) and normal onto local axes. A gantry's track runs along +Y in the X-Y plane, so v is
+ * −X; a loop's along +X in the X-Z plane, so v is +Z (curves to the left turn up).
+ */
+const TRACK_PLANE = { xtsGantry: rotZ(90), xtsLoop: rotX(90) };
+
+/** Cross-section of a track's modules in the module frame (across, along the normal), mm. */
+type TrackSection = { across: [number, number]; depth: [number, number] };
+
+/**
+ * An XTS track laid out from its modules inside its track group (`group`: an MCS frame, e.g. a gantry lifted by Z):
+ * the modules to draw, the frame at any track position (relative to the group: +X the tangent, +Y left, +Z the plane
+ * normal), the module boundaries and curve centres as snap points and the top centre for the fault label.
+ */
+function layTrack(
+  c: { name: string; modules: TrackModule[] },
+  states: readonly TrackModuleState[],
+  plane: Mat3,
+  group: Frame,
+  closed: boolean,
+  section: TrackSection,
+) {
+  const starts = moduleStarts(c.modules);
+  const absolute = (u: number, v: number) => toMcs(group, apply(plane, [u, v, 0]));
+  const faults: { part: string; message: string | null; anchor: Vec3 }[] = [];
+  const inPlane = (u: number, v: number, heading: number): Frame => ({
+    rotation: mul(plane, rotZ(heading)),
+    origin: apply(plane, [u, v, 0]),
+  });
+  const modules = c.modules.map((m, i): SceneTrackModule => {
+    const p = starts[i]!;
+    const fault = faultText(states[i]?.fault);
+    const middle = alongModule(p, m, m.length / 2);
+    faults.push({ part: `Module ${i + 1}`, message: fault, anchor: lifted(absolute(middle.u, middle.v), LABEL_LIFT.module) });
+    return {
+      key: String(i + 1),
+      index: i + 1,
+      transform: toRendererTransform(inPlane(p.u, p.v, p.heading)),
+      length: m.length * MM,
+      radius: moduleTurn(m) === 0 ? 0 : curveRadius(m) * MM,
+      turn: moduleTurn(m),
+      across: [section.across[0] * MM, section.across[1] * MM],
+      depth: [section.depth[0] * MM, section.depth[1] * MM],
+      fault,
+    };
+  });
+  const n = c.modules.length;
+  const boundaries: { label: string; mcs: Vec3 }[] = [];
+  starts.forEach((p, i) => {
+    if (closed && n > 0 && i === n) return;
+    const label = i === 0 ? "track start" : i === n ? "track end" : `module ${i} / ${i + 1}`;
+    boundaries.push({ label: `${c.name} · ${label}`, mcs: absolute(p.u, p.v) });
+  });
+  c.modules.forEach((m, i) => {
+    const centre = curveCentre(starts[i]!, m);
+    if (centre) boundaries.push({ label: `${c.name} · module ${i + 1} curve centre`, mcs: absolute(centre.u, centre.v) });
+  });
+  const end = starts[n]!;
+  // Middle and top of the module boundaries, relative to the group.
+  const local = starts.map((p) => apply(plane, [p.u, p.v, 0]));
+  const span = (k: number) => [Math.min(...local.map((p) => p[k]!)), Math.max(...local.map((p) => p[k]!))] as const;
+  const [x, y, z] = [span(0), span(1), span(2)];
+  const middle: Vec3 = [(x[0] + x[1]) / 2, (y[0] + y[1]) / 2, (z[0] + z[1]) / 2];
+  return {
+    modules,
+    /** Fault labels of the modules, for the build context. */
+    faults,
+    boundaries,
+    /** How far the end of a closed track lies from its start, mm. */
+    gap: closed && n > 0 ? Math.hypot(end.u, end.v) : 0,
+    middle,
+    /** MCS point above the middle of the track, at its highest module boundary. */
+    top: toMcs(group, [middle[0], middle[1], z[1]]),
+    /** The frame at a track position, relative to the group. */
+    at(position: number): Frame {
+      const p = trackPoint(c.modules, position, closed);
+      return inPlane(p.u, p.v, p.heading);
+    },
+  };
+}
+
+/** Mover frames of an XTS gantry, its track, its reachable volume, snap points and the frames products hang from. */
 function buildGantry(c: XtsGantryConfig, state: XtsGantryState | undefined) {
   const frame = frameFromPose(c.pose);
   const z = state?.z ?? 0;
-  const trackLength = c.moduleCount * c.moduleLength;
+  const length = trackLength(c.modules);
+  const group = child(frame, [0, 0, z]);
+  // The beam above the movers: as wide as a mover plus 20 mm each side, 120 mm high.
+  const half = (c.moverWidth + 40) / 2;
+  // Recordings made before protocol 12 have no module states.
+  const track = layTrack(c, state?.modules ?? [], TRACK_PLANE.xtsGantry, group, false, {
+    across: [-half, half],
+    depth: [0, 120],
+  });
   const owner = snapOwner(c, frame);
   const carriers = new Map<number, Frame>();
   const grippers: GripperSource[] = [];
   const gantryFault = faultText(state?.fault);
-  const faults = [
-    { moverId: 0, message: gantryFault, anchor: lifted(toMcs(frame, [0, trackLength / 2, z]), LABEL_LIFT.track) },
+  const faults: { part: string | null; message: string | null; anchor: Vec3 }[] = [
+    { part: null, message: gantryFault, anchor: lifted(track.top, LABEL_LIFT.track) },
   ];
-  const snapPoints: SnapPoint[] = [
-    owner.at(`${c.name} · track start`, [0, 0, z], "structure", true),
-    ...Array.from({ length: Math.max(0, c.moduleCount - 1) }, (_, i) =>
-      owner.at(`${c.name} · module boundary ${i + 1}`, [0, (i + 1) * c.moduleLength, z], "structure", true),
-    ),
-    owner.at(`${c.name} · track end`, [0, trackLength, z], "structure", true),
-  ];
+  const snapPoints: SnapPoint[] = track.boundaries.map((b) => owner.atMcs(b.label, b.mcs, "structure", true));
   const movers = (state?.movers ?? []).map((m): SceneGantryMover => {
+    // Mover frame: +X its X axis (to the right of the track), +Y along the track, +Z up.
+    const at = track.at(m.position);
+    const mover = child(group, at.origin, mul(at.rotation, rotZ(-90)));
     const toolX = m.x + c.toolOffsetX;
-    const tip = child(frame, [toolX, m.position, z + c.toolOffsetZ]);
+    const tip = child(mover, [toolX, 0, c.toolOffsetZ]);
     carriers.set(m.id, tip);
     const fault = faultText(m.fault);
-    const carriage = toMcs(frame, [0, m.position, z]);
-    faults.push({ moverId: m.id, message: fault, anchor: lifted(carriage, LABEL_LIFT.gantryMover) });
+    faults.push({ part: `Mover ${m.id}`, message: fault, anchor: lifted(mover.origin, LABEL_LIFT.gantryMover) });
     grippers.push({ moverId: m.id, flange: tip, states: m.fingers, faulted: gantryFault !== null || fault !== null });
     snapPoints.push(owner.atMcs(`${c.name} · mover ${m.id} flange`, tip.origin, "structure", true));
     return {
       id: m.id,
-      carriage: toRenderer(carriage),
-      armEnd: toRenderer(toMcs(frame, [toolX, m.position, z])),
+      carriage: toRenderer(mover.origin),
+      armEnd: toRenderer(toMcs(mover, [toolX, 0, 0])),
       tip: toRendererTransform(tip),
       gripperActive: c.fingers.length === 0 && m.gripperActive,
       fault,
     };
   });
-  const centre: Vec3 = [
-    (c.xMin + c.xMax) / 2 + c.toolOffsetX,
-    trackLength / 2,
-    (c.zMin + c.zMax) / 2 + c.toolOffsetZ,
-  ];
+  const centre: Vec3 = [(c.xMin + c.xMax) / 2 + c.toolOffsetX, length / 2, (c.zMin + c.zMax) / 2 + c.toolOffsetZ];
   return {
     gantry: {
       id: c.id,
       name: c.name,
-      track: toRendererTransform(child(frame, [0, 0, z])),
-      trackLength: trackLength * MM,
-      moduleLength: c.moduleLength * MM,
-      moduleCount: c.moduleCount,
+      track: toRendererTransform(group),
+      modules: track.modules,
       moverLength: c.moverLength * MM,
       moverWidth: c.moverWidth * MM,
       movers,
@@ -1241,66 +1372,40 @@ function buildGantry(c: XtsGantryConfig, state: XtsGantryState | undefined) {
     area: {
       robotId: c.id,
       transform: toRendererTransform(child(frame, centre)),
-      size: [(c.xMax - c.xMin) * MM, trackLength * MM, (c.zMax - c.zMin) * MM],
+      size: [(c.xMax - c.xMin) * MM, length * MM, (c.zMax - c.zMin) * MM],
     } satisfies SceneBoxArea,
     snapPoints,
     carriers,
     grippers,
-    faults,
+    faults: [...faults, ...track.faults],
   };
 }
 
-function loopPerimeter(c: XtsLoopConfig): number {
-  return 2 * c.straightLength + 2 * Math.PI * c.curveRadius;
-}
-
-/**
- * Point and unit tangent at track position s on an XTS loop, in its local frame (mm): lower straight along +X from
- * the origin, a semicircle up at the far end, the upper straight back along −X at +2R, a semicircle down at the start.
- */
-export function loopPoint(c: Pick<XtsLoopConfig, "straightLength" | "curveRadius">, s: number) {
-  const L = c.straightLength;
-  const R = c.curveRadius;
-  const perimeter = 2 * L + 2 * Math.PI * R;
-  const u = perimeter > 0 ? ((s % perimeter) + perimeter) % perimeter : 0;
-  const arc = Math.PI * R;
-  if (u <= L) return { point: [u, 0, 0] as Vec3, tangent: [1, 0, 0] as Vec3 };
-  if (u <= L + arc) {
-    const a = (u - L) / R;
-    return { point: [L + R * Math.sin(a), 0, R - R * Math.cos(a)] as Vec3, tangent: [Math.cos(a), 0, Math.sin(a)] as Vec3 };
-  }
-  if (u <= 2 * L + arc) return { point: [L - (u - L - arc), 0, 2 * R] as Vec3, tangent: [-1, 0, 0] as Vec3 };
-  const a = (u - 2 * L - arc) / R;
-  return { point: [-R * Math.sin(a), 0, R + R * Math.cos(a)] as Vec3, tangent: [-Math.cos(a), 0, -Math.sin(a)] as Vec3 };
-}
-
-/** Mover frames of an XTS loop, snap points and the frames products hang from. */
-function buildLoop(c: XtsLoopConfig, state: XtsLoopState | undefined) {
+/** Mover frames of an XTS loop, its track, snap points and the frames products hang from. */
+function buildLoop(c: XtsLoopConfig, state: XtsLoopState | undefined, warn: (message: string) => void) {
   const frame = frameFromPose(c.pose);
   const owner = snapOwner(c, frame);
-  const L = c.straightLength;
-  const R = c.curveRadius;
+  // A band 40 mm thick in the track's plane, as deep as a mover is wide.
+  const track = layTrack(c, state?.modules ?? [], TRACK_PLANE.xtsLoop, frame, true, {
+    across: [-20, 20],
+    depth: [-c.moverWidth / 2, c.moverWidth / 2],
+  });
+  if (track.gap > 1) warn(`${c.name}: the track modules do not close the loop (${Math.round(track.gap)} mm apart)`);
   const carriers = new Map<number, Frame>();
   const grippers: GripperSource[] = [];
   const loopFault = faultText(state?.fault);
-  const faults = [{ moverId: 0, message: loopFault, anchor: lifted(toMcs(frame, [L / 2, 0, 2 * R]), LABEL_LIFT.track) }];
-  const snapPoints: SnapPoint[] = [
-    owner.at(`${c.name} · lower straight, start`, [0, 0, 0]),
-    owner.at(`${c.name} · lower straight, end`, [L, 0, 0]),
-    owner.at(`${c.name} · upper straight, start side`, [0, 0, 2 * R]),
-    owner.at(`${c.name} · upper straight, end side`, [L, 0, 2 * R]),
-    owner.at(`${c.name} · curve centre, start side`, [0, 0, R]),
-    owner.at(`${c.name} · curve centre, end side`, [L, 0, R]),
+  const faults: { part: string | null; message: string | null; anchor: Vec3 }[] = [
+    { part: null, message: loopFault, anchor: lifted(track.top, LABEL_LIFT.track) },
   ];
+  const snapPoints: SnapPoint[] = track.boundaries.map((b) => owner.atMcs(b.label, b.mcs));
   const movers = (state?.movers ?? []).map((m): SceneLoopMover => {
-    const { point, tangent } = loopPoint(c, m.position);
-    // Turn about local Y so that the mover's +X follows the tangent; its −Z then points outwards.
-    const angle = (Math.atan2(-tangent[2], tangent[0]) * 180) / Math.PI;
-    const mover = child(frame, point, rotY(angle));
+    // Mover frame: +X along the tangent, +Z to the left (inside the loop), so its −Z points outwards.
+    const at = track.at(m.position);
+    const mover = child(frame, at.origin, mul(at.rotation, rotX(-90)));
     const tool = child(mover, [0, 0, -c.toolOffset]);
     carriers.set(m.id, tool);
     const fault = faultText(m.fault);
-    faults.push({ moverId: m.id, message: fault, anchor: lifted(mover.origin, LABEL_LIFT.loopMover) });
+    faults.push({ part: `Mover ${m.id}`, message: fault, anchor: lifted(mover.origin, LABEL_LIFT.loopMover) });
     grippers.push({ moverId: m.id, flange: tool, states: m.fingers, faulted: loopFault !== null || fault !== null });
     snapPoints.push(owner.atMcs(`${c.name} · mover ${m.id} tool`, tool.origin, "structure", true));
     return { id: m.id, transform: toRendererTransform(mover), tool: toRenderer(tool.origin), fault };
@@ -1310,8 +1415,8 @@ function buildLoop(c: XtsLoopConfig, state: XtsLoopState | undefined) {
       id: c.id,
       name: c.name,
       base: toRendererTransform(frame),
-      straightLength: L * MM,
-      curveRadius: R * MM,
+      modules: track.modules,
+      label: toRenderer(track.middle),
       moverLength: c.moverLength * MM,
       moverWidth: c.moverWidth * MM,
       movers,
@@ -1320,7 +1425,7 @@ function buildLoop(c: XtsLoopConfig, state: XtsLoopState | undefined) {
     snapPoints,
     carriers,
     grippers,
-    faults,
+    faults: [...faults, ...track.faults],
   };
 }
 

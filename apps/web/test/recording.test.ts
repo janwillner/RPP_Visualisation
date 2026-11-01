@@ -197,18 +197,26 @@ describe("recording: timeline events", () => {
     ]);
   });
 
-  it("marks where a fault appears, once while it lasts, for components and XTS movers", async () => {
+  it("marks where a fault appears, once while it lasts, for components, XTS movers and track modules", async () => {
     const recorder = new Recorder([{ sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: config(A) }]);
     const jam = { message: "Belt jammed" };
     for (let at = 0; at <= 3000; at += 100) {
       const beltFault = (at >= 1000 && at < 1500) || at >= 2000 ? jam : null;
       const moverFault = at >= 2500 ? { message: "Collision" } : null;
+      const moduleFault = at >= 2700 ? { message: "Overtemperature" } : null;
       recorder.add(at, {
         ...state(A, at),
         components: [
           { type: "conveyor", id: 1, timestamp: "0", beltPosition: 0, products: [], fault: beltFault },
           // Not in the config: named by its id.
-          { type: "xtsLoop", id: 7, timestamp: "0", movers: [{ id: 2, position: 0, fingers: [], fault: moverFault }], fault: null },
+          {
+            type: "xtsLoop",
+            id: 7,
+            timestamp: "0",
+            movers: [{ id: 2, position: 0, fingers: [], fault: moverFault }],
+            modules: [{ fault: null }, { fault: null }, { fault: moduleFault }],
+            fault: null,
+          },
         ],
       });
     }
@@ -216,6 +224,7 @@ describe("recording: timeline events", () => {
       { at: 1000, kind: "fault", sourceId: A, text: "Infeed: Belt jammed" },
       { at: 2000, kind: "fault", sourceId: A, text: "Infeed: Belt jammed" },
       { at: 2500, kind: "fault", sourceId: A, text: "#7 mover 2: Collision" },
+      { at: 2700, kind: "fault", sourceId: A, text: "#7 module 3: Overtemperature" },
     ]);
   });
 

@@ -18,6 +18,7 @@ VAR_GLOBAL CONSTANT
 	VISU_un_MAX_MOVERS					: UINT := 40;	// [-] movers per XTS gantry or loop
 	VISU_un_MAX_FINGERS					: UINT := 8;	// [-] fingers per gripper
 	VISU_un_MAX_BODIES					: UINT := 16;	// [-] bodies per detector
+	VISU_un_MAX_MODULES					: UINT := 64;	// [-] track modules per XTS gantry or loop
 END_VAR]]></Declaration>
   </GVL>
 </TcPlcObject>

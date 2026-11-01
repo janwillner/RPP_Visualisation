@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="E_VisuModuleKind" Id="{29e1d178-9a17-4c00-846a-0b28501ed928}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_VisuModuleKind :
+(
+	(* Values are part of the gateway contract: append, never renumber. What an XTS track module is. *)
+	STRAIGHT := 0,		// straight motor module
+	CURVE_LEFT := 1,	// curve module: turns the track by a quarter circle (90 deg) to the left
+	CURVE_RIGHT := 2	// curve module: turns the track by a quarter circle (90 deg) to the right
+) UINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

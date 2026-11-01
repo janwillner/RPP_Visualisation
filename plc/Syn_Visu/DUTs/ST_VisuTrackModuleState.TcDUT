@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuTrackModuleState" Id="{d4ccfc84-8dcd-4636-9428-e0a151dd28ba}">
+    <Declaration><![CDATA[TYPE ST_VisuTrackModuleState :
+STRUCT
+	stFault : ST_VisuFault; // fault of this track module (set by _FB_VisuXtsTrack.m_SetModuleFault)
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

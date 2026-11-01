@@ -67,7 +67,6 @@ export const SOLID = {
   profile: "#6a7686",
   dark: "#4f5a69",
   motor: "#353c47",
-  module: "#3e4753",
   gripper: "#3d8fe0",
   gripperActive: STATUS.online,
   /** A detector's sensing part, e.g. a camera lens or a light barrier head. */

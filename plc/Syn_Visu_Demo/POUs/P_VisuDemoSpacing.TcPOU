@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoSpacing" Id="{98d9988c-33bb-44fb-a9f4-be23b23f8250}" SpecialFunc="None">
+  <POU Name="P_VisuDemoSpacing" Id="{3fcfbb48-98ae-44b8-9c28-c13940475af5}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -33,6 +33,8 @@ VAR
 	udn_SpcProduct						: ARRAY[0..7] OF UDINT;	// [-] product pushed by the mover, 0 = none
 	udn_SpcLastReleased					: UDINT;	// [-] product last handed back to the belt
 	NoFingers							: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;
+	un_Module							: UINT;	// [-] track module being set
+	e_ModuleKind						: E_VisuModuleKind;
 END_VAR
 VAR CONSTANT
 	(* Loop turned by 180 deg under the belt: its upper straight runs along MCS +X from X = 1000 to X = 4000, the
@@ -46,8 +48,9 @@ VAR CONSTANT
 	lr_SPC_MIN_GAP						: LREAL := 150;	// [mm]
 	lr_SPC_GAP_SPREAD					: LREAL := 100;	// [mm] gaps lie between lr_SPC_MIN_GAP and lr_SPC_MIN_GAP + this
 	lr_SPC_LOOP_END_X					: LREAL := 4000;	// [mm] MCS x of the loop origin, the downstream end
-	lr_SPC_STRAIGHT						: LREAL := 3000;	// [mm]
-	lr_SPC_RADIUS						: LREAL := 150;	// [mm]
+	un_SPC_STRAIGHT_MODULES				: UINT := 12;	// [-] straight XTS modules per side, joined at each end by two left curve modules
+	lr_SPC_STRAIGHT						: LREAL := 3000;	// [mm] un_SPC_STRAIGHT_MODULES * 250
+	lr_SPC_RADIUS						: LREAL := 159.15494309189535;	// [mm] two 250 mm quarter curves: 2 * 250 / pi
 	lr_SPC_TOOL_OFFSET					: LREAL := 110;	// [mm] tool point outwards from the track: the belt surface
 	n_SPC_MOVERS						: INT := 8;	// [-] size of the lr_SpcS, n_SpcMode and udn_SpcProduct arrays
 	lr_SPC_SLOT							: LREAL := 130;	// [mm] queue spacing and minimum mover distance
@@ -89,8 +92,16 @@ XtsPose.fX := lr_SPC_LOOP_END_X;
 XtsPose.fY := lr_SPC_Y;
 XtsPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z - 2 * lr_SPC_RADIUS - lr_SPC_TOOL_OFFSET;
 XtsPose.fRz := 180;
-fb_Spc.m_Configure(vi_Pose := XtsPose, vi_lr_StraightLength := lr_SPC_STRAIGHT, vi_lr_CurveRadius := lr_SPC_RADIUS,
-	vi_lr_ToolOffset := lr_SPC_TOOL_OFFSET, vi_lr_MoverLength := 100, vi_lr_MoverWidth := 60);
+fb_Spc.m_Configure(vi_Pose := XtsPose, vi_lr_ToolOffset := lr_SPC_TOOL_OFFSET, vi_lr_MoverLength := 100,
+	vi_lr_MoverWidth := 60);
+FOR un_Module := 1 TO 2 * (un_SPC_STRAIGHT_MODULES + 2) DO
+	IF (un_Module - 1) MOD (un_SPC_STRAIGHT_MODULES + 2) < un_SPC_STRAIGHT_MODULES THEN
+		e_ModuleKind := E_VisuModuleKind.STRAIGHT;
+	ELSE
+		e_ModuleKind := E_VisuModuleKind.CURVE_LEFT;
+	END_IF
+	fb_Spc.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := e_ModuleKind);
+END_FOR
 fb_Spc.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_SpcBelt.m_Id(),
 	vi_lr_Start := lr_SPC_LOOP_END_X - lr_SPC_STRAIGHT, vi_lr_End := lr_SPC_LOOP_END_X - lr_SPC_STRAIGHT + lr_SPC_TAKE_WINDOW,
 	vi_lr_CcsOffset := lr_SPC_LOOP_END_X - lr_SPC_STRAIGHT);
@@ -170,7 +181,7 @@ END_VAR]]></Declaration>
         <ST><![CDATA[(****************************************************************************************************)
 (* QUEUE AND TAKE-OVER                                                                              *)
 (****************************************************************************************************)
-lr_TempPerimeter := fb_Spc.m_Perimeter();
+lr_TempPerimeter := fb_Spc.m_TrackLength();
 lr_TempWait := lr_SPC_STRAIGHT + 3.141592653589793 * lr_SPC_RADIUS;
 lr_TempStartX := lr_SPC_LOOP_END_X - lr_SPC_STRAIGHT;
 IF NOT b_SpcInitialised THEN

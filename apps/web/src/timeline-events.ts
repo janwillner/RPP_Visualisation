@@ -25,7 +25,7 @@ export interface TimelineEvent {
 export class EventTracker {
   readonly events: TimelineEvent[] = [];
   private readonly connected = new Map<string, boolean>();
-  /** Per source the faults active in its previous state, by `componentId` or `componentId:moverId`. */
+  /** Per source the faults active in its previous state, by `componentId` or `componentId:list:part`. */
   private readonly faults = new Map<string, Set<string>>();
   /** Per source the missed products of its previous state, by `conveyorId:productId`. */
   private readonly missed = new Map<string, Set<string>>();
@@ -66,9 +66,16 @@ export class EventTracker {
 
     for (const c of message.components) {
       fault(String(c.id), nameOf(c.id), c.fault);
-      // Components with movers report a fault per mover too.
-      if ("movers" in c) {
-        for (const m of c.movers) fault(`${c.id}:${m.id}`, `${nameOf(c.id)} mover ${m.id}`, m.fault);
+      // Parts in a list of the state (movers, track modules) may report a fault each: named by their id if they
+      // have one, else by their 1-based place in the list.
+      for (const [list, entries] of Object.entries(c)) {
+        if (!Array.isArray(entries)) continue;
+        entries.forEach((e: unknown, i) => {
+          if (typeof e !== "object" || e === null || !("fault" in e)) return;
+          const part = "id" in e && typeof e.id === "number" ? e.id : i + 1;
+          const name = `${nameOf(c.id)} ${singular(list)} ${part}`;
+          fault(`${c.id}:${list}:${part}`, name, e.fault as Fault | null);
+        });
       }
       if (c.type !== "conveyor") continue;
       const conveyor = components.find((x) => x.id === c.id);
@@ -83,6 +90,11 @@ export class EventTracker {
     this.faults.set(message.sourceId, faults);
     this.missed.set(message.sourceId, missed);
   }
+}
+
+/** "movers" → "mover", "modules" → "module". */
+function singular(list: string): string {
+  return list.endsWith("s") ? list.slice(0, -1) : list;
 }
 
 /** The moment of the next event after `time` (direction 1) or the previous one before it (-1); undefined if none. */

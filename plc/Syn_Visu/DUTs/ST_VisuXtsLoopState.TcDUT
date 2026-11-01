@@ -6,6 +6,7 @@ STRUCT
 	nTimestamp : ULINT; // DC time of the writing cycle, ns since 2000-01-01 (set by _FB_VisuXtsLoop)
 	nMoverCount : UINT; // entries [0..nMoverCount-1] are evaluated
 	aMovers : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MOVERS - 1] OF ST_VisuLoopMover;
+	aModuleStates : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF ST_VisuTrackModuleState; // index as in stConfig.aModules
 	stFault : ST_VisuFault; // fault of the whole loop (set by _FB_VisuXtsLoop.m_SetFault)
 END_STRUCT
 END_TYPE]]></Declaration>

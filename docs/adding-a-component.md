@@ -36,8 +36,9 @@ Example: the Cartesian robot.
 1. **PLC library**: a value in `E_VisuComponentType`; the contract structures `ST_Visu<Name>` with `stConfig` and
    `stState`, named as `docs/plc-contract.md` ("Naming of the contract structures") requires, so the gateway maps them
    without code; a function block `EXTENDS _FB_VisuRobot` for a robot (zones and fingers come with it, it only reports
-   where they lie through `m_Zones` and `m_Fingers`), `_FB_VisuZoneComponent` for anything else with zones, or
-   `_FB_VisuComponent`.
+   where they lie through `m_Zones` and `m_Fingers`), `_FB_VisuXtsTrack` for one whose movers run on an XTS track
+   (modules and their faults come with it, through `m_Modules`), `_FB_VisuZoneComponent` for anything else with
+   zones, or `_FB_VisuComponent`.
 2. **Protocol**: the config and state schemas with `robotConfig` / `componentConfig` and `componentState`, added to
    both unions. Field names are the PLC members without their prefix.
 3. **Gateway**: the TypeScript mirror of the structures in `plc-contract.ts`, the `E_VisuComponentType` value and its
@@ -50,7 +51,9 @@ Example: the Cartesian robot.
    - its scene part type and a list for it in `SceneModel` and `emptyScene`, filtered for hidden components at the
      end of `buildScene`;
    - a mesh in `SceneView.tsx` and its line in the structural `signature`.
-   The inspector (`stateRows`), the timeline (mover faults from a `movers` list) and the recording need nothing.
+   The inspector (`stateRows`), the timeline (faults of the entries of any list in the state, e.g. movers or track
+   modules) and the recording need nothing. A part with its own fault is passed to `addFault` with its name
+   ("Mover 2", "Module 9").
 5. **Simulator** (optional): an instance in `simulator.ts`, so the dev gateway and the browser tests show it.
 6. **Tests**: the gateway test for config and state, `buildScene` tests for what it draws.
 7. **Docs**: as above.

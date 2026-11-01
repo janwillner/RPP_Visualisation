@@ -3,6 +3,7 @@ import {
   E_VisuProductShape,
   E_VisuBodyRole,
   E_VisuBodyShape,
+  E_VisuModuleKind,
   E_VisuProductState,
   MANIFEST_PATH,
   PLC_TYPES,
@@ -22,6 +23,8 @@ import {
   type ST_VisuPosition,
   type ST_VisuProduct,
   type ST_VisuProductType,
+  type ST_VisuTrackModule,
+  type ST_VisuTrackModuleState,
   type ST_VisuGantryMover,
   type ST_VisuLoopMover,
   type ST_VisuXtsGantry,
@@ -40,6 +43,26 @@ export const MAX_ZONES = 8;
 export const MAX_MOVERS = 40;
 export const MAX_FINGERS = 8;
 export const MAX_BODIES = 16;
+export const MAX_MODULES = 64;
+/** Length of an XTS motor module, straight or curve (VISU_f_XTS_MODULE_LENGTH). */
+export const XTS_MODULE_LENGTH = 250;
+
+export function trackModule(eKind: number = E_VisuModuleKind.STRAIGHT, fLength = XTS_MODULE_LENGTH): ST_VisuTrackModule {
+  return { eKind, fLength };
+}
+
+function moduleConfig(modules: ST_VisuTrackModule[]) {
+  return { nModuleCount: modules.length, aModules: padded(modules, MAX_MODULES, () => trackModule(0, 0)) };
+}
+
+/** A full module state array; module i has fault `faults[i]` if given. */
+export function moduleStates(faults: (ST_VisuFault | undefined)[] = []): ST_VisuTrackModuleState[] {
+  return padded(
+    faults.map((f) => ({ stFault: f ?? noFault() })),
+    MAX_MODULES,
+    () => ({ stFault: noFault() }),
+  );
+}
 
 export function noFault(): ST_VisuFault {
   return { bActive: false, sMessage: "" };
@@ -190,8 +213,10 @@ export function delta(spec: DeltaSpec = {}): ST_VisuDelta {
 export interface XtsGantrySpec {
   pose?: Partial<ST_VisuPose>;
   originShift?: Partial<ST_VisuPosition>;
-  moduleCount?: number;
-  moduleLength?: number;
+  /** Three straight modules unless given. */
+  modules?: ST_VisuTrackModule[];
+  /** Per module, none unless given. */
+  moduleFaults?: (ST_VisuFault | undefined)[];
   zones?: ZoneSpec[];
   fingers?: ST_VisuFinger[];
   z?: number;
@@ -215,8 +240,7 @@ export function xtsGantry(spec: XtsGantrySpec = {}): ST_VisuXtsGantry {
   return {
     stConfig: {
       stPose: pose(spec.pose),
-      nModuleCount: spec.moduleCount ?? 3,
-      fModuleLength: spec.moduleLength ?? 1000,
+      ...moduleConfig(spec.modules ?? [trackModule(), trackModule(), trackModule()]),
       fXMin: -50,
       fXMax: 300,
       fZMin: -200,
@@ -235,6 +259,7 @@ export function xtsGantry(spec: XtsGantrySpec = {}): ST_VisuXtsGantry {
       fZ: spec.z ?? 0,
       nMoverCount: movers.length,
       aMovers: padded(movers, MAX_MOVERS, empty),
+      aModuleStates: moduleStates(spec.moduleFaults),
       stFault: spec.fault ?? noFault(),
     },
   };
@@ -243,8 +268,10 @@ export function xtsGantry(spec: XtsGantrySpec = {}): ST_VisuXtsGantry {
 export interface XtsLoopSpec {
   pose?: Partial<ST_VisuPose>;
   originShift?: Partial<ST_VisuPosition>;
-  straightLength?: number;
-  curveRadius?: number;
+  /** Eight straight modules, two left curves, eight straight, two left curves unless given. */
+  modules?: ST_VisuTrackModule[];
+  /** Per module, none unless given. */
+  moduleFaults?: (ST_VisuFault | undefined)[];
   zones?: ZoneSpec[];
   fingers?: ST_VisuFinger[];
   movers?: Partial<ST_VisuLoopMover>[];
@@ -265,8 +292,7 @@ export function xtsLoop(spec: XtsLoopSpec = {}): ST_VisuXtsLoop {
   return {
     stConfig: {
       stPose: pose(spec.pose),
-      fStraightLength: spec.straightLength ?? 2000,
-      fCurveRadius: spec.curveRadius ?? 250,
+      ...moduleConfig(spec.modules ?? loopModules(8)),
       fToolOffset: 120,
       fMoverLength: 100,
       fMoverWidth: 60,
@@ -279,9 +305,20 @@ export function xtsLoop(spec: XtsLoopSpec = {}): ST_VisuXtsLoop {
       nTimestamp: spec.timestamp ?? 0n,
       nMoverCount: movers.length,
       aMovers: padded(movers, MAX_MOVERS, empty),
+      aModuleStates: moduleStates(spec.moduleFaults),
       stFault: spec.fault ?? noFault(),
     },
   };
+}
+
+/** A loop of two straights of `straight` modules, each followed by two left curve modules. */
+export function loopModules(straight: number): ST_VisuTrackModule[] {
+  const half = [
+    ...Array.from({ length: straight }, () => trackModule()),
+    trackModule(E_VisuModuleKind.CURVE_LEFT),
+    trackModule(E_VisuModuleKind.CURVE_LEFT),
+  ];
+  return [...half, ...half.map((m) => ({ ...m }))];
 }
 
 export interface CartesianSpec {

@@ -18,6 +18,7 @@ import type {
   SceneGantry,
   SceneLoop,
   SceneModel,
+  SceneTrackModule,
   SceneOrigin,
   SceneProduct,
   SceneWorkingArea,
@@ -283,11 +284,11 @@ function signature(m: SceneModel): string {
     m.deltas.map((d) => d.id + ":" + d.baseRadius + ":" + d.effectorRadius).join(","),
     m.zones.map((w) => `${w.componentId}:${w.conveyorId}:${w.length}`).join(","),
     m.snapPoints.filter((p) => !p.moving).map((p) => p.key).join(","),
-    m.gantries.map((g) => `${g.id}:${g.moduleCount}:${g.moduleLength}:${g.movers.map((x) => x.id).join("/")}`).join(","),
+    m.gantries.map((g) => `${g.id}:${trackSignature(g.modules)}:${g.movers.map((x) => x.id).join("/")}`).join(","),
     m.boxAreas.map((a) => `${a.robotId}:${a.size.join("/")}`).join(","),
     m.limitAreas.map((a) => `${a.robotId}:${a.size.join("/")}`).join(","),
     m.zones.map((w) => (w.allocation ? w.allocation.length : 0)).join(","),
-    m.loops.map((l) => `${l.id}:${l.straightLength}:${l.curveRadius}:${l.movers.map((x) => x.id).join("/")}`).join(","),
+    m.loops.map((l) => `${l.id}:${trackSignature(l.modules)}:${l.movers.map((x) => x.id).join("/")}`).join(","),
     m.cartesians.map((c) => `${c.id}:${c.parts.map((p) => p.size.join("/")).join("/")}:${c.flange ? 1 : 0}`).join(","),
     m.fingers.map((f) => `${f.key}:${f.diameter}:${f.height}`).join(","),
     m.bodies.map((b) => `${b.key}:${b.shape}:${b.role}:${b.size.length}/${b.size.width}/${b.size.height}`).join(","),
@@ -1318,8 +1319,6 @@ function OriginTriad({ origin }: { origin: SceneOrigin }) {
 }
 
 const XTS_COLORS = {
-  beam: SOLID.profile,
-  module: SOLID.module,
   mover: SOLID.aluLight,
   arm: SOLID.dark,
   cup: SOLID.gripper,
@@ -1339,7 +1338,7 @@ function GantryMesh(props: {
   onSelect: (s: LocalSelection) => void;
 }) {
   const { gantry, latest, selected, onSelect } = props;
-  const { id, name, trackLength, moduleLength, moduleCount, moverLength, moverWidth } = gantry;
+  const { id, name, moverLength, moverWidth } = gantry;
   const track = useRef<THREE.Group>(null);
   const carriages = useRef<(THREE.Object3D | null)[]>([]);
   const arms = useRef<(THREE.Mesh | null)[]>([]);
@@ -1381,16 +1380,8 @@ function GantryMesh(props: {
     <group userData={{ label: name }}>
       <FaultScope faulted={gantryFaulted}>
         <group ref={track}>
-          {/* Beam above the movers along the track (MCS local +Y is renderer local −Z). */}
-          <SolidBox size={[moverWidth + 0.04, 0.12, trackLength]} position={[0, 0.06, -trackLength / 2]} onClick={select}>
-            <meshStandardMaterial color={selected ? SOLID.selectedStructure : XTS_COLORS.beam} metalness={0.25} roughness={0.6} />
-          </SolidBox>
-          {Array.from({ length: moduleCount + 1 }, (_, k) => (
-            <mesh key={k} position={[0, 0.06, -k * moduleLength]} raycast={noRaycast}>
-              <boxGeometry args={[moverWidth + 0.05, 0.125, 0.006]} />
-              <meshStandardMaterial color={XTS_COLORS.module} />
-            </mesh>
-          ))}
+          {/* The track modules form the beam above the movers. */}
+          <TrackModuleMeshes modules={gantry.modules} faulted={gantryFaulted} selected={selected} onClick={select} />
           <Html position={[0, 0.16, 0]} className="label" zIndexRange={[10, 0]}>
             {name}
           </Html>
@@ -1426,32 +1417,81 @@ function GantryMesh(props: {
   );
 }
 
-/** Stadium-shaped band of an XTS loop in its local X-Z plane (renderer x-y), centred on the track line. */
-function loopBandGeometry(length: number, radius: number, halfWidth: number, depth: number): THREE.ExtrudeGeometry {
-  const path = (offset: number, shape: THREE.Path, reverse: boolean) => {
-    const r = radius + offset;
-    if (!reverse) {
-      shape.moveTo(0, radius - r);
-      shape.lineTo(length, radius - r);
-      shape.absarc(length, radius, r, -Math.PI / 2, Math.PI / 2, false);
-      shape.lineTo(0, radius + r);
-      shape.absarc(0, radius, r, Math.PI / 2, (3 * Math.PI) / 2, false);
-    } else {
-      shape.moveTo(0, radius - r);
-      shape.absarc(0, radius, r, (3 * Math.PI) / 2, Math.PI / 2, true);
-      shape.lineTo(length, radius + r);
-      shape.absarc(length, radius, r, Math.PI / 2, -Math.PI / 2, true);
-      shape.lineTo(0, radius - r);
-    }
-  };
-  const outer = new THREE.Shape();
-  path(halfWidth, outer, false);
-  const inner = new THREE.Path();
-  path(-halfWidth, inner, true);
-  outer.holes.push(inner);
-  const geometry = new THREE.ExtrudeGeometry(outer, { depth, bevelEnabled: false, curveSegments: 32 });
-  geometry.translate(0, 0, -depth / 2);
+/** What of a track's modules changes their meshes. */
+function trackSignature(modules: readonly SceneTrackModule[]): string {
+  return modules.map((m) => `${m.length}/${m.turn}/${m.across.join("/")}/${m.depth.join("/")}`).join(";");
+}
+
+/** Gap at each end of a track module, metres, so that the joints between modules show. */
+const MODULE_JOINT = 0.0015;
+
+/**
+ * One track module's solid in its module frame (MCS axes, metres; see `SceneTrackModule`): a box for a straight
+ * module, a quarter ring around the curve's centre for a curve module.
+ */
+function trackModuleGeometry(m: SceneTrackModule): THREE.BufferGeometry {
+  const [a0, a1] = m.across;
+  const [d0, d1] = m.depth;
+  if (m.turn === 0) {
+    const geometry = new THREE.BoxGeometry(Math.max(m.length - 2 * MODULE_JOINT, 0.001), a1 - a0, d1 - d0);
+    geometry.translate(m.length / 2, (a0 + a1) / 2, (d0 + d1) / 2);
+    return geometry;
+  }
+  // The track line runs at radius R around the centre (0, turn · R); a point `a` across it lies at R − turn · a.
+  const { radius: r, turn: t } = m;
+  const cy = t * r;
+  const radii = [r - t * a0, r - t * a1];
+  const [inner, outer] = [Math.min(...radii), Math.max(...radii)];
+  const joint = MODULE_JOINT / r;
+  // The module starts straight "below" (left curve) or "above" (right curve) the centre and sweeps towards +X.
+  const from = -t * (Math.PI / 2) + t * joint;
+  const to = from + t * (m.length / r - 2 * joint);
+  const shape = new THREE.Shape();
+  shape.moveTo(outer * Math.cos(from), cy + outer * Math.sin(from));
+  shape.absarc(0, cy, outer, from, to, t < 0);
+  shape.absarc(0, cy, inner, to, from, t > 0);
+  shape.closePath();
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: d1 - d0, bevelEnabled: false, curveSegments: 24 });
+  geometry.translate(0, 0, d0);
   return geometry;
+}
+
+function TrackModuleMesh(props: { module: SceneTrackModule; selected: boolean; onClick: (e: ThreeEvent<MouseEvent>) => void }) {
+  const { module: m, selected, onClick } = props;
+  const signature = trackSignature([m]);
+  // Rebuilt only when the module's shape changes, not with every new scene object.
+  const geometry = useMemo(() => trackModuleGeometry(m), [signature]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  return (
+    <group position={m.transform.position} quaternion={m.transform.quaternion}>
+      {/* Turns the module frame's MCS axes into the renderer's: (x, y, z) → (x, z, −y). */}
+      <group rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh geometry={geometry} onClick={onClick}>
+          <meshStandardMaterial color={selected ? SOLID.selectedStructure : XTS_COLORS.track} metalness={0.25} roughness={0.6} />
+          <EdgeLines geometry={geometry} />
+        </mesh>
+      </group>
+    </group>
+  );
+}
+
+/** The track modules of an XTS gantry or loop, inside its track group; red with their own fault or the component's. */
+function TrackModuleMeshes(props: {
+  modules: readonly SceneTrackModule[];
+  /** The whole component is faulted. */
+  faulted: boolean;
+  selected: boolean;
+  onClick: (e: ThreeEvent<MouseEvent>) => void;
+}) {
+  return (
+    <>
+      {props.modules.map((m) => (
+        <FaultScope key={m.key} faulted={props.faulted || m.fault !== null}>
+          <TrackModuleMesh module={m} selected={props.selected} onClick={props.onClick} />
+        </FaultScope>
+      ))}
+    </>
+  );
 }
 
 /** XTS loop: the oval track, movers turning with the tangent, and each mover's tool point. */
@@ -1462,14 +1502,10 @@ function LoopMesh(props: {
   onSelect: (s: LocalSelection) => void;
 }) {
   const { loop, latest, selected, onSelect } = props;
-  const { id, name, straightLength, curveRadius, moverLength, moverWidth } = loop;
+  const { id, name, moverLength, moverWidth } = loop;
   const base = useRef<THREE.Group>(null);
   const movers = useRef<(THREE.Group | null)[]>([]);
   const tools = useRef<(THREE.Mesh | null)[]>([]);
-  const band = useMemo(
-    () => loopBandGeometry(straightLength, curveRadius, 0.02, moverWidth),
-    [straightLength, curveRadius, moverWidth],
-  );
   const select = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();
     onSelect({ kind: "component", id });
@@ -1499,11 +1535,8 @@ function LoopMesh(props: {
     <group userData={{ label: name }}>
       <FaultScope faulted={loopFaulted}>
         <group ref={base}>
-          <mesh geometry={band} onClick={select}>
-            <meshStandardMaterial color={selected ? SOLID.selectedStructure : XTS_COLORS.track} metalness={0.25} roughness={0.6} />
-            <EdgeLines geometry={band} />
-          </mesh>
-          <Html position={[straightLength / 2, curveRadius, 0]} className="label" zIndexRange={[10, 0]}>
+          <TrackModuleMeshes modules={loop.modules} faulted={loopFaulted} selected={selected} onClick={select} />
+          <Html position={loop.label} className="label" zIndexRange={[10, 0]}>
             {name}
           </Html>
         </group>

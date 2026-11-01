@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuTrackModule" Id="{56b61815-b9fa-4405-9904-64488335639b}">
+    <Declaration><![CDATA[TYPE ST_VisuTrackModule :
+STRUCT
+	(* One XTS motor module of a track, in the order the movers run along it. Each module starts where the one
+	   before it ends; a curve module is drawn as a quarter circle as long as fLength. *)
+	eKind : E_VisuModuleKind;
+	fLength : LREAL; // mm along the track (track positions), VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH for an XTS module
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

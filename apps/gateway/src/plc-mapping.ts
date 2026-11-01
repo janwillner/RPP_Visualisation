@@ -30,9 +30,10 @@ export function registerEnumTable(schema: z.ZodTypeAny, table: Record<number, st
 
 /** Protocol fields whose PLC member has another name, tried after the conventional one. */
 const ALIASES: Record<string, string> = {
-  /** Live states of the config's `aFingers` and `aBodies` sit in the state as `aFingerStates` and `aBodyStates`. */
+  /** Live states of the config's lists sit in the state as `aFingerStates`, `aBodyStates` and `aModuleStates`. */
   fingers: "fingerStates",
   bodies: "bodyStates",
+  modules: "moduleStates",
 };
 
 /** `fLength` → `length`, `stOriginShift` → `originShift`. */

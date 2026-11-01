@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoIdh" Id="{1cd44c67-abcc-470b-8f7e-94ff4f3e29e1}" SpecialFunc="None">
+  <POU Name="P_VisuDemoIdh" Id="{66e97f88-7496-4d34-82ad-1a948165f6b7}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -37,6 +37,7 @@ VAR
 	b_GantryGrip						: ARRAY[0..3] OF BOOL;
 	udn_GantryProduct					: ARRAY[0..3] OF UDINT;	// [-] product id on the IDH infeed
 	MoverFingers						: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;	// the mover's cup
+	un_Module							: UINT;	// [-] track module being set
 END_VAR
 VAR CONSTANT
 	(* Gantry turned by -90 deg: track along MCS +X, X axes towards MCS -Y (IDH infeed under X = 200, tray belt
@@ -137,8 +138,10 @@ XtsPose.fX := lr_GANTRY_X;
 XtsPose.fY := lr_GANTRY_Y;
 XtsPose.fZ := lr_GANTRY_Z;
 XtsPose.fRz := -90;
-fb_Idh.m_Configure(vi_Pose := XtsPose, vi_un_ModuleCount := un_GANTRY_MODULES, vi_lr_ModuleLength := lr_GANTRY_MODULE_LENGTH,
-	vi_lr_XMin := 0, vi_lr_XMax := 700, vi_lr_ZMin := lr_GANTRY_Z_DOWN, vi_lr_ZMax := 0,
+FOR un_Module := 1 TO un_GANTRY_MODULES DO
+	fb_Idh.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := E_VisuModuleKind.STRAIGHT, vi_lr_Length := lr_GANTRY_MODULE_LENGTH);
+END_FOR
+fb_Idh.m_Configure(vi_Pose := XtsPose, vi_lr_XMin := 0, vi_lr_XMax := 700, vi_lr_ZMin := lr_GANTRY_Z_DOWN, vi_lr_ZMax := 0,
 	vi_lr_ToolOffsetX := lr_GANTRY_TOOL_X, vi_lr_ToolOffsetZ := lr_GANTRY_TOOL_Z + DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT,
 	vi_lr_MoverLength := lr_GANTRY_MOVER_LENGTH, vi_lr_MoverWidth := 80);
 fb_Idh.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER,

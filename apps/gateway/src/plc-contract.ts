@@ -42,6 +42,9 @@ export const E_VisuBodyShape = { BOX: 0, CYLINDER: 1, FRUSTUM: 2 } as const;
 /** E_VisuBodyRole */
 export const E_VisuBodyRole = { STRUCTURE: 0, SENSOR: 1, BEAM: 2, FIELD_OF_VIEW: 3 } as const;
 
+/** E_VisuModuleKind: a curve module turns by a quarter circle. */
+export const E_VisuModuleKind = { STRAIGHT: 0, CURVE_LEFT: 1, CURVE_RIGHT: 2 } as const;
+
 /** E_VisuProductShape */
 export const E_VisuProductShape = { BOX: 0, CYLINDER: 1, ROUNDED_BOX: 2 } as const;
 
@@ -206,10 +209,22 @@ export interface ST_VisuDelta {
   stState: ST_VisuDeltaState;
 }
 
+/** One XTS motor module of a track. */
+export interface ST_VisuTrackModule {
+  eKind: PlcEnum;
+  /** mm along the track. */
+  fLength: number;
+}
+
+/** Live state of a track module. */
+export interface ST_VisuTrackModuleState {
+  stFault: ST_VisuFault;
+}
+
 export interface ST_VisuXtsGantryConfig {
   stPose: ST_VisuPose;
   nModuleCount: number;
-  fModuleLength: number;
+  aModules: ST_VisuTrackModule[];
   fXMin: number;
   fXMax: number;
   fZMin: number;
@@ -241,6 +256,8 @@ export interface ST_VisuXtsGantryState {
   fZ: number;
   nMoverCount: number;
   aMovers: ST_VisuGantryMover[];
+  /** One per possible track module, index as in aModules. */
+  aModuleStates: ST_VisuTrackModuleState[];
   stFault: ST_VisuFault;
 }
 
@@ -251,8 +268,8 @@ export interface ST_VisuXtsGantry {
 
 export interface ST_VisuXtsLoopConfig {
   stPose: ST_VisuPose;
-  fStraightLength: number;
-  fCurveRadius: number;
+  nModuleCount: number;
+  aModules: ST_VisuTrackModule[];
   fToolOffset: number;
   fMoverLength: number;
   fMoverWidth: number;
@@ -276,6 +293,8 @@ export interface ST_VisuXtsLoopState {
   nTimestamp: bigint;
   nMoverCount: number;
   aMovers: ST_VisuLoopMover[];
+  /** One per possible track module, index as in aModules. */
+  aModuleStates: ST_VisuTrackModuleState[];
   stFault: ST_VisuFault;
 }
 

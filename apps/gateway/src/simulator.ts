@@ -1,5 +1,6 @@
-import type { Vec3 } from "@rpp/protocol";
+import { TrackModuleSchema, trackLength, trackPoint, type TrackModule, type Vec3 } from "@rpp/protocol";
 import { InMemoryPlc } from "./in-memory-plc";
+import { mapPlc } from "./plc-mapping";
 import {
   noFault,
   MAX_PRODUCTS,
@@ -11,6 +12,8 @@ import {
   detector,
   emptyProduct,
   fingerStates,
+  loopModules,
+  trackModule,
   xtsGantry,
   xtsLoop,
   type ZoneSpec,
@@ -18,6 +21,7 @@ import {
 import {
   E_VisuBodyRole,
   E_VisuBodyShape,
+  E_VisuModuleKind,
   E_VisuProductShape,
   E_VisuProductState,
   type ST_VisuCartesian,
@@ -96,8 +100,8 @@ const LOOP = {
   id: 20,
   path: "MAIN.fbFxx.stVisu",
   x: 1000,
-  straight: 2400,
-  radius: 250,
+  /** Straight modules per side: 10 × 250 mm, joined by two curve modules at each end. */
+  straight: 10,
   toolOffset: 120,
   movers: 12,
   moverLength: 100,
@@ -109,23 +113,17 @@ const LOOP = {
   deliverSpeed: 700,
   returnSpeed: 900,
 };
-const LOOP_PERIMETER = 2 * LOOP.straight + 2 * Math.PI * LOOP.radius;
+const LOOP_MODULES = loopModules(LOOP.straight);
+const LOOP_TRACK: TrackModule[] = LOOP_MODULES.map((m) => mapPlc(TrackModuleSchema, m));
+const LOOP_PERIMETER = trackLength(LOOP_TRACK);
 
-/** Point and tangent angle (degrees about local Y) at track position s on the loop, in its local X-Z plane. */
+/**
+ * Point and tangent angle (degrees about local Y) at track position s on the loop, in its local X-Z plane: the track
+ * plane's u is local X and its v local Z, so a heading turns the mover by −heading about Y.
+ */
 function loopPoint(s: number): { point: Vec3; angle: number } {
-  const L = LOOP.straight;
-  const R = LOOP.radius;
-  const arc = Math.PI * R;
-  const u = ((s % LOOP_PERIMETER) + LOOP_PERIMETER) % LOOP_PERIMETER;
-  const deg = (rad: number) => (rad * 180) / Math.PI;
-  if (u <= L) return { point: [u, 0, 0], angle: 0 };
-  if (u <= L + arc) {
-    const a = (u - L) / R;
-    return { point: [L + R * Math.sin(a), 0, R - R * Math.cos(a)], angle: -deg(a) };
-  }
-  if (u <= 2 * L + arc) return { point: [L - (u - L - arc), 0, 2 * R], angle: 180 };
-  const a = (u - 2 * L - arc) / R;
-  return { point: [-R * Math.sin(a), 0, R + R * Math.cos(a)], angle: 180 - deg(a) };
+  const p = trackPoint(LOOP_TRACK, s, true);
+  return { point: [p.u, 0, p.v], angle: -p.heading };
 }
 
 const rad = (deg: number) => (deg * Math.PI) / 180;
@@ -331,8 +329,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       kind: "xtsLoop",
       value: xtsLoop({
         pose: { fX: LOOP.x, fY: FXX_INFEED.y, fZ: BELT_Z + PRODUCT.height + LOOP.toolOffset },
-        straightLength: LOOP.straight,
-        curveRadius: LOOP.radius,
+        modules: LOOP_MODULES,
         fingers: [SUCTION],
         zones: centred([
           {
@@ -355,8 +352,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       kind: "xtsGantry",
       value: xtsGantry({
         pose: { fX: GANTRY.x, fY: GANTRY.y, fZ: GANTRY.z, fRz: -90 },
-        moduleCount: GANTRY.modules,
-        moduleLength: GANTRY.moduleLength,
+        modules: Array.from({ length: GANTRY.modules }, () => trackModule(E_VisuModuleKind.STRAIGHT, GANTRY.moduleLength)),
         fingers: [SUCTION],
         zones: centred([
           {
@@ -452,7 +448,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   });
 
   // Simulated time in ms; drives the demo faults: every 20 s one Fxx mover and one IDH mover are in a fault for 5 s,
-  // the Delta at another time.
+  // the Delta and the Fxx's first far curve module at other times.
   let simMs = 0;
   const faultWindow = (start: number) => {
     const phase = simMs % FAULT_PERIOD_MS;
@@ -946,6 +942,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         stFault: fault(i === 2 && faultWindow(10_000), "Following error"),
       };
     });
+    loop.stState.aModuleStates[LOOP.straight]!.stFault = fault(faultWindow(15_000), "Overtemperature");
     loop.stState.nTimestamp = now;
     gantry.stState.fZ = gantryZ;
     gantry.stState.nMoverCount = gantryMovers.length;

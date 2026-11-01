@@ -1,23 +1,25 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuXtsLoop" Id="{baa95484-bfa3-4284-9c35-795152919aee}" SpecialFunc="None">
+  <POU Name="_FB_VisuXtsLoop" Id="{8926d95c-3bb4-4209-8cbd-c96a4ea16cac}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-One visualised XTS loop (e.g. Fxx): movers circulating on a closed track of two straights and two 180 deg curves.<br>
+One visualised XTS loop (e.g. Fxx): movers circulating on a closed track of XTS motor modules, e.g. two<br>
+straights joined at each end by two CURVE_LEFT modules, standing in the local X-Z plane.<br>
 Typical cycle:<br>
   fb_Fxx.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 20, vi_str_Name := 'Fxx',<br>
       vi_str_Path := 'MAIN.fb_Fxx.vo_Visu');<br>
-  fb_Fxx.m_Configure(vi_Pose := LoopPose, vi_lr_StraightLength := 2400, vi_lr_CurveRadius := 250,<br>
-      vi_lr_ToolOffset := 120, vi_lr_MoverLength := 100, vi_lr_MoverWidth := 60);<br>
+  fb_Fxx.m_Configure(vi_Pose := LoopPose, vi_lr_ToolOffset := 120, vi_lr_MoverLength := 100,<br>
+      vi_lr_MoverWidth := 60);<br>
+  fb_Fxx.m_SetModule(vi_un_Module := 1, vi_e_Kind := E_VisuModuleKind.STRAIGHT); and so on, in order<br>
   fb_Fxx.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 50);<br>
   fb_Fxx.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 2, vi_lr_Start := 2200, vi_lr_End := 2800);<br>
   fb_Fxx.m_SetMoverCount(12);<br>
   fb_Fxx.m_SetMover(vi_un_Index := 0, vi_udn_Id := 1, vi_lr_Position := ..., vi_FingerStates := Mover1Fingers);<br>
-Positions run along the loop from the start of the lower straight in the conveying direction (0..m_Perimeter()).<br>
+Positions run along the loop from the start of module 1 in the conveying direction (0..m_TrackLength()).<br>
 The config methods may be called every cycle; the config version only changes when a value does.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
@@ -26,8 +28,9 @@ vo_Visu is the contract structure the gateway reads at the path given to m_Regis
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Zones and fingers from _FB_VisuRobot; m_SetZone by index, no kind<br>
+Syn_Visu 5.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Track of modules from _FB_VisuXtsTrack; m_Perimeter is m_TrackLength<br>
 ****************************************************************************************************)
-FUNCTION_BLOCK _FB_VisuXtsLoop EXTENDS _FB_VisuRobot
+FUNCTION_BLOCK _FB_VisuXtsLoop EXTENDS _FB_VisuXtsTrack
 VAR_OUTPUT
 	vo_Visu								: ST_VisuXtsLoop;	// contract structure read by the gateway
 END_VAR]]></Declaration>
@@ -76,13 +79,11 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Sets pose, track geometry, tool offset and mover size. TRUE if anything changed.<br>
+Sets pose, tool offset and mover size; the track comes from m_SetModule. TRUE if anything changed.<br>
 ****************************************************************************************************)
 METHOD m_Configure : BOOL
 VAR_INPUT
-	vi_Pose								: ST_VisuPose;	// MCS, start of the lower straight; the loop stands in the local X-Z plane
-	vi_lr_StraightLength				: LREAL;	// [mm]
-	vi_lr_CurveRadius					: LREAL;	// [mm]
+	vi_Pose								: ST_VisuPose;	// MCS, start of module 1; the loop stands in the local X-Z plane
 	vi_lr_ToolOffset					: LREAL;	// [mm] tool point outwards from the track
 	vi_lr_MoverLength					: LREAL;	// [mm] along the track
 	vi_lr_MoverWidth					: LREAL;	// [mm]
@@ -93,8 +94,6 @@ END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[TempNew := vo_Visu.stConfig;
 TempNew.stPose := vi_Pose;
-TempNew.fStraightLength := vi_lr_StraightLength;
-TempNew.fCurveRadius := vi_lr_CurveRadius;
 TempNew.fToolOffset := vi_lr_ToolOffset;
 TempNew.fMoverLength := vi_lr_MoverLength;
 TempNew.fMoverWidth := vi_lr_MoverWidth;
@@ -122,18 +121,27 @@ vo_p_Fingers := ADR(vo_Visu.stConfig.aFingers);
 m_Fingers := TRUE;]]></ST>
       </Implementation>
     </Method>
-    <Method Name="m_Perimeter" Id="{3738bf5c-d889-4d83-85b1-93a2f8148d45}">
+    <Method Name="m_Modules" Id="{3a17d240-73c7-47f5-a0c9-92e93189ce4d}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Length of the loop as the visualisation computes it (curves as semicircles), [mm].<br>
+The loop's track modules for _FB_VisuXtsTrack.m_SetModule and m_ClearModules.<br>
 ****************************************************************************************************)
-METHOD m_Perimeter : LREAL]]></Declaration>
+METHOD PROTECTED m_Modules : BOOL
+VAR_OUTPUT
+	vo_p_Count							: POINTER TO UINT;
+	vo_p_Modules						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF ST_VisuTrackModule;
+	vo_p_States							: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF ST_VisuTrackModuleState;
+END_VAR
+]]></Declaration>
       <Implementation>
-        <ST><![CDATA[m_Perimeter := 2.0 * vo_Visu.stConfig.fStraightLength + 2.0 * 3.141592653589793 * vo_Visu.stConfig.fCurveRadius;]]></ST>
+        <ST><![CDATA[vo_p_Count := ADR(vo_Visu.stConfig.nModuleCount);
+vo_p_Modules := ADR(vo_Visu.stConfig.aModules);
+vo_p_States := ADR(vo_Visu.stState.aModuleStates);
+m_Modules := TRUE;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_SetFault" Id="{dfe3503c-b1b7-448b-9e2d-61007f8c2ff9}">
@@ -174,7 +182,7 @@ METHOD m_SetMover : BOOL
 VAR_INPUT
 	vi_un_Index							: UINT;	// [-] 0..m_SetMoverCount - 1
 	vi_udn_Id							: UDINT;	// [-] unique within the loop, > 0
-	vi_lr_Position						: LREAL;	// [mm] along the loop from the start of the lower straight (0..m_Perimeter())
+	vi_lr_Position						: LREAL;	// [mm] along the loop from the start of module 1 (0..m_TrackLength())
 	(* Finger poses absolute in the MCS and grip states, index 0 = finger 1; entries beyond the finger count are ignored. *)
 	vi_FingerStates						: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;
 	vi_b_Fault							: BOOL := FALSE;	// TRUE: this mover is in a fault

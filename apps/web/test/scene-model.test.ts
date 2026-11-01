@@ -14,6 +14,7 @@ import type {
   StateMessage,
   VisionConfig,
   XtsGantryConfig,
+  TrackModule,
   XtsLoopConfig,
   Zone,
 } from "@rpp/protocol";
@@ -688,6 +689,17 @@ describe("scene model: measure mode", () => {
   });
 });
 
+function straight(length = 250): TrackModule {
+  return { kind: "straight", length };
+}
+
+/** Eight straight modules (2000 mm), two left curve modules, eight back, two curve modules down to the start. */
+const LOOP_MODULES: TrackModule[] = [0, 1].flatMap(() => [
+  ...Array.from({ length: 8 }, () => straight()),
+  { kind: "curveLeft" as const, length: 250 },
+  { kind: "curveLeft" as const, length: 250 },
+]);
+
 function gantryConfig(overrides: Partial<XtsGantryConfig> = {}): XtsGantryConfig {
   return {
     type: "xtsGantry",
@@ -696,8 +708,7 @@ function gantryConfig(overrides: Partial<XtsGantryConfig> = {}): XtsGantryConfig
     name: "IDH",
     // Turned by 90°: the track (local +Y) runs along MCS −X, the X axes (local +X) along MCS +Y.
     pose: { x: 3000, y: -500, z: 1500, rx: 0, ry: 0, rz: 90 },
-    moduleCount: 3,
-    moduleLength: 1000,
+    modules: [straight(1000), straight(1000), straight(1000)],
     xMin: -50,
     xMax: 300,
     zMin: -200,
@@ -714,7 +725,7 @@ function gantryConfig(overrides: Partial<XtsGantryConfig> = {}): XtsGantryConfig
 }
 
 function gantryState(z: number, movers: GantryMover[]): StateMessage["components"][number] {
-  return { type: "xtsGantry", id: 30, timestamp: "0", z, movers, fault: null };
+  return { type: "xtsGantry", id: 30, timestamp: "0", z, movers, modules: [], fault: null };
 }
 
 const mover1: GantryMover = { id: 1, position: 250, x: 80, gripperActive: true, fingers: [], fault: null };
@@ -724,10 +735,22 @@ describe("scene model: XTS gantry", () => {
   const [g] = scene.gantries;
 
   it("lifts the whole track with the common Z axis", () => {
-    expect(g).toMatchObject({ id: 30, name: "IDH", moduleCount: 3 });
-    closeTo([g!.trackLength, g!.moduleLength, g!.moverLength, g!.moverWidth], [3, 1, 0.155, 0.08]);
+    expect(g).toMatchObject({ id: 30, name: "IDH" });
+    closeTo([g!.moverLength, g!.moverWidth], [0.155, 0.08]);
     // Track start at Z = −100: MCS (3000, −500, 1400).
     closeTo(g!.track.position, [3, 1.4, 0.5]);
+  });
+
+  it("draws each track module where the one before it ends, along the track's local +Y", () => {
+    expect(g!.modules.map((m) => [m.index, m.length, m.radius])).toEqual([
+      [1, 1, 0],
+      [2, 1, 0],
+      [3, 1, 0],
+    ]);
+    // Relative to the track: module 2 starts 1000 mm along local +Y, renderer −Z.
+    closeTo(g!.modules[1]!.transform.position, [0, 0, -1]);
+    // Its local +X runs along the track.
+    closeTo(rotate(g!.modules[1]!.transform.quaternion, [1, 0, 0]), [0, 0, -1]);
   });
 
   it("places each mover on the track and its gripper flange at X + offset, turned with the gantry", () => {
@@ -767,7 +790,7 @@ describe("scene model: XTS gantry", () => {
   it("offers track start, module boundaries, track end and the gripper flanges as snap points", () => {
     const byLabel = new Map(scene.snapPoints.map((p) => [p.label, p]));
     closeTo(byLabel.get("IDH · track start")!.mcs, [3000, -500, 1400]);
-    closeTo(byLabel.get("IDH · module boundary 1")!.mcs, [2000, -500, 1400]);
+    closeTo(byLabel.get("IDH · module 1 / 2")!.mcs, [2000, -500, 1400]);
     closeTo(byLabel.get("IDH · track end")!.mcs, [0, -500, 1400]);
     const tcp = byLabel.get("IDH · mover 1 flange")!;
     closeTo(tcp.mcs, [2750, -270, 1000]);
@@ -909,8 +932,7 @@ function loopConfig(overrides: Partial<XtsLoopConfig> = {}): XtsLoopConfig {
     sourceId: "plc1",
     name: "Fxx",
     pose: { x: 5000, y: 0, z: 900, rx: 0, ry: 0, rz: 0 },
-    straightLength: 2000,
-    curveRadius: 250,
+    modules: LOOP_MODULES,
     toolOffset: 120,
     moverLength: 100,
     moverWidth: 60,
@@ -922,11 +944,20 @@ function loopConfig(overrides: Partial<XtsLoopConfig> = {}): XtsLoopConfig {
 }
 
 function loopState(movers: { id: number; position: number }[]): StateMessage["components"][number] {
-  return { type: "xtsLoop", id: 40, timestamp: "0", movers: movers.map((m) => ({ ...m, fingers: [], fault: null })), fault: null };
+  return {
+    type: "xtsLoop",
+    id: 40,
+    timestamp: "0",
+    movers: movers.map((m) => ({ ...m, fingers: [], fault: null })),
+    modules: [],
+    fault: null,
+  };
 }
 
-/** 2 × 2000 + 2π × 250 */
-const PERIMETER = 4000 + 2 * Math.PI * 250;
+/** Radius of a 250 mm quarter curve: 2 · 250 / π. */
+const R = 500 / Math.PI;
+/** 2 × (8 straight + 2 curve modules) × 250 mm. */
+const PERIMETER = 5000;
 
 describe("scene model: XTS loop", () => {
   const moverAt = (position: number) =>
@@ -939,20 +970,49 @@ describe("scene model: XTS loop", () => {
     closeTo(rotate(m.transform.quaternion, [1, 0, 0]), [1, 0, 0]);
   });
 
-  it("follows the far curve as a semicircle, turning the mover with the tangent", () => {
-    // Quarter of the way round the far curve: straight above its start, at the curve's centre height.
-    const m = moverAt(2000 + (Math.PI * 250) / 2);
-    closeTo(m.transform.position, [7.25, 1.15, 0]);
+  it("follows the far curve modules as quarter circles, turning the mover with the tangent", () => {
+    // At the end of the first curve module: a quarter circle ahead and up, at its centre's height.
+    const m = moverAt(2250);
+    closeTo(m.transform.position, [(7000 + R) / 1000, (900 + R) / 1000, 0]);
     // Tangent points up; the tool point lies outwards along +X.
     closeTo(rotate(m.transform.quaternion, [1, 0, 0]), [0, 1, 0]);
-    closeTo(m.tool, [7.37, 1.15, 0]);
+    closeTo(m.tool, [(7000 + R + 120) / 1000, (900 + R) / 1000, 0]);
   });
 
   it("returns along the upper straight against the conveying direction", () => {
-    const m = moverAt(2000 + Math.PI * 250 + 500);
-    closeTo(m.transform.position, [6.5, 1.4, 0]);
-    closeTo(m.tool, [6.5, 1.52, 0]);
+    const m = moverAt(3000);
+    closeTo(m.transform.position, [6.5, (900 + 2 * R) / 1000, 0]);
+    closeTo(m.tool, [6.5, (900 + 2 * R + 120) / 1000, 0]);
     closeTo(rotate(m.transform.quaternion, [1, 0, 0]), [-1, 0, 0]);
+  });
+
+  it("turns a right curve module the other way", () => {
+    const modules: TrackModule[] = [straight(), { kind: "curveRight", length: 250 }, straight()];
+    const m = buildScene(config(loopConfig({ modules })), [snapshot(0, [loopState([{ id: 11, position: 500 }])])], 0)
+      .loops[0]!.movers[0]!;
+    // Below the straight, heading down.
+    closeTo(m.transform.position, [(5250 + R) / 1000, (900 - R) / 1000, 0]);
+    closeTo(rotate(m.transform.quaternion, [1, 0, 0]), [0, -1, 0]);
+  });
+
+  it("draws every track module with its curve radius and turn", () => {
+    const [loop] = buildScene(config(loopConfig()), [], 0).loops;
+    expect(loop!.modules).toHaveLength(20);
+    const curve = loop!.modules[8]!;
+    expect(curve).toMatchObject({ index: 9, turn: 1 });
+    closeTo([curve.length, curve.radius], [0.25, R / 1000]);
+    // Relative to the loop's base: module 9 starts at the end of the lower straight.
+    closeTo(curve.transform.position, [2, 0, 0]);
+    // The upper straight's first module starts 2R above it, running back along −X.
+    const upper = loop!.modules[10]!;
+    closeTo(upper.transform.position, [2, (2 * R) / 1000, 0]);
+    closeTo(rotate(upper.transform.quaternion, [1, 0, 0]), [-1, 0, 0]);
+    expect(buildScene(config(loopConfig()), [], 0).warnings).toEqual([]);
+  });
+
+  it("warns when the modules of a loop do not close the track", () => {
+    const open = buildScene(config(loopConfig({ modules: [straight(), straight()] })), [], 0);
+    expect(open.warnings).toEqual(["Fxx: the track modules do not close the loop (500 mm apart)"]);
   });
 
   it("wraps positions around the perimeter", () => {
@@ -981,15 +1041,16 @@ describe("scene model: XTS loop", () => {
     closeTo(products.find((p) => p.display === "atTcp")!.transform.position, [5.5, 0.76, 0]);
   });
 
-  it("offers the straights' ends, the curve centres and the movers' tool points as snap points", () => {
+  it("offers the module boundaries, the curve centres and the movers' tool points as snap points", () => {
     const scene = buildScene(config(loopConfig()), [snapshot(0, [loopState([{ id: 11, position: 500 }])])], 0);
     const byLabel = new Map(scene.snapPoints.map((p) => [p.label, p]));
-    closeTo(byLabel.get("Fxx · lower straight, start")!.mcs, [5000, 0, 900]);
-    closeTo(byLabel.get("Fxx · lower straight, end")!.mcs, [7000, 0, 900]);
-    closeTo(byLabel.get("Fxx · upper straight, start side")!.mcs, [5000, 0, 1400]);
-    closeTo(byLabel.get("Fxx · upper straight, end side")!.mcs, [7000, 0, 1400]);
-    closeTo(byLabel.get("Fxx · curve centre, start side")!.mcs, [5000, 0, 1150]);
-    closeTo(byLabel.get("Fxx · curve centre, end side")!.mcs, [7000, 0, 1150]);
+    closeTo(byLabel.get("Fxx · track start")!.mcs, [5000, 0, 900]);
+    closeTo(byLabel.get("Fxx · module 8 / 9")!.mcs, [7000, 0, 900]);
+    closeTo(byLabel.get("Fxx · module 10 / 11")!.mcs, [7000, 0, 900 + 2 * R]);
+    closeTo(byLabel.get("Fxx · module 9 curve centre")!.mcs, [7000, 0, 900 + R]);
+    // A closed track ends where it starts.
+    expect(byLabel.has("Fxx · track end")).toBe(false);
+    expect(byLabel.has("Fxx · module 20 / 1")).toBe(false);
     const tool = byLabel.get("Fxx · mover 11 tool")!;
     closeTo(tool.mcs, [5500, 0, 780]);
     expect(tool.moving).toBe(true);
@@ -1044,7 +1105,7 @@ describe("scene model: faults", () => {
     expect(g.fault).toBeNull();
     expect(g.movers.map((m) => m.fault)).toEqual([null, "following error"]);
     expect(scene.faultLabels).toHaveLength(1);
-    expect(scene.faultLabels[0]).toMatchObject({ componentId: 30, moverId: 2, message: "following error" });
+    expect(scene.faultLabels[0]).toMatchObject({ componentId: 30, part: "Mover 2", message: "following error" });
     // Carriage at track position 600: MCS (2400, −500, 1400); the label 200 mm above it.
     closeTo(scene.faultLabels[0]!.position, [2.4, 1.6, 0.5]);
     expect(scene.faults).toEqual([{ componentId: 30, messages: ["Mover 2: following error"] }]);
@@ -1059,7 +1120,7 @@ describe("scene model: faults", () => {
     expect(scene.deltas[0]!.fault).toBe("Fault");
     expect(scene.fingers.map((f) => f.faulted)).toEqual([true]);
     expect(scene.faultLabels).toHaveLength(1);
-    expect(scene.faultLabels[0]).toMatchObject({ componentId: 20, moverId: 0, message: "Fault" });
+    expect(scene.faultLabels[0]).toMatchObject({ componentId: 20, part: null, message: "Fault" });
     // 250 mm above the base at MCS (1500, 0, 1800).
     closeTo(scene.faultLabels[0]!.position, [1.5, 2.05, 0]);
     expect(scene.faults).toEqual([{ componentId: 20, messages: ["Fault"] }]);
@@ -1072,7 +1133,45 @@ describe("scene model: faults", () => {
 
     expect(scene.gantries[0]!.fault).toBe("Z axis error");
     expect(scene.faults).toEqual([{ componentId: 30, messages: ["Z axis error", "Mover 1: following error"] }]);
-    expect(scene.faultLabels.map((l) => l.moverId)).toEqual([0, 1]);
+    expect(scene.faultLabels.map((l) => l.part)).toEqual([null, "Mover 1"]);
+  });
+
+  it("marks a faulted track module red, labels it above its middle and lists it under its loop", () => {
+    const modules = LOOP_MODULES.map(() => ({ fault: null as { message: string } | null }));
+    modules[8] = { fault: { message: "Overtemperature" } };
+    const state = { ...loopState([]), modules };
+    const scene = buildScene(config(loopConfig()), [snapshot(0, [state])], 0);
+
+    const loop = scene.loops[0]!;
+    expect(loop.modules.map((m) => m.fault).filter((f) => f !== null)).toEqual(["Overtemperature"]);
+    expect(loop.modules[8]!.fault).toBe("Overtemperature");
+    expect(scene.faults).toEqual([{ componentId: 40, messages: ["Module 9: Overtemperature"] }]);
+    expect(scene.faultLabels).toHaveLength(1);
+    expect(scene.faultLabels[0]).toMatchObject({ componentId: 40, part: "Module 9", message: "Overtemperature" });
+    // Module 9 is the first quarter curve after the lower straight: its middle lies 45° round it, the label 150 mm above.
+    const half = Math.SQRT1_2 * R;
+    closeTo(scene.faultLabels[0]!.position, [(7000 + half) / 1000, (900 + R - half + 150) / 1000, 0]);
+  });
+
+  it("reads the states of recordings made before protocol 12, which report no track modules", () => {
+    const { modules: _, ...old } = loopState([{ id: 11, position: 500 }]) as Extract<StateMessage["components"][number], { type: "xtsLoop" }>;
+    const scene = buildScene(config(loopConfig()), [snapshot(0, [old as StateMessage["components"][number]])], 0);
+    expect(scene.loops[0]!.modules.every((m) => m.fault === null)).toBe(true);
+    expect(scene.loops[0]!.movers).toHaveLength(1);
+  });
+
+  it("draws the XTS components of recordings made before protocol 12 without their track", () => {
+    const { modules: _, ...oldLoop } = { ...loopConfig(), straightLength: 2000, curveRadius: 250 };
+    const { modules: __, ...oldGantry } = { ...gantryConfig(), moduleCount: 3, moduleLength: 1000 };
+    const scene = buildScene(
+      config(oldLoop as unknown as XtsLoopConfig, oldGantry as unknown as XtsGantryConfig),
+      [snapshot(0, [loopState([{ id: 11, position: 500 }]), gantryState(0, [mover1])])],
+      0,
+    );
+    expect(scene.loops[0]!.modules).toEqual([]);
+    expect(scene.gantries[0]!.modules).toEqual([]);
+    // Movers still stand where their position lies along the start direction.
+    closeTo(scene.loops[0]!.movers[0]!.transform.position, [5.5, 0.9, 0]);
   });
 
   it("takes faults from the earlier snapshot instead of interpolating them", () => {

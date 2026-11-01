@@ -51,6 +51,7 @@ describe("stateRows", () => {
         { id: 7, position: 400, x: 12, gripperActive: false, fingers: [{ pose, active: true }], fault: null },
         { id: 8, position: 900, x: 0, gripperActive: true, fingers: [{ pose, active: false }], fault: { message: "" } },
       ],
+      modules: [],
       fault: null,
     };
     const rows = stateRows(state);
