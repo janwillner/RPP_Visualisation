@@ -260,3 +260,7 @@ It then reads `<sPath>.stConfig` once. Every cycle it sum-reads `GVL_Visu.stMani
 | `E_VisuZoneKind` (UINT) | `PICK` 1, `PLACE` 2 |
 
 Values are part of the contract: append, never renumber.
+
+A product a robot puts down onto a conveyor enters that conveyor's register as `PLACED` (an outfeed, a tray belt).
+The visualisation flags every product that passes its belt end in `DETECTED` or `ASSIGNED` as missed; `PLACED` and
+`REJECTED` products pass the end on purpose.

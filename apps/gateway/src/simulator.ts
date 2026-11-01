@@ -433,14 +433,25 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     return [p.stLatchPose.fX + (beltPosition - p.fLatchBeltPosition), p.stLatchPose.fY, p.stLatchPose.fZ];
   }
 
-  function latch(products: TrackedProduct[], c: ST_VisuConveyor, x: number, y: number, rz: number): void {
+  /**
+   * Enters a product into a conveyor's register: DETECTED where it arrives, PLACED where a robot puts it down, as the
+   * contract asks (an outfeed product past the belt end is otherwise shown as missed).
+   */
+  function latch(
+    products: TrackedProduct[],
+    c: ST_VisuConveyor,
+    x: number,
+    y: number,
+    rz: number,
+    eState: TrackedProduct["eState"] = E_VisuProductState.DETECTED,
+  ): void {
     products.push({
       ...emptyProduct(),
       nId: nextId++,
       bValid: true,
       stLatchPose: { fX: x, fY: y, fZ: BELT_Z, fRz: rz },
       fLatchBeltPosition: c.stState.fBeltPosition,
-      eState: E_VisuProductState.DETECTED,
+      eState,
       nProductType: PRODUCT.type,
     });
   }
@@ -512,7 +523,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         break;
       case "release": {
         target!.eState = E_VisuProductState.PLACED;
-        latch(outfeedProducts, outfeed, tcp[0], tcp[1], tcpRz);
+        latch(outfeedProducts, outfeed, tcp[0], tcp[1], tcpRz, E_VisuProductState.PLACED);
         target = undefined;
         phase = "idle";
         break;
@@ -565,7 +576,14 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
           m.s = Math.min(m.s + LOOP.deliverSpeed * dtS, LOOP.place);
           if (m.s >= LOOP.place) {
             m.product!.eState = E_VisuProductState.PLACED;
-            latch(fxxOutfeedProducts, fxxOutfeed, LOOP.x + m.s, FXX_OUTFEED.y, m.product!.stLatchPose.fRz);
+            latch(
+              fxxOutfeedProducts,
+              fxxOutfeed,
+              LOOP.x + m.s,
+              FXX_OUTFEED.y,
+              m.product!.stLatchPose.fRz,
+              E_VisuProductState.PLACED,
+            );
             m.product = undefined;
             m.mode = "return";
           }
@@ -664,7 +682,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
             if (!m.product) continue;
             m.product.eState = E_VisuProductState.PLACED;
             // Turned by −90°: the gripper is at MCS x = track start + position, y = pose y − (X + offset).
-            latch(trayProducts, tray, GANTRY.x + m.position, GANTRY.y - (m.x + GANTRY.toolOffsetX), 0);
+            latch(trayProducts, tray, GANTRY.x + m.position, GANTRY.y - (m.x + GANTRY.toolOffsetX), 0, E_VisuProductState.PLACED);
             m.product = undefined;
             m.gripper = false;
           }
@@ -759,7 +777,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       case "release": {
         cartTarget!.eState = E_VisuProductState.PLACED;
         // Turned by −90°: the TCP (A = 0) is at MCS x = origin + Y, y = origin − X; the product keeps the gripper turn.
-        latch(cartOutfeedProducts, cartOutfeed, CART.x + axes.y, CART.y - axes.x, -90 + axes.c);
+        latch(cartOutfeedProducts, cartOutfeed, CART.x + axes.y, CART.y - axes.x, -90 + axes.c, E_VisuProductState.PLACED);
         cartTarget = undefined;
         axes.gripper = false;
         cartPhase = "rise";

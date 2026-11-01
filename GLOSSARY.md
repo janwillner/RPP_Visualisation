@@ -66,7 +66,7 @@ The outline left travelling on the conveyor where a picked product used to lie.
 _Avoid_: ghost, empty product
 
 **Missed product**:
-A product that reached the end of its conveyor without being picked.
+A product that reached the end of its conveyor without being picked. Products placed onto a conveyor (an outfeed) or rejected pass its end on purpose and are not missed.
 _Avoid_: lost product
 
 **Fault**:
