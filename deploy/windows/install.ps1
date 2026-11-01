@@ -143,7 +143,15 @@ $targetId = Get-ServiceId $Instance
 $serviceIds = @(Get-InstalledServiceIds)
 if ($serviceIds -notcontains $targetId) { $serviceIds += $targetId }
 
-Write-Host "Installing RPP visualisation $version"
+$installedVersionFile = Join-Path $InstallDir 'VERSION'
+$installedVersion = if (Test-Path $installedVersionFile) { (Get-Content -Raw $installedVersionFile).Trim() }
+if (-not $installedVersion) {
+    Write-Host "Installing RPP visualisation $version"
+} elseif ($installedVersion -eq $version) {
+    Write-Host "Installing RPP visualisation $version again (same version)"
+} else {
+    Write-Host "Installing RPP visualisation $version, replacing $installedVersion"
+}
 
 $replaceFiles = (Resolve-Path $Source).Path.TrimEnd('\') -ne $InstallDir
 
@@ -293,4 +301,4 @@ foreach ($check in $started) {
 if ($failures.Count -gt 0) {
     throw "Installed RPP visualisation $version, but these instances need attention (logs: $LogDir):`n  $($failures -join "`n  ")"
 }
-Write-Host "Done. Open http://<ipc-address>:<port> from a browser on the machine network."
+Write-Host "Done: RPP visualisation $version is installed. Open http://<ipc-address>:<port> from a browser on the machine network."

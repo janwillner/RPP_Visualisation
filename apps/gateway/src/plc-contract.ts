@@ -103,6 +103,8 @@ export interface ST_VisuManifest {
   nConfigVersion: number;
   nCount: number;
   aEntries: ST_VisuManifestEntry[];
+  /** Version of the Syn_Visu library the PLC runs, e.g. "5.1.0"; missing before library 5.1. */
+  sLibraryVersion?: string;
 }
 
 export interface ST_VisuProductType {

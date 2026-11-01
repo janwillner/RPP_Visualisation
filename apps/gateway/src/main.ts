@@ -8,6 +8,7 @@ import { OptionsError, resolveGatewayOptions, type GatewayOptions } from "./opti
 import { HEALTH_PATH, startServer, WS_PATH } from "./server";
 import { createSimulator } from "./simulator";
 import type { SymbolAccess } from "./symbol-access";
+import { APP_VERSION } from "./version";
 
 let options: GatewayOptions;
 try {
@@ -101,9 +102,10 @@ const server = await startServer({
   ...(options.host ? { host: options.host } : {}),
   ...(options.staticDir ? { staticDir: options.staticDir } : {}),
 });
+// ASCII only: the service log is read in consoles and editors with other code pages.
 console.log(
-  `Gateway (${options.driver}) listening on http://${options.host ?? "localhost"}:${options.port}` +
-    ` – WebSocket ${WS_PATH}, health ${HEALTH_PATH}${options.staticDir ? `, serving ${options.staticDir}` : ", no static web app"}`,
+  `RPP visualisation ${APP_VERSION}: gateway (${options.driver}) listening on http://${options.host ?? "localhost"}:${options.port}` +
+    ` - WebSocket ${WS_PATH}, health ${HEALTH_PATH}${options.staticDir ? `, serving ${options.staticDir}` : ", no static web app"}`,
 );
 console.log(`Sources: ${runtimes.map((r) => `${r.name} (${r.gateway.sourceId})`).join(", ")}`);
 

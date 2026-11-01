@@ -15,8 +15,10 @@ test.beforeEach(({ page }) => {
   });
 });
 
-test("shows the simulated machine: 3D view and component tree", async ({ page }) => {
+test("shows the simulated machine: 3D view, component tree and the release version", async ({ page }) => {
   await openApp(page);
+  // E.g. v0.1.0+aa29151 (package.json version and commit) or v1.2.3 from a release tag.
+  await expect(page.locator(".statusbar .statusbar-version")).toHaveText(/^v\d+\.\d+\.\d+/);
   // Below 1600 px the components panel starts closed and the inspector always does.
   await expect(page.locator("aside.panel.left")).toBeHidden();
   await expect(page.locator("aside.panel.right")).toBeHidden();

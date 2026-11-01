@@ -386,6 +386,24 @@ describe("gateway discovery", () => {
     expect(t.states()).toEqual([]);
   });
 
+  it("names the Syn_Visu version the PLC runs, also when the protocol versions differ", async () => {
+    const t = setup([infeed, robot], { libraryVersion: "5.1.0" });
+    await t.gateway.cycle();
+    expect(t.configs()[0]!.libraryVersion).toBe("5.1.0");
+
+    const old = setup([infeed, robot], { protocolVersion: 99, libraryVersion: "4.0.0" });
+    await old.gateway.cycle();
+    expect(old.configs()[0]!.libraryVersion).toBe("4.0.0");
+    expect(old.configs()[0]!.errors[0]!.message).toMatch(/protocol version 99 \(Syn_Visu 4\.0\.0\)/);
+  });
+
+  it("leaves the Syn_Visu version out for a library older than 5.1, whose manifest does not report it", async () => {
+    const t = setup([infeed, robot]);
+    await t.gateway.cycle();
+    expect(t.configs()[0]!.libraryVersion).toBeUndefined();
+    expect(t.configs()[0]!.components).toHaveLength(2);
+  });
+
   it("recovers once the PLC reports the expected protocol version, without a config version change", async () => {
     const t = setup([infeed, robot], { protocolVersion: 99 });
     await t.gateway.cycle();
@@ -582,7 +600,7 @@ describe("gateway with several PLC sources", () => {
     const a = new InMemoryPlc();
     const b = new InMemoryPlc();
     // Both PLCs use the same manifest ids: ids are unique per source only.
-    defineMachine(a, [infeed, robot]);
+    defineMachine(a, [infeed, robot], { libraryVersion: "5.1.0" });
     defineMachine(b, [{ ...infeed, name: "Outfeed" }]);
     let time = 0;
     const gateways = [
@@ -649,10 +667,10 @@ describe("gateway with several PLC sources", () => {
     expect(statesOf(t.messages, "ads:5.1.2.4.1.1:851").length).toBe(2);
   });
 
-  it("reports every source's health at /health: 200 while all are connected, 503 once one is not", async () => {
+  it("reports the versions and every source's health at /health: 200 while all are connected, 503 once one is not", async () => {
     const ISO_TIME = expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     const t = twoSources();
-    const server = await startServer({ gateway: combineGateways(t.gateways), port: 0, host: "127.0.0.1" });
+    const server = await startServer({ gateway: combineGateways(t.gateways), port: 0, host: "127.0.0.1", version: "1.2.3" });
     const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/health`;
     try {
       await t.cycleAll();
@@ -660,9 +678,16 @@ describe("gateway with several PLC sources", () => {
       expect(healthy.status).toBe(200);
       expect(await healthy.json()).toMatchObject({
         ok: true,
+        version: "1.2.3",
         protocolVersion: PROTOCOL_VERSION,
         sources: [
-          { sourceId: "ads:5.1.2.3.1.1:851", name: "Infeed PLC", plcConnected: true, lastStateAt: ISO_TIME },
+          {
+            sourceId: "ads:5.1.2.3.1.1:851",
+            name: "Infeed PLC",
+            plcConnected: true,
+            lastStateAt: ISO_TIME,
+            libraryVersion: "5.1.0",
+          },
           { sourceId: "ads:5.1.2.4.1.1:851", name: "Outfeed PLC", plcConnected: true, lastStateAt: ISO_TIME },
         ],
       });

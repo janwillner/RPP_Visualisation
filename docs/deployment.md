@@ -125,6 +125,8 @@ Over http the browser offers no clipboard, so the measure list's copy buttons ar
 
 To update, run `install.ps1` from the newer zip. To roll back, run it from the older zip. `config.json` and the logs are kept either way.
 
+Which version is installed: the installer names the new and the replaced version (`Installing RPP visualisation 1.2.0, replacing 1.1.0`), the page shows it at the right end of its status bar, `/health` reports it as `version`, and `C:\Program Files\RPP_Visualisation\VERSION` holds it. A release built from a tag has a plain version such as `1.2.0`; a build from the repo adds its commit, e.g. `0.1.0+aa29151` (`.dirty` when it had uncommitted changes), so two such builds are never mistaken for the same release. The status bar also shows the `Syn_Visu` version of the PLC (from library 5.1.0 on; with several PLCs in their list under "PLC: n/m online").
+
 ## Uninstall
 
 ```powershell
@@ -135,8 +137,9 @@ This removes all services, the program files and the firewall rules. `C:\Program
 
 ## Monitoring
 
-`GET http://<host>:<port>/health` returns the state of every PLC source as JSON: `ok`, `protocolVersion` and per
-source `sourceId`, `name`, `plcConnected`, `lastError` and `lastStateAt` (time of the newest state snapshot). The HTTP
+`GET http://<host>:<port>/health` returns the state of every PLC source as JSON: `ok`, `version` (this release),
+`protocolVersion` and per source `sourceId`, `name`, `plcConnected`, `lastError`, `lastStateAt` (time of the newest
+state snapshot) and `libraryVersion` (the `Syn_Visu` version the PLC runs, from library 5.1.0 on). The HTTP
 status is 200 while every source is connected and 503 otherwise, so a monitoring system can check it without reading
 the body.
 

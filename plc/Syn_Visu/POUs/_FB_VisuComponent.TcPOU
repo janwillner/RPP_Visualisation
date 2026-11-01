@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuComponent" Id="{a70db01f-c2d1-494c-8092-3c5dc808ab89}" SpecialFunc="None">
+  <POU Name="_FB_VisuComponent" Id="{6c64e922-1967-49a8-a5e9-b2cd6732a3b9}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -119,6 +119,7 @@ END_VAR]]></Declaration>
 RefManifest REF= vio_Manifest;
 (* Always report the contract version of the library actually running, also after an online change. *)
 vio_Manifest.nProtocolVersion := VISU_GlobalConst.VISU_un_PROTOCOL_VERSION;
+vio_Manifest.sLibraryVersion := VISU_GlobalConst.VISU_str_LIBRARY_VERSION;
 e_TempType := m_ComponentType();
 IF vi_udn_Id = 0 OR e_TempType = E_VisuComponentType.NONE THEN
 	RETURN;

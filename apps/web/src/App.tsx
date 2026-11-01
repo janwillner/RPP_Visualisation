@@ -26,6 +26,7 @@ import { METRICS_WINDOW_MS, metrics, type MachineMetrics } from "./metrics";
 import { stateRows } from "./state-rows";
 import { loadViewSettings, saveViewSettings, type CameraPose, type ViewSettings } from "./view-settings";
 import { PRODUCT, STATUS } from "./palette";
+import { APP_VERSION } from "./version";
 import {
   SceneView,
   type CameraPreset,
@@ -933,9 +934,13 @@ function StatusBar(props: {
         {stale ? " – stale" : ""}
       </span>
       {single?.config && <span className="muted">Config v{single.config.configVersion}</span>}
+      {single?.config?.libraryVersion && <span className="muted">Syn_Visu {single.config.libraryVersion}</span>}
       <button className={errors.length ? "bad link" : "muted link"} onClick={() => setShowErrors((v) => !v)}>
         {errors.length} discovery error{errors.length === 1 ? "" : "s"}
       </button>
+      <span className="muted statusbar-version" title="Version of this visualisation">
+        v{APP_VERSION}
+      </span>
       {showSources && several && (
         <ul className="errors sources-list">
           {gateway.sources.map((source) => {
@@ -947,6 +952,9 @@ function StatusBar(props: {
                 <span className={connected ? "ok" : "bad"}>{connected ? "online" : "offline"}</span>{" "}
                 <strong>{source.name}</strong> <span className="muted">{source.sourceId.replace(/^ads:/, "")}</span>
                 {source.config && <span className="muted"> · config v{source.config.configVersion}</span>}
+                {source.config?.libraryVersion && (
+                  <span className="muted"> · Syn_Visu {source.config.libraryVersion}</span>
+                )}
                 {problem && <span className="bad"> · {problem}</span>}
               </li>
             );

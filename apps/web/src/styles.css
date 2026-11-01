@@ -565,6 +565,11 @@ h3 {
   pointer-events: none;
 }
 
+/* The release version sits at the far right of the status bar. */
+.statusbar .statusbar-version {
+  margin-left: auto;
+}
+
 .statusbar .sources-list {
   left: 12px;
   right: auto;

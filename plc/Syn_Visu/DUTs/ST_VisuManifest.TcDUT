@@ -10,6 +10,9 @@ STRUCT
 	nConfigVersion : UDINT := 1;
 	nCount : UINT; // entries [0..nCount-1] are evaluated
 	aEntries : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MANIFEST_ENTRIES - 1] OF ST_VisuManifestEntry;
+	(* Version of the Syn_Visu library actually running, e.g. '5.1.0', shown by the visualisation. Since 5.1.0;
+	   last, so the members before it keep their place. *)
+	sLibraryVersion : STRING(15);
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

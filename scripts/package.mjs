@@ -3,7 +3,8 @@
 // containing node.exe, the bundled gateway, the web app, the self-contained ADS bridge, the WinSW service
 // wrapper and the install scripts. Needs Windows, Node and the .NET SDK; downloads are cached in .cache/.
 //
-// Version: the tag in GITHUB_REF_NAME (v1.2.3 -> 1.2.3) when built by CI, else "version" in package.json.
+// Version: see app-version.mjs (1.2.3 from a CI tag, else e.g. 0.1.0+aa29151). It goes into the gateway bundle, the
+// web app, the VERSION file and the zip name.
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -11,6 +12,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } fr
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
+import { appVersion } from "./app-version.mjs";
 
 // Pinned third-party binaries with their SHA-256. When bumping Node, take the win-x64/node.exe line from
 // https://nodejs.org/dist/<version>/SHASUMS256.txt. WinSW: v2.12.0, self-contained x64 build.
@@ -22,7 +24,9 @@ const WINSW_SHA256 = "05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cache = join(root, ".cache", "package");
 const version = resolveVersion();
-const name = `rpp-visualisation-${version}-win-x64`;
+// "+" separates the commit in the version; file names and download links keep a plain "-".
+const fileVersion = version.replace("+", "-");
+const name = `rpp-visualisation-${fileVersion}-win-x64`;
 const out = join(root, "dist", name);
 const zip = join(root, "dist", `${name}.zip`);
 
@@ -46,11 +50,16 @@ await build({
   external: ["bufferutil", "utf-8-validate"],
   // CommonJS dependencies call require() for Node built-ins, which an ESM bundle does not provide by itself.
   banner: { js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);' },
+  // The release version reported at /health and in the log (apps/gateway/src/version.ts).
+  define: { __RPP_VERSION__: JSON.stringify(version) },
   logLevel: "warning",
 });
 
 step("Building the web app");
-run(process.execPath, [join(root, "apps/web/node_modules/vite/bin/vite.js"), "build"], join(root, "apps/web"));
+// The web app shows the same version as the gateway, even when the tree changes while packaging.
+run(process.execPath, [join(root, "apps/web/node_modules/vite/bin/vite.js"), "build"], join(root, "apps/web"), {
+  RPP_VERSION: version,
+});
 cpSync(join(root, "apps/web/dist"), join(out, "web"), { recursive: true });
 
 step("Publishing the ADS bridge (self-contained, single file)");
@@ -80,14 +89,11 @@ run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `Compress-Ar
 console.log(`\nDone: ${zip}`);
 
 function resolveVersion() {
-  const tag = process.env.GITHUB_REF_TYPE === "tag" ? process.env.GITHUB_REF_NAME : undefined;
-  if (tag) {
-    if (!/^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(tag)) fail(`Tag "${tag}" is not a version tag like v1.2.3.`);
-    return tag.slice(1);
+  try {
+    return appVersion(root);
+  } catch (error) {
+    fail(error.message);
   }
-  const { version } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  if (!version) fail('No version: set "version" in package.json or build from a v* tag.');
-  return version;
 }
 
 /** Downloads into the cache once and verifies the SHA-256 (also for cached files). */
@@ -106,8 +112,8 @@ async function download(url, fileName, sha256) {
   return target;
 }
 
-function run(command, args, cwd = root) {
-  execFileSync(command, args, { cwd, stdio: "inherit" });
+function run(command, args, cwd = root, env = {}) {
+  execFileSync(command, args, { cwd, stdio: "inherit", env: { ...process.env, ...env } });
 }
 
 function step(message) {

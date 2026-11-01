@@ -431,7 +431,7 @@ export type MachineComponent =
 export function defineMachine(
   plc: InMemoryPlc,
   components: MachineComponent[],
-  options: { protocolVersion?: number; configVersion?: number; manifestPath?: string } = {},
+  options: { protocolVersion?: number; configVersion?: number; manifestPath?: string; libraryVersion?: string } = {},
 ): void {
   const entries: ST_VisuManifestEntry[] = components.map((c) => ({
     nId: c.id,
@@ -444,6 +444,8 @@ export function defineMachine(
     nConfigVersion: options.configVersion ?? 1,
     nCount: entries.length,
     aEntries: padded(entries, MAX_MANIFEST_ENTRIES, () => ({ nId: 0, eType: 0, sName: "", sPath: "" })),
+    // Left out like a library older than 5.1 does.
+    ...(options.libraryVersion !== undefined ? { sLibraryVersion: options.libraryVersion } : {}),
   };
   plc.define(options.manifestPath ?? MANIFEST_PATH, PLC_TYPES.manifest, manifest);
   for (const c of components) plc.define(c.path, COMPONENTS[c.kind].plcType, c.value);

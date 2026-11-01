@@ -447,6 +447,8 @@ export const ConfigMessageSchema = z.object({
   kind: z.literal("config"),
   sourceId: SourceIdSchema,
   protocolVersion: z.number().int(),
+  /** Version of the Syn_Visu library the PLC runs; absent for libraries older than 5.1. */
+  libraryVersion: z.string().optional(),
   configVersion: z.number().int(),
   components: z.array(ComponentConfigSchema),
   errors: z.array(DiscoveryErrorSchema),

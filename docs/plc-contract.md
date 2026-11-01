@@ -19,7 +19,8 @@ their Beckhoff-style names, because the gateway reads them.
 | `plc/Syn_Visu_Demo/` | The demo application. It references the installed library like any machine project, so it also tests the library from the outside. ADS port 852. `PlcTask` calls `P_VisuDemo`, which sets the shared cycle time and fault phase (`DEMO_GlobalVar`) and calls one program per application: `P_VisuDemoDelta`, `P_VisuDemoFxx`, `P_VisuDemoIdh`, `P_VisuDemoCartesian`, `P_VisuDemoSpacing`. Shared constants (belt height and width, product, suction cup, fault timing) are in `DEMO_GlobalConst`, the manifest in `GVL_Visu`. |
 | `plc/library/Syn_Visu_<version>.library` | The exported library, committed for every released version. Machine projects install it from here. |
 
-Releasing a version: bump `_FC_GetVersionSynVisu` and the project version (Properties → Common), build, export it with
+Releasing a version: bump `_FC_GetVersionSynVisu`, `VISU_GlobalConst.VISU_str_LIBRARY_VERSION` and the project
+version (Properties → Common), build, export it with
 "Save as library and install" to `plc/library/Syn_Visu_<version>.library`, update the demo's reference and build again.
 The library is installed under the title `SynVisu` from `Syntegon Group`; its namespace is `SynVisu` too, so machine
 projects qualify library objects as `SynVisu._FB_VisuConveyor`, `SynVisu.ST_VisuPose` and so on (the demo uses them
@@ -160,7 +161,7 @@ the FBs fill them in their output `vo_Visu`, so application code does not write 
 | `ST_VisuFault` | Fault of a component, a mover or a track module: `bActive`, `sMessage` |
 | `ST_VisuFinger`, `ST_VisuFingerState` | Gripper finger (cylinder size) and its live MCS pose and grip state |
 | `ST_VisuPose`, `ST_VisuPlanarPose`, `ST_VisuPosition` | MCS poses and positions |
-| `VISU_GlobalConst` | `VISU_un_PROTOCOL_VERSION` (contract version; `ST_VisuManifest` initialises to it), `VISU_lr_DEG_TO_RAD`, `VISU_lr_XTS_MODULE_LENGTH` (250 mm) |
+| `VISU_GlobalConst` | `VISU_un_PROTOCOL_VERSION` (contract version; `ST_VisuManifest` initialises to it), `VISU_str_LIBRARY_VERSION` (this library's version, reported in the manifest), `VISU_lr_DEG_TO_RAD`, `VISU_lr_XTS_MODULE_LENGTH` (250 mm) |
 | `VISU_GlobalConst_Param` | Array sizes: `VISU_un_MAX_MANIFEST_ENTRIES` (32), `VISU_un_MAX_PRODUCTS` (128), `VISU_un_MAX_PRODUCT_TYPES` (8), `VISU_un_MAX_ZONES` (8), `VISU_un_MAX_MOVERS` (40), `VISU_un_MAX_FINGERS` (8, per gripper), `VISU_un_MAX_BODIES` (16, per detector), `VISU_un_MAX_MODULES` (64, per XTS track) |
 | `_FC_GetVersionSynVisu` | Library version at runtime (5.0.0) |
 
@@ -173,7 +174,7 @@ All component FBs:
 
 | Method | Purpose |
 | --- | --- |
-| `m_Register(vio_Manifest, vi_udn_Id, vi_str_Name, vi_str_Path)` | Adds the component to the manifest (bumps `nConfigVersion` when new). `vi_str_Path` is the symbol path of the instance's `vo_Visu`. Idempotent: call it every cycle, which also keeps `nProtocolVersion` current and the manifest reference valid after an online change |
+| `m_Register(vio_Manifest, vi_udn_Id, vi_str_Name, vi_str_Path)` | Adds the component to the manifest (bumps `nConfigVersion` when new). `vi_str_Path` is the symbol path of the instance's `vo_Visu`. Idempotent: call it every cycle, which also keeps `nProtocolVersion` and `sLibraryVersion` current and the manifest reference valid after an online change |
 | `m_Id()` | Manifest id given to `m_Register`, 0 before |
 | `m_SetFault(vi_b_Active, vi_str_Message)` | Sets or clears the component's fault; it stays until cleared with `m_SetFault(FALSE, '')` |
 | `m_SetOriginShift(vi_lr_X, vi_lr_Y := 0, vi_lr_Z := 0)` | Moves the component's coordinate system from its pose (local frame, mm); for a conveyor the belt coordinates count from there |
@@ -351,6 +352,11 @@ of the first `nCount` entries it checks that the symbol at `sPath` has the data 
 according to `eType`. Names qualified with the library namespace, such as `SynVisu.ST_VisuDelta`, are accepted too.
 It then reads `<sPath>.stConfig` once. Every cycle it sum-reads `GVL_Visu.stManifest.nProtocolVersion`,
 `GVL_Visu.stManifest.nConfigVersion` and all `<sPath>.stState`, and rediscovers when either version changes.
+
+Since library 5.1.0 the manifest's last member `sLibraryVersion` (`STRING(15)`, e.g. `5.1.0`) names the library the
+PLC runs. The gateway passes it on in the `config` message and at `/health`, and the web app shows it in the status
+bar; it also appears in the protocol version error. Older libraries do not have the member, which the gateway
+accepts, so the protocol version stays 12.
 
 ## Enumerations
 

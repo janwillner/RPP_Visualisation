@@ -100,6 +100,7 @@ export function createGateway({
 
   async function discover(): Promise<Discovery> {
     const manifest = (await plc.read(manifestPath)) as ST_VisuManifest;
+    const libraryVersion = manifest.sLibraryVersion?.trim() || undefined;
     const errors: DiscoveryError[] = [];
     const active: ActiveComponent[] = [];
     const result = (): Discovery => ({
@@ -107,6 +108,7 @@ export function createGateway({
         kind: "config",
         sourceId,
         protocolVersion: manifest.nProtocolVersion,
+        ...(libraryVersion ? { libraryVersion } : {}),
         configVersion: manifest.nConfigVersion,
         components: active.map((a) => a.config),
         errors,
@@ -117,7 +119,7 @@ export function createGateway({
     if (manifest.nProtocolVersion !== PROTOCOL_VERSION) {
       errors.push({
         path: manifestPath,
-        message: `PLC reports protocol version ${manifest.nProtocolVersion}, but this gateway expects ${PROTOCOL_VERSION}. Update the Syn_Visu library or the gateway.`,
+        message: `PLC reports protocol version ${manifest.nProtocolVersion}${libraryVersion ? ` (Syn_Visu ${libraryVersion})` : ""}, but this gateway expects ${PROTOCOL_VERSION}. Update the Syn_Visu library or the gateway.`,
       });
       return result();
     }

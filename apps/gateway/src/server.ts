@@ -5,6 +5,7 @@ import { extname, join, normalize, resolve, sep } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { MessageSource } from "./gateway";
 import { watchHealth } from "./health";
+import { APP_VERSION } from "./version";
 
 /** WebSocket path the web app connects to. */
 export const WS_PATH = "/ws";
@@ -32,12 +33,14 @@ export interface ServerOptions {
   host?: string;
   /** Directory with the built web app; omit to serve the WebSocket only (development with Vite). */
   staticDir?: string;
+  /** Release version reported at /health; defaults to this build's. */
+  version?: string;
 }
 
 /** One HTTP port serving the built web app plus the read-only WebSocket fan-out. */
-export function startServer({ gateway, port, host, staticDir }: ServerOptions): Promise<Server> {
+export function startServer({ gateway, port, host, staticDir, version = APP_VERSION }: ServerOptions): Promise<Server> {
   const root = staticDir ? resolve(staticDir) : undefined;
-  const health = watchHealth(gateway);
+  const health = watchHealth(gateway, version);
 
   const server = createServer((req, res) => {
     if (req.method === "GET" && new URL(req.url ?? "/", "http://localhost").pathname === HEALTH_PATH) {
