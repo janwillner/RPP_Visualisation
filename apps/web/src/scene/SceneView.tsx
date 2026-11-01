@@ -4,7 +4,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefO
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { AXES, OVERLAY, PRODUCT, SOLID, STAGE, STATUS } from "../palette";
-import { FrameRateSampler, qualityFor, type Quality, type QualitySetting } from "./quality";
 import type { CameraPose } from "../view-settings";
 import type { SceneFeed, SourceInfo } from "../connection";
 import type {
@@ -91,10 +90,6 @@ export interface SceneViewProps {
   measurePoints: MeasurePoint[];
   /** Component keys and source ids hidden by the user. */
   hidden: ReadonlySet<string>;
-  /** Render quality chosen on this device. */
-  quality: QualitySetting;
-  /** Called with the quality actually rendered, whenever it changes (auto may drop to low). */
-  onQuality?: (quality: Quality) => void;
   /** Called whenever the set of active faults changes (hidden components included). */
   onFaults: (faults: SourcedFaults[]) => void;
 }
@@ -219,15 +214,11 @@ function fade(root: THREE.Object3D | null, offline: boolean): void {
   });
 }
 
-/**
- * A group whose content is faded while `offline`, and whose lit parts cast shadows. Re-applied on every render, so
- * new meshes are covered.
- */
+/** A group whose content is faded while `offline`. Re-applied on every render, so new meshes are covered. */
 function OfflineScope({ offline, children }: { offline: boolean; children: ReactNode }) {
   const ref = useRef<THREE.Group>(null);
   useLayoutEffect(() => {
     fade(ref.current, offline);
-    castShadows(ref.current);
   });
   return <group ref={ref}>{children}</group>;
 }
@@ -309,7 +300,7 @@ function machineSignature(m: MachineScene): string {
   ].join("|");
 }
 
-function SceneContent(props: SceneViewProps & { renderQuality: Quality }) {
+function SceneContent(props: SceneViewProps) {
   const { feed, sources, layers, selection, modelRef, measureMode, onMeasure, measurePoints, hidden, onFaults } = props;
   // In measure mode a click measures; selecting works only through the component tree.
   const onSelect = measureMode ? () => {} : props.onSelect;
@@ -348,7 +339,7 @@ function SceneContent(props: SceneViewProps & { renderQuality: Quality }) {
       <McsAxes />
       <MeasurePoints points={measurePoints} />
       {measureMode && <MeasureLayer latest={machine} structure={structure} layers={layers} onMeasure={onMeasure} />}
-      <Stage bounds={bounds} quality={props.renderQuality} />
+      <Stage bounds={bounds} />
       {sources.map((source) => (
         <SourceContent
           key={source.sourceId}
@@ -1780,16 +1771,6 @@ function CameraRig(props: {
 }
 
 
-/** Lit parts cast and receive shadows; overlays, which are unlit, never do. */
-function castShadows(root: THREE.Object3D | null): void {
-  root?.traverse((o) => {
-    if (!(o as THREE.Mesh).isMesh) return;
-    const lit = (o as THREE.Mesh).material instanceof THREE.MeshStandardMaterial;
-    o.castShadow = lit;
-    o.receiveShadow = lit;
-  });
-}
-
 /** A soft round spot, white in the middle and transparent at the rim, for the floor to fade into the stage. */
 function fadeTexture(): THREE.Texture {
   const size = 256;
@@ -1805,15 +1786,12 @@ function fadeTexture(): THREE.Texture {
   return new THREE.CanvasTexture(canvas);
 }
 
-/** Map size of the key light's shadow, in pixels per side. */
-const SHADOW_MAP_SIZE = 2048;
-
 /**
  * Everything around the machine: a neutral studio light without any download (generated, so it works on IPCs
- * without internet), a key light whose soft shadow covers the machine (high quality only), the floor at MCS Z = 0
- * that takes the shadows and fades into the background, and the measuring grid on it.
+ * without internet), a key light from nearly above, the floor at MCS Z = 0 that fades into
+ * the background, and the measuring grid on it. No shadows: they cost weak panel PCs too much for what they add.
  */
-function Stage({ bounds, quality }: { bounds: MachineBounds; quality: Quality }) {
+function Stage({ bounds }: { bounds: MachineBounds }) {
   const { gl, scene } = useThree();
   useEffect(() => {
     const pmrem = new THREE.PMREMGenerator(gl);
@@ -1840,30 +1818,19 @@ function Stage({ bounds, quality }: { bounds: MachineBounds; quality: Quality })
   useLayoutEffect(() => {
     const l = light.current;
     if (!l) return;
-    // Nearly from above: a shadow stays under its part; seen from above it must not look like a second part.
+    // Nearly from above, so the tops of parts are the brightest faces.
     l.position.copy(centre).add(new THREE.Vector3(0.15, 1, 0.2).multiplyScalar(radius * 2));
     l.target.position.copy(centre);
     l.target.updateMatrixWorld();
-    const margin = radius + 1;
-    Object.assign(l.shadow.camera, { left: -margin, right: margin, top: margin, bottom: -margin, near: 0.1, far: radius * 6 });
-    l.shadow.camera.updateProjectionMatrix();
   }, [centre, radius]);
 
   const floorRadius = radius * 1.6 + 4;
   return (
     <>
       <hemisphereLight args={["#dfe8f5", "#2a2f36", 0.55]} />
-      <directionalLight
-        ref={light}
-        intensity={1.6}
-        castShadow={quality === "high"}
-        shadow-mapSize={[SHADOW_MAP_SIZE, SHADOW_MAP_SIZE]}
-        shadow-bias={-0.0004}
-        shadow-normalBias={0.02}
-        shadow-intensity={0.55}
-      />
+      <directionalLight ref={light} intensity={1.6} />
       {/* A little below the grid, so the grid lines are never hidden by the floor. */}
-      <mesh position={[centre.x, -0.002, centre.z]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow raycast={noRaycast} renderOrder={-1}>
+      <mesh position={[centre.x, -0.002, centre.z]} rotation={[-Math.PI / 2, 0, 0]} raycast={noRaycast} renderOrder={-1}>
         <circleGeometry args={[floorRadius, 64]} />
         <meshStandardMaterial color={STAGE.floor} roughness={1} alphaMap={floorFade} transparent depthWrite={false} />
       </mesh>
@@ -1883,33 +1850,8 @@ function Stage({ bounds, quality }: { bounds: MachineBounds; quality: Quality })
   );
 }
 
-/** Low quality renders at most at this resolution, in device pixels per CSS pixel. */
-const LOW_DPR = 1;
-
-/**
- * Measures the frame rate and reports the quality to render with whenever it changes.
- */
-function QualityControl({ setting, onQuality }: { setting: QualitySetting; onQuality: (q: Quality) => void }) {
-  const sampler = useRef(new FrameRateSampler());
-  const current = useRef<Quality | undefined>(undefined);
-  const report = () => {
-    const q = qualityFor(setting, sampler.current.samples);
-    if (q === current.current) return;
-    current.current = q;
-    onQuality(q);
-  };
-  useEffect(report, [setting]);
-  useFrame((_, delta) => {
-    // Once low on auto, nothing more to measure: it stays low.
-    if (setting !== "auto" || current.current === "low") return;
-    const before = sampler.current.samples.length;
-    sampler.current.frame(delta);
-    if (sampler.current.samples.length !== before) report();
-  });
-  return null;
-}
-/** Upper limit of the render resolution in device pixels per CSS pixel, for weak panel PC graphics. */
-const MAX_DPR = 1.5;
+/** Render resolution in device pixels per CSS pixel: 1, for weak panel PC graphics. */
+const DPR = 1;
 
 export function SceneView(props: SceneViewProps) {
   // The last press on the canvas: a selection counts only if it was a tap, not a camera drag or a pinch.
@@ -1958,14 +1900,10 @@ export function SceneView(props: SceneViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // High until the quality control has measured otherwise.
-  const [quality, setQuality] = useState<Quality>("high");
-
   return (
     <Canvas
       camera={{ position: [4, 3, 4], fov: 45, near: 0.01, far: 200 }}
-      dpr={[1, quality === "high" ? MAX_DPR : LOW_DPR]}
-      shadows="soft"
+      dpr={DPR}
       // Neutral tone mapping keeps the palette colours of lit parts close to what they are.
       gl={{ toneMapping: THREE.NeutralToneMapping }}
       onPointerDown={(e) => {
@@ -1977,14 +1915,7 @@ export function SceneView(props: SceneViewProps) {
         pointersDown.current.add(e.pointerId);
       }}
     >
-      <QualityControl
-        setting={props.quality}
-        onQuality={(q) => {
-          setQuality(q);
-          props.onQuality?.(q);
-        }}
-      />
-      <SceneContent {...props} onSelect={onSelect} renderQuality={quality} />
+      <SceneContent {...props} onSelect={onSelect} />
       {/* One finger orbits, two pinch and pan; in measure mode one finger picks a point instead. */}
       <OrbitControls
         makeDefault

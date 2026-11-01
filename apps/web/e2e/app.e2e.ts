@@ -155,7 +155,7 @@ test("records, plays back, seeks, saves and opens a recording", async ({ page })
   await expect.poll(async () => Number(await slider.getAttribute("max"))).toBe(duration);
 });
 
-test("keeps layers, hidden components, render quality and the camera across a reload", async ({ page }) => {
+test("keeps layers, hidden components and the camera across a reload", async ({ page }) => {
   await openApp(page);
   const storedCamera = () =>
     page.evaluate(() => (JSON.parse(localStorage.getItem("rpp.view") ?? "{}") as { camera?: unknown }).camera);
@@ -163,8 +163,6 @@ test("keeps layers, hidden components, render quality and the camera across a re
   await page.getByRole("button", { name: "Zones", exact: true }).click();
   await page.getByRole("button", { name: "Show components" }).click();
   await page.getByRole("button", { name: "Hide Delta 1" }).click();
-  const quality = page.getByRole("group", { name: "Render quality" });
-  await quality.getByRole("button", { name: "Low" }).click();
   await page.getByRole("button", { name: "View from above" }).click();
   await expect.poll(storedCamera).toBeDefined();
   const top = await storedCamera();
@@ -174,8 +172,6 @@ test("keeps layers, hidden components, render quality and the camera across a re
   await expect(page.getByRole("button", { name: "Zones", exact: true })).toHaveAttribute("aria-pressed", "false");
   await expect(page.getByRole("button", { name: "Working areas" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Show Delta 1" })).toBeVisible();
-  await expect(quality.getByRole("button", { name: "Low" })).toHaveAttribute("aria-pressed", "true");
-  await expect(quality.getByRole("button", { name: /^Auto/ })).toHaveAttribute("aria-pressed", "false");
   // Back where it was left: framing the machine again would have stored another camera.
   await page.waitForTimeout(1000);
   expect(await storedCamera()).toEqual(top);

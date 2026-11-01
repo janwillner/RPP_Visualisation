@@ -1,4 +1,3 @@
-import type { QualitySetting } from "./scene/quality";
 import type { Layers } from "./scene/SceneView";
 
 type Vec3 = [number, number, number];
@@ -9,14 +8,13 @@ export interface CameraPose {
   target: Vec3;
 }
 
-/** How someone left the 3D view on this device: layers, hidden components and sources, camera, render quality. */
+/** How someone left the 3D view on this device: layers, hidden components and sources, camera. */
 export interface ViewSettings {
   layers: Layers;
   /** Component keys, and source ids for whole sources. */
   hidden: string[];
   /** Undefined frames the whole machine. */
   camera: CameraPose | undefined;
-  quality: QualitySetting;
 }
 
 export const DEFAULT_LAYERS: Layers = {
@@ -28,8 +26,6 @@ export const DEFAULT_LAYERS: Layers = {
 };
 
 const STORAGE_KEY = "rpp.view";
-
-const QUALITY_SETTINGS: readonly QualitySetting[] = ["auto", "high", "low"];
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -66,9 +62,7 @@ export function parseViewSettings(raw: string | null): ViewSettings {
     if (position.some((p, i) => p !== target[i])) camera = { position, target };
   }
 
-  const quality: QualitySetting = QUALITY_SETTINGS.find((q) => q === s.quality) ?? "auto";
-
-  return { layers, hidden, camera, quality };
+  return { layers, hidden, camera };
 }
 
 export function serializeViewSettings(settings: ViewSettings): string {
