@@ -154,3 +154,33 @@ test("records, plays back, seeks, saves and opens a recording", async ({ page })
   await expect(page.locator(".playback-banner")).toBeVisible();
   await expect.poll(async () => Number(await slider.getAttribute("max"))).toBe(duration);
 });
+
+test("keeps layers, hidden components and the camera across a reload", async ({ page }) => {
+  await openApp(page);
+  const storedCamera = () =>
+    page.evaluate(() => (JSON.parse(localStorage.getItem("rpp.view") ?? "{}") as { camera?: unknown }).camera);
+
+  await page.getByRole("button", { name: "Zones", exact: true }).click();
+  await page.getByRole("button", { name: "Show components" }).click();
+  await page.getByRole("button", { name: "Hide Delta 1" }).click();
+  await page.getByRole("button", { name: "View from above" }).click();
+  await expect.poll(storedCamera).toBeDefined();
+  const top = await storedCamera();
+
+  await page.reload();
+  await openApp(page);
+  await expect(page.getByRole("button", { name: "Zones", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("button", { name: "Working areas" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Show Delta 1" })).toBeVisible();
+  // Back where it was left: framing the machine again would have stored another camera.
+  await page.waitForTimeout(1000);
+  expect(await storedCamera()).toEqual(top);
+
+  // A drag in the 3D view is remembered too.
+  const box = (await page.locator("main.viewport canvas").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 150, box.y + box.height / 2 + 40, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(storedCamera).not.toEqual(top);
+});

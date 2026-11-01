@@ -2,6 +2,7 @@ import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import * as THREE from "three";
+import type { CameraPose } from "../view-settings";
 import type { SceneFeed, SourceInfo } from "../connection";
 import type {
   ProductDisplay,
@@ -71,6 +72,10 @@ export interface SceneViewProps {
   onSelect: (selection: Selection) => void;
   /** Changes to `{ action, seq }` move the camera; `seq` allows repeating the same action. */
   cameraRequest: { action: CameraPreset; seq: number };
+  /** Where the camera starts once the machine appears; undefined frames the whole machine. */
+  initialCamera?: CameraPose;
+  /** Called when someone has moved the camera, by a gesture or a view button. */
+  onCameraChange?: (pose: CameraPose) => void;
   /** Receives the machine scene every frame, e.g. for the inspector. */
   modelRef: MutableRefObject<MachineScene | undefined>;
   /** Measure mode: origins and snap points are shown, a click on a snap point measures instead of selecting. */
@@ -316,7 +321,12 @@ function SceneContent(props: SceneViewProps) {
           onSelect={(local) => onSelect(local && { ...local, sourceId: source.sourceId })}
         />
       ))}
-      <CameraRig request={props.cameraRequest} structure={bounds} />
+      <CameraRig
+        request={props.cameraRequest}
+        structure={bounds}
+        initial={props.initialCamera}
+        onChange={props.onCameraChange}
+      />
     </>
   );
 }
@@ -1372,14 +1382,52 @@ function McsAxes() {
 }
 
 
+/** What the camera rig needs of the OrbitControls instance. */
+interface OrbitControlsLike {
+  target: THREE.Vector3;
+  update(): void;
+  addEventListener(type: "change", listener: () => void): void;
+  removeEventListener(type: "change", listener: () => void): void;
+}
+
+/** Quiet time after the last camera movement before it is reported as the camera's new place. */
+const CAMERA_SETTLE_MS = 400;
+
 /** Frames the conveyors and Delta bases of all sources. */
 function CameraRig(props: {
   request: { action: CameraPreset; seq: number };
   structure: { conveyors: SceneConveyor[]; deltas: SceneDelta[] };
+  initial: CameraPose | undefined;
+  onChange: ((pose: CameraPose) => void) | undefined;
 }) {
-  const { request, structure } = props;
-  const { camera, controls } = useThree() as unknown as { camera: THREE.PerspectiveCamera; controls: { target: THREE.Vector3; update(): void } | null };
+  const { request, structure, initial } = props;
+  const { camera, controls } = useThree() as unknown as { camera: THREE.PerspectiveCamera; controls: OrbitControlsLike | null };
   const hasFramed = useRef(false);
+  const onChange = useRef(props.onChange);
+  onChange.current = props.onChange;
+
+  const pending = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Reported once the camera has come to rest (the controls glide on after a gesture), and only after the first
+  // framing, so the start camera never replaces a remembered one.
+  const report = () => {
+    if (!hasFramed.current) return;
+    clearTimeout(pending.current);
+    pending.current = setTimeout(() => {
+      const target = controls?.target ?? new THREE.Vector3();
+      onChange.current?.({ position: camera.position.toArray(), target: target.toArray() });
+    }, CAMERA_SETTLE_MS);
+  };
+
+  useEffect(() => {
+    if (!controls) return;
+    controls.addEventListener("change", report);
+    return () => {
+      controls.removeEventListener("change", report);
+      clearTimeout(pending.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controls]);
 
   const frame = (preset: CameraPreset) => {
     const box = new THREE.Box3();
@@ -1411,14 +1459,23 @@ function CameraRig(props: {
   useEffect(() => {
     if (request.seq === 0) return;
     frame(request.action);
+    report();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request.seq]);
 
-  // Frame the machine once when it first appears.
+  // Frame the machine once when it first appears, or go back to where the camera was left on this device.
   useEffect(() => {
     if (!hasFramed.current && (structure.conveyors.length > 0 || structure.deltas.length > 0)) {
       hasFramed.current = true;
-      frame("iso");
+      if (!initial) frame("iso");
+      else {
+        camera.position.set(...initial.position);
+        camera.lookAt(...initial.target);
+        if (controls) {
+          controls.target.set(...initial.target);
+          controls.update();
+        }
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structure]);

@@ -23,6 +23,7 @@ import {
   type SourcedFaults,
   type Vec3,
 } from "./scene/scene-model";
+import { loadViewSettings, saveViewSettings, type CameraPose, type ViewSettings } from "./view-settings";
 import {
   MISSED_COLOR,
   PRODUCT_COLORS,
@@ -106,17 +107,22 @@ export function App() {
     return () => store.stop();
   }, [store]);
   const gateway = useGateway(store);
-  const [layers, setLayers] = useState<Layers>({
-    workingAreas: true,
-    limitAreas: true,
-    zones: true,
-    tcpMarkers: true,
-    faultLabels: true,
-  });
+  // Layers, hidden components and camera come back as they were left on this device.
+  const initialView = useMemo(loadViewSettings, []);
+  const view = useRef<ViewSettings>(initialView);
+  const [layers, setLayers] = useState<Layers>(initialView.layers);
   const [faults, setFaults] = useState<SourcedFaults[]>([]);
   const [selection, setSelection] = useState<Selection>();
   // Component keys, and source ids for whole sources.
-  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set(initialView.hidden));
+  useEffect(() => {
+    view.current = { ...view.current, layers, hidden: [...hidden] };
+    saveViewSettings(view.current);
+  }, [layers, hidden]);
+  const rememberCamera = (camera: CameraPose) => {
+    view.current = { ...view.current, camera };
+    saveViewSettings(view.current);
+  };
   const toggleHidden = (key: string) =>
     setHidden((h) => {
       const next = new Set(h);
@@ -219,6 +225,8 @@ export function App() {
           selection={selection}
           onSelect={setSelection}
           cameraRequest={cameraRequest}
+          initialCamera={initialView.camera}
+          onCameraChange={rememberCamera}
           modelRef={modelRef}
           measureMode={measureMode}
           onMeasure={addMeasurePoint}
