@@ -145,7 +145,7 @@ All robot FBs (Delta, XTS gantry, XTS loop, Cartesian):
 | `m_SetProductType(vi_udn_Id, vi_lr_Length, vi_lr_Width, vi_lr_Height)` | Adds or updates a product type |
 | `m_SetBeltPosition(vi_lr_Position)` | Belt position (continuous, mm) and state timestamp; call once per cycle |
 | `m_SetModuloBeltPosition(vi_lr_ModuloPosition, vi_lr_ModuloPeriod, vi_b_Reset)` | Same for a modulo axis; unwraps to a continuous position |
-| `m_LatchProduct(vi_udn_Id, vi_LatchPose, vi_udn_ProductType)` | Adds a detected product at the current belt position (or at `vi_lr_LatchBeltPosition` with `vi_b_UseLatchBeltPosition`) |
+| `m_LatchProduct(vi_udn_Id, vi_LatchPose, vi_udn_ProductType, vi_e_State := DETECTED, vi_udn_RobotId := 0)` | Adds a product at the current belt position (or at `vi_lr_LatchBeltPosition` with `vi_b_UseLatchBeltPosition`): `DETECTED` where it arrives, `PLACED` with the robot's id where a robot puts it down |
 | `m_SetProductState(vi_udn_Id, vi_e_State, vi_udn_RobotId, vi_udn_MoverId := 0, vi_udn_FingerId := 0)` | Changes state, assigned robot, carrying mover and finger |
 | `m_MoveProduct(vi_udn_Id, vi_Pose)` | Puts a product at a new MCS pose at the current belt position, keeping its state, e.g. while a mover pushes it along the belt |
 | `m_RemoveProduct(vi_udn_Id)` | Removes one product |
@@ -261,6 +261,7 @@ It then reads `<sPath>.stConfig` once. Every cycle it sum-reads `GVL_Visu.stMani
 
 Values are part of the contract: append, never renumber.
 
-A product a robot puts down onto a conveyor enters that conveyor's register as `PLACED` (an outfeed, a tray belt).
+A product a robot puts down onto a conveyor enters that conveyor's register as `PLACED` (an outfeed, a tray belt), e.g.
+`m_LatchProduct(..., vi_e_State := E_VisuProductState.PLACED, vi_udn_RobotId := fb_Robot.m_Id())`.
 The visualisation flags every product that passes its belt end in `DETECTED` or `ASSIGNED` as missed; `PLACED` and
 `REJECTED` products pass the end on purpose.

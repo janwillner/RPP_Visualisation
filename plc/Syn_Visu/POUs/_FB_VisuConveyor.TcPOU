@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuConveyor" Id="{e5db6457-2101-4e5d-b4d4-c31d1c70192a}" SpecialFunc="None">
+  <POU Name="_FB_VisuConveyor" Id="{d79b894d-25ab-4c1e-9e3d-a25f9087949a}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -21,6 +21,7 @@ vo_Visu is the contract structure the gateway reads at the path given to m_Regis
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
+Syn_Visu 3.4.0  ¦ 2026-11-01 ¦ J.Willner ¦ m_LatchProduct: product state and robot (PLACED onto outfeeds)<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_VisuConveyor EXTENDS _FB_VisuComponent
 VAR_OUTPUT
@@ -172,8 +173,11 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Adds a detected product at the current belt position. Call m_SetBeltPosition first in the cycle,<br>
+Adds a product at the current belt position. Call m_SetBeltPosition first in the cycle,<br>
 or pass the belt position at the latch moment in vi_lr_LatchBeltPosition.<br>
+A product arriving on the conveyor enters as DETECTED (default). A product a robot puts down onto it<br>
+(outfeed, tray, back onto the same belt) enters as PLACED with that robot's id: the visualisation<br>
+shows a DETECTED or ASSIGNED product passing the belt end as missed.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
 FALSE for vi_udn_Id = 0, an id already in the register, or a full register.<br>
@@ -185,6 +189,8 @@ VAR_INPUT
 	vi_udn_ProductType					: UDINT;	// [-] id given to m_SetProductType
 	vi_lr_LatchBeltPosition				: LREAL := 0;	// [mm] used only if vi_b_UseLatchBeltPosition
 	vi_b_UseLatchBeltPosition			: BOOL := FALSE;	// FALSE: latch at the current belt position
+	vi_e_State							: E_VisuProductState := E_VisuProductState.DETECTED;	// PLACED for a product put down by a robot
+	vi_udn_RobotId						: UDINT := 0;	// [-] manifest id of the robot that put it down, 0 = none
 END_VAR
 VAR
 	un_TempIndex						: UINT;
@@ -203,9 +209,10 @@ IF vi_b_UseLatchBeltPosition THEN
 ELSE
 	vo_Visu.stState.aProducts[un_TempIndex].fLatchBeltPosition := vo_Visu.stState.fBeltPosition;
 END_IF
-vo_Visu.stState.aProducts[un_TempIndex].eState := E_VisuProductState.DETECTED;
-vo_Visu.stState.aProducts[un_TempIndex].nRobotId := 0;
+vo_Visu.stState.aProducts[un_TempIndex].eState := vi_e_State;
+vo_Visu.stState.aProducts[un_TempIndex].nRobotId := vi_udn_RobotId;
 vo_Visu.stState.aProducts[un_TempIndex].nMoverId := 0;
+vo_Visu.stState.aProducts[un_TempIndex].nFingerId := 0;
 vo_Visu.stState.aProducts[un_TempIndex].nProductType := vi_udn_ProductType;
 vo_Visu.stState.nProductCount := un_TempIndex + 1;
 vo_Visu.stState.nTimestamp := m_DcTime();
