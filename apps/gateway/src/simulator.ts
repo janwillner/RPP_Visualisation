@@ -702,7 +702,8 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         const wait = GANTRY.wait[m.id - 1]!;
         const goal = m.product ? Math.max(trackPos(m.product), wait) : wait;
         m.position = Math.min(approach(m.position, goal, GANTRY.trackSpeed * dtS), limit);
-        if (m.product) m.c = approach(m.c, m.product.stLatchPose.fRz, 180 * dtS);
+        // The cup turns by -90 + C in the MCS (gantry turned by -90°), so C = Rz + 90 meets the product.
+        if (m.product) m.c = approach(m.c, m.product.stLatchPose.fRz + 90, 180 * dtS);
       });
     };
     switch (gantryPhase) {
@@ -768,7 +769,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
             if (!m.product) continue;
             remove(idhInfeedProducts, m.product);
             // Turned by −90°: the gripper is at MCS x = track start + position, y = pose y − (X + offset).
-            latch(trayProducts, tray, GANTRY.x + m.position, GANTRY.y - (m.x + GANTRY.toolOffsetX), 0, E_VisuProductState.PLACED);
+            latch(trayProducts, tray, GANTRY.x + m.position, GANTRY.y - (m.x + GANTRY.toolOffsetX), -90 + m.c, E_VisuProductState.PLACED);
             m.product = undefined;
             m.gripper = false;
           }

@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoIdh" Id="{66e97f88-7496-4d34-82ad-1a948165f6b7}" SpecialFunc="None">
+  <POU Name="P_VisuDemoIdh" Id="{02bcdaf8-5041-4990-8e9e-23008dc24e9e}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -191,7 +191,8 @@ END_VAR]]></Declaration>
 	IF udn_GantryProduct[n_TempI] <> 0 THEN
 		IF m_TrackPos(vi_udn_Id := udn_GantryProduct[n_TempI], vo_lr_TrackPos => lr_TempPos, vo_lr_Rz => lr_TempRz) THEN
 			lr_TempGoal := MAX(lr_TempPos, lr_GantryWait[n_TempI]);
-			lr_GantryC[n_TempI] := _FC_DemoApproach(lr_GantryC[n_TempI], lr_TempRz, 180.0 * lr_Dt);
+			(* The cup turns by -90 + C in the MCS (gantry turned by -90 deg), so C = Rz + 90 meets the product. *)
+			lr_GantryC[n_TempI] := _FC_DemoApproach(lr_GantryC[n_TempI], lr_TempRz + 90.0, 180.0 * lr_Dt);
 		END_IF
 	END_IF
 	lr_GantryPos[n_TempI] := MIN(_FC_DemoApproach(lr_GantryPos[n_TempI], lr_TempGoal, lr_GANTRY_TRACK_SPEED * lr_Dt),
@@ -330,7 +331,7 @@ CASE n_GantryPhase OF
 					TempLatch.fX := lr_GANTRY_X + lr_GantryPos[n_TempI];
 					TempLatch.fY := lr_GANTRY_Y - (lr_GantryX[n_TempI] + lr_GANTRY_TOOL_X);
 					TempLatch.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
-					TempLatch.fRz := 0;
+					TempLatch.fRz := -90 + lr_GantryC[n_TempI];	// as the cup holds it
 					IF fb_IdhTray.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := TempLatch,
 						vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_RobotId := fb_Idh.m_Id())
 					THEN
