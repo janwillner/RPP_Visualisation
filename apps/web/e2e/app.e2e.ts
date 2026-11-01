@@ -245,3 +245,14 @@ test("shows the machine's metrics in the inspector while nothing is selected", a
   await expect(inspector.locator("table.metrics")).toContainText("in/min");
   await expect(inspector.locator("table.metrics")).toContainText("picks/min", { timeout: 20_000 });
 });
+
+test("loads the app in parts, none over 800 KB", async ({ request }) => {
+  const html = await (await request.get("/")).text();
+  const scripts = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+\.js)"/g)].map((m) => m[1]!);
+  // The entry plus the chunks it preloads: the app is split, so a new version reloads only what changed.
+  expect(scripts.length).toBeGreaterThan(1);
+  for (const script of scripts) {
+    const bytes = (await (await request.get(script)).body()).length;
+    expect(bytes, script).toBeLessThan(800 * 1024);
+  }
+});
