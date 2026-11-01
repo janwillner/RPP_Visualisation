@@ -20,11 +20,13 @@ This guide is for commissioning and service technicians. It covers installing th
    ```
 
    The script:
-   - stops every installed `RPP_Visualisation` service
-   - copies the program files to `C:\Program Files\RPP_Visualisation\`, replacing the old ones
+   - copies the program files next to `C:\Program Files\RPP_Visualisation\` while the services still run, then stops every installed `RPP_Visualisation` service and swaps the new files in. If the swap fails (a file is open, e.g. in the virus scanner), the old version stays installed and its services are started again.
    - creates `C:\ProgramData\RPP_Visualisation\config.json` with default values if it does not exist yet; an existing file is left unchanged
-   - registers every instance again and starts it (automatic start, restart after a crash, priority `BelowNormal`). If one instance fails, the others still start and the script names the failure at the end.
+   - registers every instance again and starts it (automatic start, restart after a crash, priority `BelowNormal`)
    - adds a firewall rule for the HTTP port
+   - checks that every instance answers on `/health` (up to 20 s each)
+
+   If an instance does not start or does not answer, for example because of a broken `config.json` or an HTTP port already in use, the others still start and the script ends with a red message that names the instance and shows the end of its error log. A PLC that is not connected yet is only a yellow warning with the reason: the service connects as soon as the PLC answers.
 3. Open `http://<ipc-address>:8080` in a browser on another computer on the machine network.
 
 The service can start before TwinCAT is running. It connects as soon as the PLC answers.

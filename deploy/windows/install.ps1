@@ -5,14 +5,17 @@
 .DESCRIPTION
     Run from the unzipped package in an elevated PowerShell.
 
-    - Stops every installed RPP_Visualisation service.
-    - Replaces C:\Program Files\RPP_Visualisation\ with this package.
+    - Copies this package next to C:\Program Files\RPP_Visualisation\ first, while the services still run.
+    - Stops every installed RPP_Visualisation service and swaps in the new program files. If the swap fails, the
+      old program files stay in place and the services are started again.
     - Creates C:\ProgramData\RPP_Visualisation\config.json (or config-<Instance>.json) if it is missing.
       An existing config file is never changed.
     - Registers the service (automatic start, restart after a crash, priority BelowNormal). Every other installed
       instance is registered again too, so service settings from the new package take effect everywhere.
     - Adds a firewall rule for each instance's HTTP port.
-    - Starts all instances. If one fails, the others are still started and the script reports the failure.
+    - Starts all instances and checks that each one answers on /health (up to 20 s per instance). If one fails, the others are
+      still started and the script reports the failure with the end of its error log. A PLC that is not
+      connected yet is only a warning: the service connects when the PLC answers.
 
     Running it from an older package rolls back. Logs: C:\ProgramData\RPP_Visualisation\logs\.
 
@@ -63,6 +66,9 @@ $DataDir = Join-Path $env:ProgramData $Product
 $ServiceDir = Join-Path $DataDir 'service'
 $LogDir = Join-Path $DataDir 'logs'
 $Source = $PSScriptRoot
+$StagingDir = "$InstallDir.new"
+$PreviousDir = "$InstallDir.old"
+$HealthTimeout = [TimeSpan]::FromSeconds(20)
 
 function Get-ServiceId([string]$Name) { if ($Name) { "${Product}_$Name" } else { $Product } }
 function Get-InstanceName([string]$ServiceId) { $ServiceId.Substring($Product.Length).TrimStart('_') }
@@ -81,6 +87,47 @@ function Get-HttpPort([string]$ConfigPath) {
     $config = Get-Content -Raw -Path $ConfigPath | ConvertFrom-Json
     if ($config.port) { [int]$config.port } else { 8080 }
 }
+# The processes of the visualisation: service wrappers, gateway (node) and ADS bridge.
+function Get-VisualisationProcesses {
+    @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+            $_.Path -and ($_.Path.StartsWith("$InstallDir\", 'OrdinalIgnoreCase') -or
+                $_.Path.StartsWith("$ServiceDir\", 'OrdinalIgnoreCase'))
+        })
+}
+function Stop-Instances([string[]]$Ids) {
+    foreach ($id in $Ids) {
+        Write-Host "  stopping $id"
+        Stop-Service -Name $id -Force
+        (Get-Service -Name $id).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+    }
+    # A stopped service's processes may still be ending, and a wrapper between two restarts of a crashing gateway
+    # stays alive although the service shows Stopped. Their files must be free before they are replaced.
+    $deadline = (Get-Date).AddSeconds(15)
+    while ((Get-VisualisationProcesses).Count -gt 0 -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+    Get-VisualisationProcesses | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+# GET /health of an instance: its status code (200, or 503 while a PLC is not connected) and body; $null if the
+# gateway does not answer.
+function Get-Health([int]$HttpPort) {
+    try {
+        $response = Invoke-WebRequest -UseBasicParsing -TimeoutSec 3 "http://localhost:$HttpPort/health"
+        return @{ Status = [int]$response.StatusCode; Body = $response.Content }
+    } catch [System.Net.WebException] {
+        $response = $_.Exception.Response
+        if (-not $response) { return $null }
+        $body = (New-Object System.IO.StreamReader($response.GetResponseStream())).ReadToEnd()
+        return @{ Status = [int]$response.StatusCode; Body = $body }
+    }
+}
+# The last lines of an instance's error log, indented for the failure report.
+function Get-ErrorLogTail([string]$Id) {
+    $log = Join-Path $LogDir "$Id.err.log"
+    if (-not (Test-Path $log)) { return '      (no error log)' }
+    # A crashing gateway is restarted and writes the same lines again.
+    $tail = @(Get-Content -Path $log -Tail 8 | Where-Object { $_.Trim() } | Select-Object -Unique)
+    if ($tail.Count -eq 0) { return '      (error log is empty)' }
+    ($tail | ForEach-Object { "      $_" }) -join "`n"
+}
 
 foreach ($file in 'node.exe', 'gateway.mjs', 'AdsBridge.exe', 'winsw.exe', 'web') {
     if (-not (Test-Path (Join-Path $Source $file))) { throw "Package incomplete: $file is missing next to install.ps1." }
@@ -98,18 +145,40 @@ if ($serviceIds -notcontains $targetId) { $serviceIds += $targetId }
 
 Write-Host "Installing RPP visualisation $version"
 
-# 1. Stop all instances: they all run from the program folder that is about to be replaced.
-foreach ($id in Get-InstalledServiceIds) {
-    Write-Host "  stopping $id"
-    Stop-Service -Name $id -Force
-    (Get-Service -Name $id).WaitForStatus('Stopped', [TimeSpan]::FromSeconds(30))
+$replaceFiles = (Resolve-Path $Source).Path.TrimEnd('\') -ne $InstallDir
+
+# 1. Copy the package next to the program folder while the services still run: if this fails, nothing has changed.
+if ($replaceFiles) {
+    try {
+        if (Test-Path $StagingDir) { Remove-Item -Recurse -Force $StagingDir }
+        New-Item -ItemType Directory -Force $StagingDir | Out-Null
+        Copy-Item -Recurse -Path (Join-Path $Source '*') -Destination $StagingDir
+    } catch {
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $StagingDir
+        throw "Copying the program files to $StagingDir failed, nothing was changed: $($_.Exception.Message)"
+    }
 }
 
-# 2. Replace the program files.
-if ((Resolve-Path $Source).Path.TrimEnd('\') -ne $InstallDir) {
-    if (Test-Path $InstallDir) { Remove-Item -Recurse -Force $InstallDir }
-    New-Item -ItemType Directory -Force $InstallDir | Out-Null
-    Copy-Item -Recurse -Path (Join-Path $Source '*') -Destination $InstallDir
+# 2. Stop all instances (they all run from the program folder) and swap in the new program files.
+$runningIds = @(Get-InstalledServiceIds | Where-Object { (Get-Service -Name $_).Status -eq 'Running' })
+Stop-Instances (Get-InstalledServiceIds)
+if ($replaceFiles) {
+    try {
+        if (Test-Path $PreviousDir) { Remove-Item -Recurse -Force $PreviousDir }
+        if (Test-Path $InstallDir) { Rename-Item -Path $InstallDir -NewName (Split-Path -Leaf $PreviousDir) }
+        Rename-Item -Path $StagingDir -NewName (Split-Path -Leaf $InstallDir)
+    } catch {
+        $reason = $_.Exception.Message
+        # Put the old program files back (if they were moved already) and restart what ran before.
+        if (-not (Test-Path $InstallDir) -and (Test-Path $PreviousDir)) {
+            Rename-Item -Path $PreviousDir -NewName (Split-Path -Leaf $InstallDir)
+        }
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $StagingDir
+        foreach ($id in $runningIds) { Start-Service -Name $id -ErrorAction SilentlyContinue }
+        throw ("Replacing $InstallDir failed, the previous version stays installed: $reason`n" +
+            'A program or the virus scanner may have a file in it open; close it and run install.ps1 again.')
+    }
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $PreviousDir
 }
 
 # 3. Data folders and the config of the instance being installed (never overwritten).
@@ -132,6 +201,7 @@ if (-not (Test-Path $targetConfig)) {
 # 4. Service wrapper (WinSW) per instance, registration, firewall rule, start.
 #    WinSW v2 writes start mode, failure actions and names only on install, so existing services are registered again.
 $failures = @()
+$started = @()
 foreach ($id in $serviceIds) {
     $name = Get-InstanceName $id
     $configPath = Get-ConfigPath $name
@@ -185,9 +255,38 @@ foreach ($id in $serviceIds) {
         New-NetFirewallRule -DisplayName $rule -Direction Inbound -Protocol TCP -LocalPort $httpPort -Action Allow -Profile Any | Out-Null
 
         Write-Host "  starting $id on port $httpPort"
-        Start-Service -Name $id
+        try {
+            Start-Service -Name $id
+        } catch {
+            # Start-Service only says that it failed; the gateway's own message is in its error log.
+            throw "$($_.Exception.Message) End of its error log:`n$(Get-ErrorLogTail $id)"
+        }
+        $started += @{ Id = $id; Port = $httpPort }
     } catch {
         $failures += "${id}: $($_.Exception.Message)"
+    }
+}
+
+# 5. A started service may still end right away (broken config, port in use), and WinSW keeps restarting it, so the
+#    service alone can look fine: each instance must answer on /health.
+foreach ($check in $started) {
+    $deadline = (Get-Date) + $HealthTimeout
+    # Waits for 200: right after the start the gateway answers 503 until its first connection to the PLC.
+    $health = $null
+    while ((Get-Date) -lt $deadline) {
+        $health = Get-Health $check.Port
+        if ($health -and $health.Status -eq 200) { break }
+        Start-Sleep -Seconds 1
+    }
+    if (-not $health) {
+        $failures += ("$($check.Id) does not answer on http://localhost:$($check.Port)/health. " +
+            "End of its error log:`n$(Get-ErrorLogTail $check.Id)")
+    } elseif ($health.Status -ne 200) {
+        $reasons = try {
+            @(($health.Body | ConvertFrom-Json).sources | Where-Object { -not $_.plcConnected } |
+                ForEach-Object { "$($_.name): $($_.lastError)" })
+        } catch { @() }
+        Write-Warning "$($check.Id) runs, but a PLC is not connected yet: $($reasons -join '; ')"
     }
 }
 

@@ -62,7 +62,10 @@ if ($Instance) {
     Get-Service -Name "$Product*" -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match "^$Product(_[A-Za-z0-9-]+)?$" } |
         ForEach-Object { Remove-Instance $_.Name }
-    if (Test-Path $InstallDir) { Remove-Item -Recurse -Force $InstallDir }
+    # With what an interrupted install.ps1 may have left next to it.
+    foreach ($dir in $InstallDir, "$InstallDir.new", "$InstallDir.old") {
+        if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+    }
     if ($RemoveData -and (Test-Path $DataDir)) { Remove-Item -Recurse -Force $DataDir }
 }
 
