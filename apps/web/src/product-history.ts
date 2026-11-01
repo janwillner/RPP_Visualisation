@@ -31,7 +31,7 @@ const DEFAULT_MAX_PRODUCTS = 5000;
 interface Followed {
   steps: ProductStep[];
   /** State, robot, mover and finger of the previous state: a change in any of them is a step. */
-  last: string;
+  signature: string;
   /** Register state of the previous state: a change into picked, placed or rejected is an event. */
   state: Product["state"];
   missed: boolean;
@@ -60,7 +60,9 @@ export class ProductHistory {
   add(at: number, message: GatewayMessage, source: SourceInfo | undefined): void {
     if (message.kind !== "state") return;
     this.forgetEventsBefore(at - this.retainMs);
+    let counting = false;
     const log = (conveyorId: number, p: Product, kind: ProductEvent["kind"]) =>
+      counting &&
       this.log.push({
         at,
         sourceId: message.sourceId,
@@ -74,6 +76,9 @@ export class ProductHistory {
     for (const c of message.components) {
       if (c.type !== "conveyor") continue;
       const conveyor = components.find((x) => x.id === c.id);
+      const registerKey = `${message.sourceId}|${c.id}`;
+      // What lies in a register when it is first seen did not enter or get missed now: count from its second state on.
+      counting = this.registers.has(registerKey);
       const present = new Set<string>();
       for (const p of c.products) {
         const key = productKey(message.sourceId, c.id, p.id);
@@ -82,16 +87,17 @@ export class ProductHistory {
         let followed = this.products.get(key);
         if (!followed || followed.gone) {
           // A product id seen again after it left starts a new history.
-          followed = { steps: [], last: signature, state: p.state, missed: false, gone: false };
+          followed = { steps: [], signature, state: p.state, missed: false, gone: false };
           this.products.delete(key);
           this.products.set(key, followed);
           followed.steps.push({ at, kind: p.state, text: `Entered the register (${stateText(p, robot, true)})` });
-          this.forgetOldest();
           log(c.id, p, "entered");
-        } else if (followed.last !== signature) {
-          followed.last = signature;
+        } else if (followed.signature !== signature) {
+          followed.signature = signature;
           followed.steps.push({ at, kind: p.state, text: stateText(p, robot, false) });
           if (p.state !== followed.state && (p.state === "picked" || p.state === "placed" || p.state === "rejected")) {
+            // Picked and placed between two states: the pick still counts.
+            if (p.state === "placed" && followed.state !== "picked") log(c.id, p, "picked");
             log(c.id, p, p.state);
           }
           followed.state = p.state;
@@ -102,7 +108,6 @@ export class ProductHistory {
           log(c.id, p, "missed");
         }
       }
-      const registerKey = `${message.sourceId}|${c.id}`;
       for (const key of this.registers.get(registerKey) ?? []) {
         const followed = this.products.get(key);
         if (present.has(key) || !followed || followed.gone) continue;
@@ -111,6 +116,7 @@ export class ProductHistory {
       }
       this.registers.set(registerKey, present);
     }
+    this.forgetOldest();
   }
 
   /** The steps of one product up to `until`, oldest first; empty for a product never seen (or forgotten). */
@@ -139,10 +145,11 @@ export class ProductHistory {
     }
   }
 
+  /** Forgets the oldest products that have left their register; one still on a belt would else count again. */
   private forgetOldest(): void {
-    for (const key of this.products.keys()) {
+    for (const [key, followed] of this.products) {
       if (this.products.size <= this.maxProducts) return;
-      this.products.delete(key);
+      if (followed.gone) this.products.delete(key);
     }
   }
 }

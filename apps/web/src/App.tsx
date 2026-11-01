@@ -91,6 +91,11 @@ function usePanelWidth(storageKey: string): [number | undefined, (px: number) =>
   return [width, set];
 }
 
+function machineMetrics(feed: SceneFeed, sources: SourceInfo[]): MachineMetrics {
+  const { events, now, since } = feed.productEvents(METRICS_WINDOW_MS);
+  return metrics(events, now, since, sources);
+}
+
 /** "last 60 s", or the shorter time covered so far. */
 const windowText = (m: MachineMetrics) => `last ${Math.round(m.windowMs / 1000)} s`;
 const rate = (perMin: number) => perMin.toFixed(1);
@@ -735,14 +740,14 @@ function Inspector(props: {
 }) {
   const { feed, sources, selection, modelRef, faults } = props;
   useTick(200);
-  const activity = feed.productEvents(METRICS_WINDOW_MS);
-  const figures = metrics(activity.events, activity.now, activity.since, sources);
+  // Not needed while a product is selected.
+  const figures = selection?.kind === "product" ? undefined : machineMetrics(feed, sources);
   if (!selection) {
     return (
       <>
         <h2>Inspector</h2>
         <p className="muted">Select a component or product in the tree or the 3D view.</p>
-        <MetricsOverview figures={figures} sources={sources} />
+        {figures && <MetricsOverview figures={figures} sources={sources} />}
       </>
     );
   }
@@ -806,7 +811,7 @@ function Inspector(props: {
           </p>
         ))}
       {delta && !delta.reachable && <p className="warn">Kinematics: the arms cannot reach the reported TCP.</p>}
-      <ComponentMetrics figures={figures} sourceId={selection.sourceId} id={selection.id} />
+      {figures && <ComponentMetrics figures={figures} sourceId={selection.sourceId} id={selection.id} />}
       {delta && delta.angles.length > 0 && (
         <p>
           Arm angles computed from TCP: {delta.angles.map((a) => a.toFixed(2)).join(" / ")}°

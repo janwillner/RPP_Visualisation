@@ -195,8 +195,9 @@ test("marks faults on the recording's timeline and jumps to them", async ({ page
   await page.getByRole("button", { name: "Stop recording" }).click();
 
   const bar = page.getByRole("toolbar", { name: "Playback" });
-  const marker = bar.locator(".timeline-marker.fault").last();
-  await expect(marker).toHaveAttribute("title", /Fault · /);
+  await expect(bar.locator(".timeline-marker.fault").first()).toHaveAttribute("title", /Fault · /);
+  // PageUp from the end goes to the last event of any kind (missed products are marked too): its marker is the last.
+  const marker = bar.locator(".timeline-marker").last();
   const slider = bar.getByLabel("Playback position");
   const end = Number(await slider.getAttribute("max"));
 

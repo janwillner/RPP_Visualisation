@@ -554,6 +554,7 @@ describe("gateway with several PLC sources", () => {
   });
 
   it("reports every source's health at /health: 200 while all are connected, 503 once one is not", async () => {
+    const ISO_TIME = expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     const t = twoSources();
     const server = await startServer({ gateway: combineGateways(t.gateways), port: 0, host: "127.0.0.1" });
     const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/health`;
@@ -565,8 +566,8 @@ describe("gateway with several PLC sources", () => {
         ok: true,
         protocolVersion: PROTOCOL_VERSION,
         sources: [
-          { sourceId: "ads:5.1.2.3.1.1:851", name: "Infeed PLC", plcConnected: true },
-          { sourceId: "ads:5.1.2.4.1.1:851", name: "Outfeed PLC", plcConnected: true },
+          { sourceId: "ads:5.1.2.3.1.1:851", name: "Infeed PLC", plcConnected: true, lastStateAt: ISO_TIME },
+          { sourceId: "ads:5.1.2.4.1.1:851", name: "Outfeed PLC", plcConnected: true, lastStateAt: ISO_TIME },
         ],
       });
 
@@ -574,10 +575,15 @@ describe("gateway with several PLC sources", () => {
       await t.cycleAll();
       const degraded = await fetch(url);
       expect(degraded.status).toBe(503);
-      const body = (await degraded.json()) as { ok: boolean; sources: { plcConnected: boolean; lastError?: string }[] };
+      const body = (await degraded.json()) as {
+        ok: boolean;
+        sources: { plcConnected: boolean; lastError?: string; lastStateAt?: string }[];
+      };
       expect(body.ok).toBe(false);
       expect(body.sources.map((s) => s.plcConnected)).toEqual([true, false]);
       expect(body.sources[1]!.lastError).toBeTruthy();
+      // The source that dropped out still tells when its last state came.
+      expect(body.sources[1]!.lastStateAt).toEqual(ISO_TIME);
     } finally {
       server.close();
     }

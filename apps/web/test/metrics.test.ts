@@ -112,6 +112,8 @@ describe("product history: countable events", () => {
 
   it("logs entered, picked by which robot, placed, rejected and missed products in time order", () => {
     const history = new ProductHistory();
+    // The register is known before: products appearing from now on count.
+    history.add(-100, register(0, []), sources[0]);
     history.add(0, register(0, [product(1, "detected"), product(2, "detected")]), sources[0]);
     history.add(100, register(0, [product(1, "assigned", 10), product(2, "rejected")]), sources[0]);
     history.add(200, register(0, [product(1, "picked", 10), product(2, "rejected")]), sources[0]);
@@ -128,6 +130,35 @@ describe("product history: countable events", () => {
       [400, 3, "missed", 0],
     ]);
     expect(history.events(150, 300).map((e) => e.at)).toEqual([200, 300, 300]);
+  });
+
+  it("does not count what is already in a register when it is first seen as entered or missed", () => {
+    const history = new ProductHistory();
+    // First sight of the register: product 1 lies there already, product 9 is already past the belt end.
+    history.add(0, register(0, [product(1, "detected"), { ...product(9, "detected"), latchBeltPosition: -3000 }]), sources[0]);
+    history.add(100, register(0, [product(1, "detected"), product(2, "detected")]), sources[0]);
+    expect(history.events(0, 100).map((e) => [e.productId, e.kind])).toEqual([[2, "entered"]]);
+  });
+
+  it("counts a pick that happened between two states, seen only as placed", () => {
+    const history = new ProductHistory();
+    history.add(0, register(0, []), sources[0]);
+    history.add(100, register(0, [product(1, "assigned", 10)]), sources[0]);
+    history.add(200, register(0, [product(1, "placed", 10)]), sources[0]);
+    expect(history.events(0, 200).map((e) => [e.at, e.kind, e.robotId])).toEqual([
+      [100, "entered", 0],
+      [200, "picked", 10],
+      [200, "placed", 10],
+    ]);
+  });
+
+  it("forgets only products that have left their register, so those still on a belt are not counted again", () => {
+    const history = new ProductHistory(2);
+    history.add(0, register(0, []), sources[0]);
+    history.add(100, register(0, [product(1, "detected"), product(2, "detected"), product(3, "detected")]), sources[0]);
+    history.add(200, register(0, [product(1, "detected"), product(2, "detected"), product(3, "detected")]), sources[0]);
+    expect(history.events(0, 200).filter((e) => e.kind === "entered").map((e) => e.productId)).toEqual([1, 2, 3]);
+    expect(history.of(A, 1, 1).length).toBe(1);
   });
 
   it("keeps events only as long as asked", () => {

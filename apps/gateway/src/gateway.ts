@@ -317,7 +317,7 @@ export function createGateway({
   }
 }
 
-/** Library types may be reported with their namespace, e.g. `Syn_Visu.ST_VisuDelta`. */
+/** Library types may be reported with their namespace, e.g. `SynVisu.ST_VisuDelta`. */
 function isExpectedType(actual: string | undefined, expected: string): boolean {
   return actual === expected || (actual?.endsWith(`.${expected}`) ?? false);
 }
