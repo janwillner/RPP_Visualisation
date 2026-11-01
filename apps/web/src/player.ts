@@ -56,6 +56,11 @@ export class Player implements SceneFeed {
     return this.view?.latestState(sourceId);
   }
 
+  productHistory(sourceId: string, conveyorId: number, productId: number) {
+    const now = this.clock.time;
+    return { steps: this.recording.products.of(sourceId, conveyorId, productId, now), now };
+  }
+
   /** Pauses, e.g. when the view goes back to live; the clock does not run while nobody draws it. */
   pause(): void {
     this.set({ ...this.clock, playing: false });

@@ -90,6 +90,13 @@ function usePanelWidth(storageKey: string): [number | undefined, (px: number) =>
   return [width, set];
 }
 
+/** How long ago, e.g. "3.2 s ago" or "2 min 05 s ago". */
+function formatAgo(ms: number): string {
+  const s = Math.max(0, ms) / 1000;
+  if (s < 60) return `${s.toFixed(1)} s ago`;
+  return `${Math.floor(s / 60)} min ${String(Math.floor(s % 60)).padStart(2, "0")} s ago`;
+}
+
 /** Re-render at a fixed rate, for panels that show live values. */
 function useTick(intervalMs: number): number {
   const [tick, setTick] = useState(0);
@@ -682,19 +689,37 @@ function Inspector(props: {
         (p) => p.conveyorId === selection.conveyorId && p.productId === selection.productId,
       ) ?? [];
     const product = matches.find((p) => p.display !== "placeholder") ?? matches[0];
+    const conveyor = sources
+      .find((s) => s.sourceId === selection.sourceId)
+      ?.config?.components.find((c) => c.id === selection.conveyorId);
+    const history = feed.productHistory(selection.sourceId, selection.conveyorId, selection.productId);
     return (
       <>
-        <h2>Product</h2>
+        <h2>Product #{selection.productId}</h2>
         {product ? (
+          <p>
+            Display: <strong>{product.display}</strong> · {conveyor?.name ?? `Conveyor #${selection.conveyorId}`}
+          </p>
+        ) : (
+          <p className="muted">Product is no longer in the register.</p>
+        )}
+        {history.steps.length > 0 && (
           <>
-            <p>
-              Display: <strong>{product.display}</strong> · Conveyor #{product.conveyorId}
-            </p>
+            <h3>History</h3>
+            <ol className="product-history">
+              {[...history.steps].reverse().map((s, i) => (
+                <li key={i} className={s.kind}>
+                  <span className="muted">{formatAgo(history.now - s.at)}</span> {s.text}
+                </li>
+              ))}
+            </ol>
+          </>
+        )}
+        {product && (
+          <>
             <h3>Register entry</h3>
             <Json value={product.raw} />
           </>
-        ) : (
-          <p className="muted">Product is no longer in the register.</p>
         )}
       </>
     );

@@ -211,3 +211,28 @@ test("marks faults on the recording's timeline and jumps to them", async ({ page
   await marker.click();
   await expect.poll(async () => Number(await slider.inputValue())).toBe(atEvent);
 });
+
+test("shows what happened to a selected product in the inspector", async ({ page }) => {
+  await openApp(page);
+  await page.getByRole("button", { name: "Show inspector" }).click();
+  await page.getByRole("button", { name: "View from above" }).click();
+  await page.waitForTimeout(800);
+  const heading = page.locator("aside.panel.right h2");
+
+  // Products move: click a grid over the view, from the middle outwards, until one is selected.
+  const box = (await page.locator("main.viewport canvas").boundingBox())!;
+  const clicks: { x: number; y: number }[] = [];
+  for (let y = box.y + 20; y < box.y + box.height - 60; y += 16) {
+    for (let x = box.x + 20; x < box.x + box.width - 20; x += 16) clicks.push({ x, y });
+  }
+  const [cx, cy] = [box.x + box.width / 2, box.y + box.height / 2];
+  clicks.sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
+  for (const { x, y } of clicks) {
+    await page.mouse.click(x, y);
+    if ((await heading.textContent())?.startsWith("Product")) break;
+  }
+  await expect(heading).toHaveText(/^Product #\d+$/);
+  const history = page.locator("aside.panel.right .product-history li");
+  await expect(history.last()).toContainText("Entered the register");
+  await expect(history.last()).toContainText(/\d+\.\d s ago/);
+});

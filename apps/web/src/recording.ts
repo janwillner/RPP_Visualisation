@@ -2,6 +2,7 @@ import { PROTOCOL_VERSION, type ConfigMessage, type GatewayMessage, type StateMe
 import { RENDER_DELAY_MS, type SourceInfo } from "./connection";
 import type { SceneSource } from "./scene/scene-model";
 import { EventTracker, type TimelineEvent } from "./timeline-events";
+import { ProductHistory } from "./product-history";
 
 export { eventTime, type TimelineEvent, type TimelineEventKind } from "./timeline-events";
 
@@ -130,6 +131,8 @@ export class Recorder {
   private registers: Registers = new Map();
   private pendingStateSources = new Set<string>();
   private readonly tracker: EventTracker;
+  /** Every product of the whole recording: it is limited in time, not in products. */
+  private readonly products = new ProductHistory(Infinity);
 
   /** `initial`: every source as it is when recording starts (status and config, if any). */
   constructor(initial: readonly SourceInfo[], recordedAt = new Date().toISOString()) {
@@ -183,6 +186,7 @@ export class Recorder {
     if (message.kind === "state" && this.snapshotTimes.at(-1) !== at) this.snapshotTimes.push(at);
     this.sources.set(message.sourceId, source);
     this.tracker.add(at, message, source);
+    this.products.add(at, message, source);
     return true;
   }
 
@@ -191,7 +195,7 @@ export class Recorder {
     if (this.pending.length > 0) this.seal();
     this.stopped = true;
     const chunks = await Promise.all(this.chunks);
-    return new Recording(this.initial, chunks, this.lastAt, this.recordedAt, this.snapshotTimes, this.tracker.events);
+    return new Recording(this.initial, chunks, this.lastAt, this.recordedAt, this.snapshotTimes, this.tracker.events, this.products);
   }
 
   private seal(): void {
@@ -237,6 +241,8 @@ export class Recording {
     readonly snapshotTimes: readonly number[],
     /** Faults, sources going offline and back, missed products, in order; found again when a file is opened. */
     readonly events: readonly TimelineEvent[],
+    /** What happened to every product, for the inspector at the playback moment. */
+    readonly products: ProductHistory,
   ) {}
 
   /** Decompresses what the given moment needs; afterwards `view(t)` answers without waiting. */

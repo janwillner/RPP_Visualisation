@@ -6,6 +6,7 @@ import {
   type GatewayStatus,
   type StateMessage,
 } from "@rpp/protocol";
+import { ProductHistory, type ProductStep } from "./product-history";
 import type { SceneSource } from "./scene/scene-model";
 
 /** Render this far behind the newest snapshot so there is always a later sample to interpolate to. */
@@ -45,6 +46,8 @@ export interface SceneFeed {
   sceneSources(now?: number): SceneSource[];
   /** A source's newest state, e.g. for the inspector. */
   latestState(sourceId: string): StateMessage | undefined;
+  /** What has happened to a product so far, and the current moment on the same clock. */
+  productHistory(sourceId: string, conveyorId: number, productId: number): { steps: ProductStep[]; now: number };
 }
 
 /** Receives every valid message from the gateway with its JSON and arrival time (performance.now()). */
@@ -106,6 +109,7 @@ export class SourceBuffer {
 export class GatewayStore implements SceneFeed {
   private readonly buffers = new Map<string, SourceBuffer>();
   private readonly messageListeners = new Set<MessageListener>();
+  private readonly products = new ProductHistory();
   private socket: WebSocket | undefined;
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   private retryMs = 500;
@@ -153,6 +157,10 @@ export class GatewayStore implements SceneFeed {
 
   latestState(sourceId: string): StateMessage | undefined {
     return this.buffer(sourceId).latest();
+  }
+
+  productHistory(sourceId: string, conveyorId: number, productId: number) {
+    return { steps: this.products.of(sourceId, conveyorId, productId), now: performance.now() };
   }
 
   /** The snapshot buffer of a source; empty for an unknown one. */
@@ -244,6 +252,7 @@ export class GatewayStore implements SceneFeed {
       case "state":
         if (message.configVersion !== source?.config?.configVersion) break;
         this.buffer(message.sourceId).push(message);
+        this.products.add(arrival, message, source);
         break;
     }
   }

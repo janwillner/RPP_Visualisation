@@ -952,3 +952,18 @@ button.link {
   opacity: 0.4;
   cursor: default;
 }
+
+/* A product's history in the inspector, newest first. */
+.product-history {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.product-history li {
+  padding: 2px 0;
+}
+
+.product-history li.missed {
+  color: var(--bad);
+}
