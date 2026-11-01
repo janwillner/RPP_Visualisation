@@ -4,7 +4,7 @@ This is the PLC side of the contract the gateway reads. It is implemented by the
 `plc/Syn_Visu` (solution `plc/RPP_Visu.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
 and the gateway maps it to the neutral model in `packages/protocol`. Change all three together, and bump
 `VISU_GlobalConst.VISU_un_PROTOCOL_VERSION` / `PROTOCOL_VERSION` on any breaking change. Adding a component type:
-`docs/adding-a-component.md`.
+`docs/adding-a-component.md`. How to use the library in a machine project, task by task: `docs/plc-library-guide.md`.
 
 The library follows the company guideline in `docs/plc-coding-guidelines.md` (`_FB_`, `m_`, `vi_`/`vo_`/`vio_`
 prefixes) except for the contract itself: the structures, their members, the enums and `GVL_Visu.stManifest` keep
@@ -153,8 +153,8 @@ the FBs fill them in their output `vo_Visu`, so application code does not write 
 | `ST_VisuConveyor` (`stConfig` / `stState`), `ST_VisuProduct`, `ST_VisuProductType` (size, `eShape`, `fCornerRadius`), `E_VisuProductState`, `E_VisuProductShape` | Conveyor contract structure (`_FB_VisuConveyor.vo_Visu`) |
 | `ST_VisuDelta` (`stConfig`: geometry, working area, limit area, zones, fingers / `stState`: actual and setpoint TCP, finger states), `ST_VisuWorkingArea`, `ST_VisuLimitArea`, `ST_VisuZone` | Delta contract structure (`_FB_VisuDelta.vo_Visu`) |
 | `ST_VisuXtsGantry` (`stConfig`: track modules, strokes, gripper offsets, mover size, zones, fingers / `stState`: Z, movers with finger states, module states), `ST_VisuGantryMover` | XTS gantry contract structure (`_FB_VisuXtsGantry.vo_Visu`) |
-| `ST_VisuXtsLoop` (`stConfig`: track modules, tool offset, mover size, zones, fingers / `stState`: movers with finger states, module states), `ST_VisuLoopMover` |
-| `ST_VisuTrackModule`, `ST_VisuTrackModuleState`, `E_VisuModuleKind` | One module of an XTS track (kind, length) and its live fault | XTS loop contract structure (`_FB_VisuXtsLoop.vo_Visu`) |
+| `ST_VisuXtsLoop` (`stConfig`: track modules, tool offset, mover size, zones, fingers / `stState`: movers with finger states, module states), `ST_VisuLoopMover` | XTS loop contract structure (`_FB_VisuXtsLoop.vo_Visu`) |
+| `ST_VisuTrackModule`, `ST_VisuTrackModuleState`, `E_VisuModuleKind` | One module of an XTS track (kind, length) and its live fault |
 | `ST_VisuCartesian` (`stConfig`: X/Y/Z strokes, rail height, zones, fingers / `stState`: X, Y, Z, gripper, finger states) | Cartesian robot contract structure (`_FB_VisuCartesian.vo_Visu`) |
 | `ST_VisuDetector` (`stConfig`: pose, zones, bodies / `stState`: body states), `ST_VisuBody`, `ST_VisuBodyState`, `E_VisuBodyShape`, `E_VisuBodyRole` | Contract structure of a vision system or product sensor (`_FB_VisuDetector.vo_Visu`) |
 | `ST_VisuFault` | Fault of a component, a mover or a track module: `bActive`, `sMessage` |
