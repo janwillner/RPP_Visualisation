@@ -359,6 +359,217 @@ function withShape(type: ProductType): ProductType {
   return { ...type, shape: type.shape ?? "box", cornerRadius: type.cornerRadius ?? 0 };
 }
 
+type ComponentType = ComponentConfig["type"];
+type ConfigOf<T extends ComponentType> = Extract<ComponentConfig, { type: T }>;
+type StateOf<T extends ComponentType> = Extract<ComponentState, { type: T }>;
+
+/** What a component's kit adds its part of the scene through. */
+interface BuildContext {
+  /** The scene so far, hidden components included; they are dropped at the end. */
+  scene: SceneModel;
+  /**
+   * Where a picked product hangs, keyed "robotId:moverId" for the gripper flange (mover 0 for a robot without movers)
+   * and "robotId:moverId:finger" for a finger's grip point: an MCS frame whose origin touches the product's top, whose
+   * rotation orients the product and whose local −Z points to the product.
+   */
+  carriers: Map<string, Frame>;
+  /** A label for a component (moverId 0) or a mover at an MCS anchor, and its line in the component list. */
+  addFault(componentId: number, moverId: number, message: string | null, anchor: Vec3): void;
+  /** Fingers of one robot's grippers (one per mover), their grip points as carriers and snap points. */
+  addGripper(
+    robot: { id: number; name: string; pose: Pose; fingers: Finger[]; originShift: Position },
+    grippers: GripperSource[],
+  ): void;
+  /** A component's zones on the conveyors, with their allocation areas, CCS lines, snap points and warnings. */
+  addZones(c: { id: number; name: string; zones: Zone[] }): void;
+  warn(message: string): void;
+}
+
+/** How one component type becomes part of the scene. */
+interface ComponentKit<T extends ComponentType> {
+  build(c: ConfigOf<T>, state: StateOf<T> | undefined, ctx: BuildContext): void;
+  /** The state between two snapshots (`f` from 0 to 1); without it, the earlier snapshot is held. */
+  interpolate?(a: StateOf<T>, b: StateOf<T>, f: number, c: ConfigOf<T>): StateOf<T>;
+  /** Built after all others, e.g. a conveyor whose products hang from the carriers the robots provide. */
+  late?: boolean;
+  /** Order of its origin in measure mode, lower first; default 2. */
+  originRank?: number;
+}
+
+/**
+ * Every component type the scene knows. A new component type needs one entry here and, in `SceneView.tsx`, a mesh
+ * for what it adds to the scene.
+ */
+const KITS: { [T in ComponentType]: ComponentKit<T> } = {
+  conveyor: {
+    late: true,
+    originRank: 0,
+    build(c, state, ctx) {
+      const frame = frameFromPose(c.pose);
+      const fault = faultText(state?.fault);
+      ctx.scene.conveyors.push({
+        id: c.id,
+        name: c.name,
+        transform: toRendererTransform(frame),
+        length: c.length * MM,
+        width: c.width * MM,
+        fault,
+      });
+      ctx.addFault(c.id, 0, fault, lifted(toMcs(frame, [c.length / 2, 0, 0]), LABEL_LIFT.conveyor));
+      const owner = snapOwner(c, frame);
+      const snapPoints = ctx.scene.snapPoints;
+      snapPoints.push(owner.at(`${c.name} · origin`, shiftOf(c)));
+      for (const end of ["start", "end"] as const) {
+        for (const [side, y] of sides(c.width)) {
+          snapPoints.push(owner.at(`${c.name} · ${end}, ${side}`, [end === "start" ? 0 : c.length, y, 0]));
+        }
+      }
+      snapPoints.push(owner.at(`${c.name} · end centre`, [c.length, 0, 0]));
+      if (state) {
+        const shown = conveyorProducts(c, frame, state, ctx.carriers, ctx.warn);
+        ctx.scene.products.push(...shown);
+        for (const p of shown) snapPoints.push(...productSnapPoints(p, owner));
+      }
+    },
+    interpolate: (a, b, f) => ({ ...a, beltPosition: lerp(a.beltPosition, b.beltPosition, f) }),
+  },
+  delta: {
+    originRank: 1,
+    build(c, state, ctx) {
+      const frame = frameFromPose(c.pose);
+      const delta = buildDelta(c, state);
+      ctx.scene.deltas.push(delta);
+      ctx.addFault(c.id, 0, delta.fault, lifted(frame.origin, LABEL_LIFT.delta));
+      if (state) {
+        // The flange is the effector centre, turned with the base.
+        const flange: Frame = { rotation: frame.rotation, origin: positionToMcs(state.actualTcp) };
+        ctx.carriers.set(`${c.id}:0`, flange);
+        ctx.addGripper(c, [{ moverId: 0, flange, states: state.fingers, faulted: delta.fault !== null }]);
+      }
+      ctx.scene.snapPoints.push(...deltaSnapPoints(c, state));
+      const w = c.workingArea;
+      ctx.scene.workingAreas.push({
+        robotId: c.id,
+        transform: toRendererTransform(frame),
+        radius: w.radius * MM,
+        zMin: w.zMin * MM,
+        zMax: w.zMax * MM,
+        coneHeight: w.coneHeight * MM,
+        coneBottomRadius: w.coneBottomRadius * MM,
+      });
+      if (c.limitArea) {
+        const a = c.limitArea;
+        ctx.scene.limitAreas.push({
+          robotId: c.id,
+          transform: toRendererTransform(
+            child(frame, [(a.xMin + a.xMax) / 2, (a.yMin + a.yMax) / 2, (a.zMin + a.zMax) / 2]),
+          ),
+          size: [(a.xMax - a.xMin) * MM, (a.yMax - a.yMin) * MM, (a.zMax - a.zMin) * MM],
+        });
+      }
+      ctx.addZones(c);
+    },
+    interpolate: (a, b, f) => ({
+      ...a,
+      actualTcp: lerpPosition(a.actualTcp, b.actualTcp, f),
+      setpointTcp: lerpPosition(a.setpointTcp, b.setpointTcp, f),
+      fingers: lerpFingers(a.fingers, b.fingers, f),
+    }),
+  },
+  xtsGantry: {
+    build(c, state, ctx) {
+      const built = buildGantry(c, state);
+      ctx.scene.gantries.push(built.gantry);
+      ctx.scene.boxAreas.push(built.area);
+      ctx.scene.snapPoints.push(...built.snapPoints);
+      for (const [moverId, frame] of built.carriers) ctx.carriers.set(`${c.id}:${moverId}`, frame);
+      for (const f of built.faults) ctx.addFault(c.id, f.moverId, f.message, f.anchor);
+      ctx.addGripper(c, built.grippers);
+      ctx.addZones(c);
+    },
+    interpolate(a, b, f) {
+      const next = new Map(b.movers.map((m) => [m.id, m]));
+      return {
+        ...a,
+        z: lerp(a.z, b.z, f),
+        movers: a.movers.map((m) => {
+          const n = next.get(m.id);
+          return n
+            ? { ...m, position: lerp(m.position, n.position, f), x: lerp(m.x, n.x, f), fingers: lerpFingers(m.fingers, n.fingers, f) }
+            : m;
+        }),
+      };
+    },
+  },
+  xtsLoop: {
+    build(c, state, ctx) {
+      const built = buildLoop(c, state);
+      ctx.scene.loops.push(built.loop);
+      ctx.scene.snapPoints.push(...built.snapPoints);
+      for (const [moverId, frame] of built.carriers) ctx.carriers.set(`${c.id}:${moverId}`, frame);
+      for (const f of built.faults) ctx.addFault(c.id, f.moverId, f.message, f.anchor);
+      ctx.addGripper(c, built.grippers);
+      ctx.addZones(c);
+    },
+    interpolate(a, b, f, c) {
+      const perimeter = loopPerimeter(c);
+      const next = new Map(b.movers.map((m) => [m.id, m]));
+      return {
+        ...a,
+        movers: a.movers.map((m) => {
+          const n = next.get(m.id);
+          return n
+            ? { ...m, position: lerpWrapped(m.position, n.position, f, perimeter), fingers: lerpFingers(m.fingers, n.fingers, f) }
+            : m;
+        }),
+      };
+    },
+  },
+  cartesian: {
+    build(c, state, ctx) {
+      const built = buildCartesian(c, state);
+      ctx.scene.cartesians.push(built.cartesian);
+      ctx.scene.boxAreas.push(built.area);
+      ctx.scene.snapPoints.push(...built.snapPoints);
+      if (built.carrier) ctx.carriers.set(`${c.id}:0`, built.carrier);
+      ctx.addFault(c.id, 0, built.cartesian.fault, built.faultAnchor);
+      ctx.addGripper(c, built.grippers);
+      ctx.addZones(c);
+    },
+    interpolate: (a, b, f) => ({
+      ...a,
+      x: lerp(a.x, b.x, f),
+      y: lerp(a.y, b.y, f),
+      z: lerp(a.z, b.z, f),
+      fingers: lerpFingers(a.fingers, b.fingers, f),
+    }),
+  },
+};
+
+/** The kit of a component type, typed for the whole union: each kit only ever gets configs and states of its type. */
+const kitOf = (type: ComponentType) => KITS[type] as unknown as ComponentKit<ComponentType>;
+
+function emptyScene(): SceneModel {
+  return {
+    conveyors: [],
+    products: [],
+    deltas: [],
+    workingAreas: [],
+    zones: [],
+    gantries: [],
+    boxAreas: [],
+    limitAreas: [],
+    loops: [],
+    cartesians: [],
+    fingers: [],
+    snapPoints: [],
+    origins: [],
+    faultLabels: [],
+    faults: [],
+    warnings: [],
+  };
+}
+
 /**
  * `hidden`: manifest ids of components the user has hidden. A hidden component contributes nothing to the scene:
  * no geometry, zones, areas, snap points or origin; a hidden conveyor also hides its products and the zones on it.
@@ -370,241 +581,126 @@ export function buildScene(
   renderTime: number,
   hidden: ReadonlySet<number> = new Set(),
 ): SceneModel {
-  const perimeters = new Map<number, number>();
-  for (const c of config?.components ?? []) if (c.type === "xtsLoop") perimeters.set(c.id, loopPerimeter(c));
-  const states = sampleStates(snapshots, renderTime, perimeters);
-  const conveyors: SceneConveyor[] = [];
-  const products: SceneProduct[] = [];
-  const deltas: SceneDelta[] = [];
-  const gantries: SceneGantry[] = [];
-  const boxAreas: SceneBoxArea[] = [];
-  const limitAreas: SceneBoxArea[] = [];
-  const loops: SceneLoop[] = [];
-  const cartesians: SceneCartesian[] = [];
-  const fingers: SceneFinger[] = [];
-  const faultLabels: SceneFaultLabel[] = [];
-  const faults: ComponentFaults[] = [];
-  /** A label for a component (moverId 0) or a mover at an MCS anchor, and its line in the component list. */
-  const addFault = (componentId: number, moverId: number, message: string | null, anchor: Vec3) => {
-    if (message === null) return;
-    faultLabels.push({ key: `${componentId}:${moverId}`, componentId, moverId, message, position: toRenderer(anchor) });
-    let entry = faults.find((f) => f.componentId === componentId);
-    if (!entry) faults.push((entry = { componentId, messages: [] }));
-    entry.messages.push(moverId ? `Mover ${moverId}: ${message}` : message);
-  };
-  /**
-   * Where a picked product hangs, keyed "robotId:moverId" for the gripper flange (mover 0 for a robot without movers)
-   * and "robotId:moverId:finger" for a finger's grip point: an MCS frame whose origin touches the product's top, whose
-   * rotation orients the product and whose local −Z points to the product.
-   */
-  const carriers = new Map<string, Frame>();
-
-  const workingAreas: SceneWorkingArea[] = [];
-  const zones: SceneZone[] = [];
-  const warnings: string[] = [];
-  const snapPoints: SnapPoint[] = [];
+  const components = config?.components ?? [];
+  const states = sampleStates(snapshots, renderTime, new Map(components.map((c) => [c.id, c])));
+  const scene = emptyScene();
+  const { snapPoints, zones, warnings, faultLabels, faults } = scene;
   const conveyorConfigs = new Map<number, ConveyorConfig>();
-  for (const c of config?.components ?? []) if (c.type === "conveyor") conveyorConfigs.set(c.id, c);
+  for (const c of components) if (c.type === "conveyor") conveyorConfigs.set(c.id, c);
 
-  /** Fingers of one robot's grippers (one per mover), their grip points as carriers and snap points. */
-  const addGripper = (
-    robot: { id: number; name: string; pose: Pose; fingers: Finger[]; originShift: Position },
-    grippers: GripperSource[],
-  ) => {
-    const owner = snapOwner(robot, frameFromPose(robot.pose));
-    for (const g of grippers) {
-      robot.fingers.forEach((f, i) => {
-        const state = g.states[i];
-        if (!state) return;
-        const index = i + 1;
-        const frame = frameFromPose(state.pose);
-        const grip = child(frame, [0, 0, -f.height]);
-        carriers.set(`${robot.id}:${g.moverId}:${index}`, grip);
-        fingers.push({
-          key: `${robot.id}:${g.moverId}:${index}`,
-          robotId: robot.id,
-          moverId: g.moverId,
-          index,
-          transform: toRendererTransform(frame),
-          diameter: f.diameter * MM,
-          height: f.height * MM,
-          active: state.active,
-          faulted: g.faulted,
-          flange: toRenderer(g.flange.origin),
+  const ctx: BuildContext = {
+    scene,
+    carriers: new Map(),
+    warn: (message) => warnings.push(message),
+    addFault(componentId, moverId, message, anchor) {
+      if (message === null) return;
+      faultLabels.push({ key: `${componentId}:${moverId}`, componentId, moverId, message, position: toRenderer(anchor) });
+      let entry = faults.find((f) => f.componentId === componentId);
+      if (!entry) faults.push((entry = { componentId, messages: [] }));
+      entry.messages.push(moverId ? `Mover ${moverId}: ${message}` : message);
+    },
+    addGripper(robot, grippers) {
+      const owner = snapOwner(robot, frameFromPose(robot.pose));
+      for (const g of grippers) {
+        robot.fingers.forEach((f, i) => {
+          const state = g.states[i];
+          if (!state) return;
+          const index = i + 1;
+          const frame = frameFromPose(state.pose);
+          const grip = child(frame, [0, 0, -f.height]);
+          ctx.carriers.set(`${robot.id}:${g.moverId}:${index}`, grip);
+          scene.fingers.push({
+            key: `${robot.id}:${g.moverId}:${index}`,
+            robotId: robot.id,
+            moverId: g.moverId,
+            index,
+            transform: toRendererTransform(frame),
+            diameter: f.diameter * MM,
+            height: f.height * MM,
+            active: state.active,
+            faulted: g.faulted,
+            flange: toRenderer(g.flange.origin),
+          });
+          const name = g.moverId ? `${robot.name} · mover ${g.moverId} finger ${index}` : `${robot.name} · finger ${index}`;
+          snapPoints.push(owner.atMcs(`${name} grip point`, grip.origin, "structure", true));
         });
-        const name = g.moverId ? `${robot.name} · mover ${g.moverId} finger ${index}` : `${robot.name} · finger ${index}`;
-        snapPoints.push(owner.atMcs(`${name} grip point`, grip.origin, "structure", true));
-      });
-    }
-  };
-
-  const addZones = (c: { id: number; name: string; zones: Zone[] }) => {
-    if (hidden.has(c.id)) return;
-    for (const win of c.zones) {
-      const belt = conveyorConfigs.get(win.conveyorId);
-      if (!belt) {
-        warnings.push(`${c.name}: ${win.kind} zone references unknown conveyor ${win.conveyorId}`);
-        continue;
       }
-      if (hidden.has(belt.id)) continue;
-      const beltFrame = frameFromPose(belt.pose);
-      // Belt coordinates count from the conveyor's origin, which may be shifted from the belt start.
-      const along = (beltCoordinate: number) => belt.originShift.x + beltCoordinate;
-      const limit = allocationLimit(win);
-      const zoneCentre = (win.start + win.end) / 2;
-      const name = `${c.name} ${win.kind} zone on ${belt.name}`;
-      if (win.ccsOffset < Math.min(win.start, win.end) || win.ccsOffset > Math.max(win.start, win.end)) {
-        warnings.push(
-          `${c.name}: CCS of the ${win.kind} zone on ${belt.name} (${win.ccsOffset} mm) lies outside the zone (${win.start} to ${win.end} mm)`,
-        );
-      }
-      zones.push({
-        robotId: c.id,
-        conveyorId: belt.id,
-        kind: win.kind,
-        transform: toRendererTransform(child(beltFrame, [along(zoneCentre), 0, 0])),
-        length: Math.abs(win.end - win.start) * MM,
-        width: belt.width * MM,
-        ccs: toRendererTransform(child(beltFrame, [along(win.ccsOffset), 0, 0])),
-        allocation:
-          limit === undefined
-            ? null
-            : {
-                centre: ((win.start + limit) / 2 - zoneCentre) * MM,
-                length: Math.abs(limit - win.start) * MM,
-                limit: (limit - zoneCentre) * MM,
-              },
-      });
-      const owner = snapOwner(belt, beltFrame);
-      for (const [side, y] of sides(belt.width)) {
-        snapPoints.push(owner.at(`${name} · start, ${side}`, [along(win.start), y, 0], "zones"));
-        snapPoints.push(owner.at(`${name} · end, ${side}`, [along(win.end), y, 0], "zones"));
-        if (limit !== undefined) {
-          snapPoints.push(owner.at(`${name} · allocation limit, ${side}`, [along(limit), y, 0], "zones"));
+    },
+    addZones(c) {
+      if (hidden.has(c.id)) return;
+      for (const win of c.zones) {
+        const belt = conveyorConfigs.get(win.conveyorId);
+        if (!belt) {
+          warnings.push(`${c.name}: ${win.kind} zone references unknown conveyor ${win.conveyorId}`);
+          continue;
         }
+        if (hidden.has(belt.id)) continue;
+        const beltFrame = frameFromPose(belt.pose);
+        // Belt coordinates count from the conveyor's origin, which may be shifted from the belt start.
+        const along = (beltCoordinate: number) => belt.originShift.x + beltCoordinate;
+        const limit = allocationLimit(win);
+        const zoneCentre = (win.start + win.end) / 2;
+        const name = `${c.name} ${win.kind} zone on ${belt.name}`;
+        if (win.ccsOffset < Math.min(win.start, win.end) || win.ccsOffset > Math.max(win.start, win.end)) {
+          warnings.push(
+            `${c.name}: CCS of the ${win.kind} zone on ${belt.name} (${win.ccsOffset} mm) lies outside the zone (${win.start} to ${win.end} mm)`,
+          );
+        }
+        zones.push({
+          robotId: c.id,
+          conveyorId: belt.id,
+          kind: win.kind,
+          transform: toRendererTransform(child(beltFrame, [along(zoneCentre), 0, 0])),
+          length: Math.abs(win.end - win.start) * MM,
+          width: belt.width * MM,
+          ccs: toRendererTransform(child(beltFrame, [along(win.ccsOffset), 0, 0])),
+          allocation:
+            limit === undefined
+              ? null
+              : {
+                  centre: ((win.start + limit) / 2 - zoneCentre) * MM,
+                  length: Math.abs(limit - win.start) * MM,
+                  limit: (limit - zoneCentre) * MM,
+                },
+        });
+        const owner = snapOwner(belt, beltFrame);
+        for (const [side, y] of sides(belt.width)) {
+          snapPoints.push(owner.at(`${name} · start, ${side}`, [along(win.start), y, 0], "zones"));
+          snapPoints.push(owner.at(`${name} · end, ${side}`, [along(win.end), y, 0], "zones"));
+          if (limit !== undefined) {
+            snapPoints.push(owner.at(`${name} · allocation limit, ${side}`, [along(limit), y, 0], "zones"));
+          }
+        }
+        snapPoints.push(owner.at(`${name} · CCS`, [along(win.ccsOffset), 0, 0], "zones"));
       }
-      snapPoints.push(owner.at(`${name} · CCS`, [along(win.ccsOffset), 0, 0], "zones"));
-    }
+    },
   };
 
-  for (const c of config?.components ?? []) {
+  // Components that draw products come last: the products hang from the carriers the others provide.
+  const late = (c: ComponentConfig) => kitOf(c.type).late === true;
+  for (const c of [...components.filter((c) => !late(c)), ...components.filter(late)]) {
     const state = states.get(c.id);
-    if (c.type === "xtsGantry") {
-      const built = buildGantry(c, state?.type === "xtsGantry" ? state : undefined);
-      gantries.push(built.gantry);
-      boxAreas.push(built.area);
-      snapPoints.push(...built.snapPoints);
-      for (const [moverId, frame] of built.carriers) carriers.set(`${c.id}:${moverId}`, frame);
-      for (const f of built.faults) addFault(c.id, f.moverId, f.message, f.anchor);
-      addGripper(c, built.grippers);
-      addZones(c);
-      continue;
-    }
-    if (c.type === "xtsLoop") {
-      const built = buildLoop(c, state?.type === "xtsLoop" ? state : undefined);
-      loops.push(built.loop);
-      snapPoints.push(...built.snapPoints);
-      for (const [moverId, frame] of built.carriers) carriers.set(`${c.id}:${moverId}`, frame);
-      for (const f of built.faults) addFault(c.id, f.moverId, f.message, f.anchor);
-      addGripper(c, built.grippers);
-      addZones(c);
-      continue;
-    }
-    if (c.type === "cartesian") {
-      const built = buildCartesian(c, state?.type === "cartesian" ? state : undefined);
-      cartesians.push(built.cartesian);
-      boxAreas.push(built.area);
-      snapPoints.push(...built.snapPoints);
-      if (built.carrier) carriers.set(`${c.id}:0`, built.carrier);
-      addFault(c.id, 0, built.cartesian.fault, built.faultAnchor);
-      addGripper(c, built.grippers);
-      addZones(c);
-      continue;
-    }
-    if (c.type !== "delta") continue;
-    const deltaState = state?.type === "delta" ? state : undefined;
-    const builtDelta = buildDelta(c, deltaState);
-    deltas.push(builtDelta);
-    addFault(c.id, 0, builtDelta.fault, lifted(frameFromPose(c.pose).origin, LABEL_LIFT.delta));
-    if (deltaState) {
-      // The flange is the effector centre, turned with the base.
-      const flange: Frame = { rotation: frameFromPose(c.pose).rotation, origin: positionToMcs(deltaState.actualTcp) };
-      carriers.set(`${c.id}:0`, flange);
-      addGripper(c, [{ moverId: 0, flange, states: deltaState.fingers, faulted: builtDelta.fault !== null }]);
-    }
-    snapPoints.push(...deltaSnapPoints(c, deltaState));
-
-    const w = c.workingArea;
-    workingAreas.push({
-      robotId: c.id,
-      transform: toRendererTransform(frameFromPose(c.pose)),
-      radius: w.radius * MM,
-      zMin: w.zMin * MM,
-      zMax: w.zMax * MM,
-      coneHeight: w.coneHeight * MM,
-      coneBottomRadius: w.coneBottomRadius * MM,
-    });
-    if (c.limitArea) {
-      const a = c.limitArea;
-      limitAreas.push({
-        robotId: c.id,
-        transform: toRendererTransform(
-          child(frameFromPose(c.pose), [(a.xMin + a.xMax) / 2, (a.yMin + a.yMax) / 2, (a.zMin + a.zMax) / 2]),
-        ),
-        size: [(a.xMax - a.xMin) * MM, (a.yMax - a.yMin) * MM, (a.zMax - a.zMin) * MM],
-      });
-    }
-    addZones(c);
+    kitOf(c.type).build(c, state?.type === c.type ? state : undefined, ctx);
   }
-
-  for (const c of config?.components ?? []) {
-    if (c.type !== "conveyor") continue;
-    const frame = frameFromPose(c.pose);
-    const conveyorState = states.get(c.id);
-    const fault = faultText(conveyorState?.type === "conveyor" ? conveyorState.fault : null);
-    conveyors.push({
-      id: c.id,
-      name: c.name,
-      transform: toRendererTransform(frame),
-      length: c.length * MM,
-      width: c.width * MM,
-      fault,
-    });
-    addFault(c.id, 0, fault, lifted(toMcs(frame, [c.length / 2, 0, 0]), LABEL_LIFT.conveyor));
-    const owner = snapOwner(c, frame);
-    snapPoints.push(owner.at(`${c.name} · origin`, shiftOf(c)));
-    for (const end of ["start", "end"] as const) {
-      for (const [side, y] of sides(c.width)) {
-        snapPoints.push(owner.at(`${c.name} · ${end}, ${side}`, [end === "start" ? 0 : c.length, y, 0]));
-      }
-    }
-    snapPoints.push(owner.at(`${c.name} · end centre`, [c.length, 0, 0]));
-    const state = states.get(c.id);
-    if (state?.type === "conveyor") {
-      const shown = conveyorProducts(c, frame, state, carriers, (message) => warnings.push(message));
-      products.push(...shown);
-      for (const p of shown) snapPoints.push(...productSnapPoints(p, owner));
-    }
-  }
-  // Each component's coordinate system: at its pose, moved by its origin shift. Conveyors first, then Deltas.
-  const order = (c: ComponentConfig) => (c.type === "conveyor" ? 0 : c.type === "delta" ? 1 : 2);
-  const origins: SceneOrigin[] = [...(config?.components ?? [])]
-    .sort((a, b) => order(a) - order(b))
+  // Each component's coordinate system: at its pose, moved by its origin shift.
+  const rank = (c: ComponentConfig) => kitOf(c.type).originRank ?? 2;
+  const origins = [...components]
+    .sort((a, b) => rank(a) - rank(b))
     .map((c) => ({ componentId: c.id, name: c.name, transform: toRendererTransform(originFrame(c)) }));
   // Hidden components are built too (a hidden robot still carries products of a visible conveyor), then dropped.
   const shown = (id: number) => !hidden.has(id);
   return {
-    conveyors: conveyors.filter((c) => shown(c.id)),
-    products: products.filter((p) => shown(p.conveyorId)),
-    deltas: deltas.filter((d) => shown(d.id)),
-    workingAreas: workingAreas.filter((a) => shown(a.robotId)),
+    conveyors: scene.conveyors.filter((c) => shown(c.id)),
+    products: scene.products.filter((p) => shown(p.conveyorId)),
+    deltas: scene.deltas.filter((d) => shown(d.id)),
+    workingAreas: scene.workingAreas.filter((a) => shown(a.robotId)),
     zones,
-    gantries: gantries.filter((g) => shown(g.id)),
-    boxAreas: boxAreas.filter((a) => shown(a.robotId)),
-    limitAreas: limitAreas.filter((a) => shown(a.robotId)),
-    loops: loops.filter((l) => shown(l.id)),
-    cartesians: cartesians.filter((c) => shown(c.id)),
-    fingers: fingers.filter((f) => shown(f.robotId)),
+    gantries: scene.gantries.filter((g) => shown(g.id)),
+    boxAreas: scene.boxAreas.filter((a) => shown(a.robotId)),
+    limitAreas: scene.limitAreas.filter((a) => shown(a.robotId)),
+    loops: scene.loops.filter((l) => shown(l.id)),
+    cartesians: scene.cartesians.filter((c) => shown(c.id)),
+    fingers: scene.fingers.filter((f) => shown(f.robotId)),
     snapPoints: snapPoints.filter((p) => shown(p.local.componentId)),
     origins: origins.filter((o) => shown(o.componentId)),
     faultLabels: faultLabels.filter((l) => shown(l.componentId)),
@@ -855,7 +951,7 @@ function buildDelta(c: DeltaConfig, state: DeltaState | undefined): SceneDelta {
 function sampleStates(
   snapshots: readonly StateMessage[],
   renderTime: number,
-  perimeters: ReadonlyMap<number, number>,
+  configs: ReadonlyMap<number, ComponentConfig>,
 ): Map<number, ComponentState> {
   let before: StateMessage | undefined;
   let after: StateMessage | undefined;
@@ -873,7 +969,9 @@ function sampleStates(
   const f = before && after ? (renderTime - before.tRel) / (after.tRel - before.tRel) : 0;
   for (const c of base.components) {
     const n = next?.get(c.id);
-    result.set(c.id, n && n.type === c.type ? interpolate(c, n, f, perimeters.get(c.id) ?? 0) : c);
+    const config = configs.get(c.id);
+    const interpolate = kitOf(c.type).interpolate;
+    result.set(c.id, n && n.type === c.type && config?.type === c.type && interpolate ? interpolate(c, n, f, config) : c);
   }
   return result;
 }
@@ -893,52 +991,6 @@ function lerpWrapped(a: number, b: number, f: number, perimeter: number): number
   return a + d * f;
 }
 
-function interpolate(a: ComponentState, b: ComponentState, f: number, perimeter: number): ComponentState {
-  if (a.type === "xtsGantry" && b.type === "xtsGantry") {
-    const next = new Map(b.movers.map((m) => [m.id, m]));
-    return {
-      ...a,
-      z: lerp(a.z, b.z, f),
-      movers: a.movers.map((m) => {
-        const n = next.get(m.id);
-        return n
-          ? { ...m, position: lerp(m.position, n.position, f), x: lerp(m.x, n.x, f), fingers: lerpFingers(m.fingers, n.fingers, f) }
-          : m;
-      }),
-    };
-  }
-  if (a.type === "xtsLoop" && b.type === "xtsLoop") {
-    const next = new Map(b.movers.map((m) => [m.id, m]));
-    return {
-      ...a,
-      movers: a.movers.map((m) => {
-        const n = next.get(m.id);
-        return n
-          ? { ...m, position: lerpWrapped(m.position, n.position, f, perimeter), fingers: lerpFingers(m.fingers, n.fingers, f) }
-          : m;
-      }),
-    };
-  }
-  if (a.type === "cartesian" && b.type === "cartesian") {
-    return {
-      ...a,
-      x: lerp(a.x, b.x, f),
-      y: lerp(a.y, b.y, f),
-      z: lerp(a.z, b.z, f),
-      fingers: lerpFingers(a.fingers, b.fingers, f),
-    };
-  }
-  if (a.type === "conveyor" && b.type === "conveyor") return { ...a, beltPosition: lerp(a.beltPosition, b.beltPosition, f) };
-  if (a.type === "delta" && b.type === "delta") {
-    return {
-      ...a,
-      actualTcp: lerpPosition(a.actualTcp, b.actualTcp, f),
-      setpointTcp: lerpPosition(a.setpointTcp, b.setpointTcp, f),
-      fingers: lerpFingers(a.fingers, b.fingers, f),
-    };
-  }
-  return a;
-}
 
 function lerpPosition(a: Position, b: Position, f: number): Position {
   return { x: lerp(a.x, b.x, f), y: lerp(a.y, b.y, f), z: lerp(a.z, b.z, f) };

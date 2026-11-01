@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { Fault, ComponentConfig, ComponentState } from "@rpp/protocol";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import type { ComponentConfig, ComponentState } from "@rpp/protocol";
 import {
   GatewayStore,
   STALE_AFTER_MS,
@@ -13,7 +13,6 @@ import {
 import { PlayerBar, PlayerBarToggle, RecordButton, usePlaybackKeys, useRecordingControls } from "./RecordingControls";
 import {
   componentKey,
-  faultText,
   formatPointCopy,
   measureChain,
   pointsCsv,
@@ -24,6 +23,7 @@ import {
   type Vec3,
 } from "./scene/scene-model";
 import { METRICS_WINDOW_MS, metrics, type MachineMetrics } from "./metrics";
+import { stateRows } from "./state-rows";
 import { loadViewSettings, saveViewSettings, type CameraPose, type ViewSettings } from "./view-settings";
 import { PRODUCT, STATUS } from "./palette";
 import type { Quality, QualitySetting } from "./scene/quality";
@@ -832,40 +832,7 @@ function Inspector(props: {
           Arm angles computed from TCP: {delta.angles.map((a) => a.toFixed(2)).join(" / ")}°
         </p>
       )}
-      {state?.type === "xtsGantry" && (
-        <>
-          <h3>Movers · Z {state.z.toFixed(1)}</h3>
-          <MoverTable
-            head={["Id", "Position", "X", "Gripper", "Fault"]}
-            rows={state.movers.map((m) => [
-              m.id,
-              m.position.toFixed(1),
-              m.x.toFixed(1),
-              m.gripperActive ? "on" : "off",
-              faultCell(m.fault),
-            ])}
-          />
-        </>
-      )}
-      {state?.type === "xtsLoop" && (
-        <>
-          <h3>Movers</h3>
-          <MoverTable
-            head={["Id", "s", "Fault"]}
-            rows={state.movers.map((m) => [m.id, m.position.toFixed(1), faultCell(m.fault)])}
-          />
-        </>
-      )}
-      {state?.type === "cartesian" && (
-        <>
-          <h3>Axes</h3>
-          <MoverTable
-            head={["X", "Y", "Z", "Gripper"]}
-            rows={[[...[state.x, state.y, state.z].map((v) => v.toFixed(1)), state.gripperActive ? "on" : "off"]]}
-          />
-        </>
-      )}
-      {state && "fingers" in (component ?? {}) && <FingerTable state={state} />}
+      {state && <StateValues state={state} />}
       <h3>Config</h3>
       <Json value={component} />
       <h3>State</h3>
@@ -874,32 +841,23 @@ function Inspector(props: {
   );
 }
 
-/** Live finger poses (MCS) and grip state, per mover for XTS kinematics. */
-function FingerTable({ state }: { state: ComponentState }) {
-  const groups =
-    state.type === "xtsGantry" || state.type === "xtsLoop"
-      ? state.movers.map((m) => ({ moverId: m.id, fingers: m.fingers }))
-      : state.type === "delta" || state.type === "cartesian"
-        ? [{ moverId: 0, fingers: state.fingers }]
-        : [];
-  const rows = groups.flatMap((g) =>
-    g.fingers.map((f, i) => [
-      g.moverId ? `${g.moverId}.${i + 1}` : String(i + 1),
-      ...[f.pose.x, f.pose.y, f.pose.z, f.pose.rx, f.pose.ry, f.pose.rz].map((v) => v.toFixed(1)),
-      f.active ? "on" : "off",
-    ]),
-  );
-  if (rows.length === 0) return null;
+/** The component's live values and lists (movers, fingers), whatever its type. */
+function StateValues({ state }: { state: ComponentState }) {
+  const { values, tables } = stateRows(state);
   return (
     <>
-      <h3>Fingers</h3>
-      <MoverTable head={["Finger", "X", "Y", "Z", "Rx", "Ry", "Rz", "Grip"]} rows={rows} />
+      {values.length > 0 && (
+        <MoverTable head={values.map((v) => v.label)} rows={[values.map((v) => v.value)]} />
+      )}
+      {tables.map((t) => (
+        <Fragment key={t.title}>
+          <h3>{t.title}</h3>
+          <MoverTable head={t.head} rows={t.rows} />
+        </Fragment>
+      ))}
     </>
   );
 }
-
-/** A mover's fault as table text; empty when there is none. */
-const faultCell = (fault: Fault | null) => faultText(fault) ?? "";
 
 function MoverTable({ head, rows }: { head: string[]; rows: (string | number)[][] }) {
   return (

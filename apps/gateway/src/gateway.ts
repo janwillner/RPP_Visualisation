@@ -7,36 +7,8 @@ import {
   type GatewayMessage,
   type GatewayStatus,
 } from "@rpp/protocol";
-import {
-  mapCartesianConfig,
-  mapCartesianState,
-  mapConveyorConfig,
-  mapConveyorState,
-  mapDeltaConfig,
-  mapDeltaState,
-  mapXtsGantryConfig,
-  mapXtsGantryState,
-  mapXtsLoopConfig,
-  mapXtsLoopState,
-  type ComponentIdentity,
-} from "./mapping";
-import {
-  E_VisuComponentType,
-  MANIFEST_PATH,
-  PLC_TYPES,
-  enumValue,
-  type ST_VisuCartesianConfig,
-  type ST_VisuCartesianState,
-  type ST_VisuConveyorConfig,
-  type ST_VisuConveyorState,
-  type ST_VisuDeltaConfig,
-  type ST_VisuDeltaState,
-  type ST_VisuManifest,
-  type ST_VisuXtsGantryConfig,
-  type ST_VisuXtsGantryState,
-  type ST_VisuXtsLoopConfig,
-  type ST_VisuXtsLoopState,
-} from "./plc-contract";
+import { COMPONENTS, componentKind, mapConfig, mapState as mapComponentState } from "./components";
+import { MANIFEST_PATH, enumValue, type ST_VisuManifest } from "./plc-contract";
 import { SymbolNotFoundError, type SymbolAccess } from "./symbol-access";
 
 export interface GatewayOptions {
@@ -91,48 +63,6 @@ export function combineGateways(gateways: readonly Gateway[]): MessageSource {
     },
   };
 }
-
-type ComponentKind = ComponentConfig["type"];
-
-const COMPONENT_KINDS: Record<number, ComponentKind> = {
-  [E_VisuComponentType.CONVEYOR]: "conveyor",
-  [E_VisuComponentType.DELTA]: "delta",
-  [E_VisuComponentType.XTS_GANTRY]: "xtsGantry",
-  [E_VisuComponentType.XTS_LOOP]: "xtsLoop",
-  [E_VisuComponentType.CARTESIAN]: "cartesian",
-};
-
-/** Mapping of each component type's PLC structures to the neutral model. */
-const fingerCount = (c: ComponentConfig) => ("fingers" in c ? c.fingers.length : 0);
-
-const MAPPERS: {
-  [K in ComponentKind]: {
-    config: (identity: ComponentIdentity, raw: unknown) => ComponentConfig;
-    /** Gets the component's config, e.g. for the number of configured fingers. */
-    state: (config: ComponentConfig, raw: unknown) => ComponentState;
-  };
-} = {
-  conveyor: {
-    config: (i, raw) => mapConveyorConfig(i, raw as ST_VisuConveyorConfig),
-    state: (c, raw) => mapConveyorState(c.id, raw as ST_VisuConveyorState),
-  },
-  delta: {
-    config: (i, raw) => mapDeltaConfig(i, raw as ST_VisuDeltaConfig),
-    state: (c, raw) => mapDeltaState(c.id, raw as ST_VisuDeltaState, fingerCount(c)),
-  },
-  xtsGantry: {
-    config: (i, raw) => mapXtsGantryConfig(i, raw as ST_VisuXtsGantryConfig),
-    state: (c, raw) => mapXtsGantryState(c.id, raw as ST_VisuXtsGantryState, fingerCount(c)),
-  },
-  xtsLoop: {
-    config: (i, raw) => mapXtsLoopConfig(i, raw as ST_VisuXtsLoopConfig),
-    state: (c, raw) => mapXtsLoopState(c.id, raw as ST_VisuXtsLoopState, fingerCount(c)),
-  },
-  cartesian: {
-    config: (i, raw) => mapCartesianConfig(i, raw as ST_VisuCartesianConfig),
-    state: (c, raw) => mapCartesianState(c.id, raw as ST_VisuCartesianState, fingerCount(c)),
-  },
-};
 
 /** A discovered component whose state is read every cycle. */
 interface ActiveComponent {
@@ -193,7 +123,7 @@ export function createGateway({
     }
 
     for (const entry of manifest.aEntries.slice(0, manifest.nCount)) {
-      const kind = COMPONENT_KINDS[enumValue(entry.eType)];
+      const kind = componentKind(enumValue(entry.eType));
       const identity = { id: entry.nId, sourceId, name: entry.sName };
       if (!kind) {
         errors.push({
@@ -204,17 +134,17 @@ export function createGateway({
         continue;
       }
       const actualType = await plc.typeOf(entry.sPath);
-      if (!isExpectedType(actualType, PLC_TYPES[kind])) {
+      if (!isExpectedType(actualType, COMPONENTS[kind].plcType)) {
         errors.push({
           componentId: entry.nId,
           path: entry.sPath,
-          message: `Symbol has expected type ${PLC_TYPES[kind]} but is ${actualType ?? "missing"}`,
+          message: `Symbol has expected type ${COMPONENTS[kind].plcType} but is ${actualType ?? "missing"}`,
         });
         continue;
       }
       try {
         const raw = await plc.read(`${entry.sPath}.stConfig`);
-        const config = MAPPERS[kind].config(identity, raw);
+        const config = mapConfig(kind, identity, raw);
         active.push({ config, statePath: `${entry.sPath}.stState` });
       } catch (error) {
         // A missing member or an unexpected shape affects this entry only; connection errors propagate.
@@ -230,7 +160,7 @@ export function createGateway({
   }
 
   function mapState(component: ActiveComponent, raw: unknown): ComponentState {
-    return MAPPERS[component.config.type].state(component.config, raw);
+    return mapComponentState(component.config, raw);
   }
 
   /**

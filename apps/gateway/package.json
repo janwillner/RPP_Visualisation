@@ -10,6 +10,7 @@
   "dependencies": {
     "@rpp/protocol": "workspace:*",
     "ads-client": "^2.1.0",
+    "zod": "^3.25.76",
     "ws": "^8.18.3"
   },
   "devDependencies": {

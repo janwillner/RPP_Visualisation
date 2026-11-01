@@ -84,18 +84,39 @@ export const ProductTypeSchema = z.object({
 });
 export type ProductType = z.infer<typeof ProductTypeSchema>;
 
-export const ConveyorConfigSchema = z.object({
-  type: z.literal("conveyor"),
-  id: z.number().int(),
-  sourceId: z.string(),
-  name: z.string(),
-  /** Pose of the belt start; local +X is the conveying direction, local Z is the belt surface normal. */
-  pose: PoseSchema,
+/**
+ * The configuration every component has: its manifest identity, its pose in the MCS and its origin shift (origin of
+ * the component's coordinate system, mm in its local frame from `pose`; a conveyor's belt coordinates count from it,
+ * other components use it where the origin is shown: origin triad, local measuring coordinates).
+ */
+function componentConfig<K extends string, S extends z.ZodRawShape>(type: K, shape: S) {
+  return z.object({
+    type: z.literal(type),
+    id: z.number().int(),
+    sourceId: z.string(),
+    name: z.string(),
+    pose: PoseSchema,
+    ...shape,
+    originShift: PositionSchema,
+  });
+}
+
+/** The state every component reports: its PLC timestamp and its active fault (null = none). */
+function componentState<K extends string, S extends z.ZodRawShape>(type: K, shape: S) {
+  return z.object({
+    type: z.literal(type),
+    id: z.number().int(),
+    timestamp: TimestampSchema,
+    ...shape,
+    fault: FaultSchema.nullable(),
+  });
+}
+
+/** Conveyor: `pose` is the belt start; local +X is the conveying direction, local Z is the belt surface normal. */
+export const ConveyorConfigSchema = componentConfig("conveyor", {
   length: z.number(),
   width: z.number(),
   productTypes: z.array(ProductTypeSchema),
-  /** Origin of the component's coordinate system, mm in its local frame from `pose`; belt coordinates (zones' start, end, CCS offset) count from it. */
-  originShift: PositionSchema,
 });
 export type ConveyorConfig = z.infer<typeof ConveyorConfigSchema>;
 
@@ -143,13 +164,13 @@ export const ZoneSchema = z.object({
 });
 export type Zone = z.infer<typeof ZoneSchema>;
 
-export const DeltaConfigSchema = z.object({
-  type: z.literal("delta"),
-  id: z.number().int(),
-  sourceId: z.string(),
-  name: z.string(),
-  /** Pose of the base centre in the MCS. */
-  pose: PoseSchema,
+/** A robot's configuration: a component with zones on conveyors and gripper fingers (empty: no gripper definition). */
+function robotConfig<K extends string, S extends z.ZodRawShape>(type: K, shape: S) {
+  return componentConfig(type, { ...shape, zones: z.array(ZoneSchema), fingers: z.array(FingerSchema) });
+}
+
+/** Delta robot: `pose` is the base centre in the MCS. */
+export const DeltaConfigSchema = robotConfig("delta", {
   baseRadius: z.number(),
   effectorRadius: z.number(),
   upperArmLength: z.number(),
@@ -157,11 +178,6 @@ export const DeltaConfigSchema = z.object({
   workingArea: WorkingAreaSchema,
   /** Null when the robot has no limit area. */
   limitArea: LimitAreaSchema.nullable(),
-  zones: z.array(ZoneSchema),
-  /** Gripper fingers; empty when there is no gripper definition. */
-  fingers: z.array(FingerSchema),
-  /** Origin of the component's coordinate system, mm in its local frame from `pose`; only where the origin is shown (origin triad, local measuring coordinates). */
-  originShift: PositionSchema,
 });
 export type DeltaConfig = z.infer<typeof DeltaConfigSchema>;
 
@@ -169,12 +185,7 @@ export type DeltaConfig = z.infer<typeof DeltaConfigSchema>;
  * Straight XTS track carried by a common Z axis; every mover carries an X axis with a gripper flange at its end.
  * Local frame: origin at the track start on top of the movers with Z = 0; track along +Y, X axes along +X, Z up.
  */
-export const XtsGantryConfigSchema = z.object({
-  type: z.literal("xtsGantry"),
-  id: z.number().int(),
-  sourceId: z.string(),
-  name: z.string(),
-  pose: PoseSchema,
+export const XtsGantryConfigSchema = robotConfig("xtsGantry", {
   moduleCount: z.number().int(),
   /** Length of one track module; the track is moduleCount × moduleLength long. */
   moduleLength: z.number(),
@@ -187,11 +198,6 @@ export const XtsGantryConfigSchema = z.object({
   toolOffsetZ: z.number(),
   moverLength: z.number(),
   moverWidth: z.number(),
-  zones: z.array(ZoneSchema),
-  /** Gripper fingers of every mover; empty when there is no gripper definition. */
-  fingers: z.array(FingerSchema),
-  /** Origin of the component's coordinate system, mm in its local frame from `pose`; only where the origin is shown (origin triad, local measuring coordinates). */
-  originShift: PositionSchema,
 });
 export type XtsGantryConfig = z.infer<typeof XtsGantryConfigSchema>;
 
@@ -199,23 +205,13 @@ export type XtsGantryConfig = z.infer<typeof XtsGantryConfigSchema>;
  * Closed XTS loop: two straights joined by two semicircles, standing in the local X-Z plane.
  * Local frame: origin at the start of the lower straight, which runs along +X; the upper straight is at +2R.
  */
-export const XtsLoopConfigSchema = z.object({
-  type: z.literal("xtsLoop"),
-  id: z.number().int(),
-  sourceId: z.string(),
-  name: z.string(),
-  pose: PoseSchema,
+export const XtsLoopConfigSchema = robotConfig("xtsLoop", {
   straightLength: z.number(),
   curveRadius: z.number(),
   /** Distance of a mover's gripper flange (tool point) from the track, outwards. */
   toolOffset: z.number(),
   moverLength: z.number(),
   moverWidth: z.number(),
-  zones: z.array(ZoneSchema),
-  /** Gripper fingers of every mover; empty when there is no gripper definition. */
-  fingers: z.array(FingerSchema),
-  /** Origin of the component's coordinate system, mm in its local frame from `pose`; only where the origin is shown (origin triad, local measuring coordinates). */
-  originShift: PositionSchema,
 });
 export type XtsLoopConfig = z.infer<typeof XtsLoopConfigSchema>;
 
@@ -224,12 +220,7 @@ export type XtsLoopConfig = z.infer<typeof XtsLoopConfigSchema>;
  * in X and a vertical column (Z) ending at the gripper flange.
  * Local frame: origin at axis X = Y = 0, Z up; the flange is at (X, Y, Z).
  */
-export const CartesianConfigSchema = z.object({
-  type: z.literal("cartesian"),
-  id: z.number().int(),
-  sourceId: z.string(),
-  name: z.string(),
-  pose: PoseSchema,
+export const CartesianConfigSchema = robotConfig("cartesian", {
   xMin: z.number(),
   xMax: z.number(),
   yMin: z.number(),
@@ -238,11 +229,6 @@ export const CartesianConfigSchema = z.object({
   zMax: z.number(),
   /** Height of the rails and the bridge above the local origin. */
   railHeight: z.number(),
-  zones: z.array(ZoneSchema),
-  /** Gripper fingers; empty when the robot has no gripper definition. */
-  fingers: z.array(FingerSchema),
-  /** Origin of the component's coordinate system, mm in its local frame from `pose`; only where the origin is shown (origin triad, local measuring coordinates). */
-  originShift: PositionSchema,
 });
 export type CartesianConfig = z.infer<typeof CartesianConfigSchema>;
 
@@ -275,30 +261,20 @@ export const ProductSchema = z.object({
 });
 export type Product = z.infer<typeof ProductSchema>;
 
-export const ConveyorStateSchema = z.object({
-  type: z.literal("conveyor"),
-  id: z.number().int(),
-  timestamp: TimestampSchema,
+export const ConveyorStateSchema = componentState("conveyor", {
   /** Continuous belt surface position in mm (no modulo). */
   beltPosition: z.number(),
   /** Valid register entries only. */
   products: z.array(ProductSchema),
-  /** Active fault, null = none. */
-  fault: FaultSchema.nullable(),
 });
 export type ConveyorState = z.infer<typeof ConveyorStateSchema>;
 
-export const DeltaStateSchema = z.object({
-  type: z.literal("delta"),
-  id: z.number().int(),
-  timestamp: TimestampSchema,
+export const DeltaStateSchema = componentState("delta", {
   /** Actual TCP (effector centre, the gripper flange) in the MCS; the arms are derived from it by inverse kinematics. */
   actualTcp: PositionSchema,
   setpointTcp: PositionSchema,
   /** One per configured finger. */
   fingers: z.array(FingerStateSchema),
-  /** Active fault, null = none. */
-  fault: FaultSchema.nullable(),
 });
 export type DeltaState = z.infer<typeof DeltaStateSchema>;
 
@@ -317,16 +293,11 @@ export const GantryMoverSchema = z.object({
 });
 export type GantryMover = z.infer<typeof GantryMoverSchema>;
 
-export const XtsGantryStateSchema = z.object({
-  type: z.literal("xtsGantry"),
-  id: z.number().int(),
-  timestamp: TimestampSchema,
+export const XtsGantryStateSchema = componentState("xtsGantry", {
   /** Common Z axis. */
   z: z.number(),
   /** Valid movers only. */
   movers: z.array(GantryMoverSchema),
-  /** Active fault of the whole gantry, null = none. */
-  fault: FaultSchema.nullable(),
 });
 export type XtsGantryState = z.infer<typeof XtsGantryStateSchema>;
 
@@ -341,21 +312,13 @@ export const LoopMoverSchema = z.object({
 });
 export type LoopMover = z.infer<typeof LoopMoverSchema>;
 
-export const XtsLoopStateSchema = z.object({
-  type: z.literal("xtsLoop"),
-  id: z.number().int(),
-  timestamp: TimestampSchema,
+export const XtsLoopStateSchema = componentState("xtsLoop", {
   /** Valid movers only. */
   movers: z.array(LoopMoverSchema),
-  /** Active fault of the whole loop, null = none. */
-  fault: FaultSchema.nullable(),
 });
 export type XtsLoopState = z.infer<typeof XtsLoopStateSchema>;
 
-export const CartesianStateSchema = z.object({
-  type: z.literal("cartesian"),
-  id: z.number().int(),
-  timestamp: TimestampSchema,
+export const CartesianStateSchema = componentState("cartesian", {
   /** Actual axis values in the local frame: the gripper flange. */
   x: z.number(),
   y: z.number(),
@@ -364,8 +327,6 @@ export const CartesianStateSchema = z.object({
   gripperActive: z.boolean(),
   /** One per configured finger. */
   fingers: z.array(FingerStateSchema),
-  /** Active fault, null = none. */
-  fault: FaultSchema.nullable(),
 });
 export type CartesianState = z.infer<typeof CartesianStateSchema>;
 

@@ -66,7 +66,8 @@ export class EventTracker {
 
     for (const c of message.components) {
       fault(String(c.id), nameOf(c.id), c.fault);
-      if (c.type === "xtsGantry" || c.type === "xtsLoop") {
+      // Components with movers report a fault per mover too.
+      if ("movers" in c) {
         for (const m of c.movers) fault(`${c.id}:${m.id}`, `${nameOf(c.id)} mover ${m.id}`, m.fault);
       }
       if (c.type !== "conveyor") continue;
