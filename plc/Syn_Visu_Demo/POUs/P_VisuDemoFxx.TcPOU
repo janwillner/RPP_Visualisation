@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoFxx" Id="{ef1aecec-09de-4102-99cb-704f25076a76}" SpecialFunc="None">
+  <POU Name="P_VisuDemoFxx" Id="{b2af5188-ce65-4f7b-be0a-d48b3186bc4c}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -132,9 +132,9 @@ fb_Fxx.m_Configure(vi_Pose := XtsPose, vi_lr_StraightLength := lr_LOOP_STRAIGHT,
 	vi_lr_MoverWidth := 60);
 fb_Fxx.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER,
 	vi_lr_Height := DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT);
-fb_Fxx.m_SetZone(vi_udn_ConveyorId := fb_FxxInfeed.m_Id(), vi_e_Kind := E_VisuZoneKind.PICK, vi_lr_Start := lr_LOOP_X,
+fb_Fxx.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_FxxInfeed.m_Id(), vi_lr_Start := lr_LOOP_X,
 	vi_lr_End := lr_LOOP_X + lr_LOOP_RELEASE, vi_lr_CcsOffset := lr_LOOP_X);
-fb_Fxx.m_SetZone(vi_udn_ConveyorId := fb_FxxOutfeed.m_Id(), vi_e_Kind := E_VisuZoneKind.PLACE,
+fb_Fxx.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_FxxOutfeed.m_Id(),
 	vi_lr_Start := lr_LOOP_X + lr_LOOP_PLACE - lr_FXX_OUTFEED_X - 300,
 	vi_lr_End := lr_LOOP_X + lr_LOOP_PLACE - lr_FXX_OUTFEED_X + 100,
 	vi_lr_CcsOffset := lr_LOOP_X + lr_LOOP_PLACE - lr_FXX_OUTFEED_X);

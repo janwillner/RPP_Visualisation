@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuDelta" Id="{2d81bdee-33d2-4453-b579-821dc794f89c}" SpecialFunc="None">
+  <POU Name="_FB_VisuDelta" Id="{c58f04fa-639e-40a0-9196-4153dd8f42de}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -150,8 +150,8 @@ The robot's gripper fingers for _FB_VisuRobot.m_SetFinger and m_ClearFingers.<br
 ****************************************************************************************************)
 METHOD PROTECTED m_Fingers : BOOL
 VAR_OUTPUT
-	vo_p_Count							: POINTER TO UINT;	// nFingerCount of vo_Visu.stConfig
-	vo_p_Fingers						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFinger;	// aFingers of vo_Visu.stConfig
+	vo_p_Count							: POINTER TO UINT;
+	vo_p_Fingers						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFinger;
 END_VAR
 ]]></Declaration>
       <Implementation>
@@ -331,8 +331,8 @@ The robot's zones for _FB_VisuZoneComponent.m_SetZone and m_ClearZones.<br>
 ****************************************************************************************************)
 METHOD PROTECTED m_Zones : BOOL
 VAR_OUTPUT
-	vo_p_Count							: POINTER TO UINT;	// nZoneCount of vo_Visu.stConfig
-	vo_p_Zones							: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone;	// aZones of vo_Visu.stConfig
+	vo_p_Count							: POINTER TO UINT;
+	vo_p_Zones							: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone;
 END_VAR
 ]]></Declaration>
       <Implementation>

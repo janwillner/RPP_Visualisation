@@ -80,6 +80,13 @@ describe("product history", () => {
     expect(history.of(A, 1, 99)).toEqual([]);
   });
 
+  it("reads products of recordings made before protocol 11, which name no detector", () => {
+    const { detectorId: _, ...old } = product(5, "detected");
+    const history = new ProductHistory();
+    history.add(0, register(0, [old as Product]), source);
+    expect(history.of(A, 1, 5)[0]!.text).toBe("Entered the register (detected)");
+  });
+
   it("names the detector that latched a product", () => {
     const withVision: SourceInfo = {
       ...source,

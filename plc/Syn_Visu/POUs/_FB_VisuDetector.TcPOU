@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuDetector" Id="{08a39a44-1369-4b0c-b57a-4ab0a9917ce3}" SpecialFunc="None">
+  <POU Name="_FB_VisuDetector" Id="{3968a0c3-0d88-43ca-9b44-8a1b40723aef}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -267,8 +267,8 @@ The detector's zones for _FB_VisuZoneComponent.m_SetZone and m_ClearZones.<br>
 ****************************************************************************************************)
 METHOD PROTECTED m_Zones : BOOL
 VAR_OUTPUT
-	vo_p_Count							: POINTER TO UINT;	// nZoneCount of vo_Visu.stConfig
-	vo_p_Zones							: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone;	// aZones of vo_Visu.stConfig
+	vo_p_Count							: POINTER TO UINT;
+	vo_p_Zones							: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone;
 END_VAR
 ]]></Declaration>
       <Implementation>

@@ -1,6 +1,5 @@
 import { PROTOCOL_VERSION } from "@rpp/protocol";
 import {
-  E_VisuComponentType,
   E_VisuProductShape,
   E_VisuBodyRole,
   E_VisuBodyShape,
@@ -30,6 +29,7 @@ import {
   type ST_VisuLimitArea,
   type ST_VisuZone,
 } from "./plc-contract";
+import { COMPONENTS } from "./components";
 import type { InMemoryPlc } from "./in-memory-plc";
 
 /** Library defaults (constants in Syn_Visu, overridable per project). */
@@ -389,15 +389,6 @@ export type MachineComponent =
   | Entry<"vision", ST_VisuDetector>
   | Entry<"sensor", ST_VisuDetector>;
 
-const MANIFEST_TYPES: Record<MachineComponent["kind"], number> = {
-  conveyor: E_VisuComponentType.CONVEYOR,
-  delta: E_VisuComponentType.DELTA,
-  xtsGantry: E_VisuComponentType.XTS_GANTRY,
-  xtsLoop: E_VisuComponentType.XTS_LOOP,
-  cartesian: E_VisuComponentType.CARTESIAN,
-  vision: E_VisuComponentType.VISION,
-  sensor: E_VisuComponentType.SENSOR,
-};
 
 /** Registers a manifest and its components in an in-memory PLC. */
 export function defineMachine(
@@ -407,7 +398,7 @@ export function defineMachine(
 ): void {
   const entries: ST_VisuManifestEntry[] = components.map((c) => ({
     nId: c.id,
-    eType: MANIFEST_TYPES[c.kind],
+    eType: COMPONENTS[c.kind].plcValue,
     sName: c.name,
     sPath: c.path,
   }));
@@ -418,5 +409,5 @@ export function defineMachine(
     aEntries: padded(entries, MAX_MANIFEST_ENTRIES, () => ({ nId: 0, eType: 0, sName: "", sPath: "" })),
   };
   plc.define(options.manifestPath ?? MANIFEST_PATH, PLC_TYPES.manifest, manifest);
-  for (const c of components) plc.define(c.path, PLC_TYPES[c.kind], c.value);
+  for (const c of components) plc.define(c.path, COMPONENTS[c.kind].plcType, c.value);
 }

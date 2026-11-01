@@ -13,7 +13,7 @@ Position and orientation of something in the MCS.
 _Avoid_: location, placement
 
 **Component**:
-One visualised part of a machine that the PLC registers: a conveyor, a Delta robot, an XTS gantry, an XTS loop or a Cartesian robot.
+One visualised part of a machine that the PLC registers: a conveyor, a Delta robot, an XTS gantry, an XTS loop, a Cartesian robot, a vision system or a product sensor.
 _Avoid_: unit, device, module
 
 **Recording**:
@@ -74,7 +74,7 @@ The size and shape a conveyor's products can have: a box, a cylinder (round, or 
 _Avoid_: format, article
 
 **Latch**:
-The moment a product is detected on a conveyor. Its pose and the belt position at that moment are stored; the product's current position is the latch pose moved by the belt travel since.
+The moment a product is detected on a conveyor, by the detector that saw it if one is named. Its pose and the belt position at that moment are stored; the product's current position is the latch pose moved by the belt travel since.
 _Avoid_: trigger, capture
 
 **Placeholder**:
@@ -163,8 +163,12 @@ _Avoid_: work area, workspace, reach (reach is what the kinematics allow)
 A box around a Delta robot that further restricts its working area, so that neighbouring robots cannot collide.
 _Avoid_: collision zone, safety box, limit zone
 
+**Zone**:
+A stretch of a conveyor, measured along the conveying direction, that belongs to a component: where a robot may pick or place products, where a detector detects them. A zone of length 0 is a line across the belt.
+_Avoid_: window, tracking window
+
 **Pick zone** / **Place zone**:
-The stretch of a conveyor, measured along the conveying direction, where a robot may pick products from it or place products onto it.
+A robot's zone in which it picks products from a conveyor or places them onto it. The visualisation does not tell them apart.
 _Avoid_: window, tracking window
 
 **Allocation area**:
@@ -176,5 +180,23 @@ The point in a zone, a set distance before its end, beyond which a robot no long
 _Avoid_: allocation end, reservation limit
 
 **CCS (conveyor coordinate system)**:
-Where a robot's coordinate system for one conveyor lies along that conveyor, given per zone as a belt coordinate.
+Where a component's coordinate system for one conveyor lies along that conveyor, given per zone as a belt coordinate.
 _Avoid_: client position, tracking origin
+
+## Detectors
+
+**Detector**:
+A component that detects products on a conveyor in its zones: a vision system or a product sensor. The PLC latches what it detects.
+_Avoid_: scanner, trigger
+
+**Vision system**:
+A camera over a conveyor that detects products in its field of view.
+_Avoid_: camera (when meaning the whole component), scanner
+
+**Product sensor**:
+A sensor at a conveyor that detects products at one point, e.g. a light barrier whose beam a product interrupts.
+_Avoid_: initiator, photo-eye
+
+**Body**:
+One solid a component is drawn from as its PLC describes it: a box, a cylinder or a frustum with a role (a machine part, a sensing part, a beam, a field of view).
+_Avoid_: shape (a product type has a shape), part

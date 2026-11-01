@@ -29,6 +29,8 @@ describe("simulator", () => {
       "conveyor",
       "conveyor",
       "delta",
+      "sensor",
+      "vision",
       "xtsGantry",
       "xtsLoop",
     ]);
@@ -37,6 +39,20 @@ describe("simulator", () => {
     expect(states).toHaveLength(3000);
     const products = states.flatMap((s) => s.components.flatMap((c) => (c.type === "conveyor" ? c.products : [])));
     expect(new Set(products.map((p) => p.state))).toEqual(new Set(["detected", "assigned", "picked", "placed"]));
+
+    // The vision system latches the Delta infeed's products, the light barrier the Cartesian infeed's, and its beam
+    // lights up while a product passes it.
+    const idOf = (name: string) => config.components.find((c) => c.name === name)!.id;
+    const detectors = (belt: string) =>
+      new Set(states.flatMap((s) => s.components.flatMap((c) => (c.id === idOf(belt) && c.type === "conveyor" ? c.products.map((p) => p.detectorId) : []))));
+    expect(detectors("Infeed")).toEqual(new Set([idOf("Vision 1")]));
+    expect(detectors("Cartesian infeed")).toEqual(new Set([idOf("Light barrier")]));
+    const beam = states.map((s) => s.components.find((c) => c.type === "sensor"));
+    const lit = beam.map((c) => c?.type === "sensor" && c.bodies[1]!.active);
+    expect(new Set(lit)).toEqual(new Set([true, false]));
+    // A product of 120 mm at 150 mm/s covers it for about 0.8 s: 40 cycles of 20 ms.
+    const longest = lit.reduce((run, on, i) => (on ? Math.max(run, lit.slice(0, i + 1).reverse().findIndex((x) => !x)) : run), 0);
+    expect(longest).toBeGreaterThan(30);
 
     // The loop and the gantry carry products on their movers and hand them on to their own outfeeds.
     const byId = new Map(config.components.map((c) => [c.id, c.type]));

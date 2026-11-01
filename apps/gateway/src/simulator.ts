@@ -3,10 +3,12 @@ import { InMemoryPlc } from "./in-memory-plc";
 import {
   noFault,
   MAX_PRODUCTS,
+  body,
   cartesian,
   conveyor,
   defineMachine,
   delta,
+  detector,
   emptyProduct,
   fingerStates,
   xtsGantry,
@@ -14,11 +16,14 @@ import {
   type ZoneSpec,
 } from "./plc-builders";
 import {
+  E_VisuBodyRole,
+  E_VisuBodyShape,
   E_VisuProductShape,
   E_VisuProductState,
   type ST_VisuCartesian,
   type ST_VisuConveyor,
   type ST_VisuDelta,
+  type ST_VisuDetector,
   type ST_VisuFingerState,
   type ST_VisuProduct,
   type ST_VisuXtsGantry,
@@ -28,13 +33,15 @@ import {
 /**
  * Sample machine behind the same contract as a real PLC: four independent applications side by side, each line
  * starting at X = 0 and conveying along +X.
- * - Delta (Y = 0..900): a Delta picks from the infeed and places onto the outfeed.
+ * - Delta (Y = 0..900): a vision system over the infeed detects the products, a Delta picks them and places them
+ *   onto the outfeed.
  * - Fxx (Y = 2500): products arrive irregularly on the Fxx infeed; an XTS loop puts them onto the Fxx outfeed with an
  *   even spacing.
  * - IDH (Y = 4100..4850): an XTS gantry with four movers picks from the IDH infeed in batches of up to four and
  *   places onto the tray belt.
  * - Cartesian (Y = 6500..7300): a Cartesian robot picks from the Cartesian infeed, turns each product by C = −90°,
- *   tilts it by A while lowering and places it onto the Cartesian outfeed.
+ *   tilts it by A while lowering and places it onto the Cartesian outfeed. A light barrier detects the products on the
+ *   Cartesian infeed; its beam lights up while one interrupts it.
  * It is an in-memory PLC whose values change on every `step`, so it runs through real discovery.
  */
 export interface Simulator {
@@ -58,6 +65,10 @@ const PRODUCT = { type: 1, length: 120, width: 80, height: 40 };
 /** A can, the second product type on the Delta infeed: as high as the standard product, so the robot moves alike. */
 const CAN = { type: 2, diameter: 80 };
 const PICK_ZONE = { start: 1100, end: 1900, allocationOffset: 300 };
+/** Vision system over the infeed: its lens 800 mm above the belt, its field of view from 100 to 500 mm along the belt. */
+const VISION = { id: 50, path: "MAIN.fbVision.vo_Visu", x: 300, field: 400, distance: 800 };
+/** Light barrier at the side of the Cartesian infeed, its beam across the belt 20 mm above it. */
+const SENSOR = { id: 51, path: "MAIN.fbSensor.vo_Visu", x: 300, beam: 500, height: 20 };
 const PLACE_X = 1500;
 const SPAWN_INTERVAL_MS = 700;
 const TCP_SPEED = 2500; // mm/s
@@ -239,6 +250,42 @@ const productTypes = [
 const FAULT_PERIOD_MS = 20_000;
 const FAULT_DURATION_MS = 5_000;
 
+/**
+ * The bodies _FB_VisuVision.m_Configure describes: housing above the lens, lens, field of view down to the belt.
+ */
+function visionBodies(field: number, distance: number) {
+  const at = (fZ: number) => ({ fX: 0, fY: 0, fZ, fRx: 0, fRy: 0, fRz: 0 });
+  return [
+    body({ stPose: at(60), fLength: 100, fWidth: 80, fHeight: 140 }),
+    body({ eShape: E_VisuBodyShape.CYLINDER, eRole: E_VisuBodyRole.SENSOR, stPose: at(0), fLength: 50, fWidth: 50, fHeight: 60 }),
+    body({
+      eShape: E_VisuBodyShape.FRUSTUM,
+      eRole: E_VisuBodyRole.FIELD_OF_VIEW,
+      stPose: at(-distance),
+      fLength: field,
+      fWidth: field,
+      fHeight: distance,
+      fTopLength: 50,
+      fTopWidth: 50,
+    }),
+  ];
+}
+
+/** The bodies _FB_VisuSensor.m_Configure describes: the head and the beam along its local +Y. */
+function sensorBodies(beam: number) {
+  return [
+    body({ eRole: E_VisuBodyRole.SENSOR, stPose: { fX: 0, fY: 0, fZ: -30, fRx: 0, fRy: 0, fRz: 0 }, fLength: 30, fWidth: 40, fHeight: 60 }),
+    body({
+      eShape: E_VisuBodyShape.CYLINDER,
+      eRole: E_VisuBodyRole.BEAM,
+      stPose: { fX: 0, fY: 20, fZ: 0, fRx: -90, fRy: 0, fRz: 0 },
+      fLength: 8,
+      fWidth: 8,
+      fHeight: beam,
+    }),
+  ];
+}
+
 /** The simulated robots keep their conveyor coordinate system (CCS) in the middle of each zone. */
 function centred(zones: ZoneSpec[]): ZoneSpec[] {
   return zones.map((z) => ({ ...z, fCcsOffset: (z.fStart + z.fEnd) / 2 }));
@@ -325,7 +372,37 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         ]),
       }),
     },
+    {
+      id: VISION.id,
+      name: "Vision 1",
+      path: VISION.path,
+      kind: "vision",
+      value: detector({
+        pose: { fX: INFEED.x + VISION.x, fY: INFEED.y, fZ: BELT_Z + VISION.distance },
+        zones: [
+          {
+            nConveyorId: INFEED.id,
+            fStart: VISION.x - VISION.field / 2,
+            fEnd: VISION.x + VISION.field / 2,
+            fCcsOffset: VISION.x,
+          },
+        ],
+        bodies: visionBodies(VISION.field, VISION.distance),
+      }),
+    },
     { id: CART_INFEED.id, name: "Cartesian infeed", path: CART_INFEED.path, kind: "conveyor", value: belt(CART_INFEED) },
+    {
+      id: SENSOR.id,
+      name: "Light barrier",
+      path: SENSOR.path,
+      kind: "sensor",
+      value: detector({
+        // At the right belt edge (local −Y), the beam across the belt towards +Y.
+        pose: { fX: CART_INFEED.x + SENSOR.x, fY: CART_INFEED.y - 250, fZ: BELT_Z + SENSOR.height },
+        zones: [{ nConveyorId: CART_INFEED.id, fStart: SENSOR.x, fEnd: SENSOR.x, fCcsOffset: SENSOR.x }],
+        bodies: sensorBodies(SENSOR.beam),
+      }),
+    },
     { id: CART_OUTFEED.id, name: "Cartesian outfeed", path: CART_OUTFEED.path, kind: "conveyor", value: belt(CART_OUTFEED) },
     {
       id: CART.id,
@@ -355,6 +432,8 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   const cartInfeed = plc.get<ST_VisuConveyor>(CART_INFEED.path);
   const cartOutfeed = plc.get<ST_VisuConveyor>(CART_OUTFEED.path);
   const cart = plc.get<ST_VisuCartesian>(CART.path);
+  const lightBarrier = plc.get<ST_VisuDetector>(SENSOR.path);
+  const vision = plc.get<ST_VisuDetector>(VISION.path);
   const robot = plc.get<ST_VisuDelta>(ROBOT.path);
   robot.stConfig.stWorkingArea = { fRadius: 700, fZMin: -1300, fZMax: -700, fConeHeight: 200, fConeBottomRadius: 400 };
   const loop = plc.get<ST_VisuXtsLoop>(LOOP.path);
@@ -453,6 +532,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     rz: number,
     eState: TrackedProduct["eState"] = E_VisuProductState.DETECTED,
     productType: number = PRODUCT.type,
+    detectorId = 0,
   ): void {
     products.push({
       ...emptyProduct(),
@@ -462,6 +542,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       fLatchBeltPosition: c.stState.fBeltPosition,
       eState,
       nProductType: productType,
+      nDetectorId: detectorId,
     });
   }
 
@@ -833,6 +914,18 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     robot.stState.nTimestamp = now;
   }
 
+  /** The light barrier's beam is interrupted while a product on the belt covers it; both report every cycle. */
+  function writeDetectors(): void {
+    const beamX = CART_INFEED.x + SENSOR.x;
+    const interrupted = cartInfeedProducts.some((p) => {
+      if (p.eState === E_VisuProductState.PICKED) return false;
+      return Math.abs(productPosition(p, cartInfeed.stState.fBeltPosition)[0] - beamX) <= PRODUCT.length / 2;
+    });
+    lightBarrier.stState.aBodyStates[1]!.bActive = interrupted;
+    lightBarrier.stState.nTimestamp = now;
+    vision.stState.nTimestamp = now;
+  }
+
   function writeXts(): void {
     loop.stState.nMoverCount = loopMovers.length;
     loopMovers.forEach((m, i) => {
@@ -922,7 +1015,10 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         sinceSpawn = 0;
         // About one product in three on the Delta infeed is a can.
         const type = random() < 1 / 3 ? CAN.type : PRODUCT.type;
-        latch(infeedProducts, infeed, INFEED.x + 100, INFEED.y + (random() - 0.5) * 240, (random() - 0.5) * 60, E_VisuProductState.DETECTED, type);
+        // The vision system sees each product in the middle of its field of view.
+        const x = INFEED.x + VISION.x;
+        const y = INFEED.y + (random() - 0.5) * 240;
+        latch(infeedProducts, infeed, x, y, (random() - 0.5) * 60, E_VisuProductState.DETECTED, type, VISION.id);
       }
       // Irregular gaps on the Fxx infeed: the loop evens them out.
       sinceFxxSpawn += dtMs;
@@ -941,7 +1037,9 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       sinceCartSpawn += dtMs;
       if (sinceCartSpawn >= CART.spawnIntervalMs) {
         sinceCartSpawn = 0;
-        latch(cartInfeedProducts, cartInfeed, CART_INFEED.x + 100, CART_INFEED.y, (random() - 0.5) * 60);
+        // Latched when its front edge reaches the light barrier; it covers the beam while it passes.
+        const x = CART_INFEED.x + SENSOR.x - PRODUCT.length / 2;
+        latch(cartInfeedProducts, cartInfeed, x, CART_INFEED.y, (random() - 0.5) * 60, E_VisuProductState.DETECTED, PRODUCT.type, SENSOR.id);
       }
 
       stepRobot(dtS);
@@ -958,6 +1056,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       writeRegister(cartOutfeed, cartOutfeedProducts, CART_OUTFEED.x, CART_OUTFEED.length);
       writeRobot();
       writeXts();
+      writeDetectors();
     },
   };
 }

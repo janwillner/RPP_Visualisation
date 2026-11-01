@@ -111,9 +111,9 @@ function mapValue(schema: z.ZodTypeAny, raw: unknown, path: string, fixed: Recor
 function mapArray(schema: z.ZodArray<z.ZodTypeAny>, raw: unknown, count: unknown, path: string): unknown[] {
   if (!Array.isArray(raw)) throw new TypeError(`${path} is not an array`);
   const entries = typeof count === "number" ? raw.slice(0, Math.max(0, Math.min(count, raw.length))) : raw;
-  return entries
-    .filter((e) => !(typeof e === "object" && e !== null && "bValid" in e) || (e as { bValid: unknown }).bValid)
-    .map((e, i) => mapValue(schema.element, e, `${path}[${i}]`));
+  // Mapped before the bValid filter, so that an error names the entry's index in the PLC array.
+  const valid = (e: unknown) => !(typeof e === "object" && e !== null && "bValid" in e) || (e as { bValid: unknown }).bValid;
+  return entries.flatMap((e, i) => (valid(e) ? [mapValue(schema.element, e, `${path}[${i}]`)] : []));
 }
 
 /** `zones` → `zone`, `bodies` → `body`: the count member is named after one entry. */

@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoDelta" Id="{ebc824d5-6a38-497c-8ecf-01d27c55d56b}" SpecialFunc="None">
+  <POU Name="P_VisuDemoDelta" Id="{242f19e8-02de-4a30-a88f-6c9a956ae34c}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -16,6 +16,8 @@ onto the outfeed. Some products are deliberately missed. Each Delta has a differ
 Products come in five types of different size and shape (boxes, a can, an oval, a pouch), mixed on both infeeds;<br>
 Delta 1 picks a pair of one type, Delta 3 closes its fingers around the product's outline. A product put down<br>
 on the outfeed leaves the infeed's register.<br>
+A vision system over infeed 1 detects its products in the middle of its field of view; a light barrier on<br>
+infeed 2 detects them at their front edge, its beam lighting up while a product interrupts it.<br>
 Delta 1 is in a fault now and then. Called by P_VisuDemo.<br>
 ****************************************************************************************************)
 PROGRAM P_VisuDemoDelta
@@ -26,6 +28,8 @@ VAR
 	fb_Delta1							: _FB_VisuDelta;
 	fb_Delta2							: _FB_VisuDelta;
 	fb_Delta3							: _FB_VisuDelta;
+	fb_Vision1							: _FB_VisuVision;	// over infeed 1
+	fb_Barrier2							: _FB_VisuSensor;	// light barrier on infeed 2
 
 	(* Conveyors *)
 	lr_Dt								: LREAL;	// [s] cycle time
@@ -38,6 +42,8 @@ VAR
 	n_Belt								: INT;
 	lr_Random							: LREAL;	// [-] 0..1
 	udn_Type							: UDINT;	// [-] product type, 1..udn_TYPE_COUNT
+	DetectorPose						: ST_VisuPose;	// lens of the vision system, head of the light barrier
+	b_BeamInterrupted					: BOOL;	// a product on infeed 2 covers the light barrier's beam
 
 	(* Per Delta robot *)
 	n_Phase								: ARRAY[0..2] OF INT;
@@ -96,6 +102,13 @@ VAR CONSTANT
 	   Zones on a belt are given from its origin. *)
 	lr_INFEED2_ORIGIN_X					: LREAL := 5000;	// [mm] from the belt start
 	lr_OUTFEED_ORIGIN_X					: LREAL := 1500;	// [mm] from the belt start
+	(* Detectors *)
+	lr_VISION_X							: LREAL := 300;	// [mm] lens over infeed 1, middle of the field of view
+	lr_VISION_FIELD						: LREAL := 400;	// [mm] field of view on the belt, along and across
+	lr_VISION_DISTANCE					: LREAL := 800;	// [mm] lens above the belt
+	lr_BARRIER_X						: LREAL := 300;	// [mm] beam across infeed 2
+	lr_BARRIER_HEIGHT					: LREAL := 20;	// [mm] beam above the belt
+	lr_BARRIER_BEAM						: LREAL := 500;	// [mm] from the head at the belt edge across the belt
 	lr_ROBOT1_X							: LREAL := 1500;	// [mm]
 	lr_ROBOT_PITCH						: LREAL := 1000;	// [mm] distance between robots along X
 	lr_ROBOT_Y							: LREAL := 500;	// [mm]
@@ -148,6 +161,10 @@ fb_Delta2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 11, vi_st
 	vi_str_Path := 'P_VisuDemoDelta.fb_Delta2.vo_Visu');
 fb_Delta3.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 12, vi_str_Name := 'Delta 3',
 	vi_str_Path := 'P_VisuDemoDelta.fb_Delta3.vo_Visu');
+fb_Vision1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 50, vi_str_Name := 'Vision 1',
+	vi_str_Path := 'P_VisuDemoDelta.fb_Vision1.vo_Visu');
+fb_Barrier2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 51, vi_str_Name := 'Light barrier 2',
+	vi_str_Path := 'P_VisuDemoDelta.fb_Barrier2.vo_Visu');
 
 
 (****************************************************************************************************)
@@ -183,6 +200,25 @@ fb_Outfeed.m_SetBeltPosition(lr_BeltPosition[2]);
 
 
 (****************************************************************************************************)
+(* DETECTORS (configuration idempotent, every cycle)                                                *)
+(****************************************************************************************************)
+DetectorPose.fX := lr_VISION_X;
+DetectorPose.fY := lr_INFEED1_Y;
+DetectorPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_VISION_DISTANCE;
+fb_Vision1.m_Configure(vi_Pose := DetectorPose, vi_lr_FieldLength := lr_VISION_FIELD,
+	vi_lr_FieldWidth := lr_VISION_FIELD, vi_lr_WorkingDistance := lr_VISION_DISTANCE);
+fb_Vision1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed1.m_Id(), vi_lr_Start := lr_VISION_X - lr_VISION_FIELD / 2,
+	vi_lr_End := lr_VISION_X + lr_VISION_FIELD / 2, vi_lr_CcsOffset := lr_VISION_X);
+(* The head at the right belt edge, its beam across the belt towards +Y. Infeed 2 counts from its end. *)
+DetectorPose.fX := lr_BARRIER_X;
+DetectorPose.fY := lr_INFEED2_Y - lr_BARRIER_BEAM / 2;
+DetectorPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_BARRIER_HEIGHT;
+fb_Barrier2.m_Configure(vi_Pose := DetectorPose, vi_lr_BeamLength := lr_BARRIER_BEAM);
+fb_Barrier2.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed2.m_Id(), vi_lr_Start := lr_BARRIER_X - lr_INFEED2_ORIGIN_X,
+	vi_lr_End := lr_BARRIER_X - lr_INFEED2_ORIGIN_X, vi_lr_CcsOffset := lr_BARRIER_X - lr_INFEED2_ORIGIN_X);
+
+
+(****************************************************************************************************)
 (* PRODUCT INFEED: both infeeds, products slightly offset across the belt and turned                *)
 (****************************************************************************************************)
 FOR n_Belt := 0 TO 1 DO
@@ -198,12 +234,17 @@ FOR n_Belt := 0 TO 1 DO
 			fb_RefBelt REF= fb_Infeed2;
 			LatchPose.fY := lr_INFEED2_Y + (lr_Random - 0.5) * 160.0;
 		END_IF
-		LatchPose.fX := 100;
 		LatchPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 		LatchPose.fRz := (UDINT_TO_LREAL((udn_Seed / 1000) MOD 1000) / 1000.0 - 0.5) * 60.0;
 		udn_Type := (udn_Seed / 1000000) MOD udn_TYPE_COUNT + 1;
+		(* Where its detector sees it: the vision system in the middle of its field, the light barrier at its front edge. *)
+		IF n_Belt = 0 THEN
+			LatchPose.fX := lr_VISION_X;
+		ELSE
+			LatchPose.fX := lr_BARRIER_X - lr_TYPE_LENGTH[udn_Type] / 2;
+		END_IF
 		IF fb_RefBelt.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := LatchPose,
-			vi_udn_ProductType := udn_Type)
+			vi_udn_ProductType := udn_Type, vi_udn_DetectorId := SEL(n_Belt = 0, fb_Barrier2.m_Id(), fb_Vision1.m_Id()))
 		THEN
 			DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 		END_IF
@@ -220,6 +261,21 @@ FOR n_Robot := 0 TO 2 DO
 	m_Sequence();
 	m_Report();
 END_FOR
+
+
+(* The light barrier's beam is interrupted while a product not yet picked covers it. *)
+b_BeamInterrupted := FALSE;
+un_Index := 0;
+WHILE un_Index < fb_Infeed2.m_ProductCount() DO
+	fb_Infeed2.m_GetProduct(vi_un_Index := un_Index, vo_Product => Product, vo_Pose => ProductPose);
+	IF Product.eState <> E_VisuProductState.PICKED AND Product.nProductType >= 1 AND Product.nProductType <= udn_TYPE_COUNT
+		AND_THEN ABS(ProductPose.fX - lr_BARRIER_X) <= lr_TYPE_LENGTH[Product.nProductType] / 2
+	THEN
+		b_BeamInterrupted := TRUE;
+	END_IF
+	un_Index := un_Index + 1;
+END_WHILE
+fb_Barrier2.m_SetSignal(vi_b_Signal := b_BeamInterrupted);
 
 
 (****************************************************************************************************)
@@ -323,14 +379,14 @@ fb_RefRobot.m_SetWorkingArea(vi_lr_Radius := 750, vi_lr_ZMin := -1300, vi_lr_ZMa
 fb_RefRobot.m_SetLimitArea(vi_lr_XMin := -lr_ROBOT_PITCH / 2, vi_lr_XMax := lr_ROBOT_PITCH / 2, vi_lr_YMin := -750,
 	vi_lr_YMax := 750, vi_lr_ZMin := -1500, vi_lr_ZMax := -700);
 (* The robot's conveyor coordinate system lies under its base on every belt. *)
-fb_RefRobot.m_SetZone(vi_udn_ConveyorId := fb_Infeed1.m_Id(), vi_e_Kind := E_VisuZoneKind.PICK,
+fb_RefRobot.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed1.m_Id(),
 	vi_lr_Start := lr_BaseX - lr_PICK_HALF_ZONE, vi_lr_End := lr_BaseX + lr_PICK_HALF_ZONE,
 	vi_lr_AllocationOffset := lr_ALLOCATION_OFFSET, vi_lr_CcsOffset := lr_BaseX);
-fb_RefRobot.m_SetZone(vi_udn_ConveyorId := fb_Infeed2.m_Id(), vi_e_Kind := E_VisuZoneKind.PICK,
+fb_RefRobot.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_Infeed2.m_Id(),
 	vi_lr_Start := lr_BaseX - lr_PICK_HALF_ZONE - lr_INFEED2_ORIGIN_X,
 	vi_lr_End := lr_BaseX + lr_PICK_HALF_ZONE - lr_INFEED2_ORIGIN_X,
 	vi_lr_AllocationOffset := lr_ALLOCATION_OFFSET, vi_lr_CcsOffset := lr_BaseX - lr_INFEED2_ORIGIN_X);
-fb_RefRobot.m_SetZone(vi_udn_ConveyorId := fb_Outfeed.m_Id(), vi_e_Kind := E_VisuZoneKind.PLACE,
+fb_RefRobot.m_SetZone(vi_un_Zone := 3, vi_udn_ConveyorId := fb_Outfeed.m_Id(),
 	vi_lr_Start := lr_BaseX - lr_PLACE_HALF_ZONE - lr_OUTFEED_ORIGIN_X,
 	vi_lr_End := lr_BaseX + lr_PLACE_HALF_ZONE - lr_OUTFEED_ORIGIN_X,
 	vi_lr_CcsOffset := lr_BaseX - lr_OUTFEED_ORIGIN_X);

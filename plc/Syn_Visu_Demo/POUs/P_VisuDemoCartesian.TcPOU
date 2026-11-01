@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoCartesian" Id="{87d13a67-73ee-4dc3-9f1c-0aba79874e81}" SpecialFunc="None">
+  <POU Name="P_VisuDemoCartesian" Id="{9e500c46-b805-441c-a815-3807729778a4}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -153,9 +153,9 @@ fb_Cartesian.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.D
 	vi_lr_Height := lr_CART_CUP_HEIGHT);
 fb_Cartesian.m_SetFinger(vi_un_Finger := 2, vi_lr_Diameter := lr_CART_JAW_DIAMETER, vi_lr_Height := lr_CART_JAW_HEIGHT);
 fb_Cartesian.m_SetFinger(vi_un_Finger := 3, vi_lr_Diameter := lr_CART_JAW_DIAMETER, vi_lr_Height := lr_CART_JAW_HEIGHT);
-fb_Cartesian.m_SetZone(vi_udn_ConveyorId := fb_CartInfeed.m_Id(), vi_e_Kind := E_VisuZoneKind.PICK,
+fb_Cartesian.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_CartInfeed.m_Id(),
 	vi_lr_Start := 0, vi_lr_End := 1000, vi_lr_CcsOffset := 0);
-fb_Cartesian.m_SetZone(vi_udn_ConveyorId := fb_CartOutfeed.m_Id(), vi_e_Kind := E_VisuZoneKind.PLACE,
+fb_Cartesian.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_CartOutfeed.m_Id(),
 	vi_lr_Start := lr_CART_X + lr_CART_Y_PLACE - 200, vi_lr_End := lr_CART_X + lr_CART_Y_PLACE + 200,
 	vi_lr_CcsOffset := lr_CART_X + lr_CART_Y_PLACE);
 m_Step();

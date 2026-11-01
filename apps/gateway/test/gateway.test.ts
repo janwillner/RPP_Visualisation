@@ -292,7 +292,7 @@ describe("gateway discovery", () => {
   });
 
   it("publishes a vision system and a product sensor with their zones and the bodies they are drawn from", async () => {
-    const camera: MachineComponent = {
+    const vision: MachineComponent = {
       id: 60,
       name: "Vision 1",
       path: "MAIN.fbVision.vo_Visu",
@@ -325,7 +325,7 @@ describe("gateway discovery", () => {
         bodies: [body({ eShape: E_VisuBodyShape.CYLINDER, eRole: E_VisuBodyRole.BEAM, fLength: 6, fWidth: 6, fHeight: 500 })],
       }),
     };
-    const t = setup([infeed, camera, barrier]);
+    const t = setup([infeed, vision, barrier]);
     await t.gateway.cycle();
 
     const [config] = t.configs();
