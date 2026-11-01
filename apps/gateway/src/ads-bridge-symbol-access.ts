@@ -36,7 +36,11 @@ interface Response {
 export class AdsBridgeSymbolAccess implements SymbolAccess {
   private child: ChildProcessWithoutNullStreams | undefined;
   private nextId = 1;
-  private readonly pending = new Map<number, { resolve: (r: Response) => void; reject: (e: Error) => void }>();
+  /** Open requests with the bridge process they went to: a bridge that ends fails only its own. */
+  private readonly pending = new Map<
+    number,
+    { child: ChildProcessWithoutNullStreams; resolve: (r: Response) => void; reject: (e: Error) => void }
+  >();
 
   constructor(private readonly options: AdsBridgeOptions) {}
 
@@ -61,7 +65,7 @@ export class AdsBridgeSymbolAccess implements SymbolAccess {
     const child = this.ensureChild();
     const id = this.nextId++;
     const response = await new Promise<Response>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      this.pending.set(id, { child, resolve, reject });
       // A bridge that has just died fails the write (EPIPE); the request fails, the next one starts a new bridge.
       child.stdin.write(`${JSON.stringify({ id, ...body })}\n`, (error) => {
         if (!error || !this.pending.delete(id)) return;
@@ -70,6 +74,9 @@ export class AdsBridgeSymbolAccess implements SymbolAccess {
     });
     if (response.ok) return response.value;
     if (response.notFound) throw new SymbolNotFoundError(path);
+    // A failed request starts a new bridge for the next one. TwinCAT.Ads cannot recover in the same process once it
+    // started before the AMS router was ready (the service at boot): every new AdsClient fails to register its port.
+    if (this.child === child) this.close();
     throw new Error(response.error ?? "ADS bridge request failed");
   }
 
@@ -94,8 +101,11 @@ export class AdsBridgeSymbolAccess implements SymbolAccess {
     let stderr = "";
     child.stderr.on("data", (chunk: Buffer) => (stderr = (stderr + chunk.toString()).slice(-2000)));
     const fail = (reason: string) => {
-      for (const { reject } of this.pending.values()) reject(new Error(reason));
-      this.pending.clear();
+      for (const [id, waiter] of this.pending) {
+        if (waiter.child !== child) continue;
+        this.pending.delete(id);
+        waiter.reject(new Error(reason));
+      }
       if (this.child === child) this.child = undefined;
     };
     // Without a listener a failed write to a dead bridge (EPIPE) would end the whole gateway.
