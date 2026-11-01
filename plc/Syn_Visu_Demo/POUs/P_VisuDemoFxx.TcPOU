@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoFxx" Id="{0ad5cd73-39e7-4830-acec-95a4256c8e3a}" SpecialFunc="None">
+  <POU Name="P_VisuDemoFxx" Id="{ef1aecec-09de-4102-99cb-704f25076a76}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -326,8 +326,8 @@ FOR n_TempI := 0 TO n_LOOP_MOVERS - 1 DO
 				IF n_TempIdx >= 0 THEN
 					fb_FxxInfeed.m_GetProduct(vi_un_Index := INT_TO_UINT(n_TempIdx), vo_Product => TempProduct, vo_Pose => TempPose);
 					lr_TempRz := TempProduct.stLatchPose.fRz;
-					fb_FxxInfeed.m_SetProductState(vi_udn_Id := TempProduct.nId, vi_e_State := E_VisuProductState.PLACED,
-						vi_udn_RobotId := fb_Fxx.m_Id(), vi_udn_MoverId := 0);
+					(* Put down on the outfeed: it no longer lies on the infeed. *)
+					fb_FxxInfeed.m_RemoveProduct(TempProduct.nId);
 				END_IF
 				TempLatch.fX := lr_LOOP_X + lr_LoopS[n_TempI];
 				TempLatch.fY := lr_FXX_Y;

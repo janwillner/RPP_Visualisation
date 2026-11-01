@@ -74,7 +74,7 @@ The moment a product is detected on a conveyor. Its pose and the belt position a
 _Avoid_: trigger, capture
 
 **Placeholder**:
-The outline left travelling on the conveyor where a picked product used to lie.
+The outline left travelling on the conveyor where a picked product used to lie, while the robot holds it. A product put down on a conveyor is drawn there as itself, not as a placeholder.
 _Avoid_: ghost, empty product
 
 **Missed product**:

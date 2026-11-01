@@ -148,7 +148,7 @@ All robot FBs (Delta, XTS gantry, XTS loop, Cartesian):
 | `m_LatchProduct(vi_udn_Id, vi_LatchPose, vi_udn_ProductType, vi_e_State := DETECTED, vi_udn_RobotId := 0)` | Adds a product at the current belt position (or at `vi_lr_LatchBeltPosition` with `vi_b_UseLatchBeltPosition`): `DETECTED` where it arrives, `PLACED` with the robot's id where a robot puts it down |
 | `m_SetProductState(vi_udn_Id, vi_e_State, vi_udn_RobotId, vi_udn_MoverId := 0, vi_udn_FingerId := 0)` | Changes state, assigned robot, carrying mover and finger |
 | `m_MoveProduct(vi_udn_Id, vi_Pose)` | Puts a product at a new MCS pose at the current belt position, keeping its state, e.g. while a mover pushes it along the belt |
-| `m_RemoveProduct(vi_udn_Id)` | Removes one product |
+| `m_RemoveProduct(vi_udn_Id)` | Removes one product, e.g. once a robot has put it down on another conveyor |
 | `m_RemoveProductsBeyond(vi_lr_BeltX)` | Drops invalid entries and products beyond `vi_lr_BeltX` mm along the belt; keeps ASSIGNED and PICKED ones |
 | `m_ProductCount()`, `m_GetProduct(vi_un_Index, vo_Product =>, vo_Pose =>)`, `m_FindProduct(vi_udn_Id)` | Read the register; `vo_Pose` is the product's current MCS pose |
 | `m_BeltPosition()` | Belt position last set |
@@ -265,3 +265,9 @@ A product a robot puts down onto a conveyor enters that conveyor's register as `
 `m_LatchProduct(..., vi_e_State := E_VisuProductState.PLACED, vi_udn_RobotId := fb_Robot.m_Id())`.
 The visualisation flags every product that passes its belt end in `DETECTED` or `ASSIGNED` as missed; `PLACED` and
 `REJECTED` products pass the end on purpose.
+
+`PLACED` means the product lies on the conveyor whose register holds it: the visualisation draws it there like a
+detected product. While a robot holds a product it stays `PICKED` in the register it was picked from (a placeholder
+travels on that belt); once the robot puts it down on another conveyor, the PLC removes it from that register
+(`m_RemoveProduct(vi_udn_Id)`) and latches it on the other one as `PLACED`. A product put back onto the same belt
+(e.g. by a spacing loop) changes to `PLACED` in place.

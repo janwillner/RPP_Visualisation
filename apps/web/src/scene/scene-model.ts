@@ -962,8 +962,9 @@ export function isMissed(c: ConveyorConfig, state: ConveyorState, p: Product): b
 
 /**
  * Products of one conveyor register, positioned by latch + belt travel, with the display lifecycle:
- * - picked/placed: a placeholder keeps travelling on the belt (until the belt end);
- *   while picked, the product itself hangs below its robot's TCP.
+ * - picked: a placeholder keeps travelling on the belt (until the belt end) while the product itself hangs below
+ *   its carrier (robot TCP, mover or finger);
+ * - placed: the product was put down onto this belt and lies on it like a detected one, but is never missed.
  */
 function conveyorProducts(
   c: ConveyorConfig,
@@ -1000,17 +1001,14 @@ function conveyorProducts(
     const beltX = productBeltX(c, state, p);
     const beyondEnd = beltX > c.length;
 
-    if (p.state === "picked" || p.state === "placed") {
+    if (p.state === "picked") {
       if (!beyondEnd) result.push(onBelt("placeholder"));
-      let carrier: Frame | undefined;
-      if (p.state === "picked") {
-        const flange = carriers.get(`${p.robotId}:${p.moverId}`);
-        carrier = p.fingerId > 0 ? carriers.get(`${p.robotId}:${p.moverId}:${p.fingerId}`) : flange;
-        if (!carrier && flange) {
-          // An unknown finger: hang it at the flange so it stays visible.
-          warn(`${c.name}: product #${p.id} hangs from finger ${p.fingerId}, which robot #${p.robotId} does not have`);
-          carrier = flange;
-        }
+      const flange = carriers.get(`${p.robotId}:${p.moverId}`);
+      let carrier = p.fingerId > 0 ? carriers.get(`${p.robotId}:${p.moverId}:${p.fingerId}`) : flange;
+      if (!carrier && flange) {
+        // An unknown finger: hang it at the flange so it stays visible.
+        warn(`${c.name}: product #${p.id} hangs from finger ${p.fingerId}, which robot #${p.robotId} does not have`);
+        carrier = flange;
       }
       if (carrier) {
         // Hanging from the carrier: the product's top touches the carrier origin.

@@ -378,9 +378,12 @@ describe("scene model: product lifecycle", () => {
     expect(shown.map((p) => p.display)).toEqual(["atTcp"]);
   });
 
-  it("drops a placed product from the TCP but keeps its placeholder on the belt", () => {
-    const shown = show(product({ state: "placed", robotId: 20, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } }), 200);
-    expect(shown.map((p) => p.display)).toEqual(["placeholder"]);
+  it("shows a placed product lying on the belt it was put down on, and hides it past the belt end", () => {
+    const placed = product({ state: "placed", robotId: 20, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } });
+    const shown = show(placed, 200);
+    expect(shown.map((p) => p.display)).toEqual(["normal"]);
+    closeTo(shown[0]!.transform.position, [1.2, 0.82, 0]);
+    expect(show(placed, 2100)).toEqual([]);
   });
 
   it("flags an unpicked product that ran past the belt end as missed and holds it at the belt end", () => {

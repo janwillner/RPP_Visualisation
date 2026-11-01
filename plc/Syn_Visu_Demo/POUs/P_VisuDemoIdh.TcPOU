@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoIdh" Id="{b0bfa371-7172-483b-9954-256eb387d6cf}" SpecialFunc="None">
+  <POU Name="P_VisuDemoIdh" Id="{b75ddf1e-598b-4959-a6ca-397139747984}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -321,8 +321,8 @@ CASE n_GantryPhase OF
 		IF lr_GantryZ = lr_GANTRY_Z_DOWN THEN
 			FOR n_TempI := 0 TO 3 DO
 				IF udn_GantryProduct[n_TempI] <> 0 THEN
-					fb_IdhInfeed.m_SetProductState(vi_udn_Id := udn_GantryProduct[n_TempI], vi_e_State := E_VisuProductState.PLACED,
-						vi_udn_RobotId := fb_Idh.m_Id(), vi_udn_MoverId := 0);
+					(* Put down on the tray: it no longer lies on the infeed. *)
+					fb_IdhInfeed.m_RemoveProduct(udn_GantryProduct[n_TempI]);
 					(* Turned by -90 deg: gripper at MCS x = track start + position, y = pose y - (X + tool offset). *)
 					TempLatch.fX := lr_GANTRY_X + lr_GantryPos[n_TempI];
 					TempLatch.fY := lr_GANTRY_Y - (lr_GantryX[n_TempI] + lr_GANTRY_TOOL_X);

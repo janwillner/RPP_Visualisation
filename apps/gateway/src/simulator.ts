@@ -434,6 +434,15 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   }
 
   /**
+   * Takes a product out of the register of the conveyor it was picked from, once a robot has put it down elsewhere:
+   * it no longer lies on that belt (PLACED means it lies on the belt whose register holds it).
+   */
+  function remove(products: TrackedProduct[], p: TrackedProduct): void {
+    const i = products.indexOf(p);
+    if (i >= 0) products.splice(i, 1);
+  }
+
+  /**
    * Enters a product into a conveyor's register: DETECTED where it arrives, PLACED where a robot puts it down, as the
    * contract asks (an outfeed product past the belt end is otherwise shown as missed).
    */
@@ -522,7 +531,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         if (moveToward([tcp[0], tcp[1], BELT_Z + PRODUCT.height], dtS)) phase = "release";
         break;
       case "release": {
-        target!.eState = E_VisuProductState.PLACED;
+        remove(infeedProducts, target!);
         latch(outfeedProducts, outfeed, tcp[0], tcp[1], tcpRz, E_VisuProductState.PLACED);
         target = undefined;
         phase = "idle";
@@ -575,7 +584,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         case "deliver":
           m.s = Math.min(m.s + LOOP.deliverSpeed * dtS, LOOP.place);
           if (m.s >= LOOP.place) {
-            m.product!.eState = E_VisuProductState.PLACED;
+            remove(fxxInfeedProducts, m.product!);
             latch(
               fxxOutfeedProducts,
               fxxOutfeed,
@@ -680,7 +689,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         if (gantryZ === GANTRY.zDown) {
           for (const m of gantryMovers) {
             if (!m.product) continue;
-            m.product.eState = E_VisuProductState.PLACED;
+            remove(idhInfeedProducts, m.product);
             // Turned by −90°: the gripper is at MCS x = track start + position, y = pose y − (X + offset).
             latch(trayProducts, tray, GANTRY.x + m.position, GANTRY.y - (m.x + GANTRY.toolOffsetX), 0, E_VisuProductState.PLACED);
             m.product = undefined;
@@ -775,7 +784,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         if (move({ a: 0 })) cartPhase = "release";
         break;
       case "release": {
-        cartTarget!.eState = E_VisuProductState.PLACED;
+        remove(cartInfeedProducts, cartTarget!);
         // Turned by −90°: the TCP (A = 0) is at MCS x = origin + Y, y = origin − X; the product keeps the gripper turn.
         latch(cartOutfeedProducts, cartOutfeed, CART.x + axes.y, CART.y - axes.x, -90 + axes.c, E_VisuProductState.PLACED);
         cartTarget = undefined;

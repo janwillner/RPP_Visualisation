@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoDelta" Id="{ecc8680e-a5ad-447a-a309-250e51c45487}" SpecialFunc="None">
+  <POU Name="P_VisuDemoDelta" Id="{d1c56df2-fd44-4d84-a854-03fd02c46e09}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -13,6 +13,8 @@ onto the outfeed. Some products are deliberately missed. Each Delta has a differ
 - Delta 1: two suction cups beside the flange that turn about Rz; it picks two products and places both at once.<br>
 - Delta 2: one finger that turns about Rz and tilts about Rx while carrying.<br>
 - Delta 3: five fingers around the flange that close when picking and open when placing.<br>
+Products come in three types of different size; Delta 1 picks a pair of one type, Delta 3 closes its fingers<br>
+around the product's corners. A product put down on the outfeed leaves the infeed's register.<br>
 Delta 1 is in a fault now and then. Called by P_VisuDemo.<br>
 ****************************************************************************************************)
 PROGRAM P_VisuDemoDelta
@@ -34,6 +36,7 @@ VAR
 	LatchPose							: ST_VisuPlanarPose;
 	n_Belt								: INT;
 	lr_Random							: LREAL;	// [-] 0..1
+	udn_Type							: UDINT;	// [-] product type, 1..udn_TYPE_COUNT
 
 	(* Per Delta robot *)
 	n_Phase								: ARRAY[0..2] OF INT;
@@ -44,9 +47,12 @@ VAR
 	lr_ToolRz							: ARRAY[0..2] OF LREAL;	// [deg] tool rotation about MCS Z (4th axis)
 	udn_Held							: ARRAY[0..2, 0..1] OF UDINT;	// [-] carried product ids per slot (Delta 1 carries two)
 	n_HeldBelt							: ARRAY[0..2, 0..1] OF INT;	// [-] infeed of each carried product: 0 = infeed 1, 1 = infeed 2
+	udn_HeldType						: ARRAY[0..2, 0..1] OF UDINT;	// [-] product type of each carried product
+	lr_HeldHeight						: LREAL;	// [mm] height of the product carried or approached
 	n_HeldCount							: ARRAY[0..2] OF INT;
 	lr_TiltRx							: LREAL;	// [deg] Delta 2: finger tilt about its X
 	lr_Spread							: LREAL := 130;	// [mm] Delta 3: finger distance from the flange
+	lr_SpreadClosed						: LREAL := 82;	// [mm] Delta 3: finger distance closed around the current product
 	n_Finger							: INT;	// [-] finger used for the current pick, 0 = the flange
 	n_FingerCount						: INT;
 	n_Slot								: INT;
@@ -72,6 +78,11 @@ VAR CONSTANT
 	lr_INFEED_SPEED						: LREAL := 150;	// [mm/s]
 	lr_OUTFEED_SPEED					: LREAL := 120;	// [mm/s]
 	lr_SPAWN_INTERVAL					: LREAL := 0.6;	// [s] per infeed
+	(* Product types, the same on every belt; type 1 is the standard product of the other demo applications. *)
+	udn_TYPE_COUNT						: UDINT := 3;
+	lr_TYPE_LENGTH						: ARRAY[1..3] OF LREAL := [120, 150, 90];	// [mm] along the conveying direction
+	lr_TYPE_WIDTH						: ARRAY[1..3] OF LREAL := [80, 100, 90];	// [mm]
+	lr_TYPE_HEIGHT						: ARRAY[1..3] OF LREAL := [40, 45, 60];	// [mm] at least lr_RING_HEIGHT
 	lr_INFEED1_Y						: LREAL := 0;	// [mm]
 	lr_INFEED2_Y						: LREAL := 1000;	// [mm]
 	lr_OUTFEED_Y						: LREAL := 500;	// [mm]
@@ -100,7 +111,7 @@ VAR CONSTANT
 	lr_RING_DIAMETER					: LREAL := 16;	// [mm]
 	lr_RING_HEIGHT						: LREAL := 40;	// [mm] reaching down to the belt beside a carried product
 	lr_SPREAD_OPEN						: LREAL := 130;	// [mm]
-	lr_SPREAD_CLOSED					: LREAL := 82;	// [mm] around a 120 x 80 mm product in any orientation
+	lr_RING_CLEARANCE					: LREAL := 10;	// [mm] closed fingers: finger radius plus a gap beyond the product's corners
 	lr_SPREAD_SPEED						: LREAL := 200;	// [mm/s]
 	(* Sequence *)
 	n_PHASE_IDLE						: INT := 0;
@@ -147,8 +158,10 @@ FOR n_Belt := 0 TO 2 DO
 	END_CASE
 	fb_RefBelt.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_BELT_LENGTH,
 		vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
-	fb_RefBelt.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
-		vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
+	FOR udn_Type := 1 TO udn_TYPE_COUNT DO
+		fb_RefBelt.m_SetProductType(vi_udn_Id := udn_Type, vi_lr_Length := lr_TYPE_LENGTH[udn_Type],
+			vi_lr_Width := lr_TYPE_WIDTH[udn_Type], vi_lr_Height := lr_TYPE_HEIGHT[udn_Type]);
+	END_FOR
 END_FOR
 fb_Infeed2.m_SetOriginShift(vi_lr_X := lr_INFEED2_ORIGIN_X);
 fb_Outfeed.m_SetOriginShift(vi_lr_X := lr_OUTFEED_ORIGIN_X);
@@ -181,8 +194,9 @@ FOR n_Belt := 0 TO 1 DO
 		LatchPose.fX := 100;
 		LatchPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 		LatchPose.fRz := (UDINT_TO_LREAL((udn_Seed / 1000) MOD 1000) / 1000.0 - 0.5) * 60.0;
+		udn_Type := (udn_Seed / 1000000) MOD udn_TYPE_COUNT + 1;
 		IF fb_RefBelt.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := LatchPose,
-			vi_udn_ProductType := 1)
+			vi_udn_ProductType := udn_Type)
 		THEN
 			DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 		END_IF
@@ -233,7 +247,9 @@ METHOD PRIVATE m_Allocate : BOOL]]></Declaration>
 	END_IF
 	WHILE udn_TargetId[n_Robot] = 0 AND un_Index < fb_RefBelt.m_ProductCount() DO
 		fb_RefBelt.m_GetProduct(vi_un_Index := un_Index, vo_Product => Product, vo_Pose => ProductPose);
+		(* Delta 1 adds only a product of the type it already carries: both cups hang at the same height. *)
 		IF Product.eState = E_VisuProductState.DETECTED
+		AND (n_Robot <> 0 OR n_HeldCount[n_Robot] = 0 OR Product.nProductType = udn_HeldType[n_Robot, 0])
 		AND ProductPose.fX >= lr_BaseX - lr_PICK_HALF_ZONE
 		AND ProductPose.fX <= lr_BaseX + lr_PICK_HALF_ZONE - lr_ALLOCATION_OFFSET
 		THEN
@@ -466,7 +482,7 @@ METHOD PRIVATE m_Report : BOOL]]></Declaration>
         <ST><![CDATA[(* Delta 3 closes its fingers while it descends onto a product and keeps them closed while it carries one. *)
 IF n_Robot = 2 THEN
 	IF n_Phase[n_Robot] = n_PHASE_DESCEND OR n_HeldCount[n_Robot] > 0 THEN
-		lr_Spread := _FC_DemoApproach(lr_Spread, lr_SPREAD_CLOSED, lr_SPREAD_SPEED * lr_Dt);
+		lr_Spread := _FC_DemoApproach(lr_Spread, lr_SpreadClosed, lr_SPREAD_SPEED * lr_Dt);
 	ELSE
 		lr_Spread := _FC_DemoApproach(lr_Spread, lr_SPREAD_OPEN, lr_SPREAD_SPEED * lr_Dt);
 	END_IF
@@ -533,13 +549,14 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 		(* Delta 3 grips only once its fingers have closed around the product (both operands are evaluated). *)
 		IF m_MoveToward(vio_Tcp := Tcp[n_Robot], vi_lr_TargetX := lr_X - Grip.fX, vi_lr_TargetY := lr_Y - Grip.fY,
 			vi_lr_TargetZ := lr_TopZ - Grip.fZ, vi_lr_MaxStep := lr_Step)
-		AND (n_Robot <> 2 OR lr_Spread = lr_SPREAD_CLOSED)
+		AND (n_Robot <> 2 OR lr_Spread = lr_SpreadClosed)
 		THEN
 			n_Slot := n_HeldCount[n_Robot];
 			fb_RefBelt.m_SetProductState(vi_udn_Id := udn_TargetId[n_Robot], vi_e_State := E_VisuProductState.PICKED,
 				vi_udn_RobotId := fb_RefRobot.m_Id(), vi_udn_FingerId := INT_TO_UDINT(n_Finger));
 			udn_Held[n_Robot, n_Slot] := udn_TargetId[n_Robot];
 			n_HeldBelt[n_Robot, n_Slot] := n_TargetBelt[n_Robot];
+			udn_HeldType[n_Robot, n_Slot] := Product.nProductType;
 			n_HeldCount[n_Robot] := n_Slot + 1;
 			udn_TargetId[n_Robot] := 0;
 			n_Phase[n_Robot] := n_PHASE_LIFT;
@@ -547,7 +564,7 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 
 	n_PHASE_LIFT:
 		IF m_MoveToward(vio_Tcp := Tcp[n_Robot], vi_lr_TargetX := Tcp[n_Robot].fX, vi_lr_TargetY := Tcp[n_Robot].fY,
-			vi_lr_TargetZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT + lr_GripHeight
+			vi_lr_TargetZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_HeldHeight + lr_GripHeight
 							+ lr_HOVER,
 			vi_lr_MaxStep := lr_Step)
 		THEN
@@ -565,7 +582,7 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 			lr_TiltRx := _FC_DemoApproach(lr_TiltRx, lr_TILT_ANGLE, lr_TILT_SPEED * lr_Dt);
 		END_IF
 		IF m_MoveToward(vio_Tcp := Tcp[n_Robot], vi_lr_TargetX := lr_BaseX, vi_lr_TargetY := lr_OUTFEED_Y,
-			vi_lr_TargetZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT + lr_GripHeight
+			vi_lr_TargetZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_HeldHeight + lr_GripHeight
 							+ lr_HOVER,
 			vi_lr_MaxStep := lr_Step)
 		THEN
@@ -579,7 +596,7 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 		END_IF
 		(* Delta 2 puts the product down straight (both operands are evaluated). *)
 		IF m_MoveToward(vio_Tcp := Tcp[n_Robot], vi_lr_TargetX := Tcp[n_Robot].fX, vi_lr_TargetY := Tcp[n_Robot].fY,
-			vi_lr_TargetZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT + lr_GripHeight,
+			vi_lr_TargetZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_HeldHeight + lr_GripHeight,
 			vi_lr_MaxStep := lr_Step)
 		AND (n_Robot <> 1 OR lr_TiltRx = 0)
 		THEN
@@ -594,8 +611,8 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 			ELSE
 				fb_RefBelt REF= fb_Infeed2;
 			END_IF
-			fb_RefBelt.m_SetProductState(vi_udn_Id := udn_Held[n_Robot, n_Slot], vi_e_State := E_VisuProductState.PLACED,
-				vi_udn_RobotId := fb_RefRobot.m_Id());
+			(* Put down on the outfeed: it no longer lies on the infeed. *)
+			fb_RefBelt.m_RemoveProduct(udn_Held[n_Robot, n_Slot]);
 			n_Finger := SEL(n_Robot = 2, n_Slot + 1, 0);
 			Grip := m_GripOffset(vi_n_Robot := n_Robot, vi_n_Finger := n_Finger);
 			LatchPose.fX := Tcp[n_Robot].fX + Grip.fX;
@@ -604,7 +621,8 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 			(* A product carried at a finger keeps the finger's turn; one at the flange is turned with the base. *)
 			LatchPose.fRz := SEL(n_Robot = 2, lr_ToolRz[n_Robot], 0);
 			IF fb_Outfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := LatchPose,
-				vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_RobotId := fb_RefRobot.m_Id())
+				vi_udn_ProductType := udn_HeldType[n_Robot, n_Slot], vi_e_State := E_VisuProductState.PLACED,
+				vi_udn_RobotId := fb_RefRobot.m_Id())
 			THEN
 				DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 			END_IF
@@ -650,9 +668,23 @@ END_IF
 IF b_Found THEN
 	lr_X := ProductPose.fX + lr_LEAD;
 	lr_Y := ProductPose.fY;
-	lr_TopZ := ProductPose.fZ + DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT;
+	lr_TopZ := ProductPose.fZ + lr_TYPE_HEIGHT[LIMIT(1, Product.nProductType, udn_TYPE_COUNT)];
 	lr_TargetRz := ProductPose.fRz;
 END_IF
+
+(* Size of the product carried, else of the one approached: Delta 1 carries a pair of one type, so its first slot
+   stands for both. *)
+IF n_HeldCount[n_Robot] > 0 THEN
+	udn_Type := LIMIT(1, udn_HeldType[n_Robot, 0], udn_TYPE_COUNT);
+ELSIF b_Found THEN
+	udn_Type := LIMIT(1, Product.nProductType, udn_TYPE_COUNT);
+ELSE
+	udn_Type := 1;
+END_IF
+lr_HeldHeight := lr_TYPE_HEIGHT[udn_Type];
+(* Delta 3 closes its fingers on a circle just beyond the product's corners. *)
+lr_SpreadClosed := SQRT(lr_TYPE_LENGTH[udn_Type] * lr_TYPE_LENGTH[udn_Type] + lr_TYPE_WIDTH[udn_Type] * lr_TYPE_WIDTH[udn_Type])
+					/ 2.0 + lr_RING_CLEARANCE;
 
 (* Finger used for the current pick: Delta 1 fills its cups one after the other, Delta 3 carries at the flange
    between its fingers. *)
