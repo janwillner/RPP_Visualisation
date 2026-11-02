@@ -57,7 +57,8 @@ methods, and it fills its output `vo_Visu`, the structure the gateway reads.
 
 ### 2.1 Install and reference the library
 
-1. Install the released library file from this repository: `plc/library/Syn_Visu_<version>.library`. In XAE:
+1. Install the released library: `plc\Syn_Visu_<version>.compiled-library` from the deployment package (compiled,
+   without source code), or `plc/library/Syn_Visu_<version>.library` from this repository (with source). In XAE:
    PLC → Library Repository → Install. It is installed as **`SynVisu`** from **Syntegon Group**.
 2. In your PLC project add a reference: References → Add Library → `SynVisu`. A placeholder reference (newest
    version) is fine.

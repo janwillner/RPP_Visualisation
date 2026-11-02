@@ -17,11 +17,13 @@ their Beckhoff-style names, because the gateway reads them.
 | `plc/RPP_Visu.sln` | TwinCAT solution with both PLC projects |
 | `plc/Syn_Visu/` | The library project: structures, enums, constants and the component function blocks. No task, no application code. |
 | `plc/Syn_Visu_Demo/` | The demo application. It references the installed library like any machine project, so it also tests the library from the outside. ADS port 852. `PlcTask` calls `P_VisuDemo`, which sets the shared cycle time and fault phase (`DEMO_GlobalVar`) and calls one program per application: `P_VisuDemoDelta`, `P_VisuDemoFxx`, `P_VisuDemoIdh`, `P_VisuDemoCartesian`, `P_VisuDemoSpacing`. Shared constants (belt height and width, product, suction cup, fault timing) are in `DEMO_GlobalConst`, the manifest in `GVL_Visu`. |
-| `plc/library/Syn_Visu_<version>.library` | The exported library, committed for every released version. Machine projects install it from here. |
+| `plc/library/Syn_Visu_<version>.library` | The exported library with its source, committed for every released version. |
+| `plc/library/Syn_Visu_<version>.compiled-library` | The same version compiled, without source code. `pnpm package` puts the newest one into the deployment package (`plc/`); machine projects install it from there. |
 
 Releasing a version: bump `_FC_GetVersionSynVisu`, `VISU_GlobalConst.VISU_str_LIBRARY_VERSION` and the project
 version (Properties → Common), build, export it with
-"Save as library and install" to `plc/library/Syn_Visu_<version>.library`, update the demo's reference and build again.
+"Save as library and install" to `plc/library/Syn_Visu_<version>.library` and with "Save as compiled library" to
+`plc/library/Syn_Visu_<version>.compiled-library`, update the demo's reference and build again.
 The library is installed under the title `SynVisu` from `Syntegon Group`; its namespace is `SynVisu` too, so machine
 projects qualify library objects as `SynVisu._FB_VisuConveyor`, `SynVisu.ST_VisuPose` and so on (the demo uses them
 unqualified).

@@ -1,14 +1,15 @@
 // Builds the self-contained Windows package for Beckhoff IPCs (ADR 0004):
 //   dist/rpp-visualisation-<version>-win-x64.zip
 // containing node.exe, the bundled gateway, the web app, the self-contained ADS bridge, the WinSW service
-// wrapper and the install scripts. Needs Windows, Node and the .NET SDK; downloads are cached in .cache/.
+// wrapper, the install scripts and the compiled PLC library (plc/Syn_Visu_<version>.compiled-library, the newest
+// in plc/library, without source code). Needs Windows, Node and the .NET SDK; downloads are cached in .cache/.
 //
 // Version: see app-version.mjs (1.2.3 from a CI tag, else e.g. 0.1.0+aa29151). It goes into the gateway bundle, the
 // web app, the VERSION file and the zip name.
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
@@ -84,6 +85,11 @@ for (const file of ["install.ps1", "uninstall.ps1"]) cpSync(join(root, "deploy/w
 cpSync(join(root, "docs/deployment.md"), join(out, "DEPLOYMENT.md"));
 writeFileSync(join(out, "VERSION"), `${version}\n`);
 
+const library = newestCompiledLibrary();
+step(`Adding the PLC library ${library}`);
+mkdirSync(join(out, "plc"));
+cpSync(join(root, "plc/library", library), join(out, "plc", library));
+
 step("Zipping");
 run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `Compress-Archive -Path '${out}\\*' -DestinationPath '${zip}'`]);
 console.log(`\nDone: ${zip}`);
@@ -110,6 +116,22 @@ async function download(url, fileName, sha256) {
     fail(`Checksum mismatch for ${url}: expected ${sha256}, got ${actual}`);
   }
   return target;
+}
+
+/**
+ * The compiled Syn_Visu library of the highest version in plc/library (exported from XAE with "Save as compiled
+ * library", so it holds no source code). It must exist: a package never ships without the library its PLC
+ * programs need.
+ */
+function newestCompiledLibrary() {
+  const pattern = /^Syn_Visu_(\d+)\.(\d+)\.(\d+)\.compiled-library$/;
+  const found = readdirSync(join(root, "plc/library"))
+    .map((file) => ({ file, match: pattern.exec(file) }))
+    .filter((f) => f.match)
+    .map((f) => ({ file: f.file, parts: f.match.slice(1).map(Number) }))
+    .sort((a, b) => b.parts[0] - a.parts[0] || b.parts[1] - a.parts[1] || b.parts[2] - a.parts[2]);
+  if (!found.length) fail("No plc/library/Syn_Visu_<version>.compiled-library: export it from XAE first.");
+  return found[0].file;
 }
 
 function run(command, args, cwd = root, env = {}) {
