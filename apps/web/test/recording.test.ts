@@ -126,7 +126,7 @@ describe("recording: playback at any point in time", () => {
   it("plays back product registers that change over time, in their order", async () => {
     const product = (id: number, state: "detected" | "picked") => ({
       id,
-      latchPose: { x: 100, y: 0, z: 800, rz: 0 },
+      latchPose: { x: 100, y: 0, z: 0, rz: 0 },
       latchBeltPosition: 0,
       state,
       previousState: "detected" as const,
@@ -250,7 +250,7 @@ describe("recording: timeline events", () => {
   it("marks a product that passes the belt end without being picked, once", async () => {
     const product = (id: number, productState: "detected" | "rejected" | "picked") => ({
       id,
-      latchPose: { x: 100, y: 0, z: 800, rz: 0 },
+      latchPose: { x: 100, y: 0, z: 0, rz: 0 },
       latchBeltPosition: 0,
       state: productState,
       previousState: "detected" as const,

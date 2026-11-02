@@ -78,7 +78,7 @@ The size and shape a conveyor's products can have: a box, a cylinder (round, or 
 _Avoid_: format, article
 
 **Latch**:
-The moment a product is detected on a conveyor, by the client that latched it (a detector or a station) if one is named. Its pose and the belt position at that moment are stored; the product's current position is the latch pose moved by the belt travel since.
+The moment a product is detected on a conveyor, by the client that latched it (a detector or a station) if one is named. Its pose on the belt (in the conveyor's belt coordinates, from where they count) and the belt position at that moment are stored; the product's current position is the latch pose moved by the belt travel since.
 _Avoid_: trigger, capture
 
 **Placeholder**:

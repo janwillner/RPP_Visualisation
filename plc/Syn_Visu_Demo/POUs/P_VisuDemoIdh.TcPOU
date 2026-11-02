@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoIdh" Id="{bb1980e9-8a88-4f89-87e8-6fbb56cebd5b}" SpecialFunc="None">
+  <POU Name="P_VisuDemoIdh" Id="{ed87301d-6e91-4027-9df1-59dac2a47667}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -123,7 +123,8 @@ IF lr_SinceSpawn >= lr_SpawnInterval THEN
 	LatchPose.fY := lr_IDH_INFEED_Y;
 	LatchPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 	LatchPose.fRz := (UDINT_TO_LREAL((udn_Seed / 1000) MOD 1000) / 1000.0 - 0.5) * 60.0;
-	IF fb_IdhInfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := LatchPose,
+	IF fb_IdhInfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
+		vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_IdhInfeed.vo_Visu.stConfig, vi_Pose := LatchPose),
 		vi_udn_ProductType := 1)
 	THEN
 		DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
@@ -242,6 +243,7 @@ CASE n_GantryPhase OF
 				lr_TempBest := -1.0E9;
 				FOR un_TempIndex := 1 TO fb_IdhInfeed.m_ProductCount() DO
 					fb_IdhInfeed.m_GetProduct(vi_un_Index := un_TempIndex - 1, vo_Product => TempProduct, vo_Pose => TempPose);
+					TempPose := _FC_DemoBeltToMcs(vio_Config := fb_IdhInfeed.vo_Visu.stConfig, vi_Pose := TempPose);
 					lr_TempPos := TempPose.fX - lr_GANTRY_X;
 					IF TempProduct.eState = E_VisuProductState.DETECTED AND lr_TempPos < lr_GantryPos[n_TempI]
 					AND lr_TempPos > -500 AND lr_TempPos > lr_TempBest
@@ -332,7 +334,8 @@ CASE n_GantryPhase OF
 					TempLatch.fY := lr_GANTRY_Y - (lr_GantryX[n_TempI] + lr_GANTRY_TOOL_X);
 					TempLatch.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 					TempLatch.fRz := -90 + lr_GantryC[n_TempI];	// as the cup holds it
-					IF fb_IdhTray.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := TempLatch,
+					IF fb_IdhTray.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
+						vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_IdhTray.vo_Visu.stConfig, vi_Pose := TempLatch),
 						vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_ClientId := fb_Idh.m_Id())
 					THEN
 						DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
@@ -417,6 +420,7 @@ END_VAR]]></Declaration>
 m_TrackPos := n_TempIndex >= 0;
 IF m_TrackPos THEN
 	fb_IdhInfeed.m_GetProduct(vi_un_Index := INT_TO_UINT(n_TempIndex), vo_Product => TempProduct, vo_Pose => TempPose);
+	TempPose := _FC_DemoBeltToMcs(vio_Config := fb_IdhInfeed.vo_Visu.stConfig, vi_Pose := TempPose);
 	vo_lr_TrackPos := TempPose.fX - lr_GANTRY_X;
 	vo_lr_Rz := TempPose.fRz;
 END_IF]]></ST>

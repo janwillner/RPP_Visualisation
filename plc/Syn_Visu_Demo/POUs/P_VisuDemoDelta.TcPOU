@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoDelta" Id="{205b80b1-4de6-4a5b-a74b-bcd3f89d0e01}" SpecialFunc="None">
+  <POU Name="P_VisuDemoDelta" Id="{2d1b7ebc-fd96-42a3-8023-89588d6bf62d}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -257,7 +257,8 @@ FOR n_Belt := 0 TO 1 DO
 		ELSE
 			LatchPose.fX := lr_BARRIER_X - lr_TYPE_LENGTH[udn_Type] / 2;
 		END_IF
-		IF fb_RefBelt.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := LatchPose,
+		IF fb_RefBelt.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
+			vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_RefBelt.vo_Visu.stConfig, vi_Pose := LatchPose),
 			vi_udn_ProductType := udn_Type, vi_udn_ClientId := SEL(n_Belt = 0, fb_Barrier2.m_Id(), fb_Vision1.m_Id()))
 		THEN
 			DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
@@ -282,6 +283,7 @@ b_BeamInterrupted := FALSE;
 un_Index := 0;
 WHILE un_Index < fb_Infeed2.m_ProductCount() DO
 	fb_Infeed2.m_GetProduct(vi_un_Index := un_Index, vo_Product => Product, vo_Pose => ProductPose);
+	ProductPose := _FC_DemoBeltToMcs(vio_Config := fb_Infeed2.vo_Visu.stConfig, vi_Pose := ProductPose);
 	IF Product.eState <> E_VisuProductState.PICKED AND Product.nProductType >= 1 AND Product.nProductType <= udn_TYPE_COUNT
 		AND_THEN ABS(ProductPose.fX - lr_BARRIER_X) <= lr_TYPE_LENGTH[Product.nProductType] / 2
 	THEN
@@ -325,6 +327,7 @@ METHOD PRIVATE m_Allocate : BOOL]]></Declaration>
 	END_IF
 	WHILE udn_TargetId[n_Robot] = 0 AND un_Index < fb_RefBelt.m_ProductCount() DO
 		fb_RefBelt.m_GetProduct(vi_un_Index := un_Index, vo_Product => Product, vo_Pose => ProductPose);
+		ProductPose := _FC_DemoBeltToMcs(vio_Config := fb_RefBelt.vo_Visu.stConfig, vi_Pose := ProductPose);
 		(* Delta 1 adds only a product of the type it already carries: both cups hang at the same height. *)
 		IF Product.eState = E_VisuProductState.DETECTED
 		AND (n_Robot <> 0 OR n_HeldCount[n_Robot] = 0 OR Product.nProductType = udn_HeldType[n_Robot, 0])
@@ -612,6 +615,7 @@ END_IF
 un_TempIndex := 0;
 WHILE un_TempIndex < fb_Outfeed.m_ProductCount() DO
 	fb_Outfeed.m_GetProduct(vi_un_Index := un_TempIndex, vo_Product => TempProduct, vo_Pose => TempProductPose);
+	TempProductPose := _FC_DemoBeltToMcs(vio_Config := fb_Outfeed.vo_Visu.stConfig, vi_Pose := TempProductPose);
 	IF TempProduct.eState = E_VisuProductState.PLACED AND TempProductPose.fX >= lr_REJECT_X
 		AND TempProductPose.fX - lr_OUTFEED_SPEED * lr_Dt < lr_REJECT_X
 	THEN
@@ -781,7 +785,8 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 			LatchPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 			(* A product carried at a finger keeps the finger's turn; one at the flange is turned with the base. *)
 			LatchPose.fRz := SEL(n_Robot = 2, lr_ToolRz[n_Robot], 0);
-			IF fb_Outfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := LatchPose,
+			IF fb_Outfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
+				vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_Outfeed.vo_Visu.stConfig, vi_Pose := LatchPose),
 				vi_udn_ProductType := udn_HeldType[n_Robot, n_Slot], vi_e_State := E_VisuProductState.PLACED,
 				vi_udn_ClientId := fb_RefRobot.m_Id())
 			THEN
@@ -834,6 +839,7 @@ IF (n_Phase[n_Robot] = n_PHASE_APPROACH OR n_Phase[n_Robot] = n_PHASE_DESCEND) A
 	udn_TargetId[n_Robot] := 0;
 END_IF
 IF b_Found THEN
+	ProductPose := _FC_DemoBeltToMcs(vio_Config := fb_RefBelt.vo_Visu.stConfig, vi_Pose := ProductPose);
 	lr_X := ProductPose.fX + lr_LEAD;
 	lr_Y := ProductPose.fY;
 	lr_TopZ := ProductPose.fZ + lr_TYPE_HEIGHT[LIMIT(1, Product.nProductType, udn_TYPE_COUNT)];

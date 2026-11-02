@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FC_GetVersionSynVisu" Id="{ee345996-b438-463d-8cf8-5c43c830bfad}" SpecialFunc="None">
+  <POU Name="_FC_GetVersionSynVisu" Id="{c9fc5350-c329-4e07-877d-95b76a70a428}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -20,6 +20,7 @@ Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Vision system, product sensor, zon
 Syn_Visu 5.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ XTS tracks of track modules, a fault per module (protocol 12)<br>
 Syn_Visu 5.1.0  ¦ 2026-11-01 ¦ J.Willner ¦ Manifest sLibraryVersion: the visualisation shows the library version<br>
 Syn_Visu 6.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Generic product client (nLastClientId, ePreviousState), station (protocol 13)<br>
+Syn_Visu 7.0.0  ¦ 2026-11-02 ¦ J.Willner ¦ Product poses in the conveyor's coordinate system (protocol 14)<br>
 ****************************************************************************************************)
 FUNCTION _FC_GetVersionSynVisu : UINT
 VAR_INPUT
@@ -27,7 +28,7 @@ VAR_INPUT
 END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[CASE vi_n_VersionElement OF
-	1: _FC_GetVersionSynVisu := 6;
+	1: _FC_GetVersionSynVisu := 7;
 	2: _FC_GetVersionSynVisu := 0;
 	3: _FC_GetVersionSynVisu := 0;
 ELSE

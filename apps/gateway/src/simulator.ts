@@ -537,9 +537,14 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   let cartPhase: CartPhase = "idle";
   let cartTarget: TrackedProduct | undefined;
 
-  /** Current MCS position of a tracked product's bottom centre on a belt along MCS +X. */
-  function productPosition(p: TrackedProduct, beltPosition: number): Vec3 {
-    return [p.stLatchPose.fX + (beltPosition - p.fLatchBeltPosition), p.stLatchPose.fY, p.stLatchPose.fZ];
+  /**
+   * Current MCS position of a tracked product's bottom centre. Its latch pose is in the conveyor's coordinate system;
+   * every simulated belt runs along MCS +X without origin shift, so that is the MCS moved to the conveyor's pose.
+   */
+  function productPosition(p: TrackedProduct, c: ST_VisuConveyor): Vec3 {
+    const o = c.stConfig.stPose;
+    const travel = c.stState.fBeltPosition - p.fLatchBeltPosition;
+    return [o.fX + p.stLatchPose.fX + travel, o.fY + p.stLatchPose.fY, o.fZ + p.stLatchPose.fZ];
   }
 
   /**
@@ -560,7 +565,8 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
 
   /**
    * Enters a product into a conveyor's register: DETECTED where it arrives, PLACED where a robot puts it down, as the
-   * contract asks (an outfeed product past the belt end is otherwise shown as missed).
+   * contract asks (an outfeed product past the belt end is otherwise shown as missed). `x`, `y` are MCS; the PLC
+   * reports the latch pose in the conveyor's coordinate system (see `productPosition`).
    */
   function latch(
     products: TrackedProduct[],
@@ -576,7 +582,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       ...emptyProduct(),
       nId: nextId++,
       bValid: true,
-      stLatchPose: { fX: x, fY: y, fZ: BELT_Z, fRz: rz },
+      stLatchPose: { fX: x - c.stConfig.stPose.fX, fY: y - c.stConfig.stPose.fY, fZ: BELT_Z - c.stConfig.stPose.fZ, fRz: rz },
       fLatchBeltPosition: c.stState.fBeltPosition,
       eState,
       nProductType: productType,
@@ -597,9 +603,8 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   }
 
   function stepRobot(dtS: number): void {
-    const enc = infeed.stState.fBeltPosition;
     const top = (p: TrackedProduct): Vec3 => {
-      const pos = productPosition(p, enc);
+      const pos = productPosition(p, infeed);
       return [pos[0], pos[1], pos[2] + PRODUCT.height];
     };
     // Lead the moving product by the belt speed so the robot meets it.
@@ -607,7 +612,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     switch (phase) {
       case "idle": {
         target = infeedProducts.find((p) => {
-          const x = productPosition(p, enc)[0] - INFEED.x;
+          const x = productPosition(p, infeed)[0] - INFEED.x;
           return p.eState === E_VisuProductState.DETECTED && x >= PICK_ZONE.start && x <= PICK_ZONE.end - PICK_ZONE.allocationOffset;
         });
         if (target) {
@@ -663,7 +668,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
    * round to the queue.
    */
   function stepLoop(dtS: number): void {
-    const outfeedX = (p: TrackedProduct) => productPosition(p, fxxInfeed.stState.fBeltPosition)[0] - LOOP.x;
+    const outfeedX = (p: TrackedProduct) => productPosition(p, fxxInfeed)[0] - LOOP.x;
     const queued = loopMovers.filter((m) => m.mode === "queue").sort((a, b) => b.s - a.s);
     queued.forEach((m, rank) => {
       m.s = Math.min(m.s + LOOP.returnSpeed * dtS, LOOP_PERIMETER - rank * LOOP.slot);
@@ -731,7 +736,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
    * they are put down together and the movers return to their waiting positions.
    */
   function stepGantry(dtS: number): void {
-    const trackPos = (p: TrackedProduct) => productPosition(p, idhInfeed.stState.fBeltPosition)[0] - GANTRY.x;
+    const trackPos = (p: TrackedProduct) => productPosition(p, idhInfeed)[0] - GANTRY.x;
     const trackEnd = GANTRY.modules * GANTRY.moduleLength;
     const byPosition = [...gantryMovers].sort((a, b) => b.position - a.position);
     const follow = () => {
@@ -840,7 +845,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   function stepCartesian(dtS: number): void {
     axes.jaw = approach(axes.jaw, axes.gripper ? CART_TOOL.jawClosed : CART_TOOL.jawOpen, CART_TOOL.jawSpeed * dtS);
     // Robot Y of a product on the infeed: its MCS x relative to the robot origin.
-    const productY = (p: TrackedProduct) => productPosition(p, cartInfeed.stState.fBeltPosition)[0] - CART.x;
+    const productY = (p: TrackedProduct) => productPosition(p, cartInfeed)[0] - CART.x;
     const move = (goal: Partial<Record<"x" | "y" | "z" | "c" | "a", number>>) => {
       const speeds = { x: CART.xySpeed, y: CART.xySpeed, z: CART.zSpeed, c: CART.cSpeed, a: CART.aSpeed };
       let done = true;
@@ -923,7 +928,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   function writeRegister(c: ST_VisuConveyor, products: TrackedProduct[], beltX: number, length: number): void {
     // The PLC drops entries some distance beyond the belt end.
     for (let i = products.length - 1; i >= 0; i--) {
-      const x = productPosition(products[i]!, c.stState.fBeltPosition)[0] - beltX;
+      const x = productPosition(products[i]!, c)[0] - beltX;
       if (x > length + REMOVE_BEYOND_END && !inUse(products[i]!)) products.splice(i, 1);
     }
     const visible = products.slice(0, MAX_PRODUCTS);
@@ -959,7 +964,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     }
     for (const p of outfeedProducts) {
       if (checkedByRejectUnit.has(p.nId) || p.eState !== E_VisuProductState.PLACED) continue;
-      if (productPosition(p, outfeed.stState.fBeltPosition)[0] - OUTFEED.x < REJECT.x) continue;
+      if (productPosition(p, outfeed)[0] - OUTFEED.x < REJECT.x) continue;
       checkedByRejectUnit.add(p.nId);
       passedRejectUnit += 1;
       if (passedRejectUnit % REJECT.every !== 0 || pushing) continue;
@@ -977,7 +982,7 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     const beamX = CART_INFEED.x + SENSOR.x;
     const interrupted = cartInfeedProducts.some((p) => {
       if (p.eState === E_VisuProductState.PICKED) return false;
-      return Math.abs(productPosition(p, cartInfeed.stState.fBeltPosition)[0] - beamX) <= PRODUCT.length / 2;
+      return Math.abs(productPosition(p, cartInfeed)[0] - beamX) <= PRODUCT.length / 2;
     });
     lightBarrier.stState.aBodyStates[1]!.bActive = interrupted;
     lightBarrier.stState.nTimestamp = now;

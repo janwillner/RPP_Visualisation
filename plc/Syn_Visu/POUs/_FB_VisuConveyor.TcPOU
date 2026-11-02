@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuConveyor" Id="{88ac60b2-4f27-46dc-93cf-590d64787b8a}" SpecialFunc="None">
+  <POU Name="_FB_VisuConveyor" Id="{4e0bef27-eb68-4869-92ee-e60eb3c7b415}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -146,7 +146,8 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Reads register entry vi_un_Index and its current MCS pose (latch pose moved by the belt travel since).<br>
+Reads register entry vi_un_Index and its current pose in the conveyor's coordinate system (latch pose moved<br>
+along the belt by the belt travel since).<br>
 Indices shift when products are removed; use the product id to follow a product.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
@@ -158,7 +159,7 @@ VAR_INPUT
 END_VAR
 VAR_OUTPUT
 	vo_Product							: ST_VisuProduct;
-	vo_Pose								: ST_VisuPlanarPose;	// MCS, current bottom centre
+	vo_Pose								: ST_VisuPlanarPose;	// conveyor coordinate system, current bottom centre
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[m_GetProduct := vi_un_Index < vo_Visu.stState.nProductCount;
@@ -188,7 +189,7 @@ FALSE for vi_udn_Id = 0, an id already in the register, or a full register.<br>
 METHOD m_LatchProduct : BOOL
 VAR_INPUT
 	vi_udn_Id							: UDINT;	// [-] unique on this conveyor, > 0
-	vi_LatchPose						: ST_VisuPlanarPose;	// MCS, bottom centre of the product at the latch moment
+	vi_LatchPose						: ST_VisuPlanarPose;	// conveyor coordinate system (from its origin shift), bottom centre at the latch moment
 	vi_udn_ProductType					: UDINT;	// [-] id given to m_SetProductType
 	vi_lr_LatchBeltPosition				: LREAL := 0;	// [mm] used only if vi_b_UseLatchBeltPosition
 	vi_b_UseLatchBeltPosition			: BOOL := FALSE;	// FALSE: latch at the current belt position
@@ -230,7 +231,7 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Puts a product of the register at a new MCS pose at the current belt position, e.g. while a mover pushes it<br>
+Puts a product of the register at a new pose (conveyor coordinate system) at the current belt position, e.g. while a mover pushes it<br>
 along the belt faster than the belt runs. Call m_SetBeltPosition first in the cycle. Keeps its state.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
@@ -239,7 +240,7 @@ FALSE if the product is not in the register.<br>
 METHOD m_MoveProduct : BOOL
 VAR_INPUT
 	vi_udn_Id							: UDINT;	// [-] product id
-	vi_Pose								: ST_VisuPlanarPose;	// MCS, bottom centre of the product now
+	vi_Pose								: ST_VisuPlanarPose;	// conveyor coordinate system, bottom centre of the product now
 END_VAR
 VAR
 	n_TempIndex							: INT;
@@ -275,8 +276,8 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Current MCS pose of a product: latch pose moved along the conveying direction (local +X,<br>
-rotation Rz * Ry of the conveyor pose) by the belt travel since the latch.<br>
+Current pose of a product in the conveyor's coordinate system: latch pose moved along the belt<br>
+(local +X) by the belt travel since the latch.<br>
 ****************************************************************************************************)
 METHOD PRIVATE m_ProductPose : ST_VisuPlanarPose
 VAR_IN_OUT CONSTANT
@@ -284,17 +285,11 @@ VAR_IN_OUT CONSTANT
 END_VAR
 VAR
 	lr_TempTravel						: LREAL;	// [mm]
-	lr_TempRz							: LREAL;	// [rad]
-	lr_TempRy							: LREAL;	// [rad]
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[lr_TempTravel := vo_Visu.stState.fBeltPosition - vio_Product.fLatchBeltPosition;
-lr_TempRz := vo_Visu.stConfig.stPose.fRz * VISU_GlobalConst.VISU_lr_DEG_TO_RAD;
-lr_TempRy := vo_Visu.stConfig.stPose.fRy * VISU_GlobalConst.VISU_lr_DEG_TO_RAD;
 m_ProductPose := vio_Product.stLatchPose;
-m_ProductPose.fX := m_ProductPose.fX + lr_TempTravel * COS(lr_TempRz) * COS(lr_TempRy);
-m_ProductPose.fY := m_ProductPose.fY + lr_TempTravel * SIN(lr_TempRz) * COS(lr_TempRy);
-m_ProductPose.fZ := m_ProductPose.fZ - lr_TempTravel * SIN(lr_TempRy);]]></ST>
+m_ProductPose.fX := m_ProductPose.fX + lr_TempTravel;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_RemoveProduct" Id="{74bfe229-686e-40e4-b091-b220e209c95d}">
@@ -352,11 +347,6 @@ VAR
 	un_TempWrite						: UINT;
 	b_TempInUse							: BOOL;
 	TempPose							: ST_VisuPlanarPose;
-	lr_TempDx							: LREAL;	// [mm]
-	lr_TempDy							: LREAL;	// [mm]
-	lr_TempDz							: LREAL;	// [mm]
-	lr_TempRz							: LREAL;	// [rad]
-	lr_TempRy							: LREAL;	// [rad]
 	lr_TempX							: LREAL;	// [mm] belt X
 END_VAR]]></Declaration>
       <Implementation>
@@ -364,19 +354,12 @@ END_VAR]]></Declaration>
 IF vo_Visu.stState.nProductCount = 0 THEN
 	RETURN;
 END_IF
-lr_TempRz := vo_Visu.stConfig.stPose.fRz * VISU_GlobalConst.VISU_lr_DEG_TO_RAD;
-lr_TempRy := vo_Visu.stConfig.stPose.fRy * VISU_GlobalConst.VISU_lr_DEG_TO_RAD;
-
 (* Keep the entries to stay, in order. *)
 un_TempWrite := 0;
 FOR un_TempRead := 0 TO vo_Visu.stState.nProductCount - 1 DO
-	(* Belt X = current position projected onto the conveying direction, measured from the belt start. *)
+	(* Belt X from the belt start (stPose): the pose counts from the origin shift. *)
 	TempPose := m_ProductPose(vo_Visu.stState.aProducts[un_TempRead]);
-	lr_TempDx := TempPose.fX - vo_Visu.stConfig.stPose.fX;
-	lr_TempDy := TempPose.fY - vo_Visu.stConfig.stPose.fY;
-	lr_TempDz := TempPose.fZ - vo_Visu.stConfig.stPose.fZ;
-	lr_TempX := (lr_TempDx * COS(lr_TempRz) + lr_TempDy * SIN(lr_TempRz)) * COS(lr_TempRy)
-				- lr_TempDz * SIN(lr_TempRy);
+	lr_TempX := vo_Visu.stConfig.stOriginShift.fX + TempPose.fX;
 	b_TempInUse := vo_Visu.stState.aProducts[un_TempRead].eState = E_VisuProductState.ASSIGNED
 				OR vo_Visu.stState.aProducts[un_TempRead].eState = E_VisuProductState.PICKED;
 	IF vo_Visu.stState.aProducts[un_TempRead].bValid AND (lr_TempX <= vi_lr_BeltX OR b_TempInUse) THEN

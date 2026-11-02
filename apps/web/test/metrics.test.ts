@@ -116,7 +116,7 @@ describe("metrics", () => {
 describe("product history: countable events", () => {
   const product = (id: number, state: Product["state"], lastClientId = 0): Product => ({
     id,
-    latchPose: { x: 100, y: 0, z: 800, rz: 0 },
+    latchPose: { x: 100, y: 0, z: 0, rz: 0 },
     latchBeltPosition: 0,
     state,
     previousState: "detected",

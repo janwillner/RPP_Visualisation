@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoSpacing" Id="{18fa1a6b-df96-4a4b-a009-3056040cc366}" SpecialFunc="None">
+  <POU Name="P_VisuDemoSpacing" Id="{8731253f-3cca-41b2-8d1c-e338e7c13761}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -124,7 +124,8 @@ IF lr_SpcSinceSpawn >= lr_SpcSpawnInterval THEN
 	LatchPose.fY := lr_SPC_Y;
 	LatchPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 	LatchPose.fRz := 0;
-	IF fb_SpcBelt.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := LatchPose,
+	IF fb_SpcBelt.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
+		vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_SpcBelt.vo_Visu.stConfig, vi_Pose := LatchPose),
 		vi_udn_ProductType := 1)
 	THEN
 		DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
@@ -228,6 +229,7 @@ IF b_TempReady THEN
 	un_TempIndex := 0;
 	WHILE n_SpcMode[n_TempHead] = n_SPC_QUEUE AND un_TempIndex < fb_SpcBelt.m_ProductCount() DO
 		fb_SpcBelt.m_GetProduct(vi_un_Index := un_TempIndex, vo_Product => TempProduct, vo_Pose => TempPose);
+		TempPose := _FC_DemoBeltToMcs(vio_Config := fb_SpcBelt.vo_Visu.stConfig, vi_Pose := TempPose);
 		lr_TempX := TempPose.fX - lr_TempStartX;
 		IF TempProduct.eState = E_VisuProductState.DETECTED AND lr_TempX >= 0 AND lr_TempX < lr_SPC_TAKE_WINDOW
 		AND lr_TempMinPush - lr_TempWait - lr_TempX >= lr_SPC_SLOT
@@ -251,6 +253,7 @@ IF udn_SpcLastReleased <> 0 THEN
 	n_TempIdx := fb_SpcBelt.m_FindProduct(udn_SpcLastReleased);
 	IF n_TempIdx >= 0 THEN
 		fb_SpcBelt.m_GetProduct(vi_un_Index := INT_TO_UINT(n_TempIdx), vo_Product => TempProduct, vo_Pose => TempPose);
+		TempPose := _FC_DemoBeltToMcs(vio_Config := fb_SpcBelt.vo_Visu.stConfig, vi_Pose := TempPose);
 		lr_TempRef := TempPose.fX;
 	END_IF
 END_IF
@@ -288,7 +291,8 @@ FOR n_TempK := 1 TO n_SPC_MOVERS DO
 		TempLatch.fY := lr_SPC_Y;
 		TempLatch.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 		TempLatch.fRz := 0;
-		fb_SpcBelt.m_MoveProduct(vi_udn_Id := udn_SpcProduct[n_TempNext], vi_Pose := TempLatch);
+		fb_SpcBelt.m_MoveProduct(vi_udn_Id := udn_SpcProduct[n_TempNext],
+			vi_Pose := _FC_DemoMcsToBelt(vio_Config := fb_SpcBelt.vo_Visu.stConfig, vi_Pose := TempLatch));
 		lr_TempRef := lr_TempX;
 
 		(* At the pitch behind the product ahead (or at the end of the release area): the belt takes it on. Only the

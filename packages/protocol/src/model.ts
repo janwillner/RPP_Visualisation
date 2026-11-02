@@ -9,7 +9,7 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 13;
+export const PROTOCOL_VERSION = 14;
 
 /** Full 6-DOF pose. Rotation order: R = Rz(rz) · Ry(ry) · Rx(rx). */
 export const PoseSchema = z.object({
@@ -54,7 +54,7 @@ export const FaultSchema = z.object({
 });
 export type Fault = z.infer<typeof FaultSchema>;
 
-/** Position plus rotation about Z, used for product latch poses. */
+/** Position plus rotation about Z, used for product latch poses (in the conveyor's coordinate system). */
 export const PlanarPoseSchema = z.object({
   x: z.number(),
   y: z.number(),
@@ -326,7 +326,10 @@ export type ProductState = z.infer<typeof ProductStateSchema>;
 
 export const ProductSchema = z.object({
   id: z.number().int(),
-  /** Bottom-centre of the product on the belt surface at the moment of the latch. */
+  /**
+   * Bottom-centre of the product on the belt surface at the moment of the latch, in the conveyor's coordinate system
+   * (its pose moved by its origin shift: X along the belt, rotation about Z from the belt's X).
+   */
   latchPose: PlanarPoseSchema,
   /** Belt position at the moment of the latch. */
   latchBeltPosition: z.number(),

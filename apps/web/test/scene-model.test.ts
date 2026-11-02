@@ -98,7 +98,7 @@ describe("scene model: MCS to renderer frame", () => {
 function product(overrides: Partial<Product> = {}): Product {
   return {
     id: 7,
-    latchPose: { x: 0, y: 0, z: 800, rz: 0 },
+    latchPose: { x: 0, y: 0, z: 0, rz: 0 },
     latchBeltPosition: 0,
     state: "detected",
     previousState: "detected",
@@ -119,24 +119,27 @@ function conveyorState(beltPosition: number, products: Product[], id = 1): State
 }
 
 describe("scene model: product tracking", () => {
-  it("moves a product from its latch pose along the conveying direction by the belt travel", () => {
-    const belt = conveyorConfig({ pose: { x: 1000, y: 0, z: 800, rx: 0, ry: 0, rz: 90 } });
-    const p = product({ latchPose: { x: 1000, y: 100, z: 800, rz: 15 }, latchBeltPosition: 40 });
+  it("moves a product from its latch pose in the conveyor's coordinate system along the belt by the belt travel", () => {
+    // Turned by 90°: the belt runs along MCS +Y, its coordinate system starts 100 mm along it at MCS (1000, 100).
+    const belt = conveyorConfig({ pose: { x: 1000, y: 0, z: 800, rx: 0, ry: 0, rz: 90 }, originShift: { x: 100, y: 0, z: 0 } });
+    const p = product({ latchPose: { x: 0, y: -50, z: 0, rz: 15 }, latchBeltPosition: 40 });
 
     const scene = buildScene(config(belt), [snapshot(0, [conveyorState(540, [p])])], 0);
 
     const [shown] = scene.products;
     expect(shown).toMatchObject({ productId: 7, conveyorId: 1, display: "normal", state: "detected" });
-    // Bottom centre at MCS (1000, 600, 800); the box centre sits half its height (40 mm) above.
-    closeTo(shown!.transform.position, [1, 0.82, -0.6]);
-    closeTo(rotate(shown!.transform.quaternion, [1, 0, 0]), [Math.cos((15 * Math.PI) / 180), 0, -Math.sin((15 * Math.PI) / 180)]);
+    // Bottom centre 500 mm further at belt (500, -50), i.e. MCS (1050, 600, 800); the box centre sits 20 mm above.
+    closeTo(shown!.transform.position, [1.05, 0.82, -0.6]);
+    // Turned with the belt (90°) plus its own 15°.
+    const a = (105 * Math.PI) / 180;
+    closeTo(rotate(shown!.transform.quaternion, [1, 0, 0]), [Math.cos(a), 0, -Math.sin(a)]);
     expect(shown!.size).toEqual({ length: 0.1, width: 0.08, height: 0.04 });
   });
 });
 
 describe("scene model: interpolation", () => {
   const belt = conveyorConfig();
-  const p = product({ latchPose: { x: 100, y: 0, z: 800, rz: 0 } });
+  const p = product({ latchPose: { x: 100, y: 0, z: 0, rz: 0 } });
   const xAt = (snapshots: StateMessage[], t: number) => buildScene(config(belt), snapshots, t).products[0]!.transform.position[0];
 
   it("interpolates the belt position linearly between the surrounding snapshots by tRel", () => {
@@ -304,7 +307,7 @@ describe("scene model: gripper fingers", () => {
   });
 
   it("hangs a product picked with a finger id below that finger's grip point, turned with the finger", () => {
-    const picked = product({ state: "picked", lastClientId: 20, fingerId: 1, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } });
+    const picked = product({ state: "picked", lastClientId: 20, fingerId: 1, latchPose: { x: 1000, y: 0, z: 0, rz: 0 } });
     const carried = at([fingerAt(1500, 0, 1000, 90)], [picked]).products.find((p) => p.display === "atTcp")!;
 
     // Grip point 50 mm below the finger top, the 40 mm product's centre 20 mm below that.
@@ -316,6 +319,18 @@ describe("scene model: gripper fingers", () => {
     const picked = product({ state: "picked", lastClientId: 20, fingerId: 0 });
     const carried = at([fingerAt(1500, 0, 1000)], [picked]).products.find((p) => p.display === "atTcp")!;
     closeTo(carried.transform.position, [1.5, 0.98, 0]);
+  });
+
+  it("keeps the flange frame of a turned Delta along the MCS axes", () => {
+    const turned = deltaConfig({ fingers: [cup], pose: { x: 1500, y: 0, z: 1800, rx: 0, ry: 0, rz: 30 } });
+    const picked = product({ state: "picked", lastClientId: 20, fingerId: 0 });
+    const scene = buildScene(
+      config(conveyorConfig(), turned),
+      [snapshot(0, [conveyorState(0, [picked]), deltaState(flange, flange, 20, [fingerAt(1500, 0, 1000)])])],
+      0,
+    );
+    const carried = scene.products.find((p) => p.display === "atTcp")!;
+    closeTo(rotate(carried.transform.quaternion, [1, 0, 0]), [1, 0, 0]);
   });
 
   it("hangs a product from an unknown finger at the flange and warns", () => {
@@ -369,7 +384,7 @@ describe("scene model: product lifecycle", () => {
     buildScene(config(belt, robot), [snapshot(0, [conveyorState(beltPosition, [p]), deltaState(tcp)])], 0).products;
 
   it("hangs a picked product below its robot's TCP and leaves a placeholder travelling on the belt", () => {
-    const shown = show(product({ state: "picked", lastClientId: 20, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } }), 200);
+    const shown = show(product({ state: "picked", lastClientId: 20, latchPose: { x: 1000, y: 0, z: 0, rz: 0 } }), 200);
 
     expect(shown.map((p) => p.display).sort()).toEqual(["atTcp", "placeholder"]);
     // The product's top touches the TCP: centre 20 mm (half of 40 mm) below.
@@ -380,12 +395,12 @@ describe("scene model: product lifecycle", () => {
 
   it("removes the placeholder once it passes the belt end, without flagging it as missed", () => {
     // Latched at belt x = 1000, travelled 2100 mm -> belt x = 3100 beyond the 3000 mm belt.
-    const shown = show(product({ state: "picked", lastClientId: 20, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } }), 2100);
+    const shown = show(product({ state: "picked", lastClientId: 20, latchPose: { x: 1000, y: 0, z: 0, rz: 0 } }), 2100);
     expect(shown.map((p) => p.display)).toEqual(["atTcp"]);
   });
 
   it("shows a placed product lying on the belt it was put down on, and hides it past the belt end", () => {
-    const placed = product({ state: "placed", lastClientId: 20, latchPose: { x: 1000, y: 0, z: 800, rz: 0 } });
+    const placed = product({ state: "placed", lastClientId: 20, latchPose: { x: 1000, y: 0, z: 0, rz: 0 } });
     const shown = show(placed, 200);
     expect(shown.map((p) => p.display)).toEqual(["normal"]);
     closeTo(shown[0]!.transform.position, [1.2, 0.82, 0]);
@@ -394,7 +409,7 @@ describe("scene model: product lifecycle", () => {
 
   it("flags an unpicked product that ran past the belt end as missed and holds it at the belt end", () => {
     for (const state of ["detected", "assigned"] as const) {
-      const shown = show(product({ state, latchPose: { x: 2900, y: 0, z: 800, rz: 0 } }), 500);
+      const shown = show(product({ state, latchPose: { x: 2900, y: 0, z: 0, rz: 0 } }), 500);
       expect(shown).toHaveLength(1);
       expect(shown[0]!.display).toBe("missed");
       // Held with its front edge at the belt end: centre half a length (50 mm) before 3000 mm.
@@ -403,7 +418,7 @@ describe("scene model: product lifecycle", () => {
   });
 
   it("hides a rejected product beyond the belt end instead of flagging it as missed", () => {
-    const shown = show(product({ state: "rejected", latchPose: { x: 2900, y: 0, z: 800, rz: 0 } }), 500);
+    const shown = show(product({ state: "rejected", latchPose: { x: 2900, y: 0, z: 0, rz: 0 } }), 500);
     expect(shown).toEqual([]);
   });
 
@@ -598,7 +613,7 @@ describe("scene model: measure mode", () => {
 
   it("offers a product's bottom corners and bottom centre, rotated with the product", () => {
     const straight = conveyorConfig();
-    const p = product({ latchPose: { x: 1000, y: 0, z: 800, rz: 90 } });
+    const p = product({ latchPose: { x: 1000, y: 0, z: 0, rz: 90 } });
     const scene = buildScene(config(straight), [snapshot(0, [conveyorState(0, [p])])], 0);
 
     // 100 × 80 mm product turned by 90°: its front (local +X) points along MCS +Y, its left along MCS −X.
@@ -619,8 +634,8 @@ describe("scene model: measure mode", () => {
         { id: 3, length: 140, width: 90, height: 40, shape: "roundedBox", cornerRadius: 20 },
       ],
     });
-    const can = { ...product({ latchPose: { x: 1000, y: 0, z: 800, rz: 0 } }), id: 7, productType: 2 };
-    const pouch = { ...product({ latchPose: { x: 2000, y: 0, z: 800, rz: 0 } }), id: 8, productType: 3 };
+    const can = { ...product({ latchPose: { x: 1000, y: 0, z: 0, rz: 0 } }), id: 7, productType: 2 };
+    const pouch = { ...product({ latchPose: { x: 2000, y: 0, z: 0, rz: 0 } }), id: 8, productType: 3 };
     const scene = buildScene(config(belt), [snapshot(0, [conveyorState(0, [can, pouch])])], 0);
 
     expect(scene.products.map((p) => [p.productId, p.shape, p.cornerRadius])).toEqual([

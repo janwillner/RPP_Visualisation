@@ -126,7 +126,7 @@ export interface SceneDelta {
 
   /** Lower-arm joints on the effector; empty when the TCP is not reachable. */
   effectorJoints: Vec3[];
-  /** Effector centre at the actual TCP (the gripper flange), turned with the base. */
+  /** Effector plate at the actual TCP, turned with the base like its arm joints (the flange frame keeps the MCS axes). */
   effector: Transform | null;
   /** False when the arms cannot reach the reported TCP (the effector is still drawn at the TCP). */
   reachable: boolean;
@@ -519,8 +519,8 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
       ctx.scene.deltas.push(delta);
       ctx.addFault(c.id, null, delta.fault, lifted(frame.origin, LABEL_LIFT.delta));
       if (state) {
-        // The flange is the effector centre, turned with the base.
-        const flange: Frame = { rotation: frame.rotation, origin: positionToMcs(state.actualTcp) };
+        // The flange frame lies at the TCP with the MCS axes, whatever way the robot is mounted.
+        const flange: Frame = { rotation: rotZ(0), origin: positionToMcs(state.actualTcp) };
         ctx.carriers.set(`${c.id}:0`, flange);
         ctx.addGripper(c, [{ moverId: 0, flange, states: state.fingers, faulted: delta.fault !== null }]);
       }
@@ -1151,11 +1151,15 @@ function lerpFingers(a: FingerState[], b: FingerState[], f: number): FingerState
 
 /** How far along the belt a product is now, mm from the conveyor's pose along its conveying direction. */
 export function productBeltX(c: ConveyorConfig, state: ConveyorState, p: Product): number {
-  const frame = frameFromPose(c.pose);
-  const direction = apply(frame.rotation, [1, 0, 0]);
+  // The latch pose is in the conveyor's coordinate system, which lies at the origin shift from its pose.
+  return c.originShift.x + p.latchPose.x + (state.beltPosition - p.latchBeltPosition);
+}
+
+/** A product's bottom centre now, in the MCS and turned with the product: its latch pose moved by the belt travel. */
+function productBottom(c: ConveyorConfig, state: ConveyorState, p: Product): Frame {
+  const belt = originFrame(c);
   const travel = state.beltPosition - p.latchBeltPosition;
-  const latch: Vec3 = [p.latchPose.x, p.latchPose.y, p.latchPose.z];
-  return latch.reduce((sum, v, i) => sum + (v - frame.origin[i]!) * direction[i]!, 0) + travel;
+  return child(belt, [p.latchPose.x + travel, p.latchPose.y, p.latchPose.z], rotZ(p.latchPose.rz));
 }
 
 /**
@@ -1184,12 +1188,8 @@ function conveyorProducts(
   for (const p of state.products) {
     const type = withShape(c.productTypes.find((t) => t.id === p.productType) ?? DEFAULT_PRODUCT);
     const size = { length: type.length * MM, width: type.width * MM, height: type.height * MM };
-    const travel = state.beltPosition - p.latchBeltPosition;
-    const bottom: Vec3 = [
-      p.latchPose.x + direction[0] * travel,
-      p.latchPose.y + direction[1] * travel,
-      p.latchPose.z + direction[2] * travel,
-    ];
+    const { rotation, origin } = productBottom(c, state, p);
+    const bottom: Vec3 = [...origin];
     const shown = (display: ProductDisplay, frame: Frame): SceneProduct => ({
       key: `${c.id}:${p.id}:${display}`,
       productId: p.id,
@@ -1204,7 +1204,7 @@ function conveyorProducts(
       raw: p,
     });
     const onBelt = (display: ProductDisplay) =>
-      shown(display, { rotation: rotZ(p.latchPose.rz), origin: [bottom[0], bottom[1], bottom[2]] });
+      shown(display, { rotation, origin: [bottom[0], bottom[1], bottom[2]] });
 
     const beltX = productBeltX(c, state, p);
     const beyondEnd = beltX > c.length;

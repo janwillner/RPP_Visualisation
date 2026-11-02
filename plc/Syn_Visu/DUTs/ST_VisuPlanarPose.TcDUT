@@ -3,7 +3,7 @@
   <DUT Name="ST_VisuPlanarPose" Id="{7d4ef9b3-977d-4a92-ae2d-76dab781ea87}">
     <Declaration><![CDATA[TYPE ST_VisuPlanarPose :
 STRUCT
-	(* Position plus rotation about Z in the MCS, used for TCPs and product latch poses. *)
+	(* Position plus rotation about Z, used for product latch poses (in the conveyor's coordinate system). *)
 	fX : LREAL; // mm
 	fY : LREAL; // mm
 	fZ : LREAL; // mm

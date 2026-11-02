@@ -1,4 +1,4 @@
-# PLC contract (library `Syn_Visu`, protocol version 13)
+# PLC contract (library `Syn_Visu`, protocol version 14)
 
 This is the PLC side of the contract the gateway reads. It is implemented by the TwinCAT library project in
 `plc/Syn_Visu` (solution `plc/RPP_Visu.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
@@ -56,11 +56,16 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   `ePreviousState` equals `eState` until the first change after the latch; setting the same state again keeps it.
 - Fault: every component state, every XTS mover and every track module (`aModuleStates[i]`) carries `stFault : ST_VisuFault` (`bActive`, `sMessage` STRING(80)). While `bActive` is TRUE the visualisation draws the component, or only that mover or module, red and shows `sMessage` ("Fault" if empty) above it, in the component list, in the inspector and as a mark on the recording's timeline. There is one fault per component, mover or module at a time and no severity. Faults are live state: they are read every cycle and not interpolated.
 - `fBeltPosition` is a continuous position in mm (no modulo). For modulo axes use `_FB_VisuConveyor.m_SetModuloBeltPosition`.
-- Product latch pose = bottom centre of the product on the belt surface when it was latched.
+- Product latch pose = bottom centre of the product on the belt surface when it was latched, **in the conveyor's
+  coordinate system**: from the conveyor's `stPose` moved by its `stOriginShift`, `fX` along the conveying direction,
+  `fY` across the belt, `fZ` up, `fRz` from the belt's X axis. The visualisation moves the product from there along
+  the belt by `fBeltPosition − fLatchBeltPosition`. The application converts MCS positions (e.g. a finger's pose when
+  placing) into these coordinates itself.
 - Delta: the PLC reports only the **TCP** (effector centre, the gripper flange) as a position in the MCS. The
   visualisation derives the arm posture by inverse kinematics from the configured geometry: arm 1 lies along the
   base's local +X, arms 2 and 3 follow counter-clockwise (seen from above) at 120°; 0° = upper arm horizontal,
-  positive = downward. The effector stays turned with the base; a 4th axis shows only through the finger poses.
+  positive = downward. The effector stays turned with the base; a 4th axis shows only through the finger poses. The TCP's
+  axis triad and the flange frame keep the MCS axes, however the robot is mounted.
 - Delta limit area: an optional axis-aligned box in the robot frame (relative to the base centre, turned with the
   base pose) that further restricts the working area, e.g. so that neighbouring robots cannot collide. It is drawn
   only while `stLimitArea.bActive` is TRUE.
@@ -78,7 +83,8 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   measuring coordinates are shown from there. For a conveyor the belt coordinates also count from it: a zone's
   `fStart`, `fEnd` and `fCcsOffset` are measured along the belt from `stOriginShift.fX` (its Y and Z move only the
   shown origin). For robots only the shown origin moves; geometry, working and limit area, axis values and mover
-  positions stay relative to `stPose`. MCS values (latch poses, finger poses, TCP) are not affected.
+  positions stay relative to `stPose`. MCS values (finger poses, TCP) are not affected; product latch poses count
+  from a conveyor's shifted origin like its belt coordinates.
 - XTS track (XTS gantry and XTS loop): a chain of track modules (`nModuleCount`, `aModules`, at most
   `VISU_GlobalConst_Param.VISU_un_MAX_MODULES`) in the order the movers run along it, each starting where the one
   before it ends. A module is `STRAIGHT` or a quarter curve (`CURVE_LEFT`, `CURVE_RIGHT`: 90° to the left or right
@@ -125,8 +131,9 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
 - A product in state PICKED hangs from robot `nLastClientId`, mover `nMoverId` (0 for a robot without movers) and finger
   `nFingerId` (1-based): its top touches the finger's grip point and it takes the finger's full orientation. With
   `nFingerId` = 0 (or an unknown finger, which also raises a warning) it hangs at the gripper flange, turned with the
-  robot. When placing, set the product's latch `fRz` to the finger's MCS rotation about Z so it stays turned on the
-  belt.
+  robot (a Delta's flange keeps the MCS axes, however the robot is mounted). When placing, set the product's latch pose
+  to the finger's grip point in the conveyor's coordinate system and its `fRz` to the finger's MCS rotation about Z
+  minus the conveyor's, so it stays turned on the belt.
 - Protocol version 2 removed the Delta axis positions (`aAxisPositions`) and axis calibration (`aAxes`) of version 1.
 - Protocol version 3 renamed `stWorkArea` to `stWorkingArea` and the windows (`nWindowCount`, `aWindows`, `ST_VisuWindow`, `E_VisuWindowKind`) to zones (`nZoneCount`, `aZones`, `ST_VisuZone`, `E_VisuZoneKind`).
 - Protocol version 4 added the XTS gantry and XTS loop and the product's `nMoverId`, and renamed `fEncoder` to `fBeltPosition` and `fLatchEncoder` to `fLatchBeltPosition`.
@@ -145,6 +152,8 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
 - Protocol version 13 made the product's client generic: `nLastClientId` and `ePreviousState` replace `nRobotId` and
   `nDetectorId` (`vi_udn_ClientId` replaces `vi_udn_RobotId` and `vi_udn_DetectorId` in `m_LatchProduct` and
   `m_SetProductState`), and added the station (`ST_VisuStation`, `E_VisuComponentType.STATION`; ADR 0009).
+- Protocol version 14 gives the product's `stLatchPose` in the conveyor's coordinate system instead of the MCS
+  (ADR 0010).
 
 ## What the library contains
 

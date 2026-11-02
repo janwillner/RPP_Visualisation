@@ -935,7 +935,7 @@ function TriadArrow({ color, quaternion }: { color: string; quaternion: THREE.Qu
   );
 }
 
-// Triad in the effector's local frame: MCS X -> local +X, MCS Y -> local -Z, MCS Z -> local +Y.
+// Triad along the MCS axes (renderer frame): MCS X -> +X, MCS Y -> -Z, MCS Z -> +Y.
 const TRIAD = [
   { color: AXES.x, quaternion: new THREE.Quaternion().setFromUnitVectors(Y_AXIS, new THREE.Vector3(1, 0, 0)) },
   { color: AXES.y, quaternion: new THREE.Quaternion().setFromUnitVectors(Y_AXIS, new THREE.Vector3(0, 0, -1)) },
@@ -957,6 +957,8 @@ function DeltaMesh(props: {
   /** Per arm: elbow bar, effector bar, two rods, four ball joints. */
   const lower = useRef<(THREE.Object3D | null)[][]>([[], [], []]);
   const setpoint = useRef<THREE.Mesh>(null);
+  /** Axis triad at the actual TCP, unturned: the TCP is reported in the MCS. */
+  const triad = useRef<THREE.Group>(null);
 
   // Static parts in the base's local frame (renderer axes: MCS local Y is local -Z).
   const parts = useMemo(() => {
@@ -1013,6 +1015,10 @@ function DeltaMesh(props: {
       placeBetween(rodA ?? null, v(ends[0]!), v(ends[2]!));
       placeBetween(rodB ?? null, v(ends[1]!), v(ends[3]!));
       balls.forEach((b, k) => b?.position.copy(ends[k]!));
+    }
+    if (triad.current) {
+      triad.current.visible = showTcp && d.actualTcp !== null;
+      if (d.actualTcp) triad.current.position.set(...d.actualTcp);
     }
     if (setpoint.current) {
       setpoint.current.visible = showTcp && d.setpointTcp !== null;
@@ -1086,7 +1092,11 @@ function DeltaMesh(props: {
             <meshStandardMaterial color={DELTA_COLORS.effector} metalness={0.3} roughness={0.5} />
             <EdgeLines geometry={parts.effectorPlate} />
           </mesh>
-          {showTcp && TRIAD.map((t) => <TriadArrow key={t.color} color={t.color} quaternion={t.quaternion} />)}
+        </group>
+        <group ref={triad} userData={{ label: name + " TCP axes" }}>
+          {TRIAD.map((t) => (
+            <TriadArrow key={t.color} color={t.color} quaternion={t.quaternion} />
+          ))}
         </group>
         <mesh ref={setpoint} userData={{ label: name + " setpoint TCP" }}>
           <octahedronGeometry args={[0.018]} />

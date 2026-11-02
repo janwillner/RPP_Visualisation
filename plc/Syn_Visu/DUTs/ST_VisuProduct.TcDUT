@@ -5,7 +5,7 @@
 STRUCT
 	nId : UDINT;
 	bValid : BOOL; // invalid entries are not shown
-	stLatchPose : ST_VisuPlanarPose; // MCS, bottom centre of the product at latch time
+	stLatchPose : ST_VisuPlanarPose; // conveyor coordinate system (stPose + stOriginShift), bottom centre at latch time
 	fLatchBeltPosition : LREAL; // conveyor fBeltPosition at latch time, mm
 	eState : E_VisuProductState;
 	ePreviousState : E_VisuProductState; // state before the last change; equals eState until the first change

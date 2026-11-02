@@ -71,6 +71,7 @@ says so in its status.
 
 | Library `SynVisu` | Protocol version | Gateway |
 | --- | --- | --- |
+| 7.0.x | 14 | releases from protocol 14 on (product poses in the conveyor's coordinate system) |
 | 6.0.x | 13 | releases from protocol 13 on (generic product client, station) |
 | 5.1.x | 12 | protocol 12; the status bar also shows the library version |
 | 5.0.x | 12 | protocol 12 (XTS tracks of motor modules) |
@@ -166,7 +167,9 @@ A wrong path is the most common mistake: the gateway then reports a discovery er
   A component turned by `fRz := 90` has its local +X along MCS +Y.
 - **Belt coordinates:** positions along a conveyor (zones, CCS) are measured along the belt from its start, or from
   its origin shift (below), not in the MCS.
-- **Absolute values:** finger poses, the Delta's TCP and product latch poses are absolute in the MCS.
+- **Product poses** (latch pose, `m_GetProduct`, `m_MoveProduct`) are in the conveyor's coordinate system: from its
+  pose moved by its origin shift, X along the belt, Y across it, Z up from the belt surface, Rz from the belt's X.
+- **Absolute values:** finger poses and the Delta's TCP are absolute in the MCS.
 - **Origin shift:** `m_SetOriginShift(vi_lr_X, vi_lr_Y, vi_lr_Z)` moves the component's shown coordinate system away
   from its pose (mm in the component's local frame). The origin triad and the local measuring coordinates in the web
   app use it. For a **conveyor** the belt coordinates also count from the shifted X; use this when the machine's
@@ -225,23 +228,26 @@ drives how it is drawn.
 Rules:
 
 - **Latch pose:** `vi_LatchPose` (`ST_VisuPlanarPose`: X, Y, Z, Rz) is the bottom centre of the product on the belt
-  surface, in the MCS, at the latch moment. If the product was detected some cycles earlier, pass the belt position
+  surface, in the conveyor's coordinate system (from its origin shift), at the latch moment. A product detected
+  where the belt's coordinate system starts has `fX = 0`, one in the middle of the belt `fY = 0`, `fZ` is 0 on the
+  belt surface. If the product was detected some cycles earlier, pass the belt position
   of that moment in `vi_lr_LatchBeltPosition` with `vi_b_UseLatchBeltPosition := TRUE`.
 - **Missed products:** a product that passes the belt end while still `DETECTED` or `ASSIGNED` is flagged as missed
   in the web app (red, counted in the metrics, marked on the recording's timeline). `PLACED` and `REJECTED`
   products pass the end on purpose.
-- **Placing turned products:** when placing, set the new latch pose's `fRz` to the finger's MCS rotation about Z, so
-  the product keeps its orientation on the outfeed.
+- **Placing:** a robot works in the MCS (finger poses), so convert where its finger puts the product down into the
+  outfeed's coordinate system, and set `fRz` to the finger's MCS rotation about Z minus the outfeed's, so the product
+  keeps its orientation. For a belt along MCS +X: `fX = x − (pose.fX + shift.fX)`, `fY = y − (pose.fY + shift.fY)`.
 - **The client:** every call that latches or changes a product names the client that does it in `vi_udn_ClientId`:
   the vision system, sensor or station that latched it, the robot that is assigned to, picks, places or releases it,
   the station that rejects it. The product keeps it as `nLastClientId`, with the state before the change as
   `ePreviousState`. The inspector's product history then says who did what ("detected by Vision 1", "picked by
   Delta 1", "rejected by Reject unit"), and the metrics count per client.
 - **Reading the register:** `m_ProductCount()`, `m_GetProduct(vi_un_Index, vo_Product =>, vo_Pose =>)` (with the
-  product's current MCS pose), `m_FindProduct(vi_udn_Id)`. Useful when the machine's own data does not hold the
+  product's current pose in the conveyor's coordinate system: the latch pose moved along X by the belt travel), `m_FindProduct(vi_udn_Id)`. Useful when the machine's own data does not hold the
   product's position, e.g. to match a pick to the nearest mover.
 - **Pushing a product along the belt** (e.g. a spacing XTS loop under the belt): `m_MoveProduct(vi_udn_Id, vi_Pose)`
-  puts it at a new MCS pose at the current belt position and keeps its state.
+  puts it at a new pose (conveyor coordinate system) at the current belt position and keeps its state.
 
 ### 5.4 Example
 
@@ -255,9 +261,10 @@ fb_Infeed.m_SetProductType(vi_udn_Id := 2, vi_lr_Length := 80, vi_lr_Width := 80
 (* Each cycle: belt first, then latches *)
 fb_Infeed.m_SetBeltPosition(axInfeed.NcToPlc.ActPos);
 IF b_ProductLatched THEN
+	(* In the infeed's coordinate system: along the belt from its origin, across from its middle, on its surface *)
 	LatchPose.fX := lr_LatchX;
 	LatchPose.fY := lr_LatchY;
-	LatchPose.fZ := InfeedPose.fZ;
+	LatchPose.fZ := 0;
 	LatchPose.fRz := lr_LatchRz;
 	fb_Infeed.m_LatchProduct(vi_udn_Id := udn_ProductId, vi_LatchPose := LatchPose, vi_udn_ProductType := 1,
 		vi_udn_ClientId := fb_Vision1.m_Id());

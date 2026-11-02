@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoCartesian" Id="{962bd043-8439-470a-b5d0-59471fffd826}" SpecialFunc="None">
+  <POU Name="P_VisuDemoCartesian" Id="{bf14b9f5-ea5f-4fb6-9c76-7ef1992edc22}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -131,7 +131,8 @@ IF lr_SinceSpawn >= lr_CART_SPAWN_INTERVAL THEN
 	LatchPose.fY := lr_CART_INFEED_Y;
 	LatchPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 	LatchPose.fRz := (UDINT_TO_LREAL((udn_Seed / 1000) MOD 1000) / 1000.0 - 0.5) * 60.0;
-	IF fb_CartInfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := LatchPose,
+	IF fb_CartInfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
+		vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_CartInfeed.vo_Visu.stConfig, vi_Pose := LatchPose),
 		vi_udn_ProductType := 1)
 	THEN
 		DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
@@ -274,6 +275,7 @@ IF udn_CartProduct <> 0 THEN
 	IF n_TempFound >= 0 THEN
 		b_TempHave := fb_CartInfeed.m_GetProduct(vi_un_Index := INT_TO_UINT(n_TempFound), vo_Product => TempProduct,
 			vo_Pose => TempProductPose);
+		TempProductPose := _FC_DemoBeltToMcs(vio_Config := fb_CartInfeed.vo_Visu.stConfig, vi_Pose := TempProductPose);
 		lr_TempProductY := TempProductPose.fX - lr_CART_X;
 	END_IF
 END_IF
@@ -284,6 +286,7 @@ CASE n_CartPhase OF
 		un_TempScan := 0;
 		WHILE udn_CartProduct = 0 AND un_TempScan < fb_CartInfeed.m_ProductCount() DO
 			fb_CartInfeed.m_GetProduct(vi_un_Index := un_TempScan, vo_Product => TempProduct, vo_Pose => TempProductPose);
+			TempProductPose := _FC_DemoBeltToMcs(vio_Config := fb_CartInfeed.vo_Visu.stConfig, vi_Pose := TempProductPose);
 			IF TempProduct.eState = E_VisuProductState.DETECTED
 			AND TempProductPose.fX - lr_CART_X >= 100
 			AND TempProductPose.fX - lr_CART_X <= 600
@@ -360,7 +363,8 @@ CASE n_CartPhase OF
 		TempPlacePose.fY := lr_CART_Y - lr_CartX;
 		TempPlacePose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 		TempPlacePose.fRz := -90 + lr_CartC;
-		IF fb_CartOutfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_LatchPose := TempPlacePose,
+		IF fb_CartOutfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
+			vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_CartOutfeed.vo_Visu.stConfig, vi_Pose := TempPlacePose),
 			vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_ClientId := fb_Cartesian.m_Id())
 		THEN
 			DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;

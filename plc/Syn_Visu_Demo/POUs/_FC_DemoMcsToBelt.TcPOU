@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FC_DemoMcsToBelt" Id="{359bb42b-74e0-4ff3-98f0-f4201f1b4756}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+DEMO ONLY: an MCS product pose in a conveyor's coordinate system, as m_LatchProduct and m_MoveProduct take it.<br>
+The inverse of _FC_DemoBeltToMcs (demo conveyors run along MCS +X without rotation).<br>
+****************************************************************************************************)
+FUNCTION _FC_DemoMcsToBelt : ST_VisuPlanarPose
+VAR_IN_OUT CONSTANT
+	vio_Config							: ST_VisuConveyorConfig;	// the conveyor's vo_Visu.stConfig
+END_VAR
+VAR_INPUT
+	vi_Pose								: ST_VisuPlanarPose;	// MCS
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[_FC_DemoMcsToBelt := vi_Pose;
+_FC_DemoMcsToBelt.fX := vi_Pose.fX - vio_Config.stPose.fX - vio_Config.stOriginShift.fX;
+_FC_DemoMcsToBelt.fY := vi_Pose.fY - vio_Config.stPose.fY - vio_Config.stOriginShift.fY;
+_FC_DemoMcsToBelt.fZ := vi_Pose.fZ - vio_Config.stPose.fZ - vio_Config.stOriginShift.fZ;
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

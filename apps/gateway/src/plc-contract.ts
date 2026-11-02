@@ -132,6 +132,7 @@ export interface ST_VisuConveyorConfig {
 export interface ST_VisuProduct {
   nId: number;
   bValid: boolean;
+  /** Bottom centre at the latch, in the conveyor's coordinate system (from stPose + stOriginShift). */
   stLatchPose: ST_VisuPlanarPose;
   fLatchBeltPosition: number;
   eState: PlcEnum;
