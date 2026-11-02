@@ -194,7 +194,10 @@ const CART = {
   xOutfeed: 100,
   xInfeed: 900,
   yHome: 200,
-  yPlace: 500,
+  /** Where a product is put down that the next one is stacked on; the next one follows it along the belt. */
+  yStackBase: 300,
+  /** Beyond this the robot does not stack any more: the product below would leave its reach while it lowers. */
+  yStackMax: 900,
   zPick: -550,
   zTravel: -200,
   tilt: 20,
@@ -442,8 +445,8 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
           { nConveyorId: CART_INFEED.id, fStart: CART.x, fEnd: CART.x + 1000 },
           {
             nConveyorId: CART_OUTFEED.id,
-            fStart: CART.x + CART.yPlace - 200,
-            fEnd: CART.x + CART.yPlace + 200,
+            fStart: CART.x + CART.yStackBase - 100,
+            fEnd: CART.x + CART.yStackMax + 100,
           },
         ]),
       }),
@@ -536,6 +539,10 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   const axes = { x: CART.xInfeed, y: CART.yHome, z: CART.zTravel, c: 0, a: 0, gripper: false, jaw: CART_TOOL.jawOpen };
   let cartPhase: CartPhase = "idle";
   let cartTarget: TrackedProduct | undefined;
+  /** Product on the Cartesian outfeed that the next one is stacked on; undefined: the next one becomes it. */
+  let stackBase: TrackedProduct | undefined;
+  /** Whether the product carried now goes onto stackBase. */
+  let stacking = false;
 
   /**
    * Current MCS position of a tracked product's bottom centre. Its latch pose is in the conveyor's coordinate system;
@@ -577,12 +584,14 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     eState: TrackedProduct["eState"] = E_VisuProductState.DETECTED,
     productType: number = PRODUCT.type,
     clientId = 0,
+    /** Bottom above the belt surface, e.g. the height of the product it is stacked on. */
+    height = 0,
   ): void {
     products.push({
       ...emptyProduct(),
       nId: nextId++,
       bValid: true,
-      stLatchPose: { fX: x - c.stConfig.stPose.fX, fY: y - c.stConfig.stPose.fY, fZ: BELT_Z - c.stConfig.stPose.fZ, fRz: rz },
+      stLatchPose: { fX: x - c.stConfig.stPose.fX, fY: y - c.stConfig.stPose.fY, fZ: BELT_Z + height - c.stConfig.stPose.fZ, fRz: rz },
       fLatchBeltPosition: c.stState.fBeltPosition,
       eState,
       nProductType: productType,
@@ -859,6 +868,10 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     };
     // The gripper's +X in the MCS is pose rz (−90°) + C; it is turned onto the product's orientation.
     const pickC = (p: TrackedProduct) => p.stLatchPose.fRz + 90;
+    // Robot Y of the product to stack on, following it along the outfeed.
+    const stackY = () => (stackBase ? productPosition(stackBase, cartOutfeed)[0] - CART.x : undefined);
+    const placeY = () => (stacking ? stackY()! : CART.yStackBase);
+    const placeZ = () => CART.zPick + (stacking ? PRODUCT.height : 0);
     switch (cartPhase) {
       case "idle": {
         cartTarget = cartInfeedProducts.find(
@@ -895,18 +908,24 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
         if (move({ z: CART.zTravel })) cartPhase = "transfer";
         break;
       case "transfer":
-        if (move({ x: CART.xOutfeed, y: CART.yPlace, c: pickC(cartTarget!) + CART.turn })) cartPhase = "lower";
+        // Every second product goes on top of the one put down before, as long as that one is still in reach.
+        stacking = stackBase !== undefined && cartOutfeedProducts.includes(stackBase) && stackY()! <= CART.yStackMax;
+        if (!stacking) stackBase = undefined;
+        if (move({ x: CART.xOutfeed, y: placeY(), c: pickC(cartTarget!) + CART.turn })) cartPhase = "lower";
         break;
       case "lower":
-        if (move({ z: CART.zPick, a: CART.tilt })) cartPhase = "straighten";
+        if (move({ y: placeY(), z: placeZ(), a: CART.tilt })) cartPhase = "straighten";
         break;
       case "straighten":
-        if (move({ a: 0 })) cartPhase = "release";
+        if (move({ y: placeY(), a: 0 })) cartPhase = "release";
         break;
       case "release": {
         remove(cartInfeedProducts, cartTarget!);
         // Turned by −90°: the TCP (A = 0) is at MCS x = origin + Y, y = origin − X; the product keeps the gripper turn.
-        latch(cartOutfeedProducts, cartOutfeed, CART.x + axes.y, CART.y - axes.x, -90 + axes.c, E_VisuProductState.PLACED, PRODUCT.type, CART.id);
+        // A stacked product lies one product height above the belt.
+        latch(cartOutfeedProducts, cartOutfeed, CART.x + axes.y, CART.y - axes.x, -90 + axes.c, E_VisuProductState.PLACED, PRODUCT.type, CART.id, stacking ? PRODUCT.height : 0);
+        stackBase = stacking ? undefined : cartOutfeedProducts[cartOutfeedProducts.length - 1];
+        stacking = false;
         cartTarget = undefined;
         axes.gripper = false;
         cartPhase = "rise";

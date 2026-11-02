@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoCartesian" Id="{bf14b9f5-ea5f-4fb6-9c76-7ef1992edc22}" SpecialFunc="None">
+  <POU Name="P_VisuDemoCartesian" Id="{0163ed05-fd49-42fd-b40d-c173077815de}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -8,7 +8,8 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 DEMO ONLY: Cartesian application (Y = 6500..7300). A Cartesian robot picks products from the Cartesian infeed,<br>
-turns them by C = -90 deg, tilts them by A while lowering and places them onto the Cartesian outfeed. Its gripper<br>
+turns them by C = -90 deg, tilts them by A while lowering and places them onto the Cartesian outfeed, every second<br>
+one on top of the one it put down before (following it along the belt). Its gripper<br>
 is a cup in the middle with two jaws beside it. Called by P_VisuDemo.<br>
 ****************************************************************************************************)
 PROGRAM P_VisuDemoCartesian
@@ -38,6 +39,8 @@ VAR
 	lr_CartJaw							: LREAL := 120;	// [mm] jaw distance from the cup along the gripper's X
 	b_CartGrip							: BOOL;
 	udn_CartProduct						: UDINT;	// [-] product id on the Cartesian infeed
+	udn_CartStackBase					: UDINT;	// [-] product on the outfeed the next one is stacked on, 0 = the next one becomes it
+	b_CartStacking						: BOOL;	// the product carried now goes onto udn_CartStackBase
 END_VAR
 VAR CONSTANT
 	(* Robot turned by -90 deg: X axis across the belts towards MCS -Y (outfeed under X = 100, infeed under
@@ -62,7 +65,8 @@ VAR CONSTANT
 	lr_CART_X_OUTFEED					: LREAL := 100;	// [mm]
 	lr_CART_X_INFEED					: LREAL := 900;	// [mm]
 	lr_CART_Y_HOME						: LREAL := 200;	// [mm]
-	lr_CART_Y_PLACE						: LREAL := 500;	// [mm]
+	lr_CART_Y_STACK_BASE				: LREAL := 300;	// [mm] a product the next one is stacked on is put down here
+	lr_CART_Y_STACK_MAX				: LREAL := 900;	// [mm] beyond this no stacking: the product below would leave the reach
 	lr_CART_Z_PICK						: LREAL := -550;	// [mm]
 	lr_CART_Z_TRAVEL					: LREAL := -200;	// [mm]
 	lr_CART_TILT						: LREAL := 20;	// [deg] A while lowering
@@ -157,8 +161,8 @@ fb_Cartesian.m_SetFinger(vi_un_Finger := 3, vi_lr_Diameter := lr_CART_JAW_DIAMET
 fb_Cartesian.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_CartInfeed.m_Id(),
 	vi_lr_Start := 0, vi_lr_End := 1000, vi_lr_CcsOffset := 0);
 fb_Cartesian.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_CartOutfeed.m_Id(),
-	vi_lr_Start := lr_CART_X + lr_CART_Y_PLACE - 200, vi_lr_End := lr_CART_X + lr_CART_Y_PLACE + 200,
-	vi_lr_CcsOffset := lr_CART_X + lr_CART_Y_PLACE);
+	vi_lr_Start := lr_CART_X + lr_CART_Y_STACK_BASE - 100, vi_lr_End := lr_CART_X + lr_CART_Y_STACK_MAX + 100,
+	vi_lr_CcsOffset := lr_CART_X + (lr_CART_Y_STACK_BASE + lr_CART_Y_STACK_MAX) / 2);
 m_Step();
 fb_Cartesian.m_SetAxes(vi_lr_X := lr_CartX, vi_lr_Y := lr_CartY, vi_lr_Z := lr_CartZ, vi_b_GripperActive := b_CartGrip);
 
@@ -255,7 +259,9 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 Cartesian robot: follows a product on the Cartesian infeed in Y with the gripper turned onto it (C), picks<br>
 it, carries it across to the outfeed while turning it by a further -90 deg, tilts it by A while lowering,<br>
-straightens it and places it.<br>
+straightens it and places it. Every second product goes on top of the one put down before, following it along<br>
+the outfeed, as long as that one is in reach; otherwise it is put down at lr_CART_Y_STACK_BASE and the next one<br>
+is stacked on it.<br>
 ****************************************************************************************************)
 METHOD PRIVATE m_Step : BOOL
 VAR
@@ -266,6 +272,14 @@ VAR
 	TempProduct							: ST_VisuProduct;
 	TempProductPose						: ST_VisuPlanarPose;
 	TempPlacePose						: ST_VisuPlanarPose;
+	TempStackProduct					: ST_VisuProduct;
+	TempStackPose						: ST_VisuPlanarPose;
+	n_TempStackIdx						: INT;
+	b_TempStackFound					: BOOL;
+	lr_TempStackY						: LREAL;	// [mm] robot Y of the product to stack on
+	lr_TempPlaceY						: LREAL;	// [mm] robot Y to put the product down at
+	lr_TempPlaceZ						: LREAL;	// [mm] robot Z to put it down at: one product higher when stacking
+	udn_TempPlacedId					: UDINT;
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[(* Current product *)
@@ -279,6 +293,24 @@ IF udn_CartProduct <> 0 THEN
 		lr_TempProductY := TempProductPose.fX - lr_CART_X;
 	END_IF
 END_IF
+
+(* Product to stack on, while it travels on the outfeed *)
+b_TempStackFound := FALSE;
+IF udn_CartStackBase <> 0 THEN
+	n_TempStackIdx := fb_CartOutfeed.m_FindProduct(udn_CartStackBase);
+	IF n_TempStackIdx >= 0 THEN
+		fb_CartOutfeed.m_GetProduct(vi_un_Index := INT_TO_UINT(n_TempStackIdx), vo_Product => TempStackProduct,
+			vo_Pose => TempStackPose);
+		TempStackPose := _FC_DemoBeltToMcs(vio_Config := fb_CartOutfeed.vo_Visu.stConfig, vi_Pose := TempStackPose);
+		lr_TempStackY := TempStackPose.fX - lr_CART_X;
+		b_TempStackFound := TRUE;
+	END_IF
+END_IF
+IF NOT b_TempStackFound THEN
+	b_CartStacking := FALSE;
+END_IF
+lr_TempPlaceY := SEL(b_CartStacking, lr_CART_Y_STACK_BASE, lr_TempStackY);
+lr_TempPlaceZ := lr_CART_Z_PICK + SEL(b_CartStacking, 0, DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
 
 (* Sequence *)
 CASE n_CartPhase OF
@@ -337,21 +369,28 @@ CASE n_CartPhase OF
 		END_IF
 
 	n_CART_TRANSFER:
-		IF m_Move(vi_lr_X := lr_CART_X_OUTFEED, vi_lr_Y := lr_CART_Y_PLACE, vi_lr_Z := lr_CART_Z_TRAVEL,
+		(* Every second product goes onto the one put down before, as long as that one is in reach. *)
+		b_CartStacking := b_TempStackFound AND lr_TempStackY <= lr_CART_Y_STACK_MAX;
+		IF NOT b_CartStacking THEN
+			udn_CartStackBase := 0;
+		END_IF
+		lr_TempPlaceY := SEL(b_CartStacking, lr_CART_Y_STACK_BASE, lr_TempStackY);
+		lr_TempPlaceZ := lr_CART_Z_PICK + SEL(b_CartStacking, 0, DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
+		IF m_Move(vi_lr_X := lr_CART_X_OUTFEED, vi_lr_Y := lr_TempPlaceY, vi_lr_Z := lr_CART_Z_TRAVEL,
 			vi_lr_C := lr_CartPickC + lr_CART_TURN, vi_lr_A := 0)
 		THEN
 			n_CartPhase := n_CART_LOWER;
 		END_IF
 
 	n_CART_LOWER:
-		IF m_Move(vi_lr_X := lr_CartX, vi_lr_Y := lr_CartY, vi_lr_Z := lr_CART_Z_PICK, vi_lr_C := lr_CartC,
+		IF m_Move(vi_lr_X := lr_CartX, vi_lr_Y := lr_TempPlaceY, vi_lr_Z := lr_TempPlaceZ, vi_lr_C := lr_CartC,
 			vi_lr_A := lr_CART_TILT)
 		THEN
 			n_CartPhase := n_CART_STRAIGHTEN;
 		END_IF
 
 	n_CART_STRAIGHTEN:
-		IF m_Move(vi_lr_X := lr_CartX, vi_lr_Y := lr_CartY, vi_lr_Z := lr_CartZ, vi_lr_C := lr_CartC, vi_lr_A := 0) THEN
+		IF m_Move(vi_lr_X := lr_CartX, vi_lr_Y := lr_TempPlaceY, vi_lr_Z := lr_CartZ, vi_lr_C := lr_CartC, vi_lr_A := 0) THEN
 			n_CartPhase := n_CART_RELEASE;
 		END_IF
 
@@ -361,14 +400,23 @@ CASE n_CartPhase OF
 		(* Turned by -90 deg: the cup (A = 0) is at MCS x = origin + Y, y = origin - X; the product keeps the turn. *)
 		TempPlacePose.fX := lr_CART_X + lr_CartY;
 		TempPlacePose.fY := lr_CART_Y - lr_CartX;
-		TempPlacePose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+		(* A stacked product lies one product height above the belt. *)
+		TempPlacePose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + SEL(b_CartStacking, 0, DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
 		TempPlacePose.fRz := -90 + lr_CartC;
+		udn_TempPlacedId := DEMO_GlobalVar.DEMO_udn_NextId;
 		IF fb_CartOutfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
 			vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_CartOutfeed.vo_Visu.stConfig, vi_Pose := TempPlacePose),
 			vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_ClientId := fb_Cartesian.m_Id())
 		THEN
 			DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 		END_IF
+		(* The next product goes onto this one, unless this one is already on top of another. *)
+		IF b_CartStacking THEN
+			udn_CartStackBase := 0;
+		ELSE
+			udn_CartStackBase := udn_TempPlacedId;
+		END_IF
+		b_CartStacking := FALSE;
 		udn_CartProduct := 0;
 		b_CartGrip := FALSE;
 		n_CartPhase := n_CART_RISE;

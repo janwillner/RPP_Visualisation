@@ -231,7 +231,8 @@ Rules:
 - **Latch pose:** `vi_LatchPose` (`ST_VisuPlanarPose`: X, Y, Z, Rz) is the bottom centre of the product on the belt
   surface, in the conveyor's coordinate system (from its origin shift), at the latch moment. A product detected
   where the belt's coordinate system starts has `fX = 0`, one in the middle of the belt `fY = 0`, `fZ` is 0 on the
-  belt surface. If the product was detected some cycles earlier, pass the belt position
+  belt surface. A product put down on top of another has `fZ` = the height of the one below; it travels with the belt
+  on its own, so when the one below is picked, move the one above down yourself (`m_MoveProduct`, `fZ := 0`). If the product was detected some cycles earlier, pass the belt position
   of that moment in `vi_lr_LatchBeltPosition` with `vi_b_UseLatchBeltPosition := TRUE`.
 - **Missed products:** a product that passes the belt end while still `DETECTED` or `ASSIGNED` is flagged as missed
   in the web app (red, counted in the metrics, marked on the recording's timeline). `PLACED` and `REJECTED`

@@ -88,6 +88,18 @@ describe("simulator", () => {
     const cupTilt = cartesianStates.map((c) => (c.type === "cartesian" ? c.fingers[0]!.pose.rx : 0));
     expect(Math.max(...cupTilt)).toBeCloseTo(20);
     expect(cartesianStates.some((c) => c.type === "cartesian" && c.fingers.every((f) => f.active))).toBe(true);
+    // It stacks every second product on the one it put down before: lifted by a product height, lying on it.
+    const stacked = states.some((s) => {
+      const belt = s.components.find((c) => c.id === idOf("Cartesian outfeed"));
+      if (belt?.type !== "conveyor") return false;
+      const at = (p: (typeof belt.products)[number]) => [p.latchPose.x + belt.beltPosition - p.latchBeltPosition, p.latchPose.y];
+      return belt.products.some(
+        (top) =>
+          top.latchPose.z > 0 &&
+          belt.products.some((below) => below.latchPose.z === 0 && Math.hypot(at(top)[0]! - at(below)[0]!, at(top)[1]! - at(below)[1]!) < 20),
+      );
+    });
+    expect(stacked).toBe(true);
     // Every robot reports one state per configured finger.
     for (const c of config.components) {
       if (!("fingers" in c)) continue;

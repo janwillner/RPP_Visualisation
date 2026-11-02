@@ -417,6 +417,16 @@ describe("scene model: product lifecycle", () => {
     }
   });
 
+  it("shows a product stacked on another at its height above the belt, travelling with it", () => {
+    const below = product({ id: 7, state: "placed", latchPose: { x: 1000, y: 0, z: 0, rz: 0 } });
+    const above = product({ id: 8, state: "placed", latchPose: { x: 1000, y: 0, z: 40, rz: 0 } });
+    const shown = buildScene(config(belt), [snapshot(0, [conveyorState(200, [below, above])])], 0).products;
+
+    // Both 200 mm further; the 40 mm product below ends at 840 mm, the one above is centred 20 mm higher.
+    closeTo(shown.find((p) => p.productId === 7)!.transform.position, [1.2, 0.82, 0]);
+    closeTo(shown.find((p) => p.productId === 8)!.transform.position, [1.2, 0.86, 0]);
+  });
+
   it("hides a rejected product beyond the belt end instead of flagging it as missed", () => {
     const shown = show(product({ state: "rejected", latchPose: { x: 2900, y: 0, z: 0, rz: 0 } }), 500);
     expect(shown).toEqual([]);

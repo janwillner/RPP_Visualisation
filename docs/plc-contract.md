@@ -58,10 +58,14 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   `ePreviousState` equals `eState` until the first change after the latch; setting the same state again keeps it.
 - Fault: every component state, every XTS mover and every track module (`aModuleStates[i]`) carries `stFault : ST_VisuFault` (`bActive`, `sMessage` STRING(80)). While `bActive` is TRUE the visualisation draws the component, or only that mover or module, red and shows `sMessage` ("Fault" if empty) above it, in the component list, in the inspector and as a mark on the recording's timeline. There is one fault per component, mover or module at a time and no severity. Faults are live state: they are read every cycle and not interpolated.
 - `fBeltPosition` is a continuous position in mm (no modulo). For modulo axes use `_FB_VisuConveyor.m_SetModuloBeltPosition`.
-- Product latch pose = bottom centre of the product on the belt surface when it was latched, **in the conveyor's
+- Product latch pose = bottom centre of the product when it was latched, **in the conveyor's
   coordinate system**: from the conveyor's `stPose` moved by its `stOriginShift`, `fX` along the conveying direction,
-  `fY` across the belt, `fZ` up, `fRz` from the belt's X axis. The visualisation moves the product from there along
-  the belt by `fBeltPosition − fLatchBeltPosition`. The application converts MCS positions (e.g. a finger's pose when
+  `fY` across the belt, `fZ` up (0 on the belt surface), `fRz` from the belt's X axis. The visualisation moves the
+  product from there along the belt by `fBeltPosition − fLatchBeltPosition`, keeping its height.
+- Stacked products: a product lying on another has `fZ` = the height of the one below (their sum for a higher stack)
+  and is an entry of its own, travelling with the belt like the others. The visualisation knows no stack: when the
+  product below is picked or removed, the one above stays at its height until the application moves it
+  (`m_MoveProduct` with `fZ := 0`) or removes it. The application converts MCS positions (e.g. a finger's pose when
   placing) into these coordinates itself.
 - Delta: the PLC reports only the **TCP** (effector centre, the gripper flange) as a position in the MCS. The
   visualisation derives the arm posture by inverse kinematics from the configured geometry: arm 1 lies along the
