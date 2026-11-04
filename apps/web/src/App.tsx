@@ -10,7 +10,15 @@ import {
   type SceneFeed,
   type SourceInfo,
 } from "./connection";
-import { PlayerBar, PlayerBarToggle, RecordButton, usePlaybackKeys, useRecordingControls } from "./RecordingControls";
+import {
+  PlayerBar,
+  PlayerBarToggle,
+  RecordButton,
+  ReplayButton,
+  usePlaybackKeys,
+  useRecordingControls,
+} from "./RecordingControls";
+import { Recorder } from "./recording";
 import {
   componentKey,
   formatPointCopy,
@@ -181,10 +189,21 @@ function useTick(intervalMs: number): number {
 
 export function App() {
   const store = useMemo(() => new GatewayStore(defaultGatewayUrl()), []);
+  // Always keeps the last minute of the store's messages, for the replay button (ADR 0011).
+  const [replayBuffer, replayOrigin] = useMemo(
+    () => [Recorder.replayBuffer(), performance.now()] as const,
+    [],
+  );
   useEffect(() => {
+    const unsubscribe = store.onMessage((message, raw, arrival) =>
+      replayBuffer.add(arrival - replayOrigin, message, raw),
+    );
     store.start();
-    return () => store.stop();
-  }, [store]);
+    return () => {
+      store.stop();
+      unsubscribe();
+    };
+  }, [store, replayBuffer, replayOrigin]);
   const gateway = useGateway(store);
   // Layers, hidden components and camera come back as they were left on this device.
   const initialView = useMemo(loadViewSettings, []);
@@ -242,7 +261,7 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const recording = useRecordingControls(store);
+  const recording = useRecordingControls(store, replayBuffer);
   usePlaybackKeys(recording);
   // While playing back, the tree, the 3D view and the inspector show the recording instead of the live data.
   const playback = recording.mode === "playback" ? recording.playback : undefined;
@@ -319,6 +338,7 @@ export function App() {
         <PanelHandle side="right" label="Inspector" open={rightOpen} onClick={toggleRight} />
         <ViewControls onCamera={camera} />
         <MeasureButton on={measureMode} onClick={() => setMeasureMode((m) => !m)} />
+        <ReplayButton controls={recording} />
         <RecordButton controls={recording} />
         <PlayerBarToggle controls={recording} />
         <PlayerBar controls={recording} />

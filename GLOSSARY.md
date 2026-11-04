@@ -22,7 +22,11 @@ _Avoid_: log, trace, history
 
 **Playback**:
 Showing a recording in the 3D view instead of the live machine, at any speed or moment.
-_Avoid_: replay, simulation (the simulator is something else)
+_Avoid_: replay (except for the replay buffer and replaying its last minute), simulation (the simulator is something else)
+
+**Replay buffer**:
+What the visualisation always keeps of the last minute it received, from the page's start; one button turns it into a recording.
+_Avoid_: ring buffer, instant replay, last-minute recording
 
 **Timeline event**:
 A moment of a recording worth finding again, marked on its timeline: a fault appears, a source goes offline or comes back, a product is missed.

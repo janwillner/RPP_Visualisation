@@ -14,6 +14,8 @@ export { eventTime, type TimelineEvent, type TimelineEventKind } from "./timelin
 
 /** A recording stops taking messages at this length. */
 export const MAX_RECORDING_MS = 10 * 60_000;
+/** What the replay buffer keeps, back from its newest message (ADR 0011). */
+export const REPLAY_BUFFER_MS = 60_000;
 /** Messages are compressed in blocks of this length. */
 const CHUNK_MS = 1000;
 /** Snapshots before the playback moment that are kept for interpolation, like the live buffer. */
@@ -110,7 +112,11 @@ interface FileHeader {
 
 export class RecordingFileError extends Error {}
 
-/** Takes the gateway's messages while recording. */
+/**
+ * Takes the gateway's messages while recording. With `windowMs` it is the replay buffer instead: it runs without
+ * limit, keeps only the blocks of the last `windowMs` before its newest message and gives them as a recording with
+ * `snapshot()` (ADR 0011).
+ */
 export class Recorder {
   readonly recordedAt: string;
   /** True once MAX_RECORDING_MS is reached; the recorder then takes nothing more. */
@@ -118,6 +124,8 @@ export class Recorder {
   private readonly initial: SourceInfo[];
   private readonly sources = new Map<string, SourceInfo>();
   private readonly chunks: Promise<Chunk>[] = [];
+  /** Start of every block in `chunks`, known before its compression finishes. */
+  private readonly chunkStarts: number[] = [];
   private pending: string[] = [];
   private pendingStart = 0;
   private pendingEnd = 0;
@@ -135,11 +143,25 @@ export class Recorder {
   private readonly products = new ProductHistory(Infinity);
 
   /** `initial`: every source as it is when recording starts (status and config, if any). */
-  constructor(initial: readonly SourceInfo[], recordedAt = new Date().toISOString()) {
+  constructor(
+    initial: readonly SourceInfo[],
+    recordedAt = new Date().toISOString(),
+    private readonly windowMs?: number,
+  ) {
     this.recordedAt = recordedAt;
     this.initial = initial.map((s) => ({ ...s }));
     for (const s of this.initial) this.sources.set(s.sourceId, { ...s });
     this.tracker = new EventTracker(this.initial);
+  }
+
+  /** The replay buffer: keeps the last REPLAY_BUFFER_MS, from now on. */
+  static replayBuffer(): Recorder {
+    return new Recorder([], undefined, REPLAY_BUFFER_MS);
+  }
+
+  /** True while the recorder holds no message. */
+  get empty(): boolean {
+    return this.chunks.length === 0 && this.pending.length === 0;
   }
 
   /** Length so far, ms. */
@@ -158,7 +180,7 @@ export class Recorder {
    */
   add(at: number, message: GatewayMessage, raw: string = JSON.stringify(message)): boolean {
     if (this.stopped || this.full) return false;
-    if (at >= MAX_RECORDING_MS) {
+    if (this.windowMs === undefined && at >= MAX_RECORDING_MS) {
       this.full = true;
       return false;
     }
@@ -183,8 +205,13 @@ export class Recorder {
     };
     if (message.kind === "status") Object.assign(source, { name: message.sourceName, status: message.status });
     if (message.kind === "config") source.config = message;
-    if (message.kind === "state" && this.snapshotTimes.at(-1) !== at) this.snapshotTimes.push(at);
     this.sources.set(message.sourceId, source);
+    if (this.windowMs !== undefined) {
+      // Events, products and snapshot times are found again from the kept blocks by `snapshot()`.
+      this.dropBefore(at - this.windowMs);
+      return true;
+    }
+    if (message.kind === "state" && this.snapshotTimes.at(-1) !== at) this.snapshotTimes.push(at);
     this.tracker.add(at, message, source);
     this.products.add(at, message, source);
     return true;
@@ -198,6 +225,35 @@ export class Recorder {
     return new Recording(this.initial, chunks, this.lastAt, this.recordedAt, this.snapshotTimes, this.tracker.events, this.products);
   }
 
+  /**
+   * The kept blocks, with the block being filled, as a recording of their own that starts at 0; undefined while the
+   * recorder holds nothing. The recorder goes on taking messages.
+   */
+  async snapshot(): Promise<Recording | undefined> {
+    if (this.pending.length > 0) this.seal();
+    const chunks = await Promise.all(this.chunks);
+    const first = chunks[0];
+    if (!first) return undefined;
+    const copy = new Recorder(first.context, new Date(Date.parse(this.recordedAt) + first.start).toISOString());
+    for (const chunk of chunks) {
+      // Every block starts complete.
+      const registers: Restored = new Map();
+      for (const line of (await gunzipText(chunk.data)).split("\n")) {
+        const { at, message } = restoredEntry(JSON.parse(line) as StoredEntry, registers);
+        copy.add(at - first.start, message);
+      }
+    }
+    return copy.stop();
+  }
+
+  /** Drops the sealed blocks that start before `time`. */
+  private dropBefore(time: number): void {
+    while (this.chunkStarts.length > 0 && this.chunkStarts[0]! < time) {
+      this.chunkStarts.shift();
+      void this.chunks.shift()!.then((chunk) => (this.compressedBytes -= chunk.data.length));
+    }
+  }
+
   private seal(): void {
     const text = this.pending.join("\n");
     const block = {
@@ -208,6 +264,7 @@ export class Recorder {
     };
     this.pending = [];
     this.pendingBytes = 0;
+    this.chunkStarts.push(block.start);
     this.chunks.push(
       gzip(text).then((data) => {
         this.compressedBytes += data.length;

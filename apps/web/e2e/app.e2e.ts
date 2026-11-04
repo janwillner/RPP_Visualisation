@@ -157,6 +157,33 @@ test("records, plays back, seeks, saves and opens a recording", async ({ page })
   await expect.poll(async () => Number(await slider.getAttribute("max"))).toBe(duration);
 });
 
+test("replays the last minute from the replay buffer and saves it", async ({ page }) => {
+  await openApp(page);
+  const replay = page.getByRole("button", { name: "Replay the last minute" });
+  await page.waitForTimeout(3000);
+  await replay.click();
+
+  // The buffer has run since the page opened: the recording covers about that time.
+  const bar = page.getByRole("toolbar", { name: "Playback" });
+  await expect(page.locator(".playback-banner")).toBeVisible();
+  const slider = bar.getByLabel("Playback position");
+  const duration = Number(await slider.getAttribute("max"));
+  expect(duration).toBeGreaterThan(2000);
+  await bar.getByRole("button", { name: "Play" }).click();
+  await expect.poll(async () => Number(await slider.inputValue())).toBeGreaterThan(0);
+
+  const downloading = page.waitForEvent("download");
+  await bar.getByRole("button", { name: "Save" }).click();
+  expect((await downloading).suggestedFilename()).toMatch(/^rpp-recording-\d{8}-\d{6}\.rpprec$/);
+
+  // Still allowed during playback, and not while recording.
+  await expect(replay).toBeEnabled();
+  await bar.getByRole("button", { name: "Live" }).click();
+  await page.getByRole("button", { name: "Record", exact: true }).click();
+  await expect(replay).toBeDisabled();
+  await page.getByRole("button", { name: "Stop recording" }).click();
+});
+
 test("keeps layers, hidden components and the camera across a reload", async ({ page }) => {
   await openApp(page);
   const storedCamera = () =>

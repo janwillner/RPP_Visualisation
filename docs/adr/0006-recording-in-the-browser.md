@@ -8,7 +8,7 @@ The live data is large: about 30 states per second of roughly 60 KB JSON each, m
 
 - **Record in the gateway, on the IPC's disk.** This would allow long recordings that survive a page reload and can be shared between clients. But the browser would need to send commands over the WebSocket, which is read-only today, and recordings would need managing on the IPC.
 - **Gzip only, without dropping unchanged products.** Simpler, but about 13 MB per minute, too much for a panel PC.
-- **Always keep the last minute, so a recording can start in the past.** This costs CPU for compression even when nobody records. It is deferred.
+- **Always keep the last minute, so a recording can start in the past.** This costs CPU for compression even when nobody records. It is deferred. (Later done as the replay buffer, ADR 0011.)
 
 ## Consequences
 

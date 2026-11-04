@@ -260,10 +260,24 @@ button:hover {
   background: rgba(42, 49, 59, 0.9);
 }
 
-/* Record / stop, left of the measure button. */
-.record-toggle {
+/* Replay the last minute, left of the measure button. */
+.replay-toggle {
   position: absolute;
   right: 56px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: rgba(42, 49, 59, 0.9);
+}
+
+/* Record / stop, left of the replay button. */
+.record-toggle {
+  position: absolute;
+  right: 104px;
   bottom: 8px;
   display: flex;
   align-items: center;
@@ -307,7 +321,7 @@ button:hover {
 /* Left of the record button: slides the recording bar out. */
 .player-bar-toggle {
   position: absolute;
-  right: 104px;
+  right: 152px;
   bottom: 8px;
   display: flex;
   align-items: center;
@@ -329,7 +343,7 @@ button:hover {
 .player-bar {
   position: absolute;
   left: 8px;
-  right: 132px;
+  right: 180px;
   bottom: 8px;
   display: flex;
   align-items: center;
@@ -869,8 +883,14 @@ button.link {
     font-size: 24px;
   }
 
-  .record-toggle {
+  .replay-toggle {
     right: 68px;
+    width: 52px;
+    height: 52px;
+  }
+
+  .record-toggle {
+    right: 128px;
     min-width: 52px;
     height: 52px;
   }
@@ -880,7 +900,7 @@ button.link {
   }
 
   .player-bar-toggle {
-    right: 128px;
+    right: 188px;
     width: 32px;
     min-width: 0;
     height: 52px;
@@ -888,7 +908,7 @@ button.link {
   }
 
   .player-bar {
-    right: 168px;
+    right: 228px;
     flex-wrap: wrap;
   }
 

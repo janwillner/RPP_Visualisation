@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PROTOCOL_VERSION, type ConfigMessage, type GatewayMessage, type StateMessage } from "@rpp/protocol";
 import {
   MAX_RECORDING_MS,
+  REPLAY_BUFFER_MS,
   Recorder,
   Recording,
   RecordingFileError,
@@ -333,6 +334,87 @@ describe("recording: limits and files", () => {
   it("refuses a file that is no recording", async () => {
     await expect(Recording.fromFile(await gzip('{"hello":1}\n'))).rejects.toThrow(RecordingFileError);
     await expect(Recording.fromFile(new TextEncoder().encode("plain text"))).rejects.toThrow(RecordingFileError);
+  });
+});
+
+describe("replay buffer: the last minute as a recording", () => {
+  /** A replay buffer fed a state of A every 100 ms from `from` to `to`, recorded from 2026-01-01T00:00:00Z. */
+  function replayBuffer(from: number, to: number): Recorder {
+    const buffer = new Recorder([], "2026-01-01T00:00:00.000Z", REPLAY_BUFFER_MS);
+    buffer.add(from, status(A, true));
+    buffer.add(from, config(A));
+    for (let at = from; at <= to; at += 100) buffer.add(at, state(A, at));
+    return buffer;
+  }
+
+  it("keeps the last minute before the newest message, starting at 0", async () => {
+    const buffer = replayBuffer(0, 150_000);
+
+    const recording = (await buffer.snapshot())!;
+
+    // Whole blocks of one second: the oldest kept block starts at 90 s.
+    expect(recording.durationMs).toBe(60_000);
+    expect(recording.recordedAt).toBe("2026-01-01T00:01:30.000Z");
+    expect(recording.snapshotTimes[0]).toBe(0);
+    expect(recording.snapshotTimes.at(-1)).toBe(60_000);
+    const view = await recording.viewAt(0);
+    expect(view.sources).toEqual([
+      { sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: config(A) },
+    ]);
+    expect(belt(view, A)).toBe(9000);
+  });
+
+  it("marks the events and follows the products of the last minute only", async () => {
+    const buffer = new Recorder([], "2026-01-01T00:00:00.000Z", REPLAY_BUFFER_MS);
+    buffer.add(0, status(A, true));
+    buffer.add(0, config(A));
+    const product = (id: number) => ({
+      id,
+      latchPose: { x: 100, y: 0, z: 0, rz: 0 },
+      latchBeltPosition: 0,
+      state: "detected" as const,
+      previousState: "detected" as const,
+      lastClientId: 0,
+      moverId: 0,
+      fingerId: 0,
+      productType: 1,
+    });
+    for (let at = 0; at <= 150_000; at += 100) {
+      if (at === 30_000) buffer.add(at, status(A, false));
+      if (at === 120_000) buffer.add(at, status(A, true));
+      // Product 1 is on the belt only before the last minute, product 2 only within it.
+      const products = at < 50_000 ? [product(1)] : at > 100_000 ? [product(2)] : [];
+      buffer.add(at, {
+        ...state(A, at),
+        components: [{ type: "conveyor", id: 1, timestamp: "0", beltPosition: 0, products, fault: null }],
+      });
+    }
+
+    const recording = (await buffer.snapshot())!;
+
+    expect(recording.events).toEqual([{ at: 30_000, kind: "online", sourceId: A, text: "Infeed PLC online" }]);
+    expect(recording.products.of(A, 1, 1)).toEqual([]);
+    expect(recording.products.of(A, 1, 2).map((s) => [s.at, s.kind])).toEqual([[10_100, "detected"]]);
+  });
+
+  it("goes on taking messages after a snapshot, and its recording saves to a file", async () => {
+    const buffer = replayBuffer(0, 10_000);
+    const first = (await buffer.snapshot())!;
+    for (let at = 10_100; at <= 20_000; at += 100) buffer.add(at, state(A, at));
+
+    expect(first.durationMs).toBe(10_000);
+    expect((await buffer.snapshot())!.durationMs).toBe(20_000);
+    const opened = await Recording.fromFile(await first.toFile());
+    expect(opened.recordedAt).toBe(first.recordedAt);
+    expect((await opened.viewAt(5000)).scene).toEqual((await first.viewAt(5000)).scene);
+  });
+
+  it("holds nothing before the first message", async () => {
+    const buffer = new Recorder([], undefined, REPLAY_BUFFER_MS);
+    expect(buffer.empty).toBe(true);
+    expect(await buffer.snapshot()).toBeUndefined();
+    buffer.add(0, status(A, true));
+    expect(buffer.empty).toBe(false);
   });
 });
 
