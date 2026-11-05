@@ -42,7 +42,7 @@ interface SourceRuntime {
   close(): Promise<void> | void;
 }
 
-const simulator = options.driver === "sim" ? createSimulator() : undefined;
+const simulator = options.driver === "sim" ? createSimulator({ products: options.simProducts }) : undefined;
 const runtimes: SourceRuntime[] = simulator
   ? [runtime("sim", "Simulator", simulator.plc, () => {})]
   : options.sources.map((source) => {

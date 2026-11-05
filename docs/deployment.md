@@ -139,7 +139,8 @@ This removes all services, the program files and the firewall rules. `C:\Program
 
 `GET http://<host>:<port>/health` returns the state of every PLC source as JSON: `ok`, `version` (this release),
 `protocolVersion` and per source `sourceId`, `name`, `plcConnected`, `lastError`, `lastStateAt` (time of the newest
-state snapshot) and `libraryVersion` (the `Syn_Visu` version the PLC runs, from library 5.1.0 on). The HTTP
+state snapshot), `libraryVersion` (the `Syn_Visu` version the PLC runs, from library 5.1.0 on) and `acquisition`
+(read and map times, state message size, products, register anomalies; `docs/performance.md`). The HTTP
 status is 200 while every source is connected and 503 otherwise, so a monitoring system can check it without reading
 the body.
 

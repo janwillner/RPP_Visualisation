@@ -1,0 +1,181 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="P_VisuDemoStress" Id="{c119e2df-75e9-4bbd-991f-6816305f718e}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+DEMO ONLY: load test (Y = 11000), off unless DEMO_GlobalVar.DEMO_un_StressProducts is set online. A wide stress<br>
+belt carries that many products in lanes (at most VISU_un_MAX_PRODUCTS less four rows): it fills up within a few<br>
+seconds, then a row enters at its start every pitch and leaves beyond its end, and one product per row is<br>
+rejected halfway (m_SetProductState on a full register). It measures the task's execution time, so the cost of<br>
+large registers in the library shows in udn_MaxExecTime, and the gateway's /health shows whether the gateway reads<br>
+registers the PLC is rearranging (duplicateProducts, flickeringProducts). Called by P_VisuDemo.<br>
+****************************************************************************************************)
+PROGRAM P_VisuDemoStress
+VAR
+	fb_StressBelt						: _FB_VisuConveyor;
+	b_Registered						: BOOL;	// the stress belt is in the manifest
+
+	(* Belt *)
+	lr_Dt								: LREAL;	// [s] cycle time
+	un_Target							: UINT;	// [-] products asked for, limited to the register
+	un_Rows								: UINT;	// [-] rows of products along the belt
+	lr_BeltLength						: LREAL;	// [mm]
+	lr_BeltPosition						: LREAL;	// [mm]
+	lr_EntryStart						: LREAL;	// [mm] belt position when the first row entered
+	lr_NextRow							: LREAL;	// [mm] belt position at which the next row enters
+	udn_RowCount						: UDINT;	// [-] rows entered at the start so far
+	udn_RowFirstId						: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_PRODUCTS / 10] OF UDINT;	// [-] id of the first product per entered row, a ring (un_STRESS_LANES lanes)
+	un_FillRow							: UINT;	// [-] rows filled in from the belt end since the length changed
+	un_FilledNow						: UINT;	// [-] rows filled in this cycle
+	BeltPose							: ST_VisuPose;
+
+	(* Measurements, read them online *)
+	dn_TaskIndex						: DINT;
+	udn_LastExecTime					: UDINT;	// [100 ns] last cycle of the calling task, all programs
+	udn_MaxExecTime						: UDINT;	// [100 ns] largest udn_LastExecTime since the last reset
+	udn_ExceededCount					: UDINT;	// [-] cycles that exceeded the task cycle time since the last reset
+	b_ResetMax							: BOOL;	// TRUE: restart udn_MaxExecTime and udn_ExceededCount
+	un_Products							: UINT;	// [-] products in the stress belt's register
+END_VAR
+VAR CONSTANT
+	lr_STRESS_Y							: LREAL := 11000;	// [mm]
+	un_STRESS_LANES						: UINT := 10;	// [-] also the divisor of the udn_RowFirstId size
+	lr_STRESS_LANE_WIDTH				: LREAL := 100;	// [mm]
+	lr_STRESS_PITCH						: LREAL := 150;	// [mm] distance between two rows along the belt
+	lr_STRESS_SPEED						: LREAL := 300;	// [mm/s]
+	un_STRESS_FILL_ROWS					: UINT := 2;	// [-] rows filled in per cycle while the belt fills up
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[lr_Dt := DEMO_GlobalVar.DEMO_lr_Dt;
+
+
+(****************************************************************************************************)
+(* TASK LOAD                                                                                        *)
+(****************************************************************************************************)
+dn_TaskIndex := Tc2_System.GETCURTASKINDEXEX();
+IF dn_TaskIndex > 0 THEN
+	IF b_ResetMax THEN
+		b_ResetMax := FALSE;
+		udn_MaxExecTime := 0;
+		udn_ExceededCount := 0;
+	END_IF
+	udn_LastExecTime := TwinCAT_SystemInfoVarList._TaskInfo[dn_TaskIndex].LastExecTime;
+	udn_MaxExecTime := MAX(udn_MaxExecTime, udn_LastExecTime);
+	IF TwinCAT_SystemInfoVarList._TaskInfo[dn_TaskIndex].CycleTimeExceeded THEN
+		udn_ExceededCount := udn_ExceededCount + 1;
+	END_IF
+END_IF
+
+
+(****************************************************************************************************)
+(* REGISTRATION AND CONFIGURATION: only once a load is asked for                                    *)
+(****************************************************************************************************)
+un_Target := MIN(DEMO_GlobalVar.DEMO_un_StressProducts, VISU_GlobalConst_Param.VISU_un_MAX_PRODUCTS - 4 * un_STRESS_LANES);
+IF un_Target = 0 AND NOT b_Registered THEN
+	RETURN;
+END_IF
+fb_StressBelt.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 14, vi_str_Name := 'Stress belt',
+	vi_str_Path := 'P_VisuDemoStress.fb_StressBelt.vo_Visu');
+IF NOT b_Registered THEN
+	b_Registered := TRUE;
+	lr_EntryStart := lr_BeltPosition;
+	lr_NextRow := lr_BeltPosition;
+END_IF
+
+(* Set back to 0 the belt keeps its length and runs empty. *)
+IF un_Target > 0 AND (un_Target + un_STRESS_LANES - 1) / un_STRESS_LANES <> un_Rows THEN
+	un_Rows := (un_Target + un_STRESS_LANES - 1) / un_STRESS_LANES;
+	lr_BeltLength := UINT_TO_LREAL(un_Rows) * lr_STRESS_PITCH;
+	un_FillRow := 0;
+END_IF
+BeltPose.fX := 0;
+BeltPose.fY := lr_STRESS_Y;
+BeltPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+fb_StressBelt.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_BeltLength,
+	vi_lr_Width := UINT_TO_LREAL(un_STRESS_LANES) * lr_STRESS_LANE_WIDTH + 100);
+fb_StressBelt.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
+
+
+(****************************************************************************************************)
+(* BELT: fill up from the end, then a row enters at the start every pitch                           *)
+(****************************************************************************************************)
+lr_BeltPosition := lr_BeltPosition + lr_STRESS_SPEED * lr_Dt;
+fb_StressBelt.m_SetBeltPosition(lr_BeltPosition);
+
+(* Rows filled in from the belt end down to where the entering rows have got to, a few per cycle. *)
+un_FilledNow := 0;
+WHILE un_FilledNow < un_STRESS_FILL_ROWS
+AND lr_BeltLength - (UINT_TO_LREAL(un_FillRow) + 0.5) * lr_STRESS_PITCH > MIN(lr_BeltLength, lr_BeltPosition - lr_EntryStart) + lr_STRESS_PITCH / 2
+AND DEMO_GlobalVar.DEMO_un_StressProducts > 0 DO
+	m_LatchRow(lr_BeltLength - (UINT_TO_LREAL(un_FillRow) + 0.5) * lr_STRESS_PITCH);
+	un_FillRow := un_FillRow + 1;
+	un_FilledNow := un_FilledNow + 1;
+END_WHILE
+
+IF lr_BeltPosition >= lr_NextRow AND DEMO_GlobalVar.DEMO_un_StressProducts > 0 THEN
+	udn_RowFirstId[udn_RowCount MOD (VISU_GlobalConst_Param.VISU_un_MAX_PRODUCTS / 10 + 1)] := DEMO_GlobalVar.DEMO_udn_NextId;
+	m_LatchRow(lr_STRESS_PITCH / 2 - (lr_BeltPosition - lr_NextRow));
+	lr_NextRow := lr_NextRow + lr_STRESS_PITCH;
+	(* One product of the row that entered half a belt ago is rejected: a state change on a full register. *)
+	IF udn_RowCount >= un_Rows / 2 AND un_Rows > 1 THEN
+		fb_StressBelt.m_SetProductState(
+			vi_udn_Id := udn_RowFirstId[(udn_RowCount - un_Rows / 2) MOD (VISU_GlobalConst_Param.VISU_un_MAX_PRODUCTS / 10 + 1)]
+				+ udn_RowCount MOD un_STRESS_LANES,
+			vi_e_State := E_VisuProductState.REJECTED, vi_udn_ClientId := 0);
+	END_IF
+	udn_RowCount := udn_RowCount + 1;
+END_IF
+
+
+(****************************************************************************************************)
+(* HOUSEKEEPING                                                                                     *)
+(****************************************************************************************************)
+fb_StressBelt.m_RemoveProductsBeyond(lr_BeltLength + DEMO_GlobalConst.DEMO_lr_REMOVE_BEYOND_END);
+un_Products := fb_StressBelt.m_ProductCount();]]></ST>
+    </Implementation>
+    <Method Name="m_LatchRow" Id="{a4dd5ec8-e29f-4293-96cc-17ee3846c15f}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Latches one row of products across the stress belt, one per lane, vi_lr_X mm from its start, with ids from<br>
+DEMO_GlobalVar.DEMO_udn_NextId.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE if a product did not fit into the register.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_LatchRow : BOOL
+VAR_INPUT
+	vi_lr_X								: LREAL;	// [mm] along the belt from its start
+END_VAR
+VAR
+	un_TempLane							: UINT;
+	TempPose							: ST_VisuPlanarPose;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_LatchRow := TRUE;
+FOR un_TempLane := 0 TO un_STRESS_LANES - 1 DO
+	TempPose.fX := vi_lr_X;
+	TempPose.fY := lr_STRESS_Y + (UINT_TO_LREAL(un_TempLane) - UINT_TO_LREAL(un_STRESS_LANES - 1) / 2) * lr_STRESS_LANE_WIDTH;
+	TempPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+	TempPose.fRz := 0;
+	IF fb_StressBelt.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
+		vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_StressBelt.vo_Visu.stConfig, vi_Pose := TempPose),
+		vi_udn_ProductType := 1)
+	THEN
+		DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
+	ELSE
+		m_LatchRow := FALSE;
+	END_IF
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

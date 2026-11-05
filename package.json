@@ -12,6 +12,7 @@
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
     "test:watch": "vitest",
+    "bench": "vitest bench --run",
     "build:bridge": "dotnet build apps/ads-bridge -c Release",
     "package": "node scripts/package.mjs",
     "test:e2e": "pnpm --filter @rpp/web test:e2e"

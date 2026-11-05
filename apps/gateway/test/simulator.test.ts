@@ -160,4 +160,38 @@ describe("simulator", () => {
     expect(deltaFaults.some((f) => f !== null && f.message.length > 0)).toBe(true);
     expect(deltaFaults.some((f) => f === null)).toBe(true);
   }, 30_000);
+
+  it("keeps the asked number of products on a buffer belt for load tests while they enter, are rejected and leave", async () => {
+    const sim = createSimulator({ seed: 1, products: 1000 });
+    const gateway = createGateway({ plc: sim.plc, sourceId: "sim" });
+    const states: StateMessage[] = [];
+    let config: ConfigMessage | undefined;
+    gateway.subscribe((m) => {
+      if (m.kind === "config") config = m;
+      if (m.kind === "state") states.push(m);
+    });
+    // 10 simulated seconds: the belt moves 3 m, 20 rows of 10 products enter and leave.
+    for (let i = 0; i < 500; i++) {
+      sim.step(20);
+      await gateway.cycle();
+    }
+
+    const buffer = config!.components.find((c) => c.name === "Buffer belt")!;
+    expect(buffer).toMatchObject({ type: "conveyor", length: 15000 });
+    const registers = states.map((s) => s.components.find((c) => c.id === buffer.id)!).map((c) => (c.type === "conveyor" ? c.products : []));
+    for (const products of registers) {
+      expect(products.length).toBeGreaterThanOrEqual(1000);
+      expect(products.length).toBeLessThanOrEqual(1030);
+    }
+    const first = new Set(registers[0]!.map((p) => p.id));
+    const last = new Set(registers.at(-1)!.map((p) => p.id));
+    expect([...last].filter((id) => !first.has(id)).length).toBeGreaterThanOrEqual(190);
+    expect(registers.at(-1)!.some((p) => p.state === "rejected")).toBe(true);
+    expect(gateway.acquisition("sim")!.report()).toMatchObject({ duplicateProducts: 0, flickeringProducts: 0 });
+  }, 30_000);
+
+  it("adds no buffer belt without load test products", () => {
+    const sim = createSimulator({ seed: 1 });
+    expect(() => sim.plc.get("MAIN.stBufferBelt")).toThrow();
+  });
 });

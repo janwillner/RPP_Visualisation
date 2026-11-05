@@ -182,7 +182,7 @@ check poses on the real machine.
 ## 5. Conveyors and products
 
 FB: `SynVisu._FB_VisuConveyor`. A conveyor is a belt of a given length and width, plus a register of the products
-on it (up to `VISU_un_MAX_PRODUCTS`, 128).
+on it (up to `VISU_un_MAX_PRODUCTS`, 4800).
 
 ### 5.1 Configuration
 
@@ -608,7 +608,7 @@ The array sizes are library parameters (`SynVisu.VISU_GlobalConst_Param`):
 | Constant | Value | Per |
 | --- | --- | --- |
 | `VISU_un_MAX_MANIFEST_ENTRIES` | 32 | PLC (components) |
-| `VISU_un_MAX_PRODUCTS` | 128 | conveyor |
+| `VISU_un_MAX_PRODUCTS` | 4800 | conveyor |
 | `VISU_un_MAX_PRODUCT_TYPES` | 8 | conveyor |
 | `VISU_un_MAX_ZONES` | 8 | robot, detector or station |
 | `VISU_un_MAX_MOVERS` | 40 | XTS gantry or loop |

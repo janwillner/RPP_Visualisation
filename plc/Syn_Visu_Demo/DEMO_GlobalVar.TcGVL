@@ -8,6 +8,9 @@ VAR_GLOBAL
 	DEMO_lr_Dt							: LREAL;	// [s] cycle time of the calling task
 	DEMO_lr_FaultPhase					: LREAL;	// [s] 0..DEMO_lr_FAULT_PERIOD, drives the demo faults
 	DEMO_udn_NextId						: UDINT := 1;	// [-] next product id, unique across all applications
+	(* Load test (P_VisuDemoStress): products kept on the stress belt; 0 = off. Write it online. Once set, the stress
+	   belt stays in the manifest until the next download or reset; set back to 0 it runs empty. *)
+	DEMO_un_StressProducts				: UINT := 0;	// [-]
 END_VAR]]></Declaration>
   </GVL>
 </TcPlcObject>

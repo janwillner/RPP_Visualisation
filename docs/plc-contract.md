@@ -16,7 +16,7 @@ their Beckhoff-style names, because the gateway reads them.
 | --- | --- |
 | `plc/RPP_Visu.sln` | TwinCAT solution with both PLC projects |
 | `plc/Syn_Visu/` | The library project: structures, enums, constants and the component function blocks. No task, no application code. |
-| `plc/Syn_Visu_Demo/` | The demo application. It references the installed library like any machine project, so it also tests the library from the outside. ADS port 852. `PlcTask` calls `P_VisuDemo`, which sets the shared cycle time and fault phase (`DEMO_GlobalVar`) and calls one program per application: `P_VisuDemoDelta`, `P_VisuDemoFxx`, `P_VisuDemoIdh`, `P_VisuDemoCartesian`, `P_VisuDemoSpacing`. Shared constants (belt height and width, product, suction cup, fault timing) are in `DEMO_GlobalConst`, the manifest in `GVL_Visu`. |
+| `plc/Syn_Visu_Demo/` | The demo application. It references the installed library like any machine project, so it also tests the library from the outside. ADS port 852. `PlcTask` calls `P_VisuDemo`, which sets the shared cycle time and fault phase (`DEMO_GlobalVar`) and calls one program per application: `P_VisuDemoDelta`, `P_VisuDemoFxx`, `P_VisuDemoIdh`, `P_VisuDemoCartesian`, `P_VisuDemoSpacing`, and the load test `P_VisuDemoStress` (off unless `DEMO_GlobalVar.DEMO_un_StressProducts` is set; `docs/performance.md`). Shared constants (belt height and width, product, suction cup, fault timing) are in `DEMO_GlobalConst`, the manifest in `GVL_Visu`. |
 | `plc/library/Syn_Visu_<version>.library` | The exported library with its source, committed for every released version. |
 | `plc/library/Syn_Visu_<version>.compiled-library` | The same version compiled, without source code. `pnpm package` puts the newest one into the deployment package (`plc/`); machine projects install it from there. |
 
@@ -195,7 +195,7 @@ the FBs fill them in their output `vo_Visu`, so application code does not write 
 | `ST_VisuFinger`, `ST_VisuFingerState` | Gripper finger (cylinder size) and its live MCS pose and grip state |
 | `ST_VisuPose`, `ST_VisuPlanarPose`, `ST_VisuPosition` | MCS poses and positions |
 | `VISU_GlobalConst` | `VISU_un_PROTOCOL_VERSION` (contract version; `ST_VisuManifest` initialises to it), `VISU_str_LIBRARY_VERSION` (this library's version, reported in the manifest), `VISU_lr_DEG_TO_RAD`, `VISU_lr_XTS_MODULE_LENGTH` (250 mm) |
-| `VISU_GlobalConst_Param` | Array sizes: `VISU_un_MAX_MANIFEST_ENTRIES` (32), `VISU_un_MAX_PRODUCTS` (128), `VISU_un_MAX_PRODUCT_TYPES` (8), `VISU_un_MAX_ZONES` (8), `VISU_un_MAX_MOVERS` (40), `VISU_un_MAX_FINGERS` (8, per gripper), `VISU_un_MAX_BODIES` (16, per detector or station), `VISU_un_MAX_MODULES` (64, per XTS track) |
+| `VISU_GlobalConst_Param` | Array sizes: `VISU_un_MAX_MANIFEST_ENTRIES` (32), `VISU_un_MAX_PRODUCTS` (4800), `VISU_un_MAX_PRODUCT_TYPES` (8), `VISU_un_MAX_ZONES` (8), `VISU_un_MAX_MOVERS` (40), `VISU_un_MAX_FINGERS` (8, per gripper), `VISU_un_MAX_BODIES` (16, per detector or station), `VISU_un_MAX_MODULES` (64, per XTS track) |
 | `_FC_GetVersionSynVisu` | Library version at runtime (6.0.0) |
 
 ### Methods

@@ -7,6 +7,7 @@ import {
   type GatewayMessage,
   type GatewayStatus,
 } from "@rpp/protocol";
+import { AcquisitionStatsRecorder } from "./acquisition-stats";
 import { COMPONENTS, componentKind, mapConfig, mapState as mapComponentState } from "./components";
 import { MANIFEST_PATH, enumValue, type ST_VisuManifest } from "./plc-contract";
 import { SymbolNotFoundError, type SymbolAccess } from "./symbol-access";
@@ -37,6 +38,8 @@ export const RECONNECT_MS = 5000;
 export interface MessageSource {
   /** Receive all messages. A new subscriber immediately gets the current status and config, if any. */
   subscribe(listener: GatewayListener): () => void;
+  /** How reading a source performs (`GET /health`); undefined for a source this does not read. */
+  acquisition(sourceId: string): AcquisitionStatsRecorder | undefined;
 }
 
 /** Reads one PLC (one source). */
@@ -61,6 +64,7 @@ export function combineGateways(gateways: readonly Gateway[]): MessageSource {
         for (const u of unsubscribes) u();
       };
     },
+    acquisition: (sourceId) => gateways.find((g) => g.sourceId === sourceId)?.acquisition(sourceId),
   };
 }
 
@@ -93,6 +97,7 @@ export function createGateway({
   let lastConfigCheck = now();
   /** Time of the last failed attempt; undefined while connected. */
   let failedAt: number | undefined;
+  const stats = new AcquisitionStatsRecorder();
 
   const emit = (message: GatewayMessage) => {
     for (const l of listeners) l(message);
@@ -170,6 +175,7 @@ export function createGateway({
    * is detected in the same snapshot. Returns false (and publishes nothing) when either version changed.
    */
   async function publishSnapshot(current: Discovery): Promise<boolean> {
+    const readStart = performance.now();
     const [protocolVersion, configVersion, ...raws] = await plc.sumRead([
       protocolVersionPath,
       configVersionPath,
@@ -179,7 +185,9 @@ export function createGateway({
       return false;
     }
     if (current.active.length === 0) return true;
+    const mapStart = performance.now();
     const components = current.active.map((a, i) => mapState(a, raws[i]));
+    stats.recordSnapshot(mapStart - readStart, performance.now() - mapStart, components);
     const newest = components.reduce((max, c) => (BigInt(c.timestamp) > max ? BigInt(c.timestamp) : max), 0n);
     t0 ??= newest;
     emit({
@@ -198,6 +206,7 @@ export function createGateway({
     setStatus({ plcConnected: true });
     discovery = next;
     t0 = undefined;
+    stats.restart();
     lastConfigCheck = now();
     emit(next.config);
     return next;
@@ -223,6 +232,7 @@ export function createGateway({
       if (discovery) listener(discovery.config);
       return () => listeners.delete(listener);
     },
+    acquisition: (id) => (id === sourceId ? stats : undefined),
     async cycle() {
       if (failedAt !== undefined && now() - failedAt < RECONNECT_MS) return;
       try {

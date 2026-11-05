@@ -1,10 +1,12 @@
 import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
+import { WebSocket } from "ws";
 import {
   GatewayMessageSchema,
   PROTOCOL_VERSION,
   type ConfigMessage,
   type GatewayMessage,
+  type HealthReport,
   type StateMessage,
   type StatusMessage,
 } from "@rpp/protocol";
@@ -18,6 +20,7 @@ import {
   defineMachine,
   delta,
   detector,
+  emptyProduct,
   station,
   fingerStates,
   noFault,
@@ -1046,3 +1049,85 @@ describe("gateway state snapshots", () => {
     });
   });
 });
+
+describe("gateway acquisition statistics", () => {
+  /** Puts products with these ids into the infeed's register, as the PLC lays them out. */
+  function register(plc: InMemoryPlc, ids: number[]) {
+    const state = plc.get<ST_VisuConveyor>(infeed.path).stState;
+    state.nProductCount = ids.length;
+    ids.forEach((nId, i) => {
+      state.aProducts[i] = { ...emptyProduct(), nId, bValid: true, nProductType: 1 };
+    });
+  }
+
+  it("reports at /health how reading performs, and the state size once a browser is connected, which gets status and config first", async () => {
+    const t = setup([infeed]);
+    register(t.plc, [1, 2]);
+    const server = await startServer({ gateway: t.gateway, port: 0, host: "127.0.0.1" });
+    const port = (server.address() as AddressInfo).port;
+    const health = async () => ((await (await fetch(`http://127.0.0.1:${port}/health`)).json()) as HealthReport).sources[0]!;
+    try {
+      // Nothing measured before the first snapshot.
+      expect(t.gateway.acquisition("plc1")!.report()).toBeUndefined();
+      expect(t.gateway.acquisition("another source")).toBeUndefined();
+      await t.gateway.cycle();
+      register(t.plc, [1, 2, 3]);
+      await t.gateway.cycle();
+      const measured = (await health()).acquisition!;
+      expect(measured).toMatchObject({ window: 2, products: 3, duplicateProducts: 0, flickeringProducts: 0 });
+      expect(measured.readMs.max).toBeGreaterThanOrEqual(measured.readMs.avg);
+      expect(measured.mapMs.avg).toBeGreaterThanOrEqual(0);
+      expect(measured.stateBytes).toBeUndefined();
+
+      const browser = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+      const received: GatewayMessage[] = [];
+      browser.on("message", (data) => received.push(JSON.parse(String(data)) as GatewayMessage));
+      await new Promise((open) => browser.once("open", open));
+      await t.gateway.cycle();
+      await waitFor(() => received.some((m) => m.kind === "state"));
+      expect(received.map((m) => m.kind)).toEqual(["status", "config", "state"]);
+      const sent = (await health()).acquisition!.stateBytes!;
+      expect(sent.avg).toBe(Buffer.byteLength(JSON.stringify(received[2])));
+      browser.close();
+    } finally {
+      server.close();
+    }
+  });
+
+  it("counts register entries read while the PLC rearranged them: a product id twice, a product missing from one snapshot", async () => {
+    const t = setup([infeed]);
+    const stats = () => t.gateway.acquisition("plc1")!.report()!;
+    for (const ids of [[1, 2, 3], [1, 3], [1, 2, 3]]) {
+      register(t.plc, ids);
+      await t.gateway.cycle();
+    }
+    expect(stats()).toMatchObject({
+      flickeringProducts: 1,
+      duplicateProducts: 0,
+      lastAnomaly: "Conveyor 10: product 2 missing from one snapshot",
+    });
+
+    // A product that leaves for good, or a new one, is no anomaly.
+    for (const ids of [[3], [3, 4], [3, 4]]) {
+      register(t.plc, ids);
+      await t.gateway.cycle();
+    }
+    expect(stats()).toMatchObject({ flickeringProducts: 1, duplicateProducts: 0 });
+
+    register(t.plc, [3, 4, 4]);
+    await t.gateway.cycle();
+    expect(stats()).toMatchObject({
+      flickeringProducts: 1,
+      duplicateProducts: 1,
+      lastAnomaly: "Conveyor 10: product 4 twice in one snapshot",
+    });
+  });
+});
+
+async function waitFor(condition: () => boolean, timeoutMs = 2000): Promise<void> {
+  const start = Date.now();
+  while (!condition()) {
+    if (Date.now() - start > timeoutMs) throw new Error("Timed out");
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}

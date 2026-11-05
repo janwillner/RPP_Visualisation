@@ -210,8 +210,10 @@ asyncio.run(main())
 ## Monitoring with /health
 
 `GET /health` answers with a `HealthReport`: the release, the protocol version and, per source, whether its PLC is
-connected, the last error, the time of the newest state and the PLC library's version. The HTTP status is 200 while
-every source is connected, else 503, so a plain HTTP check works:
+connected, the last error, the time of the newest state and the PLC library's version. Once states arrive, each source
+also has `acquisition`: how long reading and mapping took and how large a state message is over the last snapshots,
+the products in its registers, and products read twice or missing from one snapshot (see `docs/performance.md`). The
+HTTP status is 200 while every source is connected, else 503, so a plain HTTP check works:
 
 ```sh
 curl -fsS http://localhost:8080/health

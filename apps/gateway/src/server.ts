@@ -3,6 +3,7 @@ import { stat } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
+import type { GatewayMessage } from "@rpp/protocol";
 import type { MessageSource } from "./gateway";
 import { createApiDocs, DOCS_PATH, DOCS_SCHEMA_PATH } from "./api-docs";
 import { watchHealth } from "./health";
@@ -116,16 +117,28 @@ export function startServer({ gateway, port, host, staticDir, version = APP_VERS
   const wss = new WebSocketServer({ server, path: WS_PATH });
   // Listen errors (e.g. port in use) are re-emitted here; the listen promise below reports them.
   wss.on("error", () => {});
+  const sockets = new Set<WebSocket>();
+  // Every message is turned into JSON once for all browsers; a new browser first gets the current status and config.
+  gateway.subscribe((message) => {
+    if (sockets.size === 0) return;
+    const json = JSON.stringify(message);
+    if (message.kind === "state") gateway.acquisition(message.sourceId)?.recordSent(Buffer.byteLength(json));
+    for (const socket of sockets) send(socket, message, json);
+  });
   wss.on("connection", (socket: WebSocket) => {
-    const unsubscribe = gateway.subscribe((message) => {
-      if (socket.readyState !== socket.OPEN) return;
-      // A client that cannot keep up skips state snapshots; config and status always go through.
-      if (message.kind === "state" && socket.bufferedAmount > MAX_BUFFERED_BYTES) return;
-      socket.send(JSON.stringify(message));
-    });
-    socket.on("close", unsubscribe);
+    // Subscribing hands over the current status and config at once; later messages come through the shared listener.
+    gateway.subscribe((message) => send(socket, message, JSON.stringify(message)))();
+    sockets.add(socket);
+    socket.on("close", () => sockets.delete(socket));
     // Read-only: anything the browser sends is ignored.
   });
+
+  function send(socket: WebSocket, message: GatewayMessage, json: string): void {
+    if (socket.readyState !== socket.OPEN) return;
+    // A client that cannot keep up skips state snapshots; config and status always go through.
+    if (message.kind === "state" && socket.bufferedAmount > MAX_BUFFERED_BYTES) return;
+    socket.send(json);
+  }
 
   return new Promise((done, fail) => {
     server.once("error", fail);
