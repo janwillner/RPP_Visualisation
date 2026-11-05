@@ -117,6 +117,13 @@ describe("resolveGatewayOptions", () => {
     ]);
   });
 
+  it("takes the simulator's load test products from the flag, none by default, and refuses them for a real PLC", () => {
+    expect(resolveGatewayOptions(["--sim-products", "4000"], env()).simProducts).toBe(4000);
+    expect(resolveGatewayOptions([], env()).simProducts).toBe(0);
+    expect(() => resolveGatewayOptions(["--driver", "ads", "--sim-products", "100"], env())).toThrow(/simulator only/);
+    expect(() => resolveGatewayOptions(["--sim-products", "1.5"], env())).toThrow(/whole number/);
+  });
+
   it("takes the AmsNetId and port flags as the short form for one source, defaulting to the local runtime 851", () => {
     expect(resolveGatewayOptions(["--ams-net-id", "5.12.34.56.1.1", "--ads-port", "852"], env()).sources).toEqual([
       { sourceId: "ads:5.12.34.56.1.1:852", name: "5.12.34.56.1.1:852", amsNetId: "5.12.34.56.1.1", adsPort: 852 },

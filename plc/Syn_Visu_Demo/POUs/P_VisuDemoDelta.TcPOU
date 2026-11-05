@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoDelta" Id="{2d1b7ebc-fd96-42a3-8023-89588d6bf62d}" SpecialFunc="None">
+  <POU Name="P_VisuDemoDelta" Id="{f2e35f00-dd47-48a4-b1a1-f27c1fd9a46a}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -161,24 +161,15 @@ lr_Step := lr_TCP_SPEED * lr_Dt;
 (****************************************************************************************************)
 (* REGISTRATION (idempotent, every cycle)                                                           *)
 (****************************************************************************************************)
-fb_Infeed1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed 1',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Infeed1.vo_Visu');
-fb_Infeed2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 2, vi_str_Name := 'Infeed 2',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Infeed2.vo_Visu');
-fb_Outfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 3, vi_str_Name := 'Outfeed',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Outfeed.vo_Visu');
-fb_Delta1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 10, vi_str_Name := 'Delta 1',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Delta1.vo_Visu');
-fb_Delta2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 11, vi_str_Name := 'Delta 2',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Delta2.vo_Visu');
-fb_Delta3.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 12, vi_str_Name := 'Delta 3',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Delta3.vo_Visu');
-fb_Vision1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 50, vi_str_Name := 'Vision 1',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Vision1.vo_Visu');
-fb_Barrier2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 51, vi_str_Name := 'Light barrier 2',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Barrier2.vo_Visu');
-fb_RejectUnit.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 60, vi_str_Name := 'Reject unit',
-	vi_str_Path := 'P_VisuDemoDelta.fb_RejectUnit.vo_Visu');
+fb_Infeed1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed 1');
+fb_Infeed2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 2, vi_str_Name := 'Infeed 2');
+fb_Outfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 3, vi_str_Name := 'Outfeed');
+fb_Delta1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 10, vi_str_Name := 'Delta 1');
+fb_Delta2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 11, vi_str_Name := 'Delta 2');
+fb_Delta3.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 12, vi_str_Name := 'Delta 3');
+fb_Vision1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 50, vi_str_Name := 'Vision 1');
+fb_Barrier2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 51, vi_str_Name := 'Light barrier 2');
+fb_RejectUnit.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 60, vi_str_Name := 'Reject unit');
 
 
 (****************************************************************************************************)
@@ -201,8 +192,8 @@ FOR n_Belt := 0 TO 2 DO
 			vi_e_Shape := e_TYPE_SHAPE[udn_Type], vi_lr_CornerRadius := lr_TYPE_CORNER_RADIUS[udn_Type]);
 	END_FOR
 END_FOR
-fb_Infeed2.m_SetOriginShift(vi_lr_X := lr_INFEED2_ORIGIN_X);
-fb_Outfeed.m_SetOriginShift(vi_lr_X := lr_OUTFEED_ORIGIN_X);
+fb_Infeed2.m_SetOriginShift(vi_lr_X := lr_INFEED2_ORIGIN_X, vi_lr_Y := 0, vi_lr_Z := 0);
+fb_Outfeed.m_SetOriginShift(vi_lr_X := lr_OUTFEED_ORIGIN_X, vi_lr_Y := 0, vi_lr_Z := 0);
 
 (* Belt travel *)
 lr_BeltPosition[0] := lr_BeltPosition[0] + lr_INFEED_SPEED * lr_Dt;
@@ -222,14 +213,15 @@ DetectorPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_VISION_DISTANCE;
 fb_Vision1.m_Configure(vi_Pose := DetectorPose, vi_lr_FieldLength := lr_VISION_FIELD,
 	vi_lr_FieldWidth := lr_VISION_FIELD, vi_lr_WorkingDistance := lr_VISION_DISTANCE);
 fb_Vision1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed1.m_Id(), vi_lr_Start := lr_VISION_X - lr_VISION_FIELD / 2,
-	vi_lr_End := lr_VISION_X + lr_VISION_FIELD / 2, vi_lr_CcsOffset := lr_VISION_X);
+	vi_lr_End := lr_VISION_X + lr_VISION_FIELD / 2, vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_VISION_X);
 (* The head at the right belt edge, its beam across the belt towards +Y. Infeed 2 counts from its end. *)
 DetectorPose.fX := lr_BARRIER_X;
 DetectorPose.fY := lr_INFEED2_Y - lr_BARRIER_BEAM / 2;
 DetectorPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_BARRIER_HEIGHT;
 fb_Barrier2.m_Configure(vi_Pose := DetectorPose, vi_lr_BeamLength := lr_BARRIER_BEAM);
 fb_Barrier2.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed2.m_Id(), vi_lr_Start := lr_BARRIER_X - lr_INFEED2_ORIGIN_X,
-	vi_lr_End := lr_BARRIER_X - lr_INFEED2_ORIGIN_X, vi_lr_CcsOffset := lr_BARRIER_X - lr_INFEED2_ORIGIN_X);
+	vi_lr_End := lr_BARRIER_X - lr_INFEED2_ORIGIN_X, vi_lr_AllocationOffset := 0,
+	vi_lr_CcsOffset := lr_BARRIER_X - lr_INFEED2_ORIGIN_X);
 
 
 (****************************************************************************************************)
@@ -259,7 +251,8 @@ FOR n_Belt := 0 TO 1 DO
 		END_IF
 		IF fb_RefBelt.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
 			vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_RefBelt.vo_Visu.stConfig, vi_Pose := LatchPose),
-			vi_udn_ProductType := udn_Type, vi_udn_ClientId := SEL(n_Belt = 0, fb_Barrier2.m_Id(), fb_Vision1.m_Id()))
+			vi_udn_ProductType := udn_Type, vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE,
+			vi_e_State := E_VisuProductState.DETECTED, vi_udn_ClientId := SEL(n_Belt = 0, fb_Barrier2.m_Id(), fb_Vision1.m_Id()))
 		THEN
 			DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 		END_IF
@@ -335,7 +328,7 @@ METHOD PRIVATE m_Allocate : BOOL]]></Declaration>
 		AND ProductPose.fX <= lr_BaseX + lr_PICK_HALF_ZONE - lr_ALLOCATION_OFFSET
 		THEN
 			fb_RefBelt.m_SetProductState(vi_udn_Id := Product.nId, vi_e_State := E_VisuProductState.ASSIGNED,
-				vi_udn_ClientId := fb_RefRobot.m_Id());
+				vi_udn_ClientId := fb_RefRobot.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := 0);
 			udn_TargetId[n_Robot] := Product.nId;
 			n_TargetBelt[n_Robot] := n_Belt;
 			n_Phase[n_Robot] := n_PHASE_APPROACH;
@@ -407,9 +400,9 @@ fb_RefRobot.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_Infeed2.m_Id(),
 fb_RefRobot.m_SetZone(vi_un_Zone := 3, vi_udn_ConveyorId := fb_Outfeed.m_Id(),
 	vi_lr_Start := lr_BaseX - lr_PLACE_HALF_ZONE - lr_OUTFEED_ORIGIN_X,
 	vi_lr_End := lr_BaseX + lr_PLACE_HALF_ZONE - lr_OUTFEED_ORIGIN_X,
-	vi_lr_CcsOffset := lr_BaseX - lr_OUTFEED_ORIGIN_X);
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_BaseX - lr_OUTFEED_ORIGIN_X);
 (* The robot's coordinate system sits in its working plane, 900 mm below the base. *)
-fb_RefRobot.m_SetOriginShift(vi_lr_X := 0, vi_lr_Z := -900);
+fb_RefRobot.m_SetOriginShift(vi_lr_X := 0, vi_lr_Y := 0, vi_lr_Z := -900);
 
 (* Start position of the TCP *)
 IF NOT b_TcpInitialised[n_Robot] THEN
@@ -590,14 +583,16 @@ TempPose.fY := -lr_HOUSING_WIDTH / 2;
 TempPose.fZ := 0;
 fb_RejectUnit.m_SetBody(vi_un_Body := 1, vi_e_Shape := E_VisuBodyShape.BOX, vi_e_Role := E_VisuBodyRole.STRUCTURE,
 	vi_Pose := TempPose, vi_lr_Length := lr_HOUSING_LENGTH, vi_lr_Width := lr_HOUSING_WIDTH,
-	vi_lr_Height := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_HOUSING_ABOVE_BELT);
+	vi_lr_Height := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_HOUSING_ABOVE_BELT, vi_lr_TopLength := 0, vi_lr_TopWidth := 0);
 TempPose.fY := lr_PUSHER_WIDTH / 2;
 TempPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_PUSHER_ABOVE_BELT;
 fb_RejectUnit.m_SetBody(vi_un_Body := 2, vi_e_Shape := E_VisuBodyShape.BOX, vi_e_Role := E_VisuBodyRole.STRUCTURE,
-	vi_Pose := TempPose, vi_lr_Length := lr_PUSHER_LENGTH, vi_lr_Width := lr_PUSHER_WIDTH, vi_lr_Height := lr_PUSHER_HEIGHT);
+	vi_Pose := TempPose, vi_lr_Length := lr_PUSHER_LENGTH, vi_lr_Width := lr_PUSHER_WIDTH, vi_lr_Height := lr_PUSHER_HEIGHT,
+	vi_lr_TopLength := 0, vi_lr_TopWidth := 0);
 (* The outfeed counts from its shifted origin. *)
 fb_RejectUnit.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Outfeed.m_Id(), vi_lr_Start := lr_REJECT_X - lr_OUTFEED_ORIGIN_X,
-	vi_lr_End := lr_REJECT_X - lr_OUTFEED_ORIGIN_X, vi_lr_CcsOffset := lr_REJECT_X - lr_OUTFEED_ORIGIN_X);
+	vi_lr_End := lr_REJECT_X - lr_OUTFEED_ORIGIN_X, vi_lr_AllocationOffset := 0,
+	vi_lr_CcsOffset := lr_REJECT_X - lr_OUTFEED_ORIGIN_X);
 
 
 (****************************************************************************************************)
@@ -622,7 +617,7 @@ WHILE un_TempIndex < fb_Outfeed.m_ProductCount() DO
 		un_RejectPassed := un_RejectPassed + 1;
 		IF un_RejectPassed MOD un_REJECT_EVERY = 0 AND udn_RejectPushing = 0 THEN
 			fb_Outfeed.m_SetProductState(vi_udn_Id := TempProduct.nId, vi_e_State := E_VisuProductState.REJECTED,
-				vi_udn_ClientId := fb_RejectUnit.m_Id());
+				vi_udn_ClientId := fb_RejectUnit.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := 0);
 			udn_RejectPushing := TempProduct.nId;
 			lr_RejectLeft := lr_REJECT_PUSH_TIME;
 		END_IF
@@ -697,7 +692,7 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 		IF lr_X - lr_LEAD > lr_BaseX + lr_PICK_HALF_ZONE THEN
 			(* Product left the zone: hand it back, a downstream robot may still catch it. *)
 			fb_RefBelt.m_SetProductState(vi_udn_Id := udn_TargetId[n_Robot], vi_e_State := E_VisuProductState.DETECTED,
-				vi_udn_ClientId := fb_RefRobot.m_Id());
+				vi_udn_ClientId := fb_RefRobot.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := 0);
 			udn_TargetId[n_Robot] := 0;
 			n_Phase[n_Robot] := n_PHASE_IDLE;
 		ELSE
@@ -718,7 +713,7 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 		THEN
 			n_Slot := n_HeldCount[n_Robot];
 			fb_RefBelt.m_SetProductState(vi_udn_Id := udn_TargetId[n_Robot], vi_e_State := E_VisuProductState.PICKED,
-				vi_udn_ClientId := fb_RefRobot.m_Id(), vi_udn_FingerId := INT_TO_UDINT(n_Finger));
+				vi_udn_ClientId := fb_RefRobot.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := INT_TO_UDINT(n_Finger));
 			udn_Held[n_Robot, n_Slot] := udn_TargetId[n_Robot];
 			n_HeldBelt[n_Robot, n_Slot] := n_TargetBelt[n_Robot];
 			udn_HeldType[n_Robot, n_Slot] := Product.nProductType;
@@ -787,7 +782,8 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 			LatchPose.fRz := SEL(n_Robot = 2, lr_ToolRz[n_Robot], 0);
 			IF fb_Outfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
 				vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_Outfeed.vo_Visu.stConfig, vi_Pose := LatchPose),
-				vi_udn_ProductType := udn_HeldType[n_Robot, n_Slot], vi_e_State := E_VisuProductState.PLACED,
+				vi_udn_ProductType := udn_HeldType[n_Robot, n_Slot], vi_lr_LatchBeltPosition := 0,
+				vi_b_UseLatchBeltPosition := FALSE, vi_e_State := E_VisuProductState.PLACED,
 				vi_udn_ClientId := fb_RefRobot.m_Id())
 			THEN
 				DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;

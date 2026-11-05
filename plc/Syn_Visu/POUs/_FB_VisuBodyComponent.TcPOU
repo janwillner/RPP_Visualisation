@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuBodyComponent" Id="{ba86e829-5142-4a10-8513-effb836f98af}" SpecialFunc="None">
+  <POU Name="_FB_VisuBodyComponent" Id="{f29e91f7-4a64-48fd-b0f4-9a4dd5737bc8}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -105,7 +105,6 @@ END_VAR
 VAR_INPUT
 	vi_udn_Id							: UDINT;	// [-] unique, > 0
 	vi_str_Name							: STRING(80);	// display name
-	vi_str_Path							: STRING(255);	// symbol path of this instance's vo_Visu, e.g. 'MAIN.fb_Vision.vo_Visu'
 END_VAR
 VAR
 	p_TempPose							: POINTER TO ST_VisuPose;
@@ -117,8 +116,7 @@ VAR
 	p_TempFault							: POINTER TO ST_VisuFault;
 END_VAR]]></Declaration>
       <Implementation>
-        <ST><![CDATA[m_Register := SUPER^.m_Register(vio_Manifest := vio_Manifest, vi_udn_Id := vi_udn_Id, vi_str_Name := vi_str_Name,
-	vi_str_Path := vi_str_Path);
+        <ST><![CDATA[m_Register := SUPER^.m_Register(vio_Manifest := vio_Manifest, vi_udn_Id := vi_udn_Id, vi_str_Name := vi_str_Name);
 m_Parts(vo_p_Pose => p_TempPose, vo_p_OriginShift => p_TempShift, vo_p_BodyCount => p_TempCount,
 	vo_p_Bodies => p_TempBodies, vo_p_BodyStates => p_TempStates, vo_p_Timestamp => p_TempTimestamp,
 	vo_p_Fault => p_TempFault);
@@ -152,8 +150,8 @@ VAR_INPUT
 	vi_lr_Length						: LREAL;	// [mm] along the body's local X; a cylinder's diameter
 	vi_lr_Width							: LREAL;	// [mm] along the body's local Y; a cylinder's diameter
 	vi_lr_Height						: LREAL;	// [mm] along the body's local Z
-	vi_lr_TopLength						: LREAL := 0;	// [mm] top face of a FRUSTUM
-	vi_lr_TopWidth						: LREAL := 0;	// [mm] top face of a FRUSTUM
+	vi_lr_TopLength						: LREAL;	// [mm] top face of a FRUSTUM, 0 for other shapes
+	vi_lr_TopWidth						: LREAL;	// [mm] top face of a FRUSTUM, 0 for other shapes
 END_VAR
 VAR
 	p_TempPose							: POINTER TO ST_VisuPose;
@@ -296,8 +294,8 @@ pose, in its local frame. The bodies stay relative to the pose. TRUE if anything
 METHOD m_SetOriginShift : BOOL
 VAR_INPUT
 	vi_lr_X								: LREAL;	// [mm] along the component's local X
-	vi_lr_Y								: LREAL := 0;	// [mm] along the component's local Y
-	vi_lr_Z								: LREAL := 0;	// [mm] along the component's local Z
+	vi_lr_Y								: LREAL;	// [mm] along the component's local Y, 0 = none
+	vi_lr_Z								: LREAL;	// [mm] along the component's local Z, 0 = none
 END_VAR
 VAR
 	p_TempPose							: POINTER TO ST_VisuPose;

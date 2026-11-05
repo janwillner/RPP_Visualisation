@@ -8,31 +8,38 @@ namespace AdsBridge;
 /// <summary>Converts raw PLC memory to JSON using the symbol's data type information.</summary>
 internal static class ValueConverter
 {
-    public static JsonNode? Convert(ResolvedSymbol symbol, byte[] data)
+    /// <summary>
+    /// The symbol's value. With <paramref name="changes"/>, each of its counted arrays of entries with an <c>nId</c>
+    /// becomes <c>{"$ids": [...], "$changed": [...]}</c>: the ids of the counted entries in order and the entries that
+    /// are new or whose bytes differ from the previous read (ADR 0013). Only those entries are converted.
+    /// </summary>
+    public static JsonNode? Convert(ResolvedSymbol symbol, byte[] data, bool changes = false)
     {
-        if (symbol.DataType != null) return Convert(symbol.DataType, data);
-        // No type information (e.g. type not in the loader): fall back on the type name.
-        return ConvertPrimitive(symbol.TypeName, data) ?? throw new InvalidOperationException($"No type information for {symbol.TypeName}");
+        if (symbol.DataType == null)
+        {
+            // No type information (e.g. type not in the loader): fall back on the type name.
+            return ConvertPrimitive(symbol.TypeName, data) ?? throw new InvalidOperationException($"No type information for {symbol.TypeName}");
+        }
+        if (!changes || !symbol.CountedArrays.Any(a => a.IdOffset != null)) return Convert(symbol.DataType, data);
+        var type = symbol.DataType;
+        while (type is IAliasType alias && alias.BaseType != null) type = alias.BaseType;
+        if (type is not IStructType structure) return Convert(symbol.DataType, data);
+        return ConvertStruct(structure, data, (IMember member, ReadOnlySpan<byte> slice, int count) =>
+        {
+            int k = symbol.CountedArrays.ToList().FindIndex(a => a.Offset == member.ByteOffset && a.IdOffset != null);
+            return k < 0 ? null : ChangedEntries((IArrayType)member.DataType!, slice, count, symbol.CountedArrays[k].IdOffset!.Value, symbol.PreviousEntries[k]);
+        });
     }
+
+    /// <summary>Converts an array member itself, or returns null to have it converted whole.</summary>
+    private delegate JsonNode? ArrayConverter(IMember member, ReadOnlySpan<byte> slice, int count);
 
     private static JsonNode? Convert(IDataType type, ReadOnlySpan<byte> data)
     {
         switch (type.Category)
         {
             case DataTypeCategory.Struct:
-            {
-                var members = ((IStructType)type).AllMembers;
-                var obj = new JsonObject();
-                foreach (var member in members)
-                {
-                    if (member.DataType == null || member.ByteOffset + member.ByteSize > data.Length) continue;
-                    var slice = data.Slice(member.ByteOffset, member.ByteSize);
-                    obj[member.InstanceName] = member.DataType.Category == DataTypeCategory.Array
-                        ? ConvertArray((IArrayType)member.DataType, slice, CountOf(members, member.InstanceName, data))
-                        : Convert(member.DataType, slice);
-                }
-                return obj;
-            }
+                return ConvertStruct((IStructType)type, data, null);
             case DataTypeCategory.Array:
                 return ConvertArray((IArrayType)type, data, int.MaxValue);
             case DataTypeCategory.Alias:
@@ -50,6 +57,55 @@ internal static class ValueConverter
             default:
                 return ConvertPrimitive(type.Name, data) ?? ConvertInteger(data, signed: false);
         }
+    }
+
+    private static JsonObject ConvertStruct(IStructType type, ReadOnlySpan<byte> data, ArrayConverter? arrays)
+    {
+        var members = type.AllMembers;
+        var obj = new JsonObject();
+        foreach (var member in members)
+        {
+            if (member.DataType == null || member.ByteOffset + member.ByteSize > data.Length) continue;
+            var slice = data.Slice(member.ByteOffset, member.ByteSize);
+            if (member.DataType.Category != DataTypeCategory.Array)
+            {
+                obj[member.InstanceName] = Convert(member.DataType, slice);
+                continue;
+            }
+            int count = CountOf(members, member.InstanceName, data);
+            obj[member.InstanceName] = arrays?.Invoke(member, slice, count) ?? ConvertArray((IArrayType)member.DataType, slice, count);
+        }
+        return obj;
+    }
+
+    /// <summary>
+    /// A counted array as changes: the ids of its first <paramref name="count"/> entries and the entries whose bytes
+    /// differ from <paramref name="previous"/> (the entries of the previous read by id), which then holds this read's.
+    /// </summary>
+    private static JsonObject ChangedEntries(IArrayType arrayType, ReadOnlySpan<byte> data, int count, int idOffset, Dictionary<uint, byte[]> previous)
+    {
+        var elementType = arrayType.ElementType ?? throw new InvalidOperationException($"No element type for {arrayType.Name}");
+        int size = elementType.ByteSize;
+        count = Math.Min(count, data.Length / size);
+        var ids = new JsonArray();
+        var changed = new JsonArray();
+        var next = new Dictionary<uint, byte[]>(count);
+        for (int i = 0; i < count; i++)
+        {
+            var entry = data.Slice(i * size, size);
+            uint id = BinaryPrimitives.ReadUInt32LittleEndian(entry[idOffset..]);
+            ids.Add(JsonValue.Create(id));
+            if (previous.TryGetValue(id, out var before) && entry.SequenceEqual(before))
+            {
+                next[id] = before;
+                continue;
+            }
+            next[id] = entry.ToArray();
+            changed.Add(Convert(elementType, entry));
+        }
+        previous.Clear();
+        foreach (var (id, bytes) in next) previous[id] = bytes;
+        return new JsonObject { ["$ids"] = ids, ["$changed"] = changed };
     }
 
     /// <summary>The first <paramref name="limit"/> entries of an array (all of them if it is larger than the array).</summary>
@@ -71,8 +127,7 @@ internal static class ValueConverter
     /// </summary>
     private static int CountOf(IEnumerable<IMember> members, string arrayName, ReadOnlySpan<byte> data)
     {
-        if (arrayName.Length < 2 || arrayName[0] != 'a' || !char.IsUpper(arrayName[1])) return int.MaxValue;
-        string countName = $"n{Singular(arrayName[1..])}Count";
+        if (CountMemberName(arrayName) is not { } countName) return int.MaxValue;
         var countMember = members.FirstOrDefault(m => string.Equals(m.InstanceName, countName, StringComparison.OrdinalIgnoreCase));
         if (countMember?.DataType == null || countMember.ByteOffset + countMember.ByteSize > data.Length) return int.MaxValue;
         var raw = data.Slice(countMember.ByteOffset, countMember.ByteSize);
@@ -89,6 +144,13 @@ internal static class ValueConverter
         };
         return (int)Math.Clamp(value, 0, int.MaxValue);
     }
+
+    /// <summary>
+    /// The count member of an array as the contract names it (<c>aProducts</c> → <c>nProductCount</c>), or null for a
+    /// member that is not named like an array.
+    /// </summary>
+    public static string? CountMemberName(string arrayName) =>
+        arrayName.Length < 2 || arrayName[0] != 'a' || !char.IsUpper(arrayName[1]) ? null : $"n{Singular(arrayName[1..])}Count";
 
     /// <summary><c>Products</c> → <c>Product</c>, <c>Bodies</c> → <c>Body</c>: the count member is named after one entry.</summary>
     private static string Singular(string name) =>

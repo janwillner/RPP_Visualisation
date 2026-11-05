@@ -24,8 +24,28 @@ public sealed record BridgeOptions(string AmsNetId, int AdsPort)
 
 public sealed class SymbolNotFoundException(string path) : Exception($"Symbol not found: {path}");
 
-/// <summary>Address and type information of one resolved symbol.</summary>
-internal sealed record ResolvedSymbol(uint IndexGroup, uint IndexOffset, int ByteSize, string TypeName, IDataType? DataType);
+/// <summary>
+/// Address and type information of one resolved symbol, with its counted arrays and how many entries of each the next
+/// read fetches (from the previous count; see <see cref="ReadPlan"/>).
+/// </summary>
+internal sealed record ResolvedSymbol(
+    uint IndexGroup,
+    uint IndexOffset,
+    int ByteSize,
+    string TypeName,
+    IDataType? DataType,
+    IReadOnlyList<CountedArray> CountedArrays,
+    int[] EntriesToRead)
+{
+    /// <summary>
+    /// The symbol's bytes, kept from read to read: a register of a few hundred KB is not allocated anew every cycle.
+    /// Every byte the conversion uses is read again each time; entries beyond a count may be stale but are never used.
+    /// </summary>
+    public byte[] Buffer { get; } = new byte[ByteSize];
+
+    /// <summary>Per counted array its entries of the previous read as changes, by id (ADR 0013).</summary>
+    public Dictionary<uint, byte[]>[] PreviousEntries { get; } = CountedArrays.Select(_ => new Dictionary<uint, byte[]>()).ToArray();
+}
 
 /// <summary>Handles gateway requests against one ADS target. Not thread-safe; requests are processed in order.</summary>
 public sealed class Bridge(BridgeOptions options) : IDisposable
@@ -37,6 +57,8 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
     private ISymbolLoader? _loader;
     private readonly Dictionary<string, ResolvedSymbol> _symbols = new();
     private bool _symbolsChanged;
+    /// <summary>The session registers are read as changes in; another one starts with every entry.</summary>
+    private string? _changesSession;
 
     public JsonNode? Handle(JsonObject request)
     {
@@ -45,7 +67,7 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
         {
             "typeOf" => TypeOf(request["path"]!.GetValue<string>()),
             "read" => Read(request["path"]!.GetValue<string>()),
-            "sumRead" => SumRead(request["paths"]!.AsArray().Select(p => p!.GetValue<string>()).ToList()),
+            "sumRead" => SumRead(request["paths"]!.AsArray().Select(p => p!.GetValue<string>()).ToList(), request["changes"]?.GetValue<string>()),
             _ => throw new InvalidOperationException($"Unknown op '{op}'"),
         };
     }
@@ -54,6 +76,7 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
     public void Reset()
     {
         _symbols.Clear();
+        _changesSession = null;
         _loader = null;
         _client?.Dispose();
         _client = null;
@@ -88,7 +111,10 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
         if (error != AdsErrorCode.NoError) throw new AdsErrorException($"Reading symbol {path} failed", error);
         if (symbol == null) return null;
         Loader().DataTypes.TryGetType(symbol.TypeName, out IDataType? dataType);
-        var resolved = new ResolvedSymbol(symbol.IndexGroup, symbol.IndexOffset, symbol.ByteSize, symbol.TypeName, dataType);
+        var arrays = ReadPlan.CountedArrays(symbol.IndexGroup, dataType);
+        // The first read takes the reserve only; it learns the counts.
+        var entries = arrays.Select(a => ReadPlan.WithReserve(0, a.Capacity)).ToArray();
+        var resolved = new ResolvedSymbol(symbol.IndexGroup, symbol.IndexOffset, symbol.ByteSize, symbol.TypeName, dataType, arrays, entries);
         _symbols[path] = resolved;
         return resolved;
     }
@@ -99,7 +125,11 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
 
     private JsonNode? Read(string path) => SumRead([path])[0]?.DeepClone();
 
-    private JsonNode SumRead(IReadOnlyList<string> paths)
+    /// <summary>
+    /// Reads several symbols in one go. With <paramref name="changes"/> (a session chosen by the gateway) registers come
+    /// as changes since the previous read of the same session; a new session starts with every entry.
+    /// </summary>
+    private JsonNode SumRead(IReadOnlyList<string> paths, string? changes = null)
     {
         if (_symbolsChanged)
         {
@@ -109,30 +139,82 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
             throw new InvalidOperationException("PLC symbols changed (download or online change); rediscovering");
         }
         var symbols = paths.Select(Require).ToList();
+        var buffers = symbols.Select(s => s.Buffer).ToList();
 
-        // Request: per entry (indexGroup, indexOffset, length). Response: per entry an error code, then all data.
-        var request = new byte[symbols.Count * 12];
-        int dataLength = 0;
-        for (int i = 0; i < symbols.Count; i++)
+        // One sum-read: each symbol whole, its counted arrays as far as the previous count plus a reserve. If a register
+        // counts more entries than were read (many added at once), everything is read again with the new count: reading
+        // only the missing entries later could mix two PLC cycles, with entries moved up in between.
+        for (bool fits = false; !fits;)
         {
-            var span = request.AsSpan(i * 12);
-            BinaryPrimitives.WriteUInt32LittleEndian(span, symbols[i].IndexGroup);
-            BinaryPrimitives.WriteUInt32LittleEndian(span[4..], symbols[i].IndexOffset);
-            BinaryPrimitives.WriteUInt32LittleEndian(span[8..], (uint)symbols[i].ByteSize);
-            dataLength += symbols[i].ByteSize;
-        }
-        var response = new byte[symbols.Count * 4 + dataLength];
-        Client().ReadWrite(SumReadIndexGroup, (uint)symbols.Count, response.AsMemory(), request.AsMemory());
+            var parts = new List<(int Symbol, Segment Segment)>();
+            for (int i = 0; i < symbols.Count; i++)
+            {
+                foreach (var segment in ReadPlan.Segments(symbols[i].ByteSize, symbols[i].CountedArrays, symbols[i].EntriesToRead))
+                    parts.Add((i, segment));
+            }
+            ReadParts(symbols, buffers, parts, paths);
 
+            fits = true;
+            for (int i = 0; i < symbols.Count; i++)
+            {
+                var arrays = symbols[i].CountedArrays;
+                for (int k = 0; k < arrays.Count; k++)
+                {
+                    // Counts are clamped to the capacity, so a second pass reads at least every counted entry.
+                    int count = arrays[k].CountIn(buffers[i]);
+                    if (count > symbols[i].EntriesToRead[k]) fits = false;
+                    symbols[i].EntriesToRead[k] = ReadPlan.WithReserve(count, arrays[k].Capacity);
+                }
+            }
+        }
+
+        if (changes != null && changes != _changesSession)
+        {
+            _changesSession = changes;
+            foreach (var symbol in _symbols.Values) foreach (var previous in symbol.PreviousEntries) previous.Clear();
+        }
         var result = new JsonArray();
-        int offset = symbols.Count * 4;
-        for (int i = 0; i < symbols.Count; i++)
-        {
-            uint error = BinaryPrimitives.ReadUInt32LittleEndian(response.AsSpan(i * 4));
-            if (error != 0) throw new InvalidOperationException($"ADS sum-read failed for {paths[i]}: error 0x{error:X}");
-            result.Add(ValueConverter.Convert(symbols[i], response.AsSpan(offset, symbols[i].ByteSize).ToArray()));
-            offset += symbols[i].ByteSize;
-        }
+        for (int i = 0; i < symbols.Count; i++) result.Add(ValueConverter.Convert(symbols[i], buffers[i], changes != null));
         return result;
+    }
+
+    /// <summary>A sum-read accepts at most this many reads.</summary>
+    private const int MaxReadsPerSumRead = 500;
+
+    /// <summary>Reads byte ranges of symbols into their buffers, in as few sum-reads as allowed.</summary>
+    private void ReadParts(
+        IReadOnlyList<ResolvedSymbol> symbols,
+        IReadOnlyList<byte[]> buffers,
+        IReadOnlyList<(int Symbol, Segment Segment)> parts,
+        IReadOnlyList<string> paths)
+    {
+        for (int start = 0; start < parts.Count; start += MaxReadsPerSumRead)
+        {
+            int n = Math.Min(MaxReadsPerSumRead, parts.Count - start);
+            // Request: per read (indexGroup, indexOffset, length). Response: per read an error code, then all data.
+            var request = new byte[n * 12];
+            int dataLength = 0;
+            for (int j = 0; j < n; j++)
+            {
+                var (s, segment) = parts[start + j];
+                var span = request.AsSpan(j * 12);
+                BinaryPrimitives.WriteUInt32LittleEndian(span, symbols[s].IndexGroup);
+                BinaryPrimitives.WriteUInt32LittleEndian(span[4..], symbols[s].IndexOffset + (uint)segment.Offset);
+                BinaryPrimitives.WriteUInt32LittleEndian(span[8..], (uint)segment.Length);
+                dataLength += segment.Length;
+            }
+            var response = new byte[n * 4 + dataLength];
+            Client().ReadWrite(SumReadIndexGroup, (uint)n, response.AsMemory(), request.AsMemory());
+
+            int offset = n * 4;
+            for (int j = 0; j < n; j++)
+            {
+                var (s, segment) = parts[start + j];
+                uint error = BinaryPrimitives.ReadUInt32LittleEndian(response.AsSpan(j * 4));
+                if (error != 0) throw new InvalidOperationException($"ADS sum-read failed for {paths[s]}: error 0x{error:X}");
+                response.AsSpan(offset, segment.Length).CopyTo(buffers[s].AsSpan(segment.Offset));
+                offset += segment.Length;
+            }
+        }
     }
 }

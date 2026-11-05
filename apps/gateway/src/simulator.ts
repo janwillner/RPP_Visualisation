@@ -102,6 +102,24 @@ const CART_TOOL = {
 /** Products are removed from the register this far beyond the belt end, so "missed" stays visible briefly. */
 const REMOVE_BEYOND_END = 300;
 
+/**
+ * Load test (`--sim-products`): a wide buffer belt beside the applications carrying products in lanes, as many as
+ * asked. Products keep entering at its start and leaving beyond its end; every `rejectEvery`-th one is rejected
+ * halfway, so the register also changes in between.
+ */
+const BUFFER = {
+  id: 9,
+  path: "MAIN.stBufferBelt",
+  x: 0,
+  y: 9000,
+  lanes: 10,
+  laneWidth: 100,
+  /** Distance between two rows of products along the belt. */
+  pitch: 150,
+  speed: 300,
+  rejectEvery: 25,
+};
+
 /** XTS loop above the Fxx infeed and outfeed; tool points at the product tops. */
 const LOOP = {
   id: 20,
@@ -310,12 +328,41 @@ function centred(zones: ZoneSpec[]): ZoneSpec[] {
   return zones.map((z) => ({ ...z, fCcsOffset: (z.fStart + z.fEnd) / 2 }));
 }
 
-export function createSimulator(options: { seed?: number } = {}): Simulator {
+export interface SimulatorOptions {
+  /** Seed of the random numbers; the current time when not given. */
+  seed?: number;
+  /** Load test: products kept on an extra buffer belt (up to MAX_PRODUCTS less a few rows); 0 or absent = none. */
+  products?: number;
+}
+
+export function createSimulator(options: SimulatorOptions = {}): Simulator {
   const random = mulberry32(options.seed ?? Date.now());
   const plc = new InMemoryPlc();
   const belt = (b: { x: number; y: number; length: number }) =>
     conveyor({ pose: { fX: b.x, fY: b.y, fZ: BELT_Z }, length: b.length, width: 400, productTypes });
+  // Rows on the buffer belt: the products beyond its end until they are removed must fit into the register too.
+  const bufferRows = Math.ceil(
+    Math.min(options.products ?? 0, MAX_PRODUCTS - BUFFER.lanes * Math.ceil(REMOVE_BEYOND_END / BUFFER.pitch + 1)) /
+      BUFFER.lanes,
+  );
+  const bufferLength = bufferRows * BUFFER.pitch;
   defineMachine(plc, [
+    ...(bufferRows > 0
+      ? [
+          {
+            id: BUFFER.id,
+            name: "Buffer belt",
+            path: BUFFER.path,
+            kind: "conveyor" as const,
+            value: conveyor({
+              pose: { fX: BUFFER.x, fY: BUFFER.y, fZ: BELT_Z },
+              length: bufferLength,
+              width: BUFFER.lanes * BUFFER.laneWidth + 100,
+              productTypes,
+            }),
+          },
+        ]
+      : []),
     { id: INFEED.id, name: "Infeed", path: INFEED.path, kind: "conveyor", value: belt(INFEED) },
     { id: OUTFEED.id, name: "Outfeed", path: OUTFEED.path, kind: "conveyor", value: belt(OUTFEED) },
     {
@@ -511,6 +558,37 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
   const cartInfeedProducts: TrackedProduct[] = [];
   const cartOutfeedProducts: TrackedProduct[] = [];
   let sinceCartSpawn = 0;
+
+  const bufferBelt = bufferRows > 0 ? plc.get<ST_VisuConveyor>(BUFFER.path) : undefined;
+  const bufferProducts: TrackedProduct[] = [];
+  /** Belt position at which the next row of products enters the buffer belt. */
+  let nextBufferRow = 0;
+  /** A row of products across the buffer belt, at `x` mm from its start; cans in every other lane. */
+  const latchBufferRow = (c: ST_VisuConveyor, x: number) => {
+    for (let lane = 0; lane < BUFFER.lanes; lane++) {
+      const y = BUFFER.y + (lane - (BUFFER.lanes - 1) / 2) * BUFFER.laneWidth;
+      const type = lane % 2 === 0 ? PRODUCT.type : CAN.type;
+      latch(bufferProducts, c, BUFFER.x + x, y, 0, E_VisuProductState.DETECTED, type);
+    }
+  };
+  if (bufferBelt) {
+    // Full from the start: the load is there at once, not only once the first row has crossed the belt.
+    for (let row = bufferRows - 1; row >= 0; row--) latchBufferRow(bufferBelt, BUFFER.pitch / 2 + row * BUFFER.pitch);
+    nextBufferRow = BUFFER.pitch;
+  }
+
+  /** The buffer belt runs on: a new row enters every pitch, every rejectEvery-th product is rejected halfway. */
+  function stepBufferBelt(c: ST_VisuConveyor, dtS: number): void {
+    c.stState.fBeltPosition += BUFFER.speed * dtS;
+    while (c.stState.fBeltPosition >= nextBufferRow) {
+      latchBufferRow(c, BUFFER.pitch / 2 - (c.stState.fBeltPosition - nextBufferRow));
+      nextBufferRow += BUFFER.pitch;
+    }
+    for (const p of bufferProducts) {
+      if (p.eState !== E_VisuProductState.DETECTED || p.nId % BUFFER.rejectEvery !== 0) continue;
+      if (productPosition(p, c)[0] - BUFFER.x >= bufferLength / 2) change(p, E_VisuProductState.REJECTED, 0);
+    }
+  }
 
   const home: Vec3 = [ROBOT.x, ROBOT.y, ROBOT.z - 900];
   let tcp: Vec3 = [...home];
@@ -952,10 +1030,8 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
     }
     const visible = products.slice(0, MAX_PRODUCTS);
     c.stState.nProductCount = visible.length;
-    c.stState.aProducts = [
-      ...visible.map((p) => ({ ...p, stLatchPose: { ...p.stLatchPose } })),
-      ...Array.from({ length: MAX_PRODUCTS - visible.length }, emptyProduct),
-    ];
+    // Only the counted entries, as the ADS bridge delivers a register: the rest of a large array is never read.
+    c.stState.aProducts = visible.map((p) => ({ ...p, stLatchPose: { ...p.stLatchPose } }));
     c.stState.nTimestamp = now;
   }
 
@@ -1138,6 +1214,10 @@ export function createSimulator(options: { seed?: number } = {}): Simulator {
       writeRegister(tray, trayProducts, TRAY.x, TRAY.length);
       writeRegister(cartInfeed, cartInfeedProducts, CART_INFEED.x, CART_INFEED.length);
       writeRegister(cartOutfeed, cartOutfeedProducts, CART_OUTFEED.x, CART_OUTFEED.length);
+      if (bufferBelt) {
+        stepBufferBelt(bufferBelt, dtS);
+        writeRegister(bufferBelt, bufferProducts, BUFFER.x, bufferLength);
+      }
       writeRobot();
       writeXts();
       writeDetectors();

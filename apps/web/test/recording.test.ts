@@ -159,6 +159,47 @@ describe("recording: playback at any point in time", () => {
     }
   });
 
+  it("plays back large registers whose products leave, enter, change and even change their order", async () => {
+    const product = (id: number, state: "detected" | "picked" = "detected") => ({
+      id,
+      latchPose: { x: id, y: 0, z: 0, rz: 0 },
+      latchBeltPosition: 0,
+      state,
+      previousState: "detected" as const,
+      lastClientId: 0,
+      moverId: 0,
+      fingerId: 0,
+      productType: 1,
+    });
+    const register = (at: number, products: ReturnType<typeof product>[]): StateMessage => ({
+      ...state(A, at),
+      components: [{ type: "conveyor", id: 1, timestamp: "0", beltPosition: at, products, fault: null }],
+    });
+    // As live: unchanged products are the objects of the previous state.
+    const first = Array.from({ length: 40 }, (_, k) => product(k + 1));
+    const shifted = [...first.slice(12), product(41), product(42)];
+    const changed = shifted.map((p) => (p.id === 30 ? product(30, "picked") : p));
+    const timeline: [number, ReturnType<typeof product>[]][] = [
+      [0, first],
+      [100, first],
+      // More products left at the front than the walk looks ahead, two new ones at the end.
+      [200, shifted],
+      [300, changed],
+      [400, [...changed].reverse()],
+      [500, changed.filter((p) => p.id % 2 === 0)],
+    ];
+    const recorder = new Recorder([{ sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: config(A) }]);
+    for (const [at, products] of timeline) recorder.add(at, register(at, products));
+    const recording = await recorder.stop();
+
+    for (const opened of [recording, await Recording.fromFile(await recording.toFile())]) {
+      for (const [at, products] of timeline) {
+        const latest = (await opened.viewAt(at)).latestState(A)!.components[0]!;
+        expect(latest.type === "conveyor" && latest.products).toEqual(products);
+      }
+    }
+  });
+
   it("keeps the last state of a source that stopped sending, like live", async () => {
     const recorder = new Recorder([
       { sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: config(A) },

@@ -38,7 +38,7 @@ import type { InMemoryPlc } from "./in-memory-plc";
 
 /** Library defaults (constants in Syn_Visu, overridable per project). */
 export const MAX_MANIFEST_ENTRIES = 32;
-export const MAX_PRODUCTS = 128;
+export const MAX_PRODUCTS = 4800;
 export const MAX_PRODUCT_TYPES = 8;
 export const MAX_ZONES = 8;
 export const MAX_MOVERS = 40;

@@ -32,6 +32,7 @@ import type {
 } from "./scene-model";
 import { availableSnapPoints, buildMachineScene, emptyScene } from "./scene-model";
 import { isTap, nearestOnScreen, snapRadiusPx, type ScreenPoint } from "./picking";
+import { ProductGroups, isGrouped, partitionProducts, type ProductGroup } from "./product-groups";
 import type { ConfigMessage, ProductState } from "@rpp/protocol";
 
 export interface Layers {
@@ -268,10 +269,13 @@ function placeBetween(mesh: THREE.Object3D | null, a: Vec3 | undefined, b: Vec3 
 }
 
 /** Structural signature: re-render React only when the set of drawn objects changes. */
-function signature(m: SceneModel): string {
+function signature(m: SceneModel, groups: ProductGroups): string {
   return [
     m.conveyors.map((c) => `${c.id}:${c.length}:${c.width}`).join(","),
-    m.products.map((p) => `${p.key}:${p.state}`).join(","),
+    // Products on the belt are drawn in groups (`ProductInstances`): only a new group or a larger one counts. The few
+    // drawn one by one (placeholders, carried products) count each.
+    groups.of(m.products).map((g) => `${g.key}:${g.capacity}`).join(","),
+    m.products.filter((p) => !isGrouped(p)).map((p) => `${p.key}:${p.state}`).join(","),
     m.deltas.map((d) => d.id + ":" + d.baseRadius + ":" + d.effectorRadius).join(","),
     m.zones.map((w) => `${w.componentId}:${w.conveyorId}:${w.length}`).join(","),
     m.snapPoints.filter((p) => !p.moving).map((p) => p.key).join(","),
@@ -311,7 +315,8 @@ function SceneContent(props: SceneViewProps) {
 
   // Priority −1: runs before the sources' frame callbacks, which read the scene built here.
   useFrame(() => {
-    const model = buildMachineScene(feed.sceneSources(), hidden);
+    // Products get snap points only while measuring: with thousands of products they cost most of the frame.
+    const model = buildMachineScene(feed.sceneSources(), hidden, { productSnapPoints: measureMode });
     machine.current = model;
     modelRef.current = model;
     const s = machineSignature(model);
@@ -379,21 +384,28 @@ function SourceContent(props: {
   const [structure, setStructure] = useState<SceneModel>(EMPTY);
   const sig = useRef("");
   const productIndex = useRef(new Map<string, SceneProduct>());
+  /** Per product group the products it draws this frame (`ProductInstances`). */
+  const groupMembers = useRef(new Map<string, SceneProduct[]>());
+  /** The product groups and the instances allocated to each so far. */
+  const productGroups = useMemo(() => new ProductGroups(), []);
   // A new config can change geometry without changing ids: force a structural update.
   useEffect(() => {
     sig.current = "";
   }, [config, hidden]);
 
+  // Priority -0.5: after the machine scene is built, before the products' frame callbacks read what is built here.
   useFrame(() => {
     const model = machine.current.sources.find((s) => s.sourceId === sourceId)?.scene ?? EMPTY;
     latest.current = model;
-    productIndex.current = new Map(model.products.map((p) => [p.key, p]));
-    const s = signature(model);
+    const { members, single } = partitionProducts(model.products);
+    productIndex.current = single;
+    groupMembers.current = members;
+    const s = signature(model, productGroups);
     if (s !== sig.current) {
       sig.current = s;
       setStructure(model);
     }
-  });
+  }, -0.5);
 
   const productByKey = (key: string) => productIndex.current.get(key);
   const isSelected = (id: number) => selection?.kind === "component" && selection.id === id;
@@ -425,15 +437,26 @@ function SourceContent(props: {
           </Html>
         </group>
       ))}
-      {structure.products.map((p) => (
-        <ProductMesh
-          key={p.key}
-          product={p}
-          selected={selection?.kind === "product" && selection.conveyorId === p.conveyorId && selection.productId === p.productId}
-          lookup={productByKey}
+      {productGroups.of(structure.products).map((g) => (
+        <ProductInstances
+          key={`${g.key}:${g.capacity}`}
+          group={g}
+          members={groupMembers}
+          selected={selection?.kind === "product" ? selection : undefined}
           onSelect={onSelect}
         />
       ))}
+      {structure.products
+        .filter((p) => !isGrouped(p))
+        .map((p) => (
+          <ProductMesh
+            key={p.key}
+            product={p}
+            selected={selection?.kind === "product" && selection.conveyorId === p.conveyorId && selection.productId === p.productId}
+            lookup={productByKey}
+            onSelect={onSelect}
+          />
+        ))}
       {structure.deltas.map((d) => (
         <DeltaMesh
           key={d.id}
@@ -732,6 +755,114 @@ function productGeometry(p: SceneProduct): THREE.BufferGeometry {
     return solid;
   }
   return new THREE.BoxGeometry(length, height, width);
+}
+
+const ONE = new THREE.Vector3(1, 1, 1);
+const PRODUCT_COLOR_OBJECTS = Object.fromEntries(
+  Object.entries(PRODUCT_COLORS).map(([state, color]) => [state, new THREE.Color(color)]),
+) as Record<ProductState, THREE.Color>;
+const SELECT_COLOR_OBJECT = new THREE.Color(SELECT_COLOR);
+const MISSED_COLOR_OBJECT = new THREE.Color(MISSED_COLOR);
+
+/**
+ * One group of products as one instanced mesh, with their edge lines as one instanced line set sharing its instance
+ * matrices: thousands of products cost a few draw calls instead of two each. Positions and colours are written every
+ * frame; React renders it again only when the group needs more room.
+ */
+function ProductInstances(props: {
+  group: ProductGroup;
+  members: MutableRefObject<Map<string, SceneProduct[]>>;
+  selected: { conveyorId: number; productId: number } | undefined;
+  onSelect: (s: LocalSelection) => void;
+}) {
+  const { group, members, selected, onSelect } = props;
+  const { sample, capacity } = group;
+  const mesh = useRef<THREE.InstancedMesh>(null);
+  /** The products drawn this frame, by instance index, for picking. */
+  const drawn = useRef<SceneProduct[]>([]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const geometry = useMemo(() => productGeometry(sample), [group.key]);
+  // The edges of one solid, drawn once per instance through the mesh's instance matrices (set once the mesh exists).
+  const edges = useMemo(() => {
+    const solidEdges = new THREE.EdgesGeometry(geometry, 30);
+    const instanced = new THREE.InstancedBufferGeometry();
+    instanced.setAttribute("position", solidEdges.getAttribute("position"));
+    instanced.instanceCount = 0;
+    return instanced;
+  }, [geometry]);
+  useEffect(
+    () => () => {
+      geometry.dispose();
+      edges.dispose();
+    },
+    [geometry, edges],
+  );
+  // Like the edges of every solid part, but placed per instance: three.js adds the instance matrix to any material
+  // that defines USE_INSTANCING, and draws an InstancedBufferGeometry once per instance, lines too.
+  const edgeMaterial = useMemo(() => {
+    const material = new THREE.LineBasicMaterial({ color: SOLID.edge, transparent: true, opacity: 0.55 });
+    Object.assign(material, { defines: { USE_INSTANCING: "" } });
+    return material;
+  }, []);
+  useEffect(() => () => edgeMaterial.dispose(), [edgeMaterial]);
+  const matrix = useMemo(() => new THREE.Matrix4(), []);
+  const position = useMemo(() => new THREE.Vector3(), []);
+  const quaternion = useMemo(() => new THREE.Quaternion(), []);
+
+  useFrame(() => {
+    const m = mesh.current;
+    if (!m) return;
+    const list = members.current.get(group.key) ?? [];
+    const n = Math.min(list.length, capacity);
+    for (let i = 0; i < n; i++) {
+      const p = list[i]!;
+      position.set(...p.transform.position);
+      quaternion.set(...p.transform.quaternion);
+      m.setMatrixAt(i, matrix.compose(position, quaternion, ONE));
+      const isSelected = selected?.conveyorId === p.conveyorId && selected.productId === p.productId;
+      m.setColorAt(
+        i,
+        isSelected ? SELECT_COLOR_OBJECT : p.display === "missed" ? MISSED_COLOR_OBJECT : PRODUCT_COLOR_OBJECTS[p.state],
+      );
+    }
+    m.count = n;
+    edges.instanceCount = n;
+    m.instanceMatrix.needsUpdate = true;
+    if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    // Picking computes them again from the instances, which move.
+    m.boundingSphere = null;
+    m.boundingBox = null;
+    drawn.current = list;
+  });
+
+  return (
+    <>
+      <instancedMesh
+        ref={(m: THREE.InstancedMesh | null) => {
+          mesh.current = m;
+          if (m) edges.setAttribute("instanceMatrix", m.instanceMatrix);
+        }}
+        args={[geometry, undefined, capacity]}
+        count={0}
+        frustumCulled={false}
+        userData={{ label: "Product" }}
+        onClick={(e: ThreeEvent<MouseEvent>) => {
+          const p = e.instanceId === undefined ? undefined : drawn.current[e.instanceId];
+          if (!p) return;
+          e.stopPropagation();
+          onSelect({ kind: "product", conveyorId: p.conveyorId, productId: p.productId });
+        }}
+      >
+        <meshStandardMaterial
+          color="#fff"
+          emissive={sample.display === "missed" ? MISSED_COLOR : "#000"}
+          emissiveIntensity={0.4}
+          roughness={0.6}
+        />
+      </instancedMesh>
+      <lineSegments geometry={edges} material={edgeMaterial} frustumCulled={false} raycast={noRaycast} />
+    </>
+  );
 }
 
 function ProductMesh(props: {

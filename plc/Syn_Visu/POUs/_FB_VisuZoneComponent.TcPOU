@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuZoneComponent" Id="{89baff7f-53db-45fb-9b3e-fcf770b299ad}" SpecialFunc="None">
+  <POU Name="_FB_VisuZoneComponent" Id="{55115424-a8c8-45e4-990d-80865fdb1e21}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -72,8 +72,8 @@ VAR_INPUT
 	vi_udn_ConveyorId					: UDINT;	// [-] manifest id of the conveyor
 	vi_lr_Start							: LREAL;	// [mm] along the conveyor from its origin (belt coordinates, not MCS)
 	vi_lr_End							: LREAL;	// [mm] along the conveyor from its origin
-	vi_lr_AllocationOffset				: LREAL := 0;	// [mm] before vi_lr_End up to which products may be allocated; 0 = no limit
-	vi_lr_CcsOffset						: LREAL := 0;	// [mm] along the conveyor from its origin: the component's conveyor coordinate system
+	vi_lr_AllocationOffset				: LREAL;	// [mm] before vi_lr_End up to which products may be allocated; 0 = no limit
+	vi_lr_CcsOffset						: LREAL;	// [mm] along the conveyor from its origin: the component's conveyor coordinate system, 0 = its origin
 END_VAR
 VAR
 	p_TempCount							: POINTER TO UINT;

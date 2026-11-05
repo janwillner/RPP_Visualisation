@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuXtsTrack" Id="{5469c6c2-1ba8-4f7d-b21e-953aeec2fd48}" SpecialFunc="None">
+  <POU Name="_FB_VisuXtsTrack" Id="{71ff9789-ccb2-46ab-8c44-a37718fe6f32}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -93,7 +93,7 @@ METHOD m_SetModule : BOOL
 VAR_INPUT
 	vi_un_Module						: UINT;	// [-] 1-based
 	vi_e_Kind							: E_VisuModuleKind;	// straight, or a quarter curve to the left or right
-	vi_lr_Length						: LREAL := VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH;	// [mm] along the track
+	vi_lr_Length						: LREAL;	// [mm] along the track, VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH for a standard module
 END_VAR
 VAR
 	p_TempCount							: POINTER TO UINT;
@@ -141,7 +141,7 @@ METHOD m_SetModuleFault : BOOL
 VAR_INPUT
 	vi_un_Module						: UINT;	// [-] 1-based
 	vi_b_Fault							: BOOL;	// TRUE: this module is in a fault
-	vi_str_FaultMessage					: STRING(80) := '';	// shown to the operator; empty shows 'Fault'
+	vi_str_FaultMessage					: STRING(80);	// shown to the operator; empty shows 'Fault', '' without a fault
 END_VAR
 VAR
 	p_TempCount							: POINTER TO UINT;

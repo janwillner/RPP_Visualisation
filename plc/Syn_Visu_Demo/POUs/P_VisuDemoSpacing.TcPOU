@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoSpacing" Id="{8731253f-3cca-41b2-8d1c-e338e7c13761}" SpecialFunc="None">
+  <POU Name="P_VisuDemoSpacing" Id="{9e193389-bca0-42a2-aac3-f1384ae511d6}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -71,10 +71,8 @@ END_VAR]]></Declaration>
 (****************************************************************************************************)
 (* REGISTRATION (idempotent, every cycle)                                                           *)
 (****************************************************************************************************)
-fb_SpcBelt.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 13, vi_str_Name := 'Spacing belt',
-	vi_str_Path := 'P_VisuDemoSpacing.fb_SpcBelt.vo_Visu');
-fb_Spc.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 21, vi_str_Name := 'Spacer',
-	vi_str_Path := 'P_VisuDemoSpacing.fb_Spc.vo_Visu');
+fb_SpcBelt.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 13, vi_str_Name := 'Spacing belt');
+fb_Spc.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 21, vi_str_Name := 'Spacer');
 
 
 (****************************************************************************************************)
@@ -85,7 +83,8 @@ BeltPose.fY := lr_SPC_Y;
 BeltPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 fb_SpcBelt.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_SPC_BELT_LENGTH, vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
 fb_SpcBelt.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
-	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT,
+	vi_e_Shape := E_VisuProductShape.BOX, vi_lr_CornerRadius := 0);
 
 (* Turned by 180 deg: the upper straight runs along MCS +X just below the belt, the tool points reach its surface. *)
 XtsPose.fX := lr_SPC_LOOP_END_X;
@@ -100,13 +99,15 @@ FOR un_Module := 1 TO 2 * (un_SPC_STRAIGHT_MODULES + 2) DO
 	ELSE
 		e_ModuleKind := E_VisuModuleKind.CURVE_LEFT;
 	END_IF
-	fb_Spc.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := e_ModuleKind);
+	fb_Spc.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := e_ModuleKind,
+		vi_lr_Length := VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH);
 END_FOR
 fb_Spc.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_SpcBelt.m_Id(),
 	vi_lr_Start := lr_SPC_LOOP_END_X - lr_SPC_STRAIGHT, vi_lr_End := lr_SPC_LOOP_END_X - lr_SPC_STRAIGHT + lr_SPC_TAKE_WINDOW,
-	vi_lr_CcsOffset := lr_SPC_LOOP_END_X - lr_SPC_STRAIGHT);
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_SPC_LOOP_END_X - lr_SPC_STRAIGHT);
 fb_Spc.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_SpcBelt.m_Id(),
-	vi_lr_Start := lr_SPC_RELEASE_MIN_X, vi_lr_End := lr_SPC_RELEASE_MAX_X, vi_lr_CcsOffset := lr_SPC_RELEASE_MIN_X);
+	vi_lr_Start := lr_SPC_RELEASE_MIN_X, vi_lr_End := lr_SPC_RELEASE_MAX_X, vi_lr_AllocationOffset := 0,
+	vi_lr_CcsOffset := lr_SPC_RELEASE_MIN_X);
 
 
 (****************************************************************************************************)
@@ -126,7 +127,8 @@ IF lr_SpcSinceSpawn >= lr_SpcSpawnInterval THEN
 	LatchPose.fRz := 0;
 	IF fb_SpcBelt.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
 		vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_SpcBelt.vo_Visu.stConfig, vi_Pose := LatchPose),
-		vi_udn_ProductType := 1)
+		vi_udn_ProductType := 1, vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE,
+		vi_e_State := E_VisuProductState.DETECTED, vi_udn_ClientId := 0)
 	THEN
 		DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 	END_IF
@@ -235,7 +237,7 @@ IF b_TempReady THEN
 		AND lr_TempMinPush - lr_TempWait - lr_TempX >= lr_SPC_SLOT
 		THEN
 			fb_SpcBelt.m_SetProductState(vi_udn_Id := TempProduct.nId, vi_e_State := E_VisuProductState.ASSIGNED,
-				vi_udn_ClientId := fb_Spc.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempHead + 1));
+				vi_udn_ClientId := fb_Spc.m_Id(), vi_udn_MoverId := INT_TO_UDINT(n_TempHead + 1), vi_udn_FingerId := 0);
 			udn_SpcProduct[n_TempHead] := TempProduct.nId;
 			lr_SpcS[n_TempHead] := lr_TempWait + lr_TempX;
 			n_SpcMode[n_TempHead] := n_SPC_PUSH;
@@ -300,7 +302,7 @@ FOR n_TempK := 1 TO n_SPC_MOVERS DO
 		IF n_TempK = 1 AND lr_TempX >= lr_SPC_RELEASE_MIN_X AND ABS(lr_TempTarget - lr_TempX) < 0.5 THEN
 			(* Put back onto the belt by the loop: PLACED, so it does not count as missed at the belt end. *)
 			fb_SpcBelt.m_SetProductState(vi_udn_Id := udn_SpcProduct[n_TempNext], vi_e_State := E_VisuProductState.PLACED,
-				vi_udn_ClientId := fb_Spc.m_Id());
+				vi_udn_ClientId := fb_Spc.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := 0);
 			udn_SpcLastReleased := udn_SpcProduct[n_TempNext];
 			udn_SpcProduct[n_TempNext] := 0;
 			n_SpcMode[n_TempNext] := n_SPC_RETURN;
@@ -323,7 +325,7 @@ FOR n_TempI := 0 TO n_SPC_MOVERS - 1 DO
 		END_IF
 	END_IF
 	fb_Spc.m_SetMover(vi_un_Index := INT_TO_UINT(n_TempI), vi_udn_Id := INT_TO_UDINT(n_TempI + 1),
-		vi_lr_Position := lr_SpcS[n_TempI], vi_FingerStates := NoFingers);
+		vi_lr_Position := lr_SpcS[n_TempI], vi_FingerStates := NoFingers, vi_b_Fault := FALSE, vi_str_FaultMessage := '');
 END_FOR
 m_Step := TRUE;]]></ST>
       </Implementation>

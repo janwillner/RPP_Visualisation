@@ -12,13 +12,15 @@ Library parameters of Syn_Visu: array sizes of the interface structures.<br>
 {attribute 'qualified_only'}
 VAR_GLOBAL CONSTANT
 	VISU_un_MAX_MANIFEST_ENTRIES		: UINT := 32;	// [-] components in the manifest
-	VISU_un_MAX_PRODUCTS				: UINT := 128;	// [-] products per conveyor
+	VISU_un_MAX_PRODUCTS				: UINT := 4800;	// [-] products per conveyor
+	VISU_un_PRODUCT_INDEX_SIZE			: UINT := 16384;	// [-] slots of a conveyor's product index by id: a power of two, at least twice VISU_un_MAX_PRODUCTS
 	VISU_un_MAX_PRODUCT_TYPES			: UINT := 8;	// [-] product types per conveyor
 	VISU_un_MAX_ZONES					: UINT := 8;	// [-] zones per robot or detector
 	VISU_un_MAX_MOVERS					: UINT := 40;	// [-] movers per XTS gantry or loop
 	VISU_un_MAX_FINGERS					: UINT := 8;	// [-] fingers per gripper
 	VISU_un_MAX_BODIES					: UINT := 16;	// [-] bodies per detector
 	VISU_un_MAX_MODULES					: UINT := 64;	// [-] track modules per XTS gantry or loop
+	VISU_un_INSTANCE_PATH_SKIP			: UINT := 2;	// [-] leading segments of an instance path that are not part of its symbol path: TwinCAT project and PLC project
 END_VAR]]></Declaration>
   </GVL>
 </TcPlcObject>

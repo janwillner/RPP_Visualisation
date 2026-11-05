@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuStation" Id="{212ed1ce-bd83-4ccc-aa14-f23790819578}" SpecialFunc="None">
+  <POU Name="_FB_VisuStation" Id="{a9fe82e8-b3b6-4694-adfa-d646d070f0b1}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -10,16 +10,16 @@ DESCRIPTION:<br>
 One visualised station: a client at a conveyor that works on the products in its zones, e.g. a reject<br>
 unit, a labeller, a printer or a check weigher. It is drawn only from the bodies it describes. Typical cycle<br>
 of a reject unit:<br>
-  fb_Reject.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 70, vi_str_Name := 'Reject unit',<br>
-      vi_str_Path := 'MAIN.fb_Reject.vo_Visu');<br>
+  fb_Reject.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 70, vi_str_Name := 'Reject unit');<br>
   fb_Reject.m_Configure(vi_Pose := StationPose);<br>
   fb_Reject.m_SetBody(vi_un_Body := 1, ...);   // housing<br>
   fb_Reject.m_SetBody(vi_un_Body := 2, ...);   // pusher<br>
-  fb_Reject.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 2, vi_lr_Start := 2400, vi_lr_End := 2400);<br>
+  fb_Reject.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 2, vi_lr_Start := 2400, vi_lr_End := 2400,<br>
+      vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 2400);<br>
   fb_Reject.m_SetBodyActive(vi_un_Body := 2, vi_b_Active := b_Pushing);<br>
 and on the conveyor, when it rejects a product:<br>
   fb_Outfeed.m_SetProductState(vi_udn_Id := udn_Product, vi_e_State := E_VisuProductState.REJECTED,<br>
-      vi_udn_ClientId := fb_Reject.m_Id());<br>
+      vi_udn_ClientId := fb_Reject.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := 0);<br>
 A station may also latch products (m_LatchProduct with vi_udn_ClientId := its id), e.g. a check weigher.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>

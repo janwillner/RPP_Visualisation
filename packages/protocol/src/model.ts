@@ -657,6 +657,15 @@ export const StateMessageSchema = z
       .number()
       .describe("Milliseconds since the first snapshot after the gateway (re)discovered this source's PLC."),
     components: z.array(ComponentStateSchema).describe("One live state per configured component."),
+    registers: z
+      .record(z.array(z.number().int()))
+      .describe(
+        "Only for a client that asked for changes (`/ws?changes=1`): per conveyor id the ids of its whole product " +
+          "register, in order. That conveyor's `products` then hold only the products that changed since the " +
+          "previous state of this source on this connection; the others are unchanged. The first state of a source " +
+          "after connecting, and after a missed one, lists every product.",
+      )
+      .optional(),
   })
   .describe(
     "A snapshot of every component's live state of one source, sent every acquisition cycle (20 ms by default). A " +

@@ -24,6 +24,8 @@ export interface GatewayOptions {
   localAmsNetId?: string;
   cycleMs: number;
   configRecheckMs: number;
+  /** Simulator only: products kept on an extra buffer belt for load tests; 0 = none. */
+  simProducts: number;
   /** Symbol path of the application's manifest. */
   manifestPath: string;
   port: number;
@@ -92,6 +94,10 @@ export const OPTION_HELP: readonly OptionHelp[] = [
   { flag: "--local-ams-net-id <id>", text: ["ads-tcp only: local AmsNetId when connecting through a remote router"] },
   { flag: "--cycle-ms <ms>", text: ["Acquisition cycle (default: 20)"] },
   {
+    flag: "--sim-products <n>",
+    text: ["sim only: load test with a buffer belt carrying about n products (default: 0 = none)"],
+  },
+  {
     flag: "--config-recheck-ms <ms>",
     text: ["Re-read the full config at this interval to catch live changes (default: 1000, 0 = off)"],
   },
@@ -119,7 +125,7 @@ export function helpText(): string {
 const stringKeys = ["driver", "amsNetId", "routerAddress", "localAmsNetId", "host", "manifestPath"] as const;
 /** String settings holding paths; relative ones resolve against the config file's folder or the working directory. */
 const pathKeys = ["adsBridge", "staticDir"] as const;
-const numberKeys = ["adsPort", "routerPort", "cycleMs", "configRecheckMs", "port"] as const;
+const numberKeys = ["adsPort", "routerPort", "cycleMs", "configRecheckMs", "simProducts", "port"] as const;
 
 type StringKey = (typeof stringKeys)[number] | (typeof pathKeys)[number];
 type NumberKey = (typeof numberKeys)[number];
@@ -164,6 +170,11 @@ export function resolveGatewayOptions(argv: readonly string[], env: OptionsEnvir
   if (!isOneOf(drivers, driver)) throw new OptionsError(`driver must be one of ${drivers.join(", ")}, got "${driver}"`);
   const staticDir = settings.staticDir ?? defaultStaticDir(env);
   const sources = resolveSources(settings, driver as Driver);
+  const simProducts = settings.simProducts ?? 0;
+  if (simProducts !== 0 && driver !== "sim") throw new OptionsError(`simProducts is for the simulator only; driver is "${driver}"`);
+  if (!Number.isInteger(simProducts) || simProducts < 0) {
+    throw new OptionsError(`simProducts must be a whole number of products, got ${simProducts}`);
+  }
 
   return {
     driver: driver as Driver,
@@ -173,6 +184,7 @@ export function resolveGatewayOptions(argv: readonly string[], env: OptionsEnvir
     ...(settings.localAmsNetId !== undefined ? { localAmsNetId: settings.localAmsNetId } : {}),
     cycleMs: settings.cycleMs ?? 20,
     configRecheckMs: settings.configRecheckMs ?? 1000,
+    simProducts,
     manifestPath: settings.manifestPath ?? MANIFEST_PATH,
     port: settings.port ?? 8080,
     ...(settings.host !== undefined ? { host: settings.host } : {}),

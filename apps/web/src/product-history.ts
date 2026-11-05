@@ -53,14 +53,24 @@ interface Followed {
   earlier?: Followed;
 }
 
+/** A product as it lay in a register's previous state, with its history. */
+interface Seen {
+  product: Product;
+  key: string;
+  followed: Followed;
+}
+
 /**
  * Follows every product through the gateway messages, for the inspector: when it entered the register, was assigned,
  * picked (by which robot, mover, finger), placed or rejected (by which client), missed, and when it left the register.
  */
 export class ProductHistory {
   private readonly products = new Map<string, Followed>();
-  /** Per conveyor the products in its previous register, to see which have left it. */
-  private readonly registers = new Map<string, Set<string>>();
+  /**
+   * Per conveyor the products in its previous register by id, to see which have left it. A product that is the same
+   * object as there has not changed (the register decoder keeps unchanged products, ADR 0013) and is not compared.
+   */
+  private readonly registers = new Map<string, Map<number, Seen>>();
   /** Product events in time order; `head` is the first one still kept. */
   private log: ProductEvent[] = [];
   private head = 0;
@@ -94,11 +104,24 @@ export class ProductHistory {
       const conveyor = components.find((x) => x.id === c.id);
       const registerKey = `${message.sourceId}|${c.id}`;
       // What lies in a register when it is first seen did not enter or get missed now: count from its second state on.
-      counting = this.registers.has(registerKey);
-      const present = new Set<string>();
+      const before = this.registers.get(registerKey);
+      counting = before !== undefined;
+      const checkMissed = (followed: Followed, conveyorId: number, p: Product) => {
+        if (followed.missed || conveyor?.type !== "conveyor" || !isMissed(conveyor, c, p)) return;
+        followed.missed = true;
+        followed.steps.push({ at, kind: "missed", text: "Missed: passed the belt end" });
+        log(conveyorId, p, "missed");
+      };
+      const present = new Map<number, Seen>();
       for (const p of c.products) {
-        const key = productKey(message.sourceId, c.id, p.id);
-        present.add(key);
+        const seen = before?.get(p.id);
+        if (seen && seen.product === p && !seen.followed.gone) {
+          // Unchanged since the previous state; only the belt has moved it on.
+          present.set(p.id, seen);
+          checkMissed(seen.followed, c.id, p);
+          continue;
+        }
+        const key = seen?.key ?? productKey(message.sourceId, c.id, p.id);
         const signature = `${p.state}:${p.lastClientId}:${p.moverId}:${p.fingerId}`;
         let followed = this.products.get(key);
         if (!followed || followed.gone) {
@@ -120,15 +143,11 @@ export class ProductHistory {
           }
           followed.state = p.state;
         }
-        if (!followed.missed && conveyor?.type === "conveyor" && isMissed(conveyor, c, p)) {
-          followed.missed = true;
-          followed.steps.push({ at, kind: "missed", text: "Missed: passed the belt end" });
-          log(c.id, p, "missed");
-        }
+        present.set(p.id, { product: p, key, followed });
+        checkMissed(followed, c.id, p);
       }
-      for (const key of this.registers.get(registerKey) ?? []) {
-        const followed = this.products.get(key);
-        if (present.has(key) || !followed || followed.gone) continue;
+      for (const [id, { followed }] of before ?? []) {
+        if (present.has(id) || followed.gone) continue;
         followed.gone = true;
         followed.steps.push({ at, kind: "gone", text: "Left the register" });
       }

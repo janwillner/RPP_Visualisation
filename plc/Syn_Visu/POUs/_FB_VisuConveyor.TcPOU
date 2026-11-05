@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuConveyor" Id="{4e0bef27-eb68-4869-92ee-e60eb3c7b415}" SpecialFunc="None">
+  <POU Name="_FB_VisuConveyor" Id="{9259762a-7fc9-4d83-989d-ff85d9c6ef7c}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -8,12 +8,14 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 One visualised conveyor. Typical cycle:<br>
-  fb_Infeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed',<br>
-      vi_str_Path := 'MAIN.fb_Infeed.vo_Visu');<br>
+  fb_Infeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed');<br>
   fb_Infeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := 5000, vi_lr_Width := 400);<br>
-  fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40);<br>
+  fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40,<br>
+      vi_e_Shape := E_VisuProductShape.BOX, vi_lr_CornerRadius := 0);<br>
   fb_Infeed.m_SetBeltPosition(lr_AxisPosition);  // or m_SetModuloBeltPosition for a modulo axis<br>
-  IF b_Latched THEN fb_Infeed.m_LatchProduct(vi_udn_Id := udn_NextId, vi_LatchPose := LatchPose, vi_udn_ProductType := 1); END_IF<br>
+  IF b_Latched THEN fb_Infeed.m_LatchProduct(vi_udn_Id := udn_NextId, vi_LatchPose := LatchPose, vi_udn_ProductType := 1,<br>
+      vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE, vi_e_State := E_VisuProductState.DETECTED,<br>
+      vi_udn_ClientId := 0); END_IF<br>
 m_Configure and m_SetProductType may be called every cycle; the config version only changes when a value does.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
@@ -24,6 +26,7 @@ Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT p
 Syn_Visu 3.4.0  ¦ 2026-11-01 ¦ J.Willner ¦ m_LatchProduct: product state and robot (PLACED onto outfeeds)<br>
 Syn_Visu 3.5.0  ¦ 2026-11-01 ¦ J.Willner ¦ m_SetProductType: shape and corner radius (protocol 10)<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ m_LatchProduct: detector that latched the product (protocol 11)<br>
+Syn_Visu 7.2.0  ¦ 2026-11-05 ¦ J.Willner ¦ Product index by id; registers rearranged with MEMMOVE<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_VisuConveyor EXTENDS _FB_VisuComponent
 VAR_OUTPUT
@@ -32,6 +35,12 @@ END_VAR
 VAR
 	lr_LastModuloPosition				: LREAL;	// [mm] modulo position of the previous cycle
 	b_ModuloInitialised					: BOOL;
+	(* Product index: per slot the register index + 1 of a product whose id hashes there, 0 = free. Rebuilt by
+	   m_FindProduct after the register was rearranged; m_LatchProduct adds to it. *)
+	un_IndexSlot						: ARRAY[0..VISU_GlobalConst_Param.VISU_un_PRODUCT_INDEX_SIZE - 1] OF UINT;
+	un_IndexedCount						: UINT;	// [-] register entries the index holds
+	b_IndexValid						: BOOL;	// the index matches the register
+	b_IndexFailed						: BOOL;	// the index is too small for the register: search linearly
 END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[]]></ST>
@@ -118,7 +127,8 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Register index of the product with vi_udn_Id, -1 if not found.<br>
+Register index of the product with vi_udn_Id, -1 if not found. Looks it up in the product index by id, which it<br>
+rebuilds first after the register was rearranged; searches linearly only if the index is too small.<br>
 ****************************************************************************************************)
 METHOD m_FindProduct : INT
 VAR_INPUT
@@ -126,9 +136,35 @@ VAR_INPUT
 END_VAR
 VAR
 	un_TempIndex						: UINT;
+	un_TempSlot							: UINT;
+	un_TempProbe						: UINT;
+	un_TempEntry						: UINT;	// [-] register index + 1, 0 = free slot
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[m_FindProduct := -1;
+IF NOT b_IndexFailed AND (NOT b_IndexValid OR un_IndexedCount <> vo_Visu.stState.nProductCount) THEN
+	m_IndexRebuild();
+END_IF
+
+IF b_IndexValid THEN
+	un_TempSlot := m_IndexSlotOf(vi_udn_Id);
+	FOR un_TempProbe := 1 TO VISU_GlobalConst_Param.VISU_un_PRODUCT_INDEX_SIZE DO
+		un_TempEntry := un_IndexSlot[un_TempSlot];
+		IF un_TempEntry = 0 THEN
+			RETURN;
+		END_IF
+		IF un_TempEntry <= vo_Visu.stState.nProductCount THEN
+			IF vo_Visu.stState.aProducts[un_TempEntry - 1].nId = vi_udn_Id THEN
+				m_FindProduct := UINT_TO_INT(un_TempEntry - 1);
+				RETURN;
+			END_IF
+		END_IF
+		un_TempSlot := (un_TempSlot + 1) AND (VISU_GlobalConst_Param.VISU_un_PRODUCT_INDEX_SIZE - 1);
+	END_FOR
+	RETURN;
+END_IF
+
+(* Index too small for the register: search linearly. *)
 un_TempIndex := 0;
 WHILE un_TempIndex < vo_Visu.stState.nProductCount DO
 	IF vo_Visu.stState.aProducts[un_TempIndex].nId = vi_udn_Id THEN
@@ -169,6 +205,93 @@ IF m_GetProduct THEN
 END_IF]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_IndexInsert" Id="{e9b3ac8c-6ddb-4cab-8600-3efd307ba392}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Adds register entry vi_un_Index with product id vi_udn_Id to the product index, in the first free slot from<br>
+its hash slot on.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE if the index has no free slot (VISU_un_PRODUCT_INDEX_SIZE too small for VISU_un_MAX_PRODUCTS).<br>
+****************************************************************************************************)
+METHOD PRIVATE m_IndexInsert : BOOL
+VAR_INPUT
+	vi_udn_Id							: UDINT;	// [-] product id
+	vi_un_Index							: UINT;	// [-] register index
+END_VAR
+VAR
+	un_TempSlot							: UINT;
+	un_TempProbe						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_IndexInsert := FALSE;
+un_TempSlot := m_IndexSlotOf(vi_udn_Id);
+FOR un_TempProbe := 1 TO VISU_GlobalConst_Param.VISU_un_PRODUCT_INDEX_SIZE DO
+	IF un_IndexSlot[un_TempSlot] = 0 THEN
+		un_IndexSlot[un_TempSlot] := vi_un_Index + 1;
+		m_IndexInsert := TRUE;
+		RETURN;
+	END_IF
+	un_TempSlot := (un_TempSlot + 1) AND (VISU_GlobalConst_Param.VISU_un_PRODUCT_INDEX_SIZE - 1);
+END_FOR]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_IndexRebuild" Id="{2f2b2934-f082-4a27-8f7d-e105a3b0fe3b}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Builds the product index from the register anew, e.g. after products were removed and the register moved up.<br>
+If the index is too small for the register, it gives up for good and m_FindProduct searches linearly.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+TRUE if the index matches the register.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_IndexRebuild : BOOL
+VAR
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[Tc2_System.MEMSET(ADR(un_IndexSlot), 0, SIZEOF(un_IndexSlot));
+b_IndexValid := TRUE;
+un_TempIndex := 0;
+WHILE un_TempIndex < vo_Visu.stState.nProductCount DO
+	IF NOT m_IndexInsert(vo_Visu.stState.aProducts[un_TempIndex].nId, un_TempIndex) THEN
+		b_IndexValid := FALSE;
+		b_IndexFailed := TRUE;
+		EXIT;
+	END_IF
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE
+un_IndexedCount := vo_Visu.stState.nProductCount;
+m_IndexRebuild := b_IndexValid;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_IndexSlotOf" Id="{9b16adaf-1db5-42f4-9fab-db9715b3ac94}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+First slot of the product index to look at for a product id (multiplicative hash): consecutive ids land on<br>
+different slots. The search goes on slot by slot from there.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_IndexSlotOf : UINT
+VAR_INPUT
+	vi_udn_Id							: UDINT;	// [-] product id
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(* The product wraps around in 32 bits on purpose. *)
+m_IndexSlotOf := UDINT_TO_UINT((vi_udn_Id * UDINT#2654435761) AND UINT_TO_UDINT(VISU_GlobalConst_Param.VISU_un_PRODUCT_INDEX_SIZE - 1));]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_LatchProduct" Id="{3f858f34-48df-4798-a839-b1c6e0e2dead}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -191,10 +314,10 @@ VAR_INPUT
 	vi_udn_Id							: UDINT;	// [-] unique on this conveyor, > 0
 	vi_LatchPose						: ST_VisuPlanarPose;	// conveyor coordinate system (from its origin shift), bottom centre at the latch moment
 	vi_udn_ProductType					: UDINT;	// [-] id given to m_SetProductType
-	vi_lr_LatchBeltPosition				: LREAL := 0;	// [mm] used only if vi_b_UseLatchBeltPosition
-	vi_b_UseLatchBeltPosition			: BOOL := FALSE;	// FALSE: latch at the current belt position
-	vi_e_State							: E_VisuProductState := E_VisuProductState.DETECTED;	// PLACED for a product put down by a robot
-	vi_udn_ClientId						: UDINT := 0;	// [-] manifest id of the client that latched it or put it down, 0 = none
+	vi_lr_LatchBeltPosition				: LREAL;	// [mm] used only if vi_b_UseLatchBeltPosition, else 0
+	vi_b_UseLatchBeltPosition			: BOOL;	// FALSE: latch at the current belt position
+	vi_e_State							: E_VisuProductState;	// DETECTED for a product arriving, PLACED for a product put down by a robot
+	vi_udn_ClientId						: UDINT;	// [-] manifest id of the client that latched it or put it down, 0 = none
 END_VAR
 VAR
 	un_TempIndex						: UINT;
@@ -220,6 +343,15 @@ vo_Visu.stState.aProducts[un_TempIndex].nMoverId := 0;
 vo_Visu.stState.aProducts[un_TempIndex].nFingerId := 0;
 vo_Visu.stState.aProducts[un_TempIndex].nProductType := vi_udn_ProductType;
 vo_Visu.stState.nProductCount := un_TempIndex + 1;
+(* m_FindProduct above brought the index up to the register; the new entry joins it. *)
+IF b_IndexValid AND un_IndexedCount = un_TempIndex THEN
+	IF m_IndexInsert(vi_udn_Id, un_TempIndex) THEN
+		un_IndexedCount := un_TempIndex + 1;
+	ELSE
+		b_IndexValid := FALSE;
+		b_IndexFailed := TRUE;
+	END_IF
+END_IF
 vo_Visu.stState.nTimestamp := m_DcTime();
 m_LatchProduct := TRUE;]]></ST>
       </Implementation>
@@ -316,12 +448,14 @@ IF NOT m_RemoveProduct THEN
 	RETURN;
 END_IF
 n_TempLast := UINT_TO_INT(vo_Visu.stState.nProductCount) - 1;
-WHILE n_TempIndex < n_TempLast DO
-	vo_Visu.stState.aProducts[n_TempIndex] := vo_Visu.stState.aProducts[n_TempIndex + 1];
-	n_TempIndex := n_TempIndex + 1;
-END_WHILE
+(* The entries behind it move up by one, in one go. *)
+IF n_TempIndex < n_TempLast THEN
+	Tc2_System.MEMMOVE(ADR(vo_Visu.stState.aProducts[n_TempIndex]), ADR(vo_Visu.stState.aProducts[n_TempIndex + 1]),
+		INT_TO_UDINT(n_TempLast - n_TempIndex) * SIZEOF(ST_VisuProduct));
+END_IF
 vo_Visu.stState.aProducts[n_TempLast].bValid := FALSE;
 vo_Visu.stState.nProductCount := INT_TO_UINT(n_TempLast);
+b_IndexValid := FALSE;
 vo_Visu.stState.nTimestamp := m_DcTime();]]></ST>
       </Implementation>
     </Method>
@@ -334,6 +468,7 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 Housekeeping: drops invalid entries and products that have travelled beyond vi_lr_BeltX (along the<br>
 conveyor from its start). Products a robot is working on (ASSIGNED or PICKED) are kept wherever they are.<br>
+The entries that stay move up in runs (usually one: the products leaving are the oldest, at the front).<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
 Number of removed entries.<br>
@@ -343,41 +478,52 @@ VAR_INPUT
 	vi_lr_BeltX							: LREAL;	// [mm] e.g. belt length + some margin so missed products stay visible briefly
 END_VAR
 VAR
+	un_TempCount						: UINT;	// [-] entries before
 	un_TempRead							: UINT;
 	un_TempWrite						: UINT;
-	b_TempInUse							: BOOL;
-	TempPose							: ST_VisuPlanarPose;
-	lr_TempX							: LREAL;	// [mm] belt X
+	un_TempRunStart						: UINT;	// [-] first entry of a run of entries that stay
+	b_TempStays							: BOOL;
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[m_RemoveProductsBeyond := 0;
-IF vo_Visu.stState.nProductCount = 0 THEN
+un_TempCount := vo_Visu.stState.nProductCount;
+IF un_TempCount = 0 THEN
 	RETURN;
 END_IF
-(* Keep the entries to stay, in order. *)
+
+(* Keep the entries that stay, in order, moving each run of them up in one go. *)
 un_TempWrite := 0;
-FOR un_TempRead := 0 TO vo_Visu.stState.nProductCount - 1 DO
-	(* Belt X from the belt start (stPose): the pose counts from the origin shift. *)
-	TempPose := m_ProductPose(vo_Visu.stState.aProducts[un_TempRead]);
-	lr_TempX := vo_Visu.stConfig.stOriginShift.fX + TempPose.fX;
-	b_TempInUse := vo_Visu.stState.aProducts[un_TempRead].eState = E_VisuProductState.ASSIGNED
-				OR vo_Visu.stState.aProducts[un_TempRead].eState = E_VisuProductState.PICKED;
-	IF vo_Visu.stState.aProducts[un_TempRead].bValid AND (lr_TempX <= vi_lr_BeltX OR b_TempInUse) THEN
-		IF un_TempWrite <> un_TempRead THEN
-			vo_Visu.stState.aProducts[un_TempWrite] := vo_Visu.stState.aProducts[un_TempRead];
+un_TempRead := 0;
+WHILE un_TempRead < un_TempCount DO
+	IF m_StaysInRegister(un_TempRead, vi_lr_BeltX) THEN
+		un_TempRunStart := un_TempRead;
+		b_TempStays := TRUE;
+		WHILE b_TempStays DO
+			un_TempRead := un_TempRead + 1;
+			b_TempStays := FALSE;
+			IF un_TempRead < un_TempCount THEN
+				b_TempStays := m_StaysInRegister(un_TempRead, vi_lr_BeltX);
+			END_IF
+		END_WHILE
+		IF un_TempWrite <> un_TempRunStart THEN
+			Tc2_System.MEMMOVE(ADR(vo_Visu.stState.aProducts[un_TempWrite]), ADR(vo_Visu.stState.aProducts[un_TempRunStart]),
+				UINT_TO_UDINT(un_TempRead - un_TempRunStart) * SIZEOF(ST_VisuProduct));
 		END_IF
-		un_TempWrite := un_TempWrite + 1;
+		un_TempWrite := un_TempWrite + (un_TempRead - un_TempRunStart);
+	ELSE
+		un_TempRead := un_TempRead + 1;
 	END_IF
-END_FOR
+END_WHILE
 
 (* Invalidate the freed tail. *)
-m_RemoveProductsBeyond := vo_Visu.stState.nProductCount - un_TempWrite;
-IF un_TempWrite < vo_Visu.stState.nProductCount THEN
-	FOR un_TempRead := un_TempWrite TO vo_Visu.stState.nProductCount - 1 DO
+m_RemoveProductsBeyond := un_TempCount - un_TempWrite;
+IF un_TempWrite < un_TempCount THEN
+	FOR un_TempRead := un_TempWrite TO un_TempCount - 1 DO
 		vo_Visu.stState.aProducts[un_TempRead].bValid := FALSE;
 	END_FOR
 	vo_Visu.stState.nProductCount := un_TempWrite;
 	vo_Visu.stState.nTimestamp := m_DcTime();
+	b_IndexValid := FALSE;
 END_IF]]></ST>
       </Implementation>
     </Method>
@@ -475,8 +621,8 @@ coordinates (zones' start, end and CCS offset) then count from the shifted origi
 METHOD m_SetOriginShift : BOOL
 VAR_INPUT
 	vi_lr_X								: LREAL;	// [mm] along the conveying direction
-	vi_lr_Y								: LREAL := 0;	// [mm] across the belt
-	vi_lr_Z								: LREAL := 0;	// [mm] along the belt surface normal
+	vi_lr_Y								: LREAL;	// [mm] across the belt, 0 = none
+	vi_lr_Z								: LREAL;	// [mm] along the belt surface normal, 0 = none
 END_VAR
 VAR
 	TempNew								: ST_VisuConveyorConfig;
@@ -505,8 +651,8 @@ VAR_INPUT
 	vi_udn_Id							: UDINT;	// [-] product id
 	vi_e_State							: E_VisuProductState;
 	vi_udn_ClientId						: UDINT;	// [-] manifest id of the client making the change, 0 = none
-	vi_udn_MoverId						: UDINT := 0;	// [-] mover of an XTS gantry or loop carrying the product, 0 = none
-	vi_udn_FingerId						: UDINT := 0;	// [-] gripper finger (1-based) the product hangs from while picked, 0 = the flange
+	vi_udn_MoverId						: UDINT;	// [-] mover of an XTS gantry or loop carrying the product, 0 = none
+	vi_udn_FingerId						: UDINT;	// [-] gripper finger (1-based) the product hangs from while picked, 0 = the flange
 END_VAR
 VAR
 	n_TempIndex							: INT;
@@ -542,8 +688,8 @@ VAR_INPUT
 	vi_lr_Length						: LREAL;	// [mm] along the conveying direction
 	vi_lr_Width							: LREAL;	// [mm]
 	vi_lr_Height						: LREAL;	// [mm]
-	vi_e_Shape							: E_VisuProductShape := E_VisuProductShape.BOX;	// [-] solid of the product
-	vi_lr_CornerRadius					: LREAL := 0;	// [mm] rounded vertical edges of a ROUNDED_BOX
+	vi_e_Shape							: E_VisuProductShape;	// [-] solid of the product, BOX for a plain box
+	vi_lr_CornerRadius					: LREAL;	// [mm] rounded vertical edges of a ROUNDED_BOX, 0 for other shapes
 END_VAR
 VAR
 	TempNew								: ST_VisuConveyorConfig;
@@ -577,6 +723,30 @@ TempNew.aProductTypes[un_TempIndex].eShape := vi_e_Shape;
 TempNew.aProductTypes[un_TempIndex].fCornerRadius := vi_lr_CornerRadius;
 m_ApplyConfig(TempNew);
 m_SetProductType := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_StaysInRegister" Id="{d91631a4-d2c4-40b7-9f88-0693a66c2799}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Whether register entry vi_un_Index stays in the register for m_RemoveProductsBeyond: it is valid and has not<br>
+travelled beyond vi_lr_BeltX, or a robot is working on it (ASSIGNED or PICKED).<br>
+****************************************************************************************************)
+METHOD PRIVATE m_StaysInRegister : BOOL
+VAR_INPUT
+	vi_un_Index							: UINT;	// [-] register index
+	vi_lr_BeltX							: LREAL;	// [mm] along the conveyor from its start
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(* Belt X from the belt start: the latch pose counts from the origin shift and moves with the belt travel. *)
+m_StaysInRegister := vo_Visu.stState.aProducts[vi_un_Index].bValid
+	AND (vo_Visu.stConfig.stOriginShift.fX + vo_Visu.stState.aProducts[vi_un_Index].stLatchPose.fX
+			+ vo_Visu.stState.fBeltPosition - vo_Visu.stState.aProducts[vi_un_Index].fLatchBeltPosition <= vi_lr_BeltX
+		OR vo_Visu.stState.aProducts[vi_un_Index].eState = E_VisuProductState.ASSIGNED
+		OR vo_Visu.stState.aProducts[vi_un_Index].eState = E_VisuProductState.PICKED);]]></ST>
       </Implementation>
     </Method>
   </POU>

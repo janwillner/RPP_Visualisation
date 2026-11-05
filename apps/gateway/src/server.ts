@@ -3,6 +3,8 @@ import { stat } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
+import type { IncomingMessage } from "node:http";
+import { RegisterEncoder, withRegisters } from "@rpp/protocol";
 import type { MessageSource } from "./gateway";
 import { createApiDocs, DOCS_PATH, DOCS_SCHEMA_PATH } from "./api-docs";
 import { watchHealth } from "./health";
@@ -16,6 +18,15 @@ export { DOCS_PATH, DOCS_SCHEMA_PATH } from "./api-docs";
 
 /** Above this many queued bytes, state snapshots to that client are dropped until it catches up. */
 const MAX_BUFFERED_BYTES = 1_000_000;
+
+/** One WebSocket client. */
+interface Client {
+  socket: WebSocket;
+  /** It asked for states in register form (`/ws?changes=1`). */
+  changes: boolean;
+  /** Sources whose previous state it got, so it can take the next one as changes. */
+  synced: Set<string>;
+}
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -116,16 +127,57 @@ export function startServer({ gateway, port, host, staticDir, version = APP_VERS
   const wss = new WebSocketServer({ server, path: WS_PATH });
   // Listen errors (e.g. port in use) are re-emitted here; the listen promise below reports them.
   wss.on("error", () => {});
-  wss.on("connection", (socket: WebSocket) => {
-    const unsubscribe = gateway.subscribe((message) => {
-      if (socket.readyState !== socket.OPEN) return;
-      // A client that cannot keep up skips state snapshots; config and status always go through.
-      if (message.kind === "state" && socket.bufferedAmount > MAX_BUFFERED_BYTES) return;
-      socket.send(JSON.stringify(message));
-    });
-    socket.on("close", unsubscribe);
+  const clients = new Set<Client>();
+  // States in register form for the clients that asked for changes, all from one encoder (ADR 0013).
+  const encoder = new RegisterEncoder();
+  // Every message is turned into JSON once per form for all clients; a new client first gets the current status and
+  // config.
+  gateway.subscribe((message) => {
+    if (clients.size === 0) return;
+    if (message.kind !== "state") {
+      const json = JSON.stringify(message);
+      for (const client of clients) send(client.socket, json);
+      return;
+    }
+    const changes = [...clients].some((c) => c.changes);
+    // Without such a client nothing is encoded; the next one starts with every product anyway.
+    if (!changes) encoder.reset();
+    const encoded = changes ? encoder.encode(message) : undefined;
+    let whole: string | undefined;
+    let changed: string | undefined;
+    let full: string | undefined;
+    for (const client of clients) {
+      // A client that cannot keep up skips states; config and status always go through.
+      if (client.socket.bufferedAmount > MAX_BUFFERED_BYTES) {
+        // One with changes then needs every product of this source again.
+        client.synced.delete(message.sourceId);
+        continue;
+      }
+      if (!client.changes) {
+        send(client.socket, (whole ??= JSON.stringify(message)));
+      } else if (client.synced.has(message.sourceId)) {
+        send(client.socket, (changed ??= JSON.stringify(encoded)));
+      } else {
+        send(client.socket, (full ??= JSON.stringify(withRegisters(message))));
+        client.synced.add(message.sourceId);
+      }
+    }
+    const sent = changed ?? whole ?? full;
+    if (sent !== undefined) gateway.acquisition(message.sourceId)?.recordSent(Buffer.byteLength(sent));
+  });
+  wss.on("connection", (socket: WebSocket, request: IncomingMessage) => {
+    const changes = new URL(request.url ?? "/", "http://localhost").searchParams.get("changes") === "1";
+    // Subscribing hands over the current status and config at once; later messages come through the shared listener.
+    gateway.subscribe((message) => send(socket, JSON.stringify(message)))();
+    const client: Client = { socket, changes, synced: new Set() };
+    clients.add(client);
+    socket.on("close", () => clients.delete(client));
     // Read-only: anything the browser sends is ignored.
   });
+
+  function send(socket: WebSocket, json: string): void {
+    if (socket.readyState === socket.OPEN) socket.send(json);
+  }
 
   return new Promise((done, fail) => {
     server.once("error", fail);

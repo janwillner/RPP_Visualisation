@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { PROTOCOL_VERSION, type ConfigMessage, type Product, type StateMessage } from "@rpp/protocol";
+import {
+  PROTOCOL_VERSION,
+  RegisterDecoder,
+  RegisterEncoder,
+  type ConfigMessage,
+  type Product,
+  type StateMessage,
+} from "@rpp/protocol";
 import type { SourceInfo } from "../src/connection";
 import { ProductHistory } from "../src/product-history";
 import { Recorder, Recording } from "../src/recording";
@@ -58,6 +65,12 @@ function register(beltPosition: number, products: Product[]): StateMessage {
     tRel: beltPosition,
     components: [{ type: "conveyor", id: 1, timestamp: "0", beltPosition, products, fault: null }],
   };
+}
+
+/** The products of a state's first conveyor. */
+function componentProducts(state: StateMessage): Product[] {
+  const c = state.components[0]!;
+  return c.type === "conveyor" ? c.products : [];
 }
 
 describe("product history", () => {
@@ -148,6 +161,53 @@ describe("product history", () => {
     expect(history.of(A, 1, 7)).toEqual([
       { at: 0, kind: "assigned", text: "Entered the register (assigned to Delta 1)" },
       { at: 2000, kind: "missed", text: "Missed: passed the belt end" },
+    ]);
+  });
+
+  it("follows decoded states, whose unchanged products are the objects of the previous state", () => {
+    // Live, the register decoder gives an unchanged product as the same object (ADR 0013).
+    const encoder = new RegisterEncoder();
+    const decoder = new RegisterDecoder();
+    const history = new ProductHistory(5000, Infinity);
+    const timeline: [number, number, Product[]][] = [
+      [0, 0, [product(5, "detected"), product(7, "detected")]],
+      [100, 0, [product(5, "detected"), product(7, "detected")]],
+      [200, 0, [product(5, "assigned", 10), product(7, "detected"), product(8, "detected")]],
+      [300, 2800, [product(5, "picked", 10, 2), product(7, "detected"), product(8, "detected")]],
+      // Product 7 passes the belt end without a change of its own.
+      [400, 3000, [product(5, "picked", 10, 2), product(7, "detected"), product(8, "detected")]],
+      [500, 3100, [product(5, "placed", 10, 2), product(8, "detected")]],
+    ];
+    let previous: StateMessage | undefined;
+    for (const [at, beltPosition, products] of timeline) {
+      const state = decoder.decode(encoder.encode(register(beltPosition, products)));
+      // Product 7 (second in the register until it leaves) never changes.
+      if (previous && at <= 400) expect(componentProducts(state)[1]).toBe(componentProducts(previous)[1]);
+      previous = state;
+      history.add(at, state, source);
+    }
+
+    expect(history.of(A, 1, 5).map((s) => [s.at, s.kind])).toEqual([
+      [0, "detected"],
+      [200, "assigned"],
+      [300, "picked"],
+      [500, "placed"],
+    ]);
+    expect(history.of(A, 1, 7).map((s) => [s.at, s.kind])).toEqual([
+      [0, "detected"],
+      [400, "missed"],
+      [500, "gone"],
+    ]);
+    expect(history.of(A, 1, 8).map((s) => [s.at, s.kind])).toEqual([
+      [200, "detected"],
+      [400, "missed"],
+    ]);
+    expect(history.events(0, Infinity).map((e) => [e.at, e.productId, e.kind])).toEqual([
+      [200, 8, "entered"],
+      [300, 5, "picked"],
+      [400, 7, "missed"],
+      [400, 8, "missed"],
+      [500, 5, "placed"],
     ]);
   });
 

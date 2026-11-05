@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuXtsGantry" Id="{e258240d-815f-404f-8267-99bc35d2d4eb}" SpecialFunc="None">
+  <POU Name="_FB_VisuXtsGantry" Id="{1afe4d62-91b5-4ad7-a7fd-2878de303e30}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -9,18 +9,20 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 One visualised XTS gantry (e.g. IDH): a straight track of XTS motor modules on a common Z axis, each mover<br>
 with an X axis and a gripper flange at its end. Typical cycle:<br>
-  fb_Idh.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 30, vi_str_Name := 'IDH',<br>
-      vi_str_Path := 'MAIN.fb_Idh.vo_Visu');<br>
+  fb_Idh.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 30, vi_str_Name := 'IDH');<br>
   fb_Idh.m_Configure(vi_Pose := TrackPose, vi_lr_XMin := 0, vi_lr_XMax := 700, vi_lr_ZMin := -100, vi_lr_ZMax := 0, vi_lr_ToolOffsetX := 150, vi_lr_ToolOffsetZ := -350,<br>
       vi_lr_MoverLength := 155, vi_lr_MoverWidth := 80);<br>
   FOR un_Module := 1 TO 6 DO<br>
-      fb_Idh.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := E_VisuModuleKind.STRAIGHT);<br>
+      fb_Idh.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := E_VisuModuleKind.STRAIGHT,<br>
+          vi_lr_Length := VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH);<br>
   END_FOR<br>
   fb_Idh.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 50);<br>
-  fb_Idh.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 3, vi_lr_Start := 1100, vi_lr_End := 2600);<br>
+  fb_Idh.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 3, vi_lr_Start := 1100, vi_lr_End := 2600,<br>
+      vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 1100);<br>
   fb_Idh.m_SetZPosition(lr_ZAxisActual);<br>
   fb_Idh.m_SetMoverCount(4);<br>
-  fb_Idh.m_SetMover(vi_un_Index := 0, vi_udn_Id := 1, vi_lr_Position := ..., vi_lr_X := ..., vi_FingerStates := Mover1Fingers);<br>
+  fb_Idh.m_SetMover(vi_un_Index := 0, vi_udn_Id := 1, vi_lr_Position := ..., vi_lr_X := ..., vi_b_GripperActive := FALSE,<br>
+      vi_FingerStates := Mover1Fingers, vi_b_Fault := FALSE, vi_str_FaultMessage := '');<br>
 Only actual values are reported; tool rotations (e.g. C) show only through the finger poses, absolute in the MCS.<br>
 The config methods may be called every cycle; the config version only changes when a value does.<br>
 *****************************************************************************************************<br>
@@ -199,8 +201,8 @@ VAR_INPUT
 	vi_b_GripperActive					: BOOL;	// used only when no fingers are configured
 	(* Finger poses absolute in the MCS and grip states, index 0 = finger 1; entries beyond the finger count are ignored. *)
 	vi_FingerStates						: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;
-	vi_b_Fault							: BOOL := FALSE;	// TRUE: this mover is in a fault
-	vi_str_FaultMessage					: STRING(80) := '';	// shown to the operator; empty shows 'Fault'
+	vi_b_Fault							: BOOL;	// TRUE: this mover is in a fault
+	vi_str_FaultMessage					: STRING(80);	// shown to the operator; empty shows 'Fault', '' without a fault
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[m_SetMover := vi_un_Index < vo_Visu.stState.nMoverCount;
@@ -256,8 +258,8 @@ TRUE if anything changed.<br>
 METHOD m_SetOriginShift : BOOL
 VAR_INPUT
 	vi_lr_X								: LREAL;	// [mm] along the gantry's local X
-	vi_lr_Y								: LREAL := 0;	// [mm] along the track (local Y)
-	vi_lr_Z								: LREAL := 0;	// [mm] along the gantry's local Z
+	vi_lr_Y								: LREAL;	// [mm] along the track (local Y), 0 = none
+	vi_lr_Z								: LREAL;	// [mm] along the gantry's local Z, 0 = none
 END_VAR
 VAR
 	TempNew								: ST_VisuXtsGantryConfig;

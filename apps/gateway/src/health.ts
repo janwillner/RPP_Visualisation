@@ -35,7 +35,10 @@ export function watchHealth(
     }
   });
   return () => {
-    const list = [...sources.values()].map((s) => ({ ...s }));
+    const list = [...sources.values()].map((s) => {
+      const acquisition = gateway.acquisition(s.sourceId)?.report();
+      return { ...s, ...(acquisition ? { acquisition } : {}) };
+    });
     return {
       ok: list.length > 0 && list.every((s) => s.plcConnected),
       version,
