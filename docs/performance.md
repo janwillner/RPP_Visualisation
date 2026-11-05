@@ -91,9 +91,11 @@ duplicate and no flickering product, and the PLC task never exceeded its cycle t
 
 What this says:
 
-- Reading costs time even with few products: about 6 ms for 119 products, because the bridge reads every conveyor's
-  whole array (`VISU_un_MAX_PRODUCTS` entries of about 72 bytes, some 340 KB per conveyor and cycle) and converts only
-  the counted ones. Reading only the counted entries comes first.
+- Reading costs time even with few products: about 6 ms for 119 products. Not mainly because of the size, as first
+  assumed: every conveyor state is 345 712 bytes (4800 products of 72 bytes), but through the local AMS router a
+  sum-read of the 21 demo states takes 2.75 ms whole (3459 KB) and 1.35 ms with only the counted entries (61 KB). Most
+  of the time goes into converting the values to JSON in the bridge, passing them to Node and parsing them there.
+  See "Reading only the counted entries" below.
 - The gateway does not reach its 20 ms cycle: about 32 snapshots per second without load, 22 with 4000 products,
   where reading alone takes longer than a cycle.
 - One browser receives 17 MB/s at 4000 products. Sending only what changed (phase 2) is what brings this down.
@@ -102,3 +104,26 @@ What this says:
   in `m_FindProduct`. Harmless in a 10 ms task, noticeable in a 1 to 2 ms task.
 - No register read caught the PLC rearranging a register here. This runtime is not real-time, so check again on an
   IPC with a real-time core; `/health` keeps counting.
+
+## Reading only the counted entries
+
+Since this change the ADS bridge reads a large array that has a count member (`aProducts` with `nProductCount`, also
+`aMovers`) only as far as the count of the previous read plus a reserve (a quarter more plus 32 entries), in the same
+sum-read as the count itself (`apps/ads-bridge/ReadPlan.cs`). If the count read is larger, the rest follows in a second
+sum-read. Arrays below 4 KB and symbols outside plain PLC memory (index groups 0x4020, 0x4040, 0xF020 to 0xF031) are
+read whole as before. The bridge keeps each symbol's buffer from read to read.
+
+Checked on the running demo with about 4900 products: old and new bridge read the same structures, and of some 98 000
+product entries compared by id only those differed that the application changed between the two reads (products pushed
+on the spacing belt, state changes by the robots); also with the reserve set to 0, so that every new product took the
+second read.
+
+Gain on the local AMS router, 21 states without the stress belt: the sum-read itself from 2.75 to 1.35 ms; reading and
+converting in the bridge from about 3.5 to 3.3 ms. The real gain is for a source on another IPC over an ADS route
+(ADR 0005): instead of 3.4 MB per cycle (170 MB/s at a 20 ms cycle, more than gigabit Ethernet carries) about 61 KB go
+over the network. Not yet measured with a second IPC.
+
+What remains is converting: with 4000 products the bridge, the pipe to Node and the mapping in the gateway take about
+30 ms per cycle, all of it proportional to the products, although almost none of them change from one cycle to the
+next. Sending and converting only what changed (phase 2) removes that cost; a faster conversion in the bridge would
+only reduce it.

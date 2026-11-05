@@ -71,8 +71,7 @@ internal static class ValueConverter
     /// </summary>
     private static int CountOf(IEnumerable<IMember> members, string arrayName, ReadOnlySpan<byte> data)
     {
-        if (arrayName.Length < 2 || arrayName[0] != 'a' || !char.IsUpper(arrayName[1])) return int.MaxValue;
-        string countName = $"n{Singular(arrayName[1..])}Count";
+        if (CountMemberName(arrayName) is not { } countName) return int.MaxValue;
         var countMember = members.FirstOrDefault(m => string.Equals(m.InstanceName, countName, StringComparison.OrdinalIgnoreCase));
         if (countMember?.DataType == null || countMember.ByteOffset + countMember.ByteSize > data.Length) return int.MaxValue;
         var raw = data.Slice(countMember.ByteOffset, countMember.ByteSize);
@@ -89,6 +88,13 @@ internal static class ValueConverter
         };
         return (int)Math.Clamp(value, 0, int.MaxValue);
     }
+
+    /// <summary>
+    /// The count member of an array as the contract names it (<c>aProducts</c> → <c>nProductCount</c>), or null for a
+    /// member that is not named like an array.
+    /// </summary>
+    public static string? CountMemberName(string arrayName) =>
+        arrayName.Length < 2 || arrayName[0] != 'a' || !char.IsUpper(arrayName[1]) ? null : $"n{Singular(arrayName[1..])}Count";
 
     /// <summary><c>Products</c> → <c>Product</c>, <c>Bodies</c> → <c>Body</c>: the count member is named after one entry.</summary>
     private static string Singular(string name) =>
