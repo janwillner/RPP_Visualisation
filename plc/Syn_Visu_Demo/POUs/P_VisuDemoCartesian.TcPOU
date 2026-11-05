@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoCartesian" Id="{c58f1b2d-3e67-4ba9-afdc-0de155b5a733}" SpecialFunc="None">
+  <POU Name="P_VisuDemoCartesian" Id="{fe69d02d-56b3-497c-bba8-632d7323db67}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -108,11 +108,13 @@ BeltPose.fY := lr_CART_OUTFEED_Y;
 fb_CartOutfeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_CART_BELT_LENGTH,
 	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
 (* The infeed's belt coordinates count from the robot's Y = 0, 1000 mm behind the belt start. *)
-fb_CartInfeed.m_SetOriginShift(vi_lr_X := lr_CART_X);
+fb_CartInfeed.m_SetOriginShift(vi_lr_X := lr_CART_X, vi_lr_Y := 0, vi_lr_Z := 0);
 fb_CartInfeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
-	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT,
+	vi_e_Shape := E_VisuProductShape.BOX, vi_lr_CornerRadius := 0);
 fb_CartOutfeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
-	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT,
+	vi_e_Shape := E_VisuProductShape.BOX, vi_lr_CornerRadius := 0);
 
 (* Belt travel *)
 lr_InfeedPosition := lr_InfeedPosition + lr_CART_BELT_SPEED * lr_Dt;
@@ -134,7 +136,8 @@ IF lr_SinceSpawn >= lr_CART_SPAWN_INTERVAL THEN
 	LatchPose.fRz := (UDINT_TO_LREAL((udn_Seed / 1000) MOD 1000) / 1000.0 - 0.5) * 60.0;
 	IF fb_CartInfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
 		vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_CartInfeed.vo_Visu.stConfig, vi_Pose := LatchPose),
-		vi_udn_ProductType := 1)
+		vi_udn_ProductType := 1, vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE,
+		vi_e_State := E_VisuProductState.DETECTED, vi_udn_ClientId := 0)
 	THEN
 		DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 	END_IF
@@ -156,10 +159,10 @@ fb_Cartesian.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.D
 fb_Cartesian.m_SetFinger(vi_un_Finger := 2, vi_lr_Diameter := lr_CART_JAW_DIAMETER, vi_lr_Height := lr_CART_JAW_HEIGHT);
 fb_Cartesian.m_SetFinger(vi_un_Finger := 3, vi_lr_Diameter := lr_CART_JAW_DIAMETER, vi_lr_Height := lr_CART_JAW_HEIGHT);
 fb_Cartesian.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_CartInfeed.m_Id(),
-	vi_lr_Start := 0, vi_lr_End := 1000, vi_lr_CcsOffset := 0);
+	vi_lr_Start := 0, vi_lr_End := 1000, vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 0);
 fb_Cartesian.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_CartOutfeed.m_Id(),
 	vi_lr_Start := lr_CART_X + lr_CART_Y_STACK_BASE - 100, vi_lr_End := lr_CART_X + lr_CART_Y_STACK_MAX + 100,
-	vi_lr_CcsOffset := lr_CART_X + (lr_CART_Y_STACK_BASE + lr_CART_Y_STACK_MAX) / 2);
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_CART_X + (lr_CART_Y_STACK_BASE + lr_CART_Y_STACK_MAX) / 2);
 m_Step();
 fb_Cartesian.m_SetAxes(vi_lr_X := lr_CartX, vi_lr_Y := lr_CartY, vi_lr_Z := lr_CartZ, vi_b_GripperActive := b_CartGrip);
 
@@ -321,7 +324,7 @@ CASE n_CartPhase OF
 			AND TempProductPose.fX - lr_CART_X <= 600
 			THEN
 				fb_CartInfeed.m_SetProductState(vi_udn_Id := TempProduct.nId, vi_e_State := E_VisuProductState.ASSIGNED,
-					vi_udn_ClientId := fb_Cartesian.m_Id());
+					vi_udn_ClientId := fb_Cartesian.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := 0);
 				udn_CartProduct := TempProduct.nId;
 				(* The gripper's +X in the MCS is pose rz (-90 deg) + C. *)
 				lr_CartPickC := TempProductPose.fRz + 90;
@@ -341,7 +344,7 @@ CASE n_CartPhase OF
 		ELSIF lr_TempProductY > 1000 THEN
 			(* Out of reach: hand it back, it will be missed. *)
 			fb_CartInfeed.m_SetProductState(vi_udn_Id := udn_CartProduct, vi_e_State := E_VisuProductState.DETECTED,
-				vi_udn_ClientId := fb_Cartesian.m_Id());
+				vi_udn_ClientId := fb_Cartesian.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := 0);
 			udn_CartProduct := 0;
 			n_CartPhase := n_CART_RISE;
 		ELSIF m_Move(vi_lr_X := lr_CART_X_INFEED, vi_lr_Y := lr_TempProductY, vi_lr_Z := lr_CartZ,
@@ -352,7 +355,7 @@ CASE n_CartPhase OF
 				vi_lr_C := lr_CartPickC, vi_lr_A := 0)
 			THEN
 				fb_CartInfeed.m_SetProductState(vi_udn_Id := udn_CartProduct, vi_e_State := E_VisuProductState.PICKED,
-					vi_udn_ClientId := fb_Cartesian.m_Id(), vi_udn_FingerId := 1);
+					vi_udn_ClientId := fb_Cartesian.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := 1);
 				b_CartGrip := TRUE;
 				n_CartPhase := n_CART_LIFT;
 			END_IF
@@ -403,7 +406,8 @@ CASE n_CartPhase OF
 		udn_TempPlacedId := DEMO_GlobalVar.DEMO_udn_NextId;
 		IF fb_CartOutfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
 			vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_CartOutfeed.vo_Visu.stConfig, vi_Pose := TempPlacePose),
-			vi_udn_ProductType := 1, vi_e_State := E_VisuProductState.PLACED, vi_udn_ClientId := fb_Cartesian.m_Id())
+			vi_udn_ProductType := 1, vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE,
+			vi_e_State := E_VisuProductState.PLACED, vi_udn_ClientId := fb_Cartesian.m_Id())
 		THEN
 			DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 		END_IF

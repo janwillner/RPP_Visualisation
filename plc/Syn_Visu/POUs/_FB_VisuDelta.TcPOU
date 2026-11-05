@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuDelta" Id="{07213205-bd3a-4bb8-9ba9-63cf1d6f5113}" SpecialFunc="None">
+  <POU Name="_FB_VisuDelta" Id="{73487c34-fa33-4c08-ae0a-90bdb5acc8ea}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -17,7 +17,7 @@ One visualised Delta robot. Typical cycle:<br>
   fb_Delta.m_SetLimitArea(vi_lr_XMin := -500, vi_lr_XMax := 500, vi_lr_YMin := -750, vi_lr_YMax := 750,<br>
       vi_lr_ZMin := -1500, vi_lr_ZMax := -700);<br>
   fb_Delta.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 1, vi_lr_Start := 1100, vi_lr_End := 1900,<br>
-      vi_lr_AllocationOffset := 300);<br>
+      vi_lr_AllocationOffset := 300, vi_lr_CcsOffset := 1100);<br>
   fb_Delta.m_SetTcp(vi_ActualTcp := ActualTcp, vi_SetpointTcp := SetpointTcp);<br>
   fb_Delta.m_SetFingerState(vi_un_Finger := 1, vi_Pose := CupPose, vi_b_Active := b_Vacuum);<br>
 Only the TCP (the gripper flange) is reported; the visualisation derives the arms from it. Tool rotations<br>
@@ -254,8 +254,8 @@ TRUE if anything changed.<br>
 METHOD m_SetOriginShift : BOOL
 VAR_INPUT
 	vi_lr_X								: LREAL;	// [mm] along the base's local X
-	vi_lr_Y								: LREAL := 0;	// [mm] along the base's local Y
-	vi_lr_Z								: LREAL := 0;	// [mm] along the base's local Z
+	vi_lr_Y								: LREAL;	// [mm] along the base's local Y, 0 = none
+	vi_lr_Z								: LREAL;	// [mm] along the base's local Z, 0 = none
 END_VAR
 VAR
 	TempNew								: ST_VisuDeltaConfig;

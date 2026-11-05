@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuBodyComponent" Id="{9f7df760-e8e3-4109-9fd0-2210fe815164}" SpecialFunc="None">
+  <POU Name="_FB_VisuBodyComponent" Id="{f29e91f7-4a64-48fd-b0f4-9a4dd5737bc8}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -150,8 +150,8 @@ VAR_INPUT
 	vi_lr_Length						: LREAL;	// [mm] along the body's local X; a cylinder's diameter
 	vi_lr_Width							: LREAL;	// [mm] along the body's local Y; a cylinder's diameter
 	vi_lr_Height						: LREAL;	// [mm] along the body's local Z
-	vi_lr_TopLength						: LREAL := 0;	// [mm] top face of a FRUSTUM
-	vi_lr_TopWidth						: LREAL := 0;	// [mm] top face of a FRUSTUM
+	vi_lr_TopLength						: LREAL;	// [mm] top face of a FRUSTUM, 0 for other shapes
+	vi_lr_TopWidth						: LREAL;	// [mm] top face of a FRUSTUM, 0 for other shapes
 END_VAR
 VAR
 	p_TempPose							: POINTER TO ST_VisuPose;
@@ -294,8 +294,8 @@ pose, in its local frame. The bodies stay relative to the pose. TRUE if anything
 METHOD m_SetOriginShift : BOOL
 VAR_INPUT
 	vi_lr_X								: LREAL;	// [mm] along the component's local X
-	vi_lr_Y								: LREAL := 0;	// [mm] along the component's local Y
-	vi_lr_Z								: LREAL := 0;	// [mm] along the component's local Z
+	vi_lr_Y								: LREAL;	// [mm] along the component's local Y, 0 = none
+	vi_lr_Z								: LREAL;	// [mm] along the component's local Z, 0 = none
 END_VAR
 VAR
 	p_TempPose							: POINTER TO ST_VisuPose;

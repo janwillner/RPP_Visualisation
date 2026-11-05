@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuConveyor" Id="{aa18a4e1-9269-4685-8a4d-aa171346d20a}" SpecialFunc="None">
+  <POU Name="_FB_VisuConveyor" Id="{9259762a-7fc9-4d83-989d-ff85d9c6ef7c}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -10,9 +10,12 @@ DESCRIPTION:<br>
 One visualised conveyor. Typical cycle:<br>
   fb_Infeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed');<br>
   fb_Infeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := 5000, vi_lr_Width := 400);<br>
-  fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40);<br>
+  fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40,<br>
+      vi_e_Shape := E_VisuProductShape.BOX, vi_lr_CornerRadius := 0);<br>
   fb_Infeed.m_SetBeltPosition(lr_AxisPosition);  // or m_SetModuloBeltPosition for a modulo axis<br>
-  IF b_Latched THEN fb_Infeed.m_LatchProduct(vi_udn_Id := udn_NextId, vi_LatchPose := LatchPose, vi_udn_ProductType := 1); END_IF<br>
+  IF b_Latched THEN fb_Infeed.m_LatchProduct(vi_udn_Id := udn_NextId, vi_LatchPose := LatchPose, vi_udn_ProductType := 1,<br>
+      vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE, vi_e_State := E_VisuProductState.DETECTED,<br>
+      vi_udn_ClientId := 0); END_IF<br>
 m_Configure and m_SetProductType may be called every cycle; the config version only changes when a value does.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
@@ -311,10 +314,10 @@ VAR_INPUT
 	vi_udn_Id							: UDINT;	// [-] unique on this conveyor, > 0
 	vi_LatchPose						: ST_VisuPlanarPose;	// conveyor coordinate system (from its origin shift), bottom centre at the latch moment
 	vi_udn_ProductType					: UDINT;	// [-] id given to m_SetProductType
-	vi_lr_LatchBeltPosition				: LREAL := 0;	// [mm] used only if vi_b_UseLatchBeltPosition
-	vi_b_UseLatchBeltPosition			: BOOL := FALSE;	// FALSE: latch at the current belt position
-	vi_e_State							: E_VisuProductState := E_VisuProductState.DETECTED;	// PLACED for a product put down by a robot
-	vi_udn_ClientId						: UDINT := 0;	// [-] manifest id of the client that latched it or put it down, 0 = none
+	vi_lr_LatchBeltPosition				: LREAL;	// [mm] used only if vi_b_UseLatchBeltPosition, else 0
+	vi_b_UseLatchBeltPosition			: BOOL;	// FALSE: latch at the current belt position
+	vi_e_State							: E_VisuProductState;	// DETECTED for a product arriving, PLACED for a product put down by a robot
+	vi_udn_ClientId						: UDINT;	// [-] manifest id of the client that latched it or put it down, 0 = none
 END_VAR
 VAR
 	un_TempIndex						: UINT;
@@ -618,8 +621,8 @@ coordinates (zones' start, end and CCS offset) then count from the shifted origi
 METHOD m_SetOriginShift : BOOL
 VAR_INPUT
 	vi_lr_X								: LREAL;	// [mm] along the conveying direction
-	vi_lr_Y								: LREAL := 0;	// [mm] across the belt
-	vi_lr_Z								: LREAL := 0;	// [mm] along the belt surface normal
+	vi_lr_Y								: LREAL;	// [mm] across the belt, 0 = none
+	vi_lr_Z								: LREAL;	// [mm] along the belt surface normal, 0 = none
 END_VAR
 VAR
 	TempNew								: ST_VisuConveyorConfig;
@@ -648,8 +651,8 @@ VAR_INPUT
 	vi_udn_Id							: UDINT;	// [-] product id
 	vi_e_State							: E_VisuProductState;
 	vi_udn_ClientId						: UDINT;	// [-] manifest id of the client making the change, 0 = none
-	vi_udn_MoverId						: UDINT := 0;	// [-] mover of an XTS gantry or loop carrying the product, 0 = none
-	vi_udn_FingerId						: UDINT := 0;	// [-] gripper finger (1-based) the product hangs from while picked, 0 = the flange
+	vi_udn_MoverId						: UDINT;	// [-] mover of an XTS gantry or loop carrying the product, 0 = none
+	vi_udn_FingerId						: UDINT;	// [-] gripper finger (1-based) the product hangs from while picked, 0 = the flange
 END_VAR
 VAR
 	n_TempIndex							: INT;
@@ -685,8 +688,8 @@ VAR_INPUT
 	vi_lr_Length						: LREAL;	// [mm] along the conveying direction
 	vi_lr_Width							: LREAL;	// [mm]
 	vi_lr_Height						: LREAL;	// [mm]
-	vi_e_Shape							: E_VisuProductShape := E_VisuProductShape.BOX;	// [-] solid of the product
-	vi_lr_CornerRadius					: LREAL := 0;	// [mm] rounded vertical edges of a ROUNDED_BOX
+	vi_e_Shape							: E_VisuProductShape;	// [-] solid of the product, BOX for a plain box
+	vi_lr_CornerRadius					: LREAL;	// [mm] rounded vertical edges of a ROUNDED_BOX, 0 for other shapes
 END_VAR
 VAR
 	TempNew								: ST_VisuConveyorConfig;

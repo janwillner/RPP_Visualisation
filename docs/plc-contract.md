@@ -210,7 +210,7 @@ All component FBs:
 | `m_Register(vio_Manifest, vi_udn_Id, vi_str_Name)` | Adds the component to the manifest (bumps `nConfigVersion` when new) with the symbol path of the instance's `vo_Visu`, taken from its device tree path (attribute `instance-path`, the first `VISU_un_INSTANCE_PATH_SKIP` segments left out). Idempotent: call it every cycle, which also keeps `nProtocolVersion` and `sLibraryVersion` current and the manifest reference valid after an online change |
 | `m_Id()` | Manifest id given to `m_Register`, 0 before |
 | `m_SetFault(vi_b_Active, vi_str_Message)` | Sets or clears the component's fault; it stays until cleared with `m_SetFault(FALSE, '')` |
-| `m_SetOriginShift(vi_lr_X, vi_lr_Y := 0, vi_lr_Z := 0)` | Moves the component's coordinate system from its pose (local frame, mm); for a conveyor the belt coordinates count from there |
+| `m_SetOriginShift(vi_lr_X, vi_lr_Y, vi_lr_Z)` | Moves the component's coordinate system from its pose (local frame, mm); for a conveyor the belt coordinates count from there |
 
 All configuration methods may be called every cycle: they bump `nConfigVersion` only when a value actually changes,
 and return TRUE in that case.
@@ -219,7 +219,7 @@ All robot, detector and station FBs (`_FB_VisuZoneComponent`):
 
 | Method | Purpose |
 | --- | --- |
-| `m_SetZone(vi_un_Zone, vi_udn_ConveyorId, vi_lr_Start, vi_lr_End, vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 0)` | Sets zone `vi_un_Zone` (1-based; set them in order, the count grows to it) on a conveyor, with the component's CCS on it |
+| `m_SetZone(vi_un_Zone, vi_udn_ConveyorId, vi_lr_Start, vi_lr_End, vi_lr_AllocationOffset, vi_lr_CcsOffset)` | Sets zone `vi_un_Zone` (1-based; set them in order, the count grows to it) on a conveyor, with the component's CCS on it |
 | `m_ClearZones()` | Removes all zones |
 
 All robot FBs (Delta, XTS gantry, XTS loop, Cartesian; `_FB_VisuRobot`):
@@ -233,9 +233,9 @@ Both XTS FBs (XTS gantry, XTS loop; `_FB_VisuXtsTrack`):
 
 | Method | Purpose |
 | --- | --- |
-| `m_SetModule(vi_un_Module, vi_e_Kind, vi_lr_Length := VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH)` | Sets track module `vi_un_Module` (1-based, in the order the movers run; set them in order, the count grows to it) |
+| `m_SetModule(vi_un_Module, vi_e_Kind, vi_lr_Length)` (`VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH` for a standard module) | Sets track module `vi_un_Module` (1-based, in the order the movers run; set them in order, the count grows to it) |
 | `m_ClearModules()` | Removes all track modules |
-| `m_SetModuleFault(vi_un_Module, vi_b_Fault, vi_str_FaultMessage := '')` | Reports a module's fault; call every cycle with its current state |
+| `m_SetModuleFault(vi_un_Module, vi_b_Fault, vi_str_FaultMessage)` | Reports a module's fault; call every cycle with its current state |
 | `m_TrackLength()` | Length of the track along its modules, mm: the range of track positions (on a loop its perimeter) |
 
 All detector and station FBs (vision system, product sensor, station; `_FB_VisuBodyComponent`). `m_Register`, called
@@ -243,7 +243,7 @@ every cycle, also stamps the component's state.
 
 | Method | Purpose |
 | --- | --- |
-| `m_SetBody(vi_un_Body, vi_e_Shape, vi_e_Role, vi_Pose, vi_lr_Length, vi_lr_Width, vi_lr_Height, vi_lr_TopLength := 0, vi_lr_TopWidth := 0)` | Describes body `vi_un_Body` (1-based) the component is drawn from; a detector's `m_Configure` sets the first ones, more may be added (e.g. a bracket); a station describes all of its bodies with it |
+| `m_SetBody(vi_un_Body, vi_e_Shape, vi_e_Role, vi_Pose, vi_lr_Length, vi_lr_Width, vi_lr_Height, vi_lr_TopLength, vi_lr_TopWidth)` | Describes body `vi_un_Body` (1-based) the component is drawn from; a detector's `m_Configure` sets the first ones, more may be added (e.g. a bracket); a station describes all of its bodies with it |
 | `m_ClearBodies()` | Removes all bodies, also those `m_Configure` described |
 | `m_SetBodyActive(vi_un_Body, vi_b_Active)` | Lights the body up while TRUE: a beam, a field of view, a pusher at work |
 
@@ -271,11 +271,11 @@ every cycle, also stamps the component's state.
 | Method | Purpose |
 | --- | --- |
 | `m_Configure(vi_Pose, vi_lr_Length, vi_lr_Width)` | Pose of the belt start and size |
-| `m_SetProductType(vi_udn_Id, vi_lr_Length, vi_lr_Width, vi_lr_Height, vi_e_Shape := BOX, vi_lr_CornerRadius := 0)` | Adds or updates a product type: a box, a cylinder (length and width are its diameters along and across the conveying direction: equal for round, different for oval products) or a box with rounded vertical edges (pouches, flow packs) |
+| `m_SetProductType(vi_udn_Id, vi_lr_Length, vi_lr_Width, vi_lr_Height, vi_e_Shape, vi_lr_CornerRadius)` | Adds or updates a product type: a box, a cylinder (length and width are its diameters along and across the conveying direction: equal for round, different for oval products) or a box with rounded vertical edges (pouches, flow packs) |
 | `m_SetBeltPosition(vi_lr_Position)` | Belt position (continuous, mm) and state timestamp; call once per cycle |
 | `m_SetModuloBeltPosition(vi_lr_ModuloPosition, vi_lr_ModuloPeriod, vi_b_Reset)` | Same for a modulo axis; unwraps to a continuous position |
-| `m_LatchProduct(vi_udn_Id, vi_LatchPose, vi_udn_ProductType, vi_e_State := DETECTED, vi_udn_ClientId := 0)` | Adds a product at the current belt position (or at `vi_lr_LatchBeltPosition` with `vi_b_UseLatchBeltPosition`): `DETECTED` where it arrives, with the client that latched it (detector, station); `PLACED` with the robot as client where a robot puts it down |
-| `m_SetProductState(vi_udn_Id, vi_e_State, vi_udn_ClientId, vi_udn_MoverId := 0, vi_udn_FingerId := 0)` | Changes the state (keeping the state before as `ePreviousState`), names the client making the change, the carrying mover and finger |
+| `m_LatchProduct(vi_udn_Id, vi_LatchPose, vi_udn_ProductType, vi_lr_LatchBeltPosition, vi_b_UseLatchBeltPosition, vi_e_State, vi_udn_ClientId)` | Adds a product at the current belt position (or at `vi_lr_LatchBeltPosition` with `vi_b_UseLatchBeltPosition`): `DETECTED` where it arrives, with the client that latched it (detector, station); `PLACED` with the robot as client where a robot puts it down |
+| `m_SetProductState(vi_udn_Id, vi_e_State, vi_udn_ClientId, vi_udn_MoverId, vi_udn_FingerId)` | Changes the state (keeping the state before as `ePreviousState`), names the client making the change, the carrying mover and finger |
 | `m_MoveProduct(vi_udn_Id, vi_Pose)` | Puts a product at a new MCS pose at the current belt position, keeping its state, e.g. while a mover pushes it along the belt |
 | `m_RemoveProduct(vi_udn_Id)` | Removes one product, e.g. once a robot has put it down on another conveyor |
 | `m_RemoveProductsBeyond(vi_lr_BeltX)` | Drops invalid entries and products beyond `vi_lr_BeltX` mm along the belt; keeps ASSIGNED and PICKED ones |
@@ -300,7 +300,7 @@ every cycle, also stamps the component's state.
 | `m_Configure(vi_Pose, vi_lr_XMin, vi_lr_XMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ToolOffsetX, vi_lr_ToolOffsetZ, vi_lr_MoverLength, vi_lr_MoverWidth)` | Pose, strokes, gripper offsets, mover size; the track from `m_SetModule` |
 | `m_SetZPosition(vi_lr_Z)` | Common Z axis and state timestamp; call once per cycle |
 | `m_SetMoverCount(vi_un_Count)` | Number of mover entries evaluated; entries beyond are invalidated |
-| `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_lr_X, vi_b_GripperActive, vi_FingerStates, vi_b_Fault := FALSE, vi_str_FaultMessage := '')` | One mover's actual values, finger states and fault |
+| `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_lr_X, vi_b_GripperActive, vi_FingerStates, vi_b_Fault, vi_str_FaultMessage)` | One mover's actual values, finger states and fault |
 
 `_FB_VisuXtsLoop`:
 
@@ -308,14 +308,14 @@ every cycle, also stamps the component's state.
 | --- | --- |
 | `m_Configure(vi_Pose, vi_lr_ToolOffset, vi_lr_MoverLength, vi_lr_MoverWidth)` | Pose, tool offset, mover size; the track from `m_SetModule` |
 | `m_SetMoverCount(vi_un_Count)` | Number of mover entries evaluated; entries beyond are invalidated |
-| `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_FingerStates, vi_b_Fault := FALSE, vi_str_FaultMessage := '')` | One mover's position along the loop, finger states and fault |
+| `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_FingerStates, vi_b_Fault, vi_str_FaultMessage)` | One mover's position along the loop, finger states and fault |
 
 `_FB_VisuCartesian`:
 
 | Method | Purpose |
 | --- | --- |
 | `m_Configure(vi_Pose, vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_RailHeight)` | Pose, strokes, rail height |
-| `m_SetAxes(vi_lr_X, vi_lr_Y, vi_lr_Z, vi_b_GripperActive := FALSE)` | Actual axis values (the flange), gripper and state timestamp; call once per cycle |
+| `m_SetAxes(vi_lr_X, vi_lr_Y, vi_lr_Z, vi_b_GripperActive)` | Actual axis values (the flange), gripper and state timestamp; call once per cycle |
 | `m_SetFingerState(vi_un_Finger, vi_Pose, vi_b_Active)` | As for the Delta |
 
 ## Using it in an application
@@ -346,18 +346,20 @@ fb_Delta1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 10, vi_st
 fb_Vision1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 50, vi_str_Name := 'Vision 1');
 
 fb_Infeed.m_Configure(vi_Pose := InfeedPose, vi_lr_Length := 5000, vi_lr_Width := 400);
-fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40);
+fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40,
+	vi_e_Shape := E_VisuProductShape.BOX, vi_lr_CornerRadius := 0);
 fb_Infeed.m_SetProductType(vi_udn_Id := 2, vi_lr_Length := 90, vi_lr_Width := 90, vi_lr_Height := 60,
-	vi_e_Shape := E_VisuProductShape.CYLINDER);
+	vi_e_Shape := E_VisuProductShape.CYLINDER, vi_lr_CornerRadius := 0);
 fb_Infeed.m_SetModuloBeltPosition(vi_lr_ModuloPosition := <axis modulo position>, vi_lr_ModuloPeriod := <modulo period>,
 	vi_b_Reset := FALSE);
 (* The lens 800 mm above the belt; the vision system sees 400 x 300 mm from 800 to 1200 mm along the belt. *)
 fb_Vision1.m_Configure(vi_Pose := LensPose, vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300,
 	vi_lr_WorkingDistance := 800);
 fb_Vision1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(), vi_lr_Start := 800, vi_lr_End := 1200,
-	vi_lr_CcsOffset := 1000);
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 1000);
 IF b_Latched THEN
 	fb_Infeed.m_LatchProduct(vi_udn_Id := udn_NextId, vi_LatchPose := LatchPose, vi_udn_ProductType := 1,
+		vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE, vi_e_State := E_VisuProductState.DETECTED,
 		vi_udn_ClientId := fb_Vision1.m_Id());
 END_IF
 
@@ -367,7 +369,7 @@ fb_Delta1.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 5
 fb_Delta1.m_SetLimitArea(vi_lr_XMin := -500, vi_lr_XMax := 500, vi_lr_YMin := -750, vi_lr_YMax := 750,
 	vi_lr_ZMin := -1500, vi_lr_ZMax := -700);
 fb_Delta1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(), vi_lr_Start := 1100, vi_lr_End := 1900,
-	vi_lr_AllocationOffset := 300);
+	vi_lr_AllocationOffset := 300, vi_lr_CcsOffset := 0);
 fb_Delta1.m_SetTcp(vi_ActualTcp := Tcp, vi_SetpointTcp := TcpSetpoint);
 (* The cup below the flange, turned by the 4th axis: absolute in the MCS. *)
 CupPose.fX := Tcp.fX; CupPose.fY := Tcp.fY; CupPose.fZ := Tcp.fZ; CupPose.fRz := lr_Axis4;

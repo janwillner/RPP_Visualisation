@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuSensor" Id="{ab4e15bb-e52f-4283-b48b-218a4f695fb4}" SpecialFunc="None">
+  <POU Name="_FB_VisuSensor" Id="{52e583a5-4898-48b8-ab6b-e0c3026df952}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -10,7 +10,8 @@ DESCRIPTION:<br>
 One visualised product sensor, e.g. a light barrier at the side of a conveyor. Typical cycle:<br>
   fb_Sensor.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 61, vi_str_Name := 'Sensor 1');<br>
   fb_Sensor.m_Configure(vi_Pose := HeadPose, vi_lr_BeamLength := 500);<br>
-  fb_Sensor.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 1, vi_lr_Start := 500, vi_lr_End := 500);<br>
+  fb_Sensor.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 1, vi_lr_Start := 500, vi_lr_End := 500,<br>
+      vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 500);<br>
   fb_Sensor.m_SetSignal(vi_b_Signal := b_BeamInterrupted);<br>
 The pose is the sensor head; its beam runs along the local +Y. m_Configure describes body 1 (head) and<br>
 body 2 (beam); further bodies may be added with m_SetBody.<br>
@@ -69,13 +70,15 @@ END_VAR
 m_SetPose(vi_Pose);
 TempPose.fZ := -lr_HEAD_HEIGHT / 2;
 m_SetBody(vi_un_Body := 1, vi_e_Shape := E_VisuBodyShape.BOX, vi_e_Role := E_VisuBodyRole.SENSOR, vi_Pose := TempPose,
-	vi_lr_Length := lr_HEAD_LENGTH, vi_lr_Width := lr_HEAD_WIDTH, vi_lr_Height := lr_HEAD_HEIGHT);
+	vi_lr_Length := lr_HEAD_LENGTH, vi_lr_Width := lr_HEAD_WIDTH, vi_lr_Height := lr_HEAD_HEIGHT, vi_lr_TopLength := 0,
+	vi_lr_TopWidth := 0);
 (* The beam stands on the head's face, turned so that its local +Z runs along the head's +Y. *)
 TempPose.fY := lr_HEAD_WIDTH / 2;
 TempPose.fZ := 0;
 TempPose.fRx := -90;
 m_SetBody(vi_un_Body := 2, vi_e_Shape := E_VisuBodyShape.CYLINDER, vi_e_Role := E_VisuBodyRole.BEAM, vi_Pose := TempPose,
-	vi_lr_Length := lr_BEAM_DIAMETER, vi_lr_Width := lr_BEAM_DIAMETER, vi_lr_Height := MAX(vi_lr_BeamLength, 0));
+	vi_lr_Length := lr_BEAM_DIAMETER, vi_lr_Width := lr_BEAM_DIAMETER, vi_lr_Height := MAX(vi_lr_BeamLength, 0),
+	vi_lr_TopLength := 0, vi_lr_TopWidth := 0);
 m_Configure := Tc2_System.MEMCMP(ADR(TempBefore), ADR(vo_Visu.stConfig), SIZEOF(TempBefore)) <> 0;]]></ST>
       </Implementation>
     </Method>

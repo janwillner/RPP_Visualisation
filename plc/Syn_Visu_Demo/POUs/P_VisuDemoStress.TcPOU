@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoStress" Id="{2d102d67-9935-4575-b392-a272043d8fe5}" SpecialFunc="None">
+  <POU Name="P_VisuDemoStress" Id="{25269abd-f536-4ace-9680-0ac56ba5034f}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -100,7 +100,8 @@ BeltPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 fb_StressBelt.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_BeltLength,
 	vi_lr_Width := UINT_TO_LREAL(un_STRESS_LANES) * lr_STRESS_LANE_WIDTH + 100);
 fb_StressBelt.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.DEMO_lr_PRODUCT_LENGTH,
-	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT);
+	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_PRODUCT_WIDTH, vi_lr_Height := DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT,
+	vi_e_Shape := E_VisuProductShape.BOX, vi_lr_CornerRadius := 0);
 
 
 (****************************************************************************************************)
@@ -141,7 +142,7 @@ IF lr_BeltPosition >= lr_NextRow AND DEMO_GlobalVar.DEMO_un_StressProducts > 0 T
 		fb_StressBelt.m_SetProductState(
 			vi_udn_Id := udn_RowFirstId[(udn_RowCount - un_Rows / 2) MOD (VISU_GlobalConst_Param.VISU_un_MAX_PRODUCTS / 10 + 1)]
 				+ udn_RowCount MOD un_STRESS_LANES,
-			vi_e_State := E_VisuProductState.REJECTED, vi_udn_ClientId := 0);
+			vi_e_State := E_VisuProductState.REJECTED, vi_udn_ClientId := 0, vi_udn_MoverId := 0, vi_udn_FingerId := 0);
 	END_IF
 	udn_RowCount := udn_RowCount + 1;
 END_IF
@@ -183,7 +184,8 @@ FOR un_TempLane := 0 TO un_STRESS_LANES - 1 DO
 	TempPose.fRz := 0;
 	IF fb_StressBelt.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
 		vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_StressBelt.vo_Visu.stConfig, vi_Pose := TempPose),
-		vi_udn_ProductType := 1)
+		vi_udn_ProductType := 1, vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE,
+		vi_e_State := E_VisuProductState.DETECTED, vi_udn_ClientId := 0)
 	THEN
 		DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 	ELSE

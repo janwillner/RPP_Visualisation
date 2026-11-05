@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuXtsLoop" Id="{e3eeb8fc-93e4-4ce7-9b9a-454fa271e258}" SpecialFunc="None">
+  <POU Name="_FB_VisuXtsLoop" Id="{5de457b9-a1c6-4597-a3d1-e610e4bec2a4}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -13,11 +13,14 @@ Typical cycle:<br>
   fb_Fxx.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 20, vi_str_Name := 'Fxx');<br>
   fb_Fxx.m_Configure(vi_Pose := LoopPose, vi_lr_ToolOffset := 120, vi_lr_MoverLength := 100,<br>
       vi_lr_MoverWidth := 60);<br>
-  fb_Fxx.m_SetModule(vi_un_Module := 1, vi_e_Kind := E_VisuModuleKind.STRAIGHT); and so on, in order<br>
+  fb_Fxx.m_SetModule(vi_un_Module := 1, vi_e_Kind := E_VisuModuleKind.STRAIGHT,<br>
+      vi_lr_Length := VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH); and so on, in order<br>
   fb_Fxx.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 50);<br>
-  fb_Fxx.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 2, vi_lr_Start := 2200, vi_lr_End := 2800);<br>
+  fb_Fxx.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 2, vi_lr_Start := 2200, vi_lr_End := 2800,<br>
+      vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 2200);<br>
   fb_Fxx.m_SetMoverCount(12);<br>
-  fb_Fxx.m_SetMover(vi_un_Index := 0, vi_udn_Id := 1, vi_lr_Position := ..., vi_FingerStates := Mover1Fingers);<br>
+  fb_Fxx.m_SetMover(vi_un_Index := 0, vi_udn_Id := 1, vi_lr_Position := ..., vi_FingerStates := Mover1Fingers,<br>
+      vi_b_Fault := FALSE, vi_str_FaultMessage := '');<br>
 Positions run along the loop from the start of module 1 in the conveying direction (0..m_TrackLength()).<br>
 The config methods may be called every cycle; the config version only changes when a value does.<br>
 *****************************************************************************************************<br>
@@ -184,8 +187,8 @@ VAR_INPUT
 	vi_lr_Position						: LREAL;	// [mm] along the loop from the start of module 1 (0..m_TrackLength())
 	(* Finger poses absolute in the MCS and grip states, index 0 = finger 1; entries beyond the finger count are ignored. *)
 	vi_FingerStates						: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;
-	vi_b_Fault							: BOOL := FALSE;	// TRUE: this mover is in a fault
-	vi_str_FaultMessage					: STRING(80) := '';	// shown to the operator; empty shows 'Fault'
+	vi_b_Fault							: BOOL;	// TRUE: this mover is in a fault
+	vi_str_FaultMessage					: STRING(80);	// shown to the operator; empty shows 'Fault', '' without a fault
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[m_SetMover := vi_un_Index < vo_Visu.stState.nMoverCount;
@@ -239,8 +242,8 @@ TRUE if anything changed.<br>
 METHOD m_SetOriginShift : BOOL
 VAR_INPUT
 	vi_lr_X								: LREAL;	// [mm] along the lower straight (local X)
-	vi_lr_Y								: LREAL := 0;	// [mm] along the loop's local Y
-	vi_lr_Z								: LREAL := 0;	// [mm] along the loop's local Z
+	vi_lr_Y								: LREAL;	// [mm] along the loop's local Y, 0 = none
+	vi_lr_Z								: LREAL;	// [mm] along the loop's local Z, 0 = none
 END_VAR
 VAR
 	TempNew								: ST_VisuXtsLoopConfig;

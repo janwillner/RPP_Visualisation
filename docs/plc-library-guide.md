@@ -72,7 +72,7 @@ says so in its status.
 
 | Library `SynVisu` | Protocol version | Gateway |
 | --- | --- | --- |
-| 8.0.x | 14 | releases from protocol 14 on; `m_Register` without `vi_str_Path` (remove it from every call, section 3.2) |
+| 8.0.x | 14 | releases from protocol 14 on; `m_Register` without `vi_str_Path` (remove it from every call, section 3.2); methods without default values, every call lists all inputs (section 3.3) |
 | 7.0.x | 14 | releases from protocol 14 on (product poses in the conveyor's coordinate system) |
 | 6.0.x | 13 | releases from protocol 13 on (generic product client, station) |
 | 5.1.x | 12 | protocol 12; the status bar also shows the library version |
@@ -128,7 +128,8 @@ fb_Infeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str
 
 (* 2. Configure *)
 fb_Infeed.m_Configure(vi_Pose := InfeedPose, vi_lr_Length := 3000, vi_lr_Width := 400);
-fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40);
+fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40,
+	vi_e_Shape := SynVisu.E_VisuProductShape.BOX, vi_lr_CornerRadius := 0);
 
 (* 3. Report *)
 fb_Infeed.m_SetBeltPosition(lr_InfeedBeltPosition);
@@ -165,6 +166,14 @@ reports a discovery error for every component, the instance paths show what to s
 resulting `str_SymbolPath` of any component instance in the online view (see [Troubleshooting](#18-troubleshooting)).
 A component works its path out once; after changing the parameter, reset the PLC (cold) or download it.
 
+### 3.3 Every input in every call
+
+Call every method with all its inputs. Since library 8.0 the methods have no default values: an input left out
+works only from TwinCAT 3.1 Build 4026, and machine projects still run on 4024. The compiler names a call that
+misses one ("Function 'm_SetZone' requires exactly '6' inputs"). Each input's comment says which value means
+"none", e.g. `vi_lr_AllocationOffset := 0` (no limit), `vi_udn_MoverId := 0`, `vi_str_FaultMessage := ''`; a
+standard XTS module is `vi_lr_Length := SynVisu.VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH`.
+
 ## 4. Coordinates
 
 - **MCS (machine coordinate system):** millimetres and degrees, right-handed, Z up, X in the product flow
@@ -196,7 +205,7 @@ on it (up to `VISU_un_MAX_PRODUCTS`, 4800).
 | Call | Meaning |
 | --- | --- |
 | `m_Configure(vi_Pose, vi_lr_Length, vi_lr_Width)` | `vi_Pose` is the centre of the belt start on the belt surface; local +X is the conveying direction, local Z the belt normal |
-| `m_SetProductType(vi_udn_Id, vi_lr_Length, vi_lr_Width, vi_lr_Height, vi_e_Shape := BOX, vi_lr_CornerRadius := 0)` | One per product type on this belt (up to 8) |
+| `m_SetProductType(vi_udn_Id, vi_lr_Length, vi_lr_Width, vi_lr_Height, vi_e_Shape, vi_lr_CornerRadius)` | One per product type on this belt (up to 8) |
 
 Product shapes (`SynVisu.E_VisuProductShape`):
 
@@ -224,13 +233,13 @@ drives how it is drawn.
 
 | Moment | Call | Shown as |
 | --- | --- | --- |
-| Product detected on the belt | `m_LatchProduct(vi_udn_Id, vi_LatchPose, vi_udn_ProductType, vi_udn_ClientId := fb_Vision.m_Id())` | `DETECTED`, travelling with the belt |
-| A robot takes the product over | `m_SetProductState(vi_udn_Id, ASSIGNED, vi_udn_ClientId := fb_Delta.m_Id())` | `ASSIGNED`, coloured as allocated |
-| The robot gives it up again | `m_SetProductState(vi_udn_Id, DETECTED, vi_udn_ClientId := fb_Delta.m_Id())` | `DETECTED`; the history says "released by" the robot |
+| Product detected on the belt | `m_LatchProduct(vi_udn_Id, vi_LatchPose, vi_udn_ProductType, ..., vi_e_State := DETECTED, vi_udn_ClientId := fb_Vision.m_Id())` | `DETECTED`, travelling with the belt |
+| A robot takes the product over | `m_SetProductState(vi_udn_Id, ASSIGNED, vi_udn_ClientId := fb_Delta.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := 0)` | `ASSIGNED`, coloured as allocated |
+| The robot gives it up again | `m_SetProductState(vi_udn_Id, DETECTED, vi_udn_ClientId := fb_Delta.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := 0)` | `DETECTED`; the history says "released by" the robot |
 | The robot picks it | `m_SetProductState(vi_udn_Id, PICKED, vi_udn_ClientId := fb_Delta.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := 1)` | Hangs from the robot's finger; a placeholder outline stays on the belt |
 | The robot puts it down on another belt | `fb_Infeed.m_RemoveProduct(vi_udn_Id)` and `fb_Outfeed.m_LatchProduct(..., vi_e_State := PLACED, vi_udn_ClientId := fb_Delta.m_Id())` | `PLACED` on the outfeed |
-| Put back onto the same belt | `m_SetProductState(vi_udn_Id, PLACED, vi_udn_ClientId := fb_Delta.m_Id())` | `PLACED` |
-| Rejected (bad product), e.g. by a reject unit | `m_SetProductState(vi_udn_Id, REJECTED, vi_udn_ClientId := fb_RejectUnit.m_Id())` | `REJECTED`, passes the belt end on purpose |
+| Put back onto the same belt | `m_SetProductState(vi_udn_Id, PLACED, vi_udn_ClientId := fb_Delta.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := 0)` | `PLACED` |
+| Rejected (bad product), e.g. by a reject unit | `m_SetProductState(vi_udn_Id, REJECTED, vi_udn_ClientId := fb_RejectUnit.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := 0)` | `REJECTED`, passes the belt end on purpose |
 | Housekeeping, every cycle | `m_RemoveProductsBeyond(vi_lr_BeltX := Length + 300)` | Drops products beyond the belt end; keeps `ASSIGNED` and `PICKED` |
 
 Rules:
@@ -263,9 +272,10 @@ Rules:
 ```st
 (* Configuration *)
 fb_Infeed.m_Configure(vi_Pose := InfeedPose, vi_lr_Length := 3000, vi_lr_Width := 400);
-fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40);
+fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40,
+	vi_e_Shape := SynVisu.E_VisuProductShape.BOX, vi_lr_CornerRadius := 0);
 fb_Infeed.m_SetProductType(vi_udn_Id := 2, vi_lr_Length := 80, vi_lr_Width := 80, vi_lr_Height := 40,
-	vi_e_Shape := SynVisu.E_VisuProductShape.CYLINDER);
+	vi_e_Shape := SynVisu.E_VisuProductShape.CYLINDER, vi_lr_CornerRadius := 0);
 
 (* Each cycle: belt first, then latches *)
 fb_Infeed.m_SetBeltPosition(axInfeed.NcToPlc.ActPos);
@@ -276,7 +286,8 @@ IF b_ProductLatched THEN
 	LatchPose.fZ := 0;
 	LatchPose.fRz := lr_LatchRz;
 	fb_Infeed.m_LatchProduct(vi_udn_Id := udn_ProductId, vi_LatchPose := LatchPose, vi_udn_ProductType := 1,
-		vi_udn_ClientId := fb_Vision1.m_Id());
+		vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE,
+		vi_e_State := SynVisu.E_VisuProductState.DETECTED, vi_udn_ClientId := fb_Vision1.m_Id());
 END_IF
 fb_Infeed.m_RemoveProductsBeyond(3000 + 300);
 ```
@@ -290,7 +301,7 @@ detects, where a station works. All robots, detectors and stations have zones; t
 fb_Delta1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(),
 	vi_lr_Start := 1100, vi_lr_End := 1900, vi_lr_AllocationOffset := 300, vi_lr_CcsOffset := 1100);
 fb_Delta1.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_Outfeed.m_Id(),
-	vi_lr_Start := 1200, vi_lr_End := 1800, vi_lr_CcsOffset := 1200);
+	vi_lr_Start := 1200, vi_lr_End := 1800, vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 1200);
 ```
 
 | Input | Meaning |
@@ -355,7 +366,7 @@ travelling in X and a vertical column (Z) ending at the gripper flange.
 | Call | Meaning |
 | --- | --- |
 | `m_Configure(vi_Pose, vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_RailHeight)` | `vi_Pose` is the axis origin (X = Y = 0); the strokes are the flange's; the rails' top lies at `vi_lr_RailHeight` above the origin |
-| each cycle: `m_SetAxes(vi_lr_X, vi_lr_Y, vi_lr_Z, vi_b_GripperActive := FALSE)` | Actual axis values, i.e. the flange in the robot frame |
+| each cycle: `m_SetAxes(vi_lr_X, vi_lr_Y, vi_lr_Z, vi_b_GripperActive)` | Actual axis values, i.e. the flange in the robot frame |
 | each cycle: `m_SetFingerState(...)` | Per finger, absolute in the MCS |
 
 If the machine's TCP is not the flange (a tool length), report the flange and let the finger reach down to the TCP:
@@ -387,7 +398,8 @@ in a row make the half turn at the end of a loop.
 ```st
 (* A straight track of six modules *)
 FOR un_Module := 1 TO 6 DO
-	fb_Idh.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := SynVisu.E_VisuModuleKind.STRAIGHT);
+	fb_Idh.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := SynVisu.E_VisuModuleKind.STRAIGHT,
+		vi_lr_Length := SynVisu.VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH);
 END_FOR
 ```
 
@@ -435,7 +447,8 @@ in the machine.
 fb_Idh.m_Configure(vi_Pose := IdhPose, vi_lr_XMin := 0, vi_lr_XMax := 700, vi_lr_ZMin := -100, vi_lr_ZMax := 0,
 	vi_lr_ToolOffsetX := 150, vi_lr_ToolOffsetZ := -350, vi_lr_MoverLength := 155, vi_lr_MoverWidth := 80);
 FOR un_Module := 1 TO 6 DO
-	fb_Idh.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := SynVisu.E_VisuModuleKind.STRAIGHT);
+	fb_Idh.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := SynVisu.E_VisuModuleKind.STRAIGHT,
+		vi_lr_Length := SynVisu.VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH);
 END_FOR
 fb_Idh.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 50);
 
@@ -471,14 +484,16 @@ FOR un_Module := 1 TO 2 * (10 + 2) DO
 	ELSE
 		e_ModuleKind := SynVisu.E_VisuModuleKind.CURVE_LEFT;
 	END_IF
-	fb_Fxx.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := e_ModuleKind);
+	fb_Fxx.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := e_ModuleKind,
+		vi_lr_Length := SynVisu.VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH);
 END_FOR
 fb_Fxx.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 50);
 
 fb_Fxx.m_SetMoverCount(12);
 FOR n_Mover := 0 TO 11 DO
 	fb_Fxx.m_SetMover(vi_un_Index := INT_TO_UINT(n_Mover), vi_udn_Id := INT_TO_UDINT(n_Mover + 1),
-		vi_lr_Position := axMover[n_Mover].NcToPlc.ActPos, vi_FingerStates := MoverFingers[n_Mover]);
+		vi_lr_Position := axMover[n_Mover].NcToPlc.ActPos, vi_FingerStates := MoverFingers[n_Mover],
+		vi_b_Fault := FALSE, vi_str_FaultMessage := '');
 END_FOR
 ```
 
@@ -509,7 +524,7 @@ LensPose.fZ := InfeedPose.fZ + 800;
 fb_Vision1.m_Configure(vi_Pose := LensPose, vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300,
 	vi_lr_WorkingDistance := 800);
 fb_Vision1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(), vi_lr_Start := 800, vi_lr_End := 1200,
-	vi_lr_CcsOffset := 1000);
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 1000);
 ```
 
 `vi_Pose` is the lens, looking along its local −Z. `m_Configure` draws a housing, the lens and the field of view as a
@@ -522,13 +537,14 @@ FB: `SynVisu._FB_VisuSensor`.
 ```st
 (* Head at the belt side, the beam across the belt (local +Y) *)
 fb_Barrier1.m_Configure(vi_Pose := HeadPose, vi_lr_BeamLength := 500);
-fb_Barrier1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(), vi_lr_Start := 300, vi_lr_End := 300);
+fb_Barrier1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(), vi_lr_Start := 300, vi_lr_End := 300,
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 300);
 fb_Barrier1.m_SetSignal(b_BeamInterrupted);	// every cycle: the beam lights up while TRUE
 ```
 
 ### 13.3 Extra bodies
 
-`m_SetBody(vi_un_Body, vi_e_Shape, vi_e_Role, vi_Pose, vi_lr_Length, vi_lr_Width, vi_lr_Height, ...)` adds solids,
+`m_SetBody(vi_un_Body, vi_e_Shape, vi_e_Role, vi_Pose, vi_lr_Length, vi_lr_Width, vi_lr_Height, vi_lr_TopLength, vi_lr_TopWidth)` adds solids,
 e.g. a bracket. The vision system uses bodies 1–3 and the sensor bodies 1–2, so start at 4 or 3. The pose is the
 body's bottom centre in the detector's frame; the body extends along its local +Z. Shapes: `BOX`, `CYLINDER`
 (length and width are its diameters), `FRUSTUM` (with a top size). Roles: `STRUCTURE` and `SENSOR` are machine parts
@@ -550,19 +566,20 @@ fb_RejectUnit.m_Configure(vi_Pose := StationPose);
 BodyPose.fY := -70;	// housing beside the belt, up to 120 mm above the belt surface
 fb_RejectUnit.m_SetBody(vi_un_Body := 1, vi_e_Shape := SynVisu.E_VisuBodyShape.BOX,
 	vi_e_Role := SynVisu.E_VisuBodyRole.STRUCTURE, vi_Pose := BodyPose, vi_lr_Length := 160, vi_lr_Width := 140,
-	vi_lr_Height := OutfeedPose.fZ + 120);
+	vi_lr_Height := OutfeedPose.fZ + 120, vi_lr_TopLength := 0, vi_lr_TopWidth := 0);
 BodyPose.fY := 15;	// pusher plate at the belt edge, just above the belt
 BodyPose.fZ := OutfeedPose.fZ + 10;
 fb_RejectUnit.m_SetBody(vi_un_Body := 2, vi_e_Shape := SynVisu.E_VisuBodyShape.BOX,
 	vi_e_Role := SynVisu.E_VisuBodyRole.STRUCTURE, vi_Pose := BodyPose, vi_lr_Length := 120, vi_lr_Width := 30,
-	vi_lr_Height := 50);
-fb_RejectUnit.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Outfeed.m_Id(), vi_lr_Start := 3000, vi_lr_End := 3000);
+	vi_lr_Height := 50, vi_lr_TopLength := 0, vi_lr_TopWidth := 0);
+fb_RejectUnit.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Outfeed.m_Id(), vi_lr_Start := 3000, vi_lr_End := 3000,
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 3000);
 
 (* Every cycle: the pusher lights up while it pushes *)
 fb_RejectUnit.m_SetBodyActive(vi_un_Body := 2, vi_b_Active := b_PusherOut);
 (* When it rejects a product, and once the product is off the belt *)
 fb_Outfeed.m_SetProductState(vi_udn_Id := udn_Bad, vi_e_State := SynVisu.E_VisuProductState.REJECTED,
-	vi_udn_ClientId := fb_RejectUnit.m_Id());
+	vi_udn_ClientId := fb_RejectUnit.m_Id(), vi_udn_MoverId := 0, vi_udn_FingerId := 0);
 fb_Outfeed.m_RemoveProduct(udn_Bad);
 ```
 

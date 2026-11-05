@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuVision" Id="{9f8c285a-f17f-473d-9b08-82e1bded2956}" SpecialFunc="None">
+  <POU Name="_FB_VisuVision" Id="{0d5d8f4e-ee8b-4ea5-b5c0-633285c5d29a}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -11,8 +11,9 @@ One visualised vision system: a camera over a conveyor. Typical cycle:<br>
   fb_Vision.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 60, vi_str_Name := 'Vision 1');<br>
   fb_Vision.m_Configure(vi_Pose := LensPose, vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300,<br>
       vi_lr_WorkingDistance := 800);<br>
-  fb_Vision.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 1, vi_lr_Start := 800, vi_lr_End := 1200);<br>
-  fb_Infeed.m_LatchProduct(..., vi_udn_DetectorId := fb_Vision.m_Id());<br>
+  fb_Vision.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 1, vi_lr_Start := 800, vi_lr_End := 1200,<br>
+      vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 1000);<br>
+  fb_Infeed.m_LatchProduct(..., vi_udn_ClientId := fb_Vision.m_Id());<br>
 The pose is the lens, looking along its local -Z. m_Configure describes bodies 1 to 3 (housing, lens,<br>
 field of view down to the working distance); further bodies may be added with m_SetBody.<br>
 *****************************************************************************************************<br>
@@ -76,10 +77,12 @@ lr_TempDistance := MAX(vi_lr_WorkingDistance, 0);
 m_SetPose(vi_Pose);
 TempPose.fZ := lr_LENS_LENGTH;
 m_SetBody(vi_un_Body := 1, vi_e_Shape := E_VisuBodyShape.BOX, vi_e_Role := E_VisuBodyRole.STRUCTURE, vi_Pose := TempPose,
-	vi_lr_Length := lr_HOUSING_LENGTH, vi_lr_Width := lr_HOUSING_WIDTH, vi_lr_Height := lr_HOUSING_HEIGHT);
+	vi_lr_Length := lr_HOUSING_LENGTH, vi_lr_Width := lr_HOUSING_WIDTH, vi_lr_Height := lr_HOUSING_HEIGHT,
+	vi_lr_TopLength := 0, vi_lr_TopWidth := 0);
 TempPose.fZ := 0;
 m_SetBody(vi_un_Body := 2, vi_e_Shape := E_VisuBodyShape.CYLINDER, vi_e_Role := E_VisuBodyRole.SENSOR, vi_Pose := TempPose,
-	vi_lr_Length := lr_LENS_DIAMETER, vi_lr_Width := lr_LENS_DIAMETER, vi_lr_Height := lr_LENS_LENGTH);
+	vi_lr_Length := lr_LENS_DIAMETER, vi_lr_Width := lr_LENS_DIAMETER, vi_lr_Height := lr_LENS_LENGTH,
+	vi_lr_TopLength := 0, vi_lr_TopWidth := 0);
 TempPose.fZ := -lr_TempDistance;
 m_SetBody(vi_un_Body := 3, vi_e_Shape := E_VisuBodyShape.FRUSTUM, vi_e_Role := E_VisuBodyRole.FIELD_OF_VIEW,
 	vi_Pose := TempPose, vi_lr_Length := vi_lr_FieldLength, vi_lr_Width := vi_lr_FieldWidth,

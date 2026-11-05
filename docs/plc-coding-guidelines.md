@@ -138,6 +138,7 @@ Pattern: `vi_` / `vo_` / `vio_` + `[t_]Name`, for example `vi_b_Init`, `vi_Data`
 - **(rule)** Never read local variables of a POU from outside through its instance path. Use outputs.
 - FB calls list all inputs and outputs, even unconnected ones. Keep the formatting that F2 produces (no space before `:=` / `=>`).
 - **(rule)** Function calls may use the short form (no input names) only with at most 4 inputs, and only for frequently used functions, on one line.
+- **(rule, this repo)** Methods are always called with every input, and method inputs have no default values (`vi_lr_Y : LREAL;`, not `vi_lr_Y : LREAL := 0;`). Default values of method inputs that a call leaves out work only from TwinCAT 3.1 Build 4026; machine projects on 4024 must compile `Syn_Visu` and their own calls. Without defaults the 4026 compiler reports every incomplete call too ("requires exactly n inputs"). Say in the input's comment which value means "none", e.g. `// [mm] ..., 0 = none`.
 
 ## Comments
 
