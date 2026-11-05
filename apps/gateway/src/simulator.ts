@@ -398,7 +398,8 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
             fEnd: PICK_ZONE.end,
             fAllocationOffset: PICK_ZONE.allocationOffset,
           },
-          { nConveyorId: OUTFEED.id, fStart: PLACE_X - 300, fEnd: PLACE_X + 300 },
+          // A lane in the middle of the outfeed, where the robot places.
+          { nConveyorId: OUTFEED.id, fStart: PLACE_X - 300, fEnd: PLACE_X + 300, fStartY: -100, fEndY: 100 },
         ]),
       }),
     },

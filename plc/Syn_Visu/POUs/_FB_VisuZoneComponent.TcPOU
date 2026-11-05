@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuZoneComponent" Id="{55115424-a8c8-45e4-990d-80865fdb1e21}" SpecialFunc="None">
+  <POU Name="_FB_VisuZoneComponent" Id="{7e769e13-92b9-46e4-ac80-29a70baa1a73}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -12,6 +12,7 @@ A derived FB tells where its zones lie in its contract structure through m_Zones
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New: zones shared by robots and detectors, no zone kind<br>
+Syn_Visu 9.0.0  ¦ 2026-11-05 ¦ J.Willner ¦ m_SetZone: vi_lr_StartY, vi_lr_EndY bound the zone across the belt<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK ABSTRACT _FB_VisuZoneComponent EXTENDS _FB_VisuComponent
 ]]></Declaration>
@@ -59,7 +60,8 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 Sets zone vi_un_Zone (1-based): a stretch of a conveyor that belongs to this component, e.g. where a<br>
-robot picks or places or where a detector detects. vi_lr_Start = vi_lr_End is a line across the belt.<br>
+robot picks or places or where a detector detects. vi_lr_Start = vi_lr_End is a line across the belt;<br>
+vi_lr_StartY = vi_lr_EndY spans the whole belt width, else the zone lies between them across the belt.<br>
 The zone count grows to vi_un_Zone; set the zones in order. The config version only changes when a<br>
 value does.<br>
 *****************************************************************************************************<br>
@@ -74,6 +76,8 @@ VAR_INPUT
 	vi_lr_End							: LREAL;	// [mm] along the conveyor from its origin
 	vi_lr_AllocationOffset				: LREAL;	// [mm] before vi_lr_End up to which products may be allocated; 0 = no limit
 	vi_lr_CcsOffset						: LREAL;	// [mm] along the conveyor from its origin: the component's conveyor coordinate system, 0 = its origin
+	vi_lr_StartY						: LREAL;	// [mm] across the conveyor from its origin (local Y): one side of the zone
+	vi_lr_EndY							: LREAL;	// [mm] across the conveyor from its origin: the other side; = vi_lr_StartY for the whole belt width
 END_VAR
 VAR
 	p_TempCount							: POINTER TO UINT;
@@ -95,6 +99,8 @@ TempZone.fStart := vi_lr_Start;
 TempZone.fEnd := vi_lr_End;
 TempZone.fAllocationOffset := vi_lr_AllocationOffset;
 TempZone.fCcsOffset := vi_lr_CcsOffset;
+TempZone.fStartY := vi_lr_StartY;
+TempZone.fEndY := vi_lr_EndY;
 IF vi_un_Zone > p_TempCount^
 OR Tc2_System.MEMCMP(ADR(TempZone), ADR(p_TempZones^[vi_un_Zone - 1]), SIZEOF(TempZone)) <> 0
 THEN

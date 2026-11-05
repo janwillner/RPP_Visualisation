@@ -277,7 +277,7 @@ function signature(m: SceneModel, groups: ProductGroups): string {
     groups.of(m.products).map((g) => `${g.key}:${g.capacity}`).join(","),
     m.products.filter((p) => !isGrouped(p)).map((p) => `${p.key}:${p.state}`).join(","),
     m.deltas.map((d) => d.id + ":" + d.baseRadius + ":" + d.effectorRadius).join(","),
-    m.zones.map((w) => `${w.componentId}:${w.conveyorId}:${w.length}`).join(","),
+    m.zones.map((w) => `${w.componentId}:${w.conveyorId}:${w.length}:${w.width}`).join(","),
     m.snapPoints.filter((p) => !p.moving).map((p) => p.key).join(","),
     m.gantries.map((g) => `${g.id}:${trackSignature(g.modules)}:${g.movers.map((x) => x.id).join("/")}`).join(","),
     m.boxAreas.map((a) => `${a.robotId}:${a.size.join("/")}`).join(","),

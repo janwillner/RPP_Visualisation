@@ -12,7 +12,7 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 14;
+export const PROTOCOL_VERSION = 15;
 
 const mm = (description: string) => z.number().describe(description);
 const deg = (description: string) => z.number().describe(description);
@@ -212,6 +212,11 @@ export const ZoneSchema = z
         "only up to `end − allocationOffset`. 0 means no allocation limit.",
     ),
     ccsOffset: mm("Belt coordinate of the robot's conveyor coordinate system (CCS) on this conveyor, mm."),
+    startY: mm(
+      "One side of the zone across the belt: Y in the conveyor's coordinate system (its `pose` moved by its " +
+        "`originShift`), mm. Equal to `endY` for a zone across the whole belt width.",
+    ),
+    endY: mm("The other side of the zone across the belt, mm; in any order with `startY`."),
   })
   .describe(
     "A stretch of a conveyor that belongs to a component: where a robot picks or places, where a detector detects. " +

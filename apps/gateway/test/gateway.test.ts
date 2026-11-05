@@ -179,20 +179,20 @@ describe("gateway discovery", () => {
         lowerArmLength: 800,
         workingArea: { radius: 600, zMin: -1100, zMax: -600, coneHeight: 0, coneBottomRadius: 0 },
         limitArea: null,
-        zones: [{ conveyorId: 10, start: 1200, end: 1800, allocationOffset: 0, ccsOffset: 0 }],
+        zones: [{ conveyorId: 10, start: 1200, end: 1800, allocationOffset: 0, ccsOffset: 0, startY: 0, endY: 0 }],
         fingers: [],
         originShift: { x: 0, y: 0, z: 0 },
       },
     ]);
   });
 
-  it("publishes a Delta's limit area and the zones' allocation offsets", async () => {
+  it("publishes a Delta's limit area and the zones' allocation offsets and Y bounds", async () => {
     const limited: MachineComponent = {
       ...robot,
       value: delta({
         limitArea: { fXMin: -500, fXMax: 500, fYMin: -700, fYMax: 700, fZMin: -1400, fZMax: -600 },
         zones: [
-          { nConveyorId: 10, fStart: 1200, fEnd: 1800, fAllocationOffset: 250 },
+          { nConveyorId: 10, fStart: 1200, fEnd: 1800, fAllocationOffset: 250, fStartY: 150, fEndY: -50 },
           { nConveyorId: 10, fStart: 2000, fEnd: 2400 },
         ],
       }),
@@ -204,8 +204,8 @@ describe("gateway discovery", () => {
     expect(config).toMatchObject({
       limitArea: { xMin: -500, xMax: 500, yMin: -700, yMax: 700, zMin: -1400, zMax: -600 },
       zones: [
-        { conveyorId: 10, start: 1200, end: 1800, allocationOffset: 250 },
-        { conveyorId: 10, start: 2000, end: 2400, allocationOffset: 0 },
+        { conveyorId: 10, start: 1200, end: 1800, allocationOffset: 250, startY: 150, endY: -50 },
+        { conveyorId: 10, start: 2000, end: 2400, allocationOffset: 0, startY: 0, endY: 0 },
       ],
     });
   });
@@ -259,7 +259,7 @@ describe("gateway discovery", () => {
         toolOffsetZ: -400,
         moverLength: 155,
         moverWidth: 80,
-        zones: [{ conveyorId: 10, start: 0, end: 800, allocationOffset: 0, ccsOffset: 0 }],
+        zones: [{ conveyorId: 10, start: 0, end: 800, allocationOffset: 0, ccsOffset: 0, startY: 0, endY: 0 }],
         fingers: [],
         originShift: { x: 0, y: 0, z: 0 },
       },
@@ -279,7 +279,7 @@ describe("gateway discovery", () => {
         toolOffset: 120,
         moverLength: 100,
         moverWidth: 60,
-        zones: [{ conveyorId: 10, start: 2500, end: 2900, allocationOffset: 0, ccsOffset: 0 }],
+        zones: [{ conveyorId: 10, start: 2500, end: 2900, allocationOffset: 0, ccsOffset: 0, startY: 0, endY: 0 }],
         fingers: [],
         originShift: { x: 0, y: 0, z: 0 },
       },
@@ -305,7 +305,7 @@ describe("gateway discovery", () => {
       zMin: -600,
       zMax: 0,
       railHeight: 1200,
-      zones: [{ conveyorId: 10, start: 100, end: 900, allocationOffset: 0, ccsOffset: 0 }],
+      zones: [{ conveyorId: 10, start: 100, end: 900, allocationOffset: 0, ccsOffset: 0, startY: 0, endY: 0 }],
       fingers: [],
       originShift: { x: 0, y: 0, z: 0 },
     });
@@ -357,7 +357,7 @@ describe("gateway discovery", () => {
       sourceId: "plc1",
       name: "Vision 1",
       pose: { ...zero, x: 500, y: 200, z: 1600 },
-      zones: [{ conveyorId: 10, start: 300, end: 700, allocationOffset: 0, ccsOffset: 500 }],
+      zones: [{ conveyorId: 10, start: 300, end: 700, allocationOffset: 0, ccsOffset: 500, startY: 0, endY: 0 }],
       bodies: [
         { shape: "box", role: "structure", pose: zero, length: 120, width: 80, height: 150, topLength: 0, topWidth: 0 },
         {

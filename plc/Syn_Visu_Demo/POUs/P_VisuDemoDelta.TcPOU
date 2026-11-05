@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoDelta" Id="{f2e35f00-dd47-48a4-b1a1-f27c1fd9a46a}" SpecialFunc="None">
+  <POU Name="P_VisuDemoDelta" Id="{21cf1241-3c2c-40ce-b945-4e94f30ecf5b}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -128,6 +128,7 @@ VAR CONSTANT
 	lr_TCP_SPEED						: LREAL := 2500;	// [mm/s]
 	lr_HOVER							: LREAL := 120;	// [mm]
 	lr_PICK_HALF_ZONE					: LREAL := 400;	// [mm]
+	lr_PICK_HALF_LANE					: LREAL := 130;	// [mm] pick zones only cover the lane the products come in on
 	lr_PLACE_HALF_ZONE					: LREAL := 300;	// [mm]
 	lr_ALLOCATION_OFFSET				: LREAL := 300;	// [mm] products are allocated only up to this distance before the pick zone end
 	lr_LEAD								: LREAL := 7.5;	// [mm] the robot leads the moving product
@@ -213,7 +214,8 @@ DetectorPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_VISION_DISTANCE;
 fb_Vision1.m_Configure(vi_Pose := DetectorPose, vi_lr_FieldLength := lr_VISION_FIELD,
 	vi_lr_FieldWidth := lr_VISION_FIELD, vi_lr_WorkingDistance := lr_VISION_DISTANCE);
 fb_Vision1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed1.m_Id(), vi_lr_Start := lr_VISION_X - lr_VISION_FIELD / 2,
-	vi_lr_End := lr_VISION_X + lr_VISION_FIELD / 2, vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_VISION_X);
+	vi_lr_End := lr_VISION_X + lr_VISION_FIELD / 2, vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_VISION_X,
+	vi_lr_StartY := 0, vi_lr_EndY := 0);
 (* The head at the right belt edge, its beam across the belt towards +Y. Infeed 2 counts from its end. *)
 DetectorPose.fX := lr_BARRIER_X;
 DetectorPose.fY := lr_INFEED2_Y - lr_BARRIER_BEAM / 2;
@@ -221,7 +223,7 @@ DetectorPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_BARRIER_HEIGHT;
 fb_Barrier2.m_Configure(vi_Pose := DetectorPose, vi_lr_BeamLength := lr_BARRIER_BEAM);
 fb_Barrier2.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed2.m_Id(), vi_lr_Start := lr_BARRIER_X - lr_INFEED2_ORIGIN_X,
 	vi_lr_End := lr_BARRIER_X - lr_INFEED2_ORIGIN_X, vi_lr_AllocationOffset := 0,
-	vi_lr_CcsOffset := lr_BARRIER_X - lr_INFEED2_ORIGIN_X);
+	vi_lr_CcsOffset := lr_BARRIER_X - lr_INFEED2_ORIGIN_X, vi_lr_StartY := 0, vi_lr_EndY := 0);
 
 
 (****************************************************************************************************)
@@ -392,15 +394,18 @@ fb_RefRobot.m_SetLimitArea(vi_lr_XMin := -lr_ROBOT_PITCH / 2, vi_lr_XMax := lr_R
 (* The robot's conveyor coordinate system lies under its base on every belt. *)
 fb_RefRobot.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed1.m_Id(),
 	vi_lr_Start := lr_BaseX - lr_PICK_HALF_ZONE, vi_lr_End := lr_BaseX + lr_PICK_HALF_ZONE,
-	vi_lr_AllocationOffset := lr_ALLOCATION_OFFSET, vi_lr_CcsOffset := lr_BaseX);
+	vi_lr_AllocationOffset := lr_ALLOCATION_OFFSET, vi_lr_CcsOffset := lr_BaseX,
+	vi_lr_StartY := -lr_PICK_HALF_LANE, vi_lr_EndY := lr_PICK_HALF_LANE);
 fb_RefRobot.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_Infeed2.m_Id(),
 	vi_lr_Start := lr_BaseX - lr_PICK_HALF_ZONE - lr_INFEED2_ORIGIN_X,
 	vi_lr_End := lr_BaseX + lr_PICK_HALF_ZONE - lr_INFEED2_ORIGIN_X,
-	vi_lr_AllocationOffset := lr_ALLOCATION_OFFSET, vi_lr_CcsOffset := lr_BaseX - lr_INFEED2_ORIGIN_X);
+	vi_lr_AllocationOffset := lr_ALLOCATION_OFFSET, vi_lr_CcsOffset := lr_BaseX - lr_INFEED2_ORIGIN_X,
+	vi_lr_StartY := -lr_PICK_HALF_LANE, vi_lr_EndY := lr_PICK_HALF_LANE);
 fb_RefRobot.m_SetZone(vi_un_Zone := 3, vi_udn_ConveyorId := fb_Outfeed.m_Id(),
 	vi_lr_Start := lr_BaseX - lr_PLACE_HALF_ZONE - lr_OUTFEED_ORIGIN_X,
 	vi_lr_End := lr_BaseX + lr_PLACE_HALF_ZONE - lr_OUTFEED_ORIGIN_X,
-	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_BaseX - lr_OUTFEED_ORIGIN_X);
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_BaseX - lr_OUTFEED_ORIGIN_X,
+	vi_lr_StartY := 0, vi_lr_EndY := 0);
 (* The robot's coordinate system sits in its working plane, 900 mm below the base. *)
 fb_RefRobot.m_SetOriginShift(vi_lr_X := 0, vi_lr_Y := 0, vi_lr_Z := -900);
 
@@ -592,7 +597,7 @@ fb_RejectUnit.m_SetBody(vi_un_Body := 2, vi_e_Shape := E_VisuBodyShape.BOX, vi_e
 (* The outfeed counts from its shifted origin. *)
 fb_RejectUnit.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Outfeed.m_Id(), vi_lr_Start := lr_REJECT_X - lr_OUTFEED_ORIGIN_X,
 	vi_lr_End := lr_REJECT_X - lr_OUTFEED_ORIGIN_X, vi_lr_AllocationOffset := 0,
-	vi_lr_CcsOffset := lr_REJECT_X - lr_OUTFEED_ORIGIN_X);
+	vi_lr_CcsOffset := lr_REJECT_X - lr_OUTFEED_ORIGIN_X, vi_lr_StartY := 0, vi_lr_EndY := 0);
 
 
 (****************************************************************************************************)

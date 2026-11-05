@@ -183,6 +183,9 @@ export interface ST_VisuZone {
   fAllocationOffset: number;
   /** mm along the conveyor's local X: the robot's conveyor coordinate system. */
   fCcsOffset: number;
+  /** mm along the conveyor's local Y: the zone's sides across the belt; equal for the whole belt width. */
+  fStartY: number;
+  fEndY: number;
 }
 
 export interface ST_VisuDeltaConfig {

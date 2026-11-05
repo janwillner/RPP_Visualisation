@@ -1,4 +1,4 @@
-# PLC contract (library `Syn_Visu`, protocol version 14)
+# PLC contract (library `Syn_Visu`, protocol version 15)
 
 This is the PLC side of the contract the gateway reads. It is implemented by the TwinCAT library project in
 `plc/Syn_Visu` (solution `plc/RPP_Visu.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
@@ -84,6 +84,10 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
 - Zone CCS: `fCcsOffset` is the belt coordinate (like `fStart` / `fEnd`) of the component's conveyor coordinate system
   (CCS) on that conveyor. It is drawn as a black dashed line across the zone, in the zones layer, and is a
   measure-mode snap point. A CCS outside its zone raises a warning.
+- Zone across the belt: `fStartY` and `fEndY` are the zone's sides across the belt, mm along the conveyor's local Y
+  from its origin shift (the conveyor's coordinate system, like a product's latch pose), in any order.
+  `fStartY = fEndY` (e.g. both 0) spans the whole belt width. A zone reaching past the belt is drawn up to its
+  edges and raises a warning. Area, allocation area, CCS line and snap points lie between the two sides.
 - Origin shift: every config has `stOriginShift : ST_VisuPosition`, mm in the component's local frame from `stPose`
   (no rotation), where the component's coordinate system lies; 0 = at the pose. The origin triad and the local
   measuring coordinates are shown from there. For a conveyor the belt coordinates also count from it: a zone's
@@ -160,6 +164,7 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   `m_SetProductState`), and added the station (`ST_VisuStation`, `E_VisuComponentType.STATION`; ADR 0009).
 - Protocol version 14 gives the product's `stLatchPose` in the conveyor's coordinate system instead of the MCS
   (ADR 0010).
+- Protocol version 15 added the zones' `fStartY` and `fEndY`: a zone may cover only part of the belt width.
 
 ## What the library contains
 
@@ -196,7 +201,7 @@ the FBs fill them in their output `vo_Visu`, so application code does not write 
 | `ST_VisuPose`, `ST_VisuPlanarPose`, `ST_VisuPosition` | MCS poses and positions |
 | `VISU_GlobalConst` | `VISU_un_PROTOCOL_VERSION` (contract version; `ST_VisuManifest` initialises to it), `VISU_str_LIBRARY_VERSION` (this library's version, reported in the manifest), `VISU_lr_DEG_TO_RAD`, `VISU_lr_XTS_MODULE_LENGTH` (250 mm) |
 | `VISU_GlobalConst_Param` | Array sizes: `VISU_un_MAX_MANIFEST_ENTRIES` (32), `VISU_un_MAX_PRODUCTS` (4800), `VISU_un_PRODUCT_INDEX_SIZE` (16384, slots of a conveyor's product index by id: a power of two, at least twice `VISU_un_MAX_PRODUCTS`), `VISU_un_MAX_PRODUCT_TYPES` (8), `VISU_un_MAX_ZONES` (8), `VISU_un_MAX_MOVERS` (40), `VISU_un_MAX_FINGERS` (8, per gripper), `VISU_un_MAX_BODIES` (16, per detector or station), `VISU_un_MAX_MODULES` (64, per XTS track) |
-| `_FC_GetVersionSynVisu` | Library version at runtime (8.0.0) |
+| `_FC_GetVersionSynVisu` | Library version at runtime (9.0.0) |
 
 ### Methods
 
@@ -219,7 +224,7 @@ All robot, detector and station FBs (`_FB_VisuZoneComponent`):
 
 | Method | Purpose |
 | --- | --- |
-| `m_SetZone(vi_un_Zone, vi_udn_ConveyorId, vi_lr_Start, vi_lr_End, vi_lr_AllocationOffset, vi_lr_CcsOffset)` | Sets zone `vi_un_Zone` (1-based; set them in order, the count grows to it) on a conveyor, with the component's CCS on it |
+| `m_SetZone(vi_un_Zone, vi_udn_ConveyorId, vi_lr_Start, vi_lr_End, vi_lr_AllocationOffset, vi_lr_CcsOffset, vi_lr_StartY, vi_lr_EndY)` | Sets zone `vi_un_Zone` (1-based; set them in order, the count grows to it) on a conveyor, with the component's CCS on it and its sides across the belt (equal: the whole belt width) |
 | `m_ClearZones()` | Removes all zones |
 
 All robot FBs (Delta, XTS gantry, XTS loop, Cartesian; `_FB_VisuRobot`):
@@ -356,7 +361,7 @@ fb_Infeed.m_SetModuloBeltPosition(vi_lr_ModuloPosition := <axis modulo position>
 fb_Vision1.m_Configure(vi_Pose := LensPose, vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300,
 	vi_lr_WorkingDistance := 800);
 fb_Vision1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(), vi_lr_Start := 800, vi_lr_End := 1200,
-	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 1000);
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 1000, vi_lr_StartY := 0, vi_lr_EndY := 0);
 IF b_Latched THEN
 	fb_Infeed.m_LatchProduct(vi_udn_Id := udn_NextId, vi_LatchPose := LatchPose, vi_udn_ProductType := 1,
 		vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE, vi_e_State := E_VisuProductState.DETECTED,
@@ -369,7 +374,7 @@ fb_Delta1.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 5
 fb_Delta1.m_SetLimitArea(vi_lr_XMin := -500, vi_lr_XMax := 500, vi_lr_YMin := -750, vi_lr_YMax := 750,
 	vi_lr_ZMin := -1500, vi_lr_ZMax := -700);
 fb_Delta1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(), vi_lr_Start := 1100, vi_lr_End := 1900,
-	vi_lr_AllocationOffset := 300, vi_lr_CcsOffset := 0);
+	vi_lr_AllocationOffset := 300, vi_lr_CcsOffset := 0, vi_lr_StartY := 0, vi_lr_EndY := 0);
 fb_Delta1.m_SetTcp(vi_ActualTcp := Tcp, vi_SetpointTcp := TcpSetpoint);
 (* The cup below the flange, turned by the 4th axis: absolute in the MCS. *)
 CupPose.fX := Tcp.fX; CupPose.fY := Tcp.fY; CupPose.fZ := Tcp.fZ; CupPose.fRz := lr_Axis4;
