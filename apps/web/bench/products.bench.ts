@@ -106,8 +106,12 @@ for (const products of PRODUCT_COUNTS) {
     });
 
     const sources = [{ sourceId: "bench", config, snapshots: states, renderTime: CYCLE_MS * 1.5, online: true }];
-    bench("build the machine scene (once per frame)", () => {
+    bench("build the machine scene, measuring (once per frame)", () => {
       buildMachineScene(sources, new Set());
+    });
+
+    bench("build the machine scene, not measuring: no product snap points", () => {
+      buildMachineScene(sources, new Set(), { productSnapPoints: false });
     });
   });
 }

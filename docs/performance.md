@@ -155,3 +155,28 @@ reading alternately, one through a bridge giving whole registers and one giving 
 Over 300 cycles both published the same products; of 1.47 million compared by id, the 1334 that differed were all
 changed by the application between the two reads (products pushed on the spacing belt, state changes by the robots).
 A gateway cycle with thousands of products now fits well into 20 ms.
+
+## Drawing thousands of products
+
+Every product used to be a mesh of its own with its own geometry, material and edge lines and its own frame callback,
+and the scene gave each product five snap points in every frame. Now products on a belt (normal and missed) are drawn
+per solid (shape and size) as one instanced mesh with a colour per instance, and their edge lines as one instanced
+line set that shares the mesh's instance matrices; placeholders and carried products, which are few, stay single
+meshes. React renders again only when a group of products appears or outgrows its room (a power of two), not for every
+product that enters or leaves. Product snap points are built only in measure mode.
+
+| 4800 products, per frame (`pnpm bench`) | Before | After |
+| --- | --- | --- |
+| Build the machine scene | 13.9 ms | 5.9 ms (13.9 ms while measuring) |
+
+In the browser (Edge, RTX 4080 through ANGLE/D3D11, 1280 × 800, simulator with 4000 products on the buffer belt,
+already with changes on the WebSocket):
+
+| | Before | After |
+| --- | --- | --- |
+| Frames per second | 11.8 | about 71 |
+| Frame time, 95th percentile | about 100 ms | 20.9 ms |
+| Main thread busy with long tasks | 87 % | 0 % |
+
+Screenshots of both versions, also close up, show the same picture. A panel PC has a much weaker GPU and CPU; measure
+there before relying on these numbers.

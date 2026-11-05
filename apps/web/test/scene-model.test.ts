@@ -135,6 +135,19 @@ describe("scene model: product tracking", () => {
     closeTo(rotate(shown!.transform.quaternion, [1, 0, 0]), [Math.cos(a), 0, -Math.sin(a)]);
     expect(shown!.size).toEqual({ length: 0.1, width: 0.08, height: 0.04 });
   });
+
+  it("gives products snap points only when asked, as the 3D view does while measuring", () => {
+    const belt = conveyorConfig();
+    const snapshots = [snapshot(0, [conveyorState(540, [product()])])];
+    const productPoints = (scene: ReturnType<typeof buildScene>) => scene.snapPoints.filter((s) => s.label.startsWith("Product #"));
+
+    expect(productPoints(buildScene(config(belt), snapshots, 0)).length).toBeGreaterThan(0);
+    const without = buildScene(config(belt), snapshots, 0, new Set(), { productSnapPoints: false });
+    expect(productPoints(without)).toEqual([]);
+    expect(without.products).toHaveLength(1);
+    // The conveyor's own points stay.
+    expect(without.snapPoints.length).toBeGreaterThan(0);
+  });
 });
 
 describe("scene model: interpolation", () => {

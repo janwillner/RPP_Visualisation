@@ -461,6 +461,17 @@ interface BuildContext {
   /** A component's zones on the conveyors, with their allocation areas, CCS lines, snap points and warnings. */
   addZones(c: { id: number; name: string; zones: Zone[] }): void;
   warn(message: string): void;
+  /** Whether products get snap points: only measure mode needs them, and they are many. */
+  productSnapPoints: boolean;
+}
+
+/** How a scene is built beyond its data. */
+export interface SceneOptions {
+  /**
+   * Snap points on every product (bottom centre, corners or outline), for measure mode; default true. Thousands of
+   * products give tens of thousands of points, so the 3D view asks for them only while measuring.
+   */
+  productSnapPoints?: boolean;
 }
 
 /** How one component type becomes part of the scene. */
@@ -506,7 +517,7 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
       if (state) {
         const shown = conveyorProducts(c, frame, state, ctx.carriers, ctx.warn);
         ctx.scene.products.push(...shown);
-        for (const p of shown) snapPoints.push(...productSnapPoints(p, owner));
+        if (ctx.productSnapPoints) for (const p of shown) snapPoints.push(...productSnapPoints(p, owner));
       }
     },
     interpolate: (a, b, f) => ({ ...a, beltPosition: lerp(a.beltPosition, b.beltPosition, f) }),
@@ -713,6 +724,7 @@ export function buildScene(
   snapshots: readonly StateMessage[],
   renderTime: number,
   hidden: ReadonlySet<number> = new Set(),
+  options: SceneOptions = {},
 ): SceneModel {
   const components = config?.components ?? [];
   const states = sampleStates(snapshots, renderTime, new Map(components.map((c) => [c.id, c])));
@@ -723,6 +735,7 @@ export function buildScene(
 
   const ctx: BuildContext = {
     scene,
+    productSnapPoints: options.productSnapPoints ?? true,
     carriers: new Map(),
     warn: (message) => warnings.push(message),
     addFault(componentId, part, message, anchor) {
@@ -882,11 +895,15 @@ export interface MachineScene {
  * references) and the results are put side by side; all sources report in the same MCS. `hidden` holds component
  * keys and source ids; a hidden source hides all of its components.
  */
-export function buildMachineScene(sources: readonly SceneSource[], hidden: ReadonlySet<string>): MachineScene {
+export function buildMachineScene(
+  sources: readonly SceneSource[],
+  hidden: ReadonlySet<string>,
+  options: SceneOptions = {},
+): MachineScene {
   const built = sources.map(({ sourceId, config, snapshots, renderTime, online }) => {
     const ids = (config?.components ?? []).map((c) => c.id);
     const hiddenIds = new Set(hidden.has(sourceId) ? ids : ids.filter((id) => hidden.has(componentKey(sourceId, id))));
-    return { sourceId, online, scene: buildScene(config, snapshots, renderTime, hiddenIds) };
+    return { sourceId, online, scene: buildScene(config, snapshots, renderTime, hiddenIds, options) };
   });
   return {
     sources: built,
