@@ -1,25 +1,7 @@
-import { PROTOCOL_VERSION } from "@rpp/protocol";
+import { PROTOCOL_VERSION, type HealthReport, type SourceHealth } from "@rpp/protocol";
+
+export type { HealthReport, SourceHealth } from "@rpp/protocol";
 import type { MessageSource } from "./gateway";
-
-export interface SourceHealth {
-  sourceId: string;
-  name: string;
-  plcConnected: boolean;
-  lastError?: string;
-  /** Wall-clock time of the newest state snapshot, ISO 8601; absent before the first one. */
-  lastStateAt?: string;
-  /** Version of the Syn_Visu library the PLC runs, once discovered (library 5.1 and newer). */
-  libraryVersion?: string;
-}
-
-export interface HealthReport {
-  /** Every source is connected (and there is at least one). */
-  ok: boolean;
-  /** Version of this visualisation release. */
-  version: string;
-  protocolVersion: number;
-  sources: SourceHealth[];
-}
 
 /**
  * Follows the gateway messages and answers how every source is doing, for monitoring (`GET /health`). Sources appear

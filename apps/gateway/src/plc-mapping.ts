@@ -20,12 +20,17 @@ export function mapPlc<S extends z.ZodTypeAny>(schema: S, raw: unknown, fixed: R
   return mapValue(schema, raw, "", fixed) as z.infer<S>;
 }
 
-/** PLC values of enumerations that do not count from 0 in the order of the protocol's options. */
-const ENUM_TABLES = new Map<z.ZodTypeAny, Record<number, string>>();
+/**
+ * PLC values of enumerations that do not count from 0 in the order of the protocol's options, keyed by those options:
+ * a field's schema is a described copy of the shared enum (`.describe()`), not the same instance.
+ */
+const ENUM_TABLES = new Map<string, Record<number, string>>();
+
+const enumKey = (options: readonly string[]) => JSON.stringify(options);
 
 /** Registers the PLC values of an enumeration whose values are not the index of its protocol option. */
-export function registerEnumTable(schema: z.ZodTypeAny, table: Record<number, string>): void {
-  ENUM_TABLES.set(schema, table);
+export function registerEnumTable(schema: z.ZodEnum<[string, ...string[]]>, table: Record<number, string>): void {
+  ENUM_TABLES.set(enumKey(schema.options), table);
 }
 
 /** Protocol fields whose PLC member has another name, tried after the conventional one. */
@@ -98,7 +103,7 @@ function mapValue(schema: z.ZodTypeAny, raw: unknown, path: string, fixed: Recor
   if (schema instanceof z.ZodEnum) {
     const options = schema.options as string[];
     const value = enumValue(raw as PlcEnum);
-    const table = ENUM_TABLES.get(schema);
+    const table = ENUM_TABLES.get(enumKey(options));
     const option = table ? table[value] : options[value];
     return option !== undefined && options.includes(option) ? option : options[0];
   }

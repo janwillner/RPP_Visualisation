@@ -1,4 +1,13 @@
-import { PROTOCOL_VERSION, type ConfigMessage, type GatewayMessage, type StateMessage } from "@rpp/protocol";
+import {
+  PROTOCOL_VERSION,
+  RECORDING_FILE_FORMAT,
+  RECORDING_FILE_FORMAT_VERSION,
+  type ConfigMessage,
+  type GatewayMessage,
+  type RecordingEntry,
+  type RecordingFileHeader,
+  type StateMessage,
+} from "@rpp/protocol";
 import { RENDER_DELAY_MS, type SourceInfo } from "./connection";
 import type { SceneSource } from "./scene/scene-model";
 import { EventTracker, type TimelineEvent } from "./timeline-events";
@@ -23,9 +32,6 @@ const WINDOW_MS = 1000;
 /** Decompressed blocks kept for playback. */
 const CACHED_CHUNKS = 6;
 
-const FILE_FORMAT = "rpp-recording";
-const FILE_FORMAT_VERSION = 1;
-
 /** A gateway message and when it arrived, ms after the recording started. */
 interface Entry {
   at: number;
@@ -33,13 +39,12 @@ interface Entry {
 }
 
 /**
- * An entry as stored. A conveyor's product register hardly changes from one snapshot to the next but makes up most
- * of a state, and a state is larger than gzip's window: so a stored state holds only the products that changed since
- * the source's previous state, and `registers` lists per conveyor id the ids of the whole register in order.
+ * An entry as stored (`RecordingEntry`, documented at /docs). A conveyor's product register hardly changes from one
+ * snapshot to the next but makes up most of a state, and a state is larger than gzip's window: so a stored state holds
+ * only the products that changed since the source's previous state, and `registers` lists per conveyor id the ids of
+ * the whole register in order.
  */
-interface StoredEntry extends Entry {
-  registers?: Record<string, number[]>;
-}
+type StoredEntry = RecordingEntry;
 
 type Product = Extract<StateMessage["components"][number], { type: "conveyor" }>["products"][number];
 
@@ -100,15 +105,8 @@ interface Chunk {
   data: Uint8Array;
 }
 
-interface FileHeader {
-  format: typeof FILE_FORMAT;
-  formatVersion: number;
-  protocolVersion: number;
-  recordedAt: string;
-  durationMs: number;
-  /** Every source as it was when the recording started. */
-  sources: SourceInfo[];
-}
+/** The first line of a recording file (`RecordingFileHeader`, documented at /docs). */
+type FileHeader = RecordingFileHeader;
 
 export class RecordingFileError extends Error {}
 
@@ -340,8 +338,8 @@ export class Recording {
   /** The recording as a file: one gzip-compressed JSON line per message, after a header line. */
   async toFile(): Promise<Uint8Array> {
     const header: FileHeader = {
-      format: FILE_FORMAT,
-      formatVersion: FILE_FORMAT_VERSION,
+      format: RECORDING_FILE_FORMAT,
+      formatVersion: RECORDING_FILE_FORMAT_VERSION,
       protocolVersion: PROTOCOL_VERSION,
       recordedAt: this.recordedAt,
       durationMs: this.durationMs,
@@ -509,12 +507,12 @@ function checkedHeader(line: string): [SourceInfo[], string] {
   } catch {
     throw new RecordingFileError("This is not a recording file");
   }
-  if (header.format !== FILE_FORMAT || !Array.isArray(header.sources) || typeof header.recordedAt !== "string") {
+  if (header.format !== RECORDING_FILE_FORMAT || !Array.isArray(header.sources) || typeof header.recordedAt !== "string") {
     throw new RecordingFileError("This is not a recording file");
   }
-  if (header.formatVersion !== FILE_FORMAT_VERSION) {
+  if (header.formatVersion !== RECORDING_FILE_FORMAT_VERSION) {
     throw new RecordingFileError(
-      `The recording has file format ${header.formatVersion}, this version reads ${FILE_FORMAT_VERSION}`,
+      `The recording has file format ${header.formatVersion}, this version reads ${RECORDING_FILE_FORMAT_VERSION}`,
     );
   }
   if (header.protocolVersion !== PROTOCOL_VERSION) {
@@ -522,7 +520,9 @@ function checkedHeader(line: string): [SourceInfo[], string] {
       `The recording has protocol version ${header.protocolVersion}, this version plays ${PROTOCOL_VERSION}`,
     );
   }
-  return [header.sources, header.recordedAt];
+  // JSON leaves out a missing status or config; SourceInfo spells them out.
+  const sources = header.sources.map((s): SourceInfo => ({ ...s, status: s.status, config: s.config }));
+  return [sources, header.recordedAt];
 }
 
 async function* lines(text: ReadableStream<string>): AsyncGenerator<string> {
