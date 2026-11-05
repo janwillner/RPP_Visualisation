@@ -25,7 +25,10 @@ export const AcquisitionStatsSchema = z
     mapMs: spread("Time to map the states read to the neutral model, ms."),
     stateBytes: spread("Size of a state message as sent to the browsers, bytes (JSON).")
       .optional()
-      .describe("Size of a state message as sent to the browsers, bytes (JSON); absent while no browser is connected."),
+      .describe(
+        "Size of a state message as sent to the browsers, bytes (JSON): in register form (only changed products) " +
+          "while a client asked for changes; absent while no browser is connected.",
+      ),
     products: z.number().int().describe("Products in all conveyor registers of the newest snapshot."),
     duplicateProducts: z
       .number()

@@ -2,6 +2,8 @@ import { bench, describe } from "vitest";
 import {
   GatewayMessageSchema,
   PROTOCOL_VERSION,
+  RegisterDecoder,
+  RegisterEncoder,
   type ConfigMessage,
   type ConveyorConfig,
   type ConveyorState,
@@ -73,6 +75,19 @@ for (const products of PRODUCT_COUNTS) {
 
     bench("receive a state message: JSON.parse and schema check", () => {
       GatewayMessageSchema.safeParse(JSON.parse(json));
+    });
+
+    // In register form (ADR 0013): from one cycle to the next, one product of 25 changed its state.
+    const encoder = new RegisterEncoder();
+    encoder.encode(states[0]!);
+    const next = stateAt(products, 0);
+    for (const c of next.components) if (c.type === "conveyor") c.products.forEach((p, k) => k % 25 === 1 && (p.state = "assigned"));
+    const changesJson = JSON.stringify(encoder.encode(next));
+    const decoder = new RegisterDecoder();
+    decoder.decode({ ...states[0]!, registers: { 1: states[0]!.components[0]!.type === "conveyor" ? states[0]!.components[0]!.products.map((p) => p.id) : [] } });
+    bench("receive a state message in register form: JSON.parse, schema check and decode", () => {
+      const parsed = GatewayMessageSchema.safeParse(JSON.parse(changesJson));
+      if (parsed.success && parsed.data.kind === "state") decoder.decode(parsed.data);
     });
 
     const history = new ProductHistory(5000, 120_000);

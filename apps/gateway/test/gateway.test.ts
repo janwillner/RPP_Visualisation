@@ -4,6 +4,7 @@ import { WebSocket } from "ws";
 import {
   GatewayMessageSchema,
   PROTOCOL_VERSION,
+  RegisterDecoder,
   type ConfigMessage,
   type GatewayMessage,
   type HealthReport,
@@ -1131,3 +1132,54 @@ async function waitFor(condition: () => boolean, timeoutMs = 2000): Promise<void
     await new Promise((r) => setTimeout(r, 5));
   }
 }
+
+describe("WebSocket clients", () => {
+  function register(plc: InMemoryPlc, products: { nId: number; eState?: number }[]) {
+    const state = plc.get<ST_VisuConveyor>(infeed.path).stState;
+    state.nProductCount = products.length;
+    products.forEach((p, i) => {
+      state.aProducts[i] = { ...emptyProduct(), bValid: true, nProductType: 1, ...p };
+    });
+  }
+
+  async function connect(port: number, query: string) {
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/ws${query}`);
+    const states: StateMessage[] = [];
+    socket.on("message", (data) => {
+      const m = GatewayMessageSchema.parse(JSON.parse(String(data)));
+      if (m.kind === "state") states.push(m);
+    });
+    await new Promise((open) => socket.once("open", open));
+    return { socket, states };
+  }
+
+  it("sends a client that asks for changes every product first, then only the changed ones, which decode to the whole states", async () => {
+    const t = setup([infeed]);
+    register(t.plc, [{ nId: 1 }, { nId: 2 }, { nId: 3 }]);
+    await t.gateway.cycle();
+    const server = await startServer({ gateway: t.gateway, port: 0, host: "127.0.0.1" });
+    const port = (server.address() as AddressInfo).port;
+    try {
+      const whole = await connect(port, "");
+      const changes = await connect(port, "?changes=1");
+      await t.gateway.cycle();
+      // Product 2 is picked, product 1 leaves, product 4 enters.
+      register(t.plc, [{ nId: 2, eState: E_VisuProductState.PICKED }, { nId: 3 }, { nId: 4 }]);
+      await t.gateway.cycle();
+      await t.gateway.cycle();
+      await waitFor(() => whole.states.length === 3 && changes.states.length === 3);
+
+      const productIds = (s: StateMessage) => s.components.flatMap((c) => (c.type === "conveyor" ? c.products.map((p) => p.id) : []));
+      expect(whole.states.map((s) => s.registers)).toEqual([undefined, undefined, undefined]);
+      expect(changes.states.map((s) => s.registers)).toEqual([{ 10: [1, 2, 3] }, { 10: [2, 3, 4] }, { 10: [2, 3, 4] }]);
+      expect(changes.states.map(productIds)).toEqual([[1, 2, 3], [2, 4], []]);
+
+      const decoder = new RegisterDecoder();
+      expect(changes.states.map((s) => decoder.decode(s))).toEqual(whole.states);
+      whole.socket.close();
+      changes.socket.close();
+    } finally {
+      server.close();
+    }
+  });
+});

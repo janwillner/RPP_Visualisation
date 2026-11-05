@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import {
   GatewayMessageSchema,
+  RegisterDecoder,
+  RegisterGapError,
   type ConfigMessage,
   type GatewayMessage,
   type GatewayStatus,
@@ -122,6 +124,8 @@ export class GatewayStore implements SceneFeed {
   private stopped = true;
   private listeners = new Set<() => void>();
   private snapshot: GatewaySnapshot = { socket: "connecting", sources: [], protocolError: undefined };
+  /** States arrive in register form, only the changed products listed (ADR 0013); this restores them whole. */
+  private readonly registers = new RegisterDecoder();
 
   constructor(private readonly url: string) {}
 
@@ -216,6 +220,8 @@ export class GatewayStore implements SceneFeed {
     this.update({ socket: "connecting" });
     const socket = new WebSocket(this.url);
     this.socket = socket;
+    // A new connection starts with every product of each source.
+    this.registers.reset();
     socket.onopen = () => {
       this.retryMs = 500;
       this.update({ socket: "open" });
@@ -246,7 +252,17 @@ export class GatewayStore implements SceneFeed {
       this.update({ protocolError: parsed.error.issues[0]?.message ?? "Invalid message from gateway" });
       return;
     }
-    const message = parsed.data;
+    let message = parsed.data;
+    if (message.kind === "state") {
+      try {
+        message = this.registers.decode(message);
+      } catch (error) {
+        if (!(error instanceof RegisterGapError)) throw error;
+        // Out of step with the gateway: a new connection starts again with every product.
+        this.socket?.close();
+        return;
+      }
+    }
     const arrival = performance.now();
     for (const l of this.messageListeners) l(message, data, arrival);
     const source = this.snapshot.sources.find((s) => s.sourceId === message.sourceId);
@@ -272,7 +288,8 @@ export class GatewayStore implements SceneFeed {
 
 export function defaultGatewayUrl(): string {
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${location.host}/ws`;
+  // Only the products that changed, see ADR 0013.
+  return `${protocol}//${location.host}/ws?changes=1`;
 }
 export function useGateway(store: GatewayStore): GatewaySnapshot {
   return useSyncExternalStore(store.subscribe, store.getSnapshot);

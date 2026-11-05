@@ -2,6 +2,8 @@ import {
   PROTOCOL_VERSION,
   RECORDING_FILE_FORMAT,
   RECORDING_FILE_FORMAT_VERSION,
+  RegisterDecoder,
+  RegisterEncoder,
   type ConfigMessage,
   type GatewayMessage,
   type RecordingEntry,
@@ -46,53 +48,24 @@ interface Entry {
  */
 type StoredEntry = RecordingEntry;
 
-type Product = Extract<StateMessage["components"][number], { type: "conveyor" }>["products"][number];
+/** The registers of the states stored so far in a block: each block starts with whole registers. */
+type Registers = RegisterEncoder;
 
-/** Per source and conveyor the products of its last state, as JSON by product id. */
-type Registers = Map<string, Map<number, Map<number, string>>>;
-
-/** Per source and conveyor the products of its last restored state, by product id. */
-type Restored = Map<string, Map<number, Map<number, Product>>>;
+/** The registers of the states restored so far. */
+type Restored = RegisterDecoder;
 
 /** The entry to store for `message`; `registers` holds the previous states and is updated. */
 function storedEntry(at: number, message: GatewayMessage, raw: string, registers: Registers): string {
   if (message.kind !== "state") return `{"at":${at},"message":${raw}}`;
-  const bySource = registers.get(message.sourceId) ?? new Map<number, Map<number, string>>();
-  registers.set(message.sourceId, bySource);
-  const order: Record<string, number[]> = {};
-  const components = message.components.map((c) => {
-    if (c.type !== "conveyor") return c;
-    const previous = bySource.get(c.id);
-    const current = new Map<number, string>();
-    const changed: Product[] = [];
-    for (const p of c.products) {
-      const json = JSON.stringify(p);
-      current.set(p.id, json);
-      if (previous?.get(p.id) !== json) changed.push(p);
-    }
-    bySource.set(c.id, current);
-    order[c.id] = c.products.map((p) => p.id);
-    return { ...c, products: changed };
-  });
-  return JSON.stringify({ at, message: { ...message, components }, registers: order });
+  const { registers: order, ...changed } = registers.encode(message);
+  return JSON.stringify({ at, message: changed, registers: order });
 }
 
 /** Restores stored entries in order; `registers` holds the products of each source's previous state. */
 function restoredEntry(stored: StoredEntry, registers: Restored): Entry {
   const { at, message, registers: order } = stored;
   if (message.kind !== "state" || !order) return { at, message };
-  const bySource = registers.get(message.sourceId) ?? new Map<number, Map<number, Product>>();
-  registers.set(message.sourceId, bySource);
-  const components = message.components.map((c) => {
-    const ids = order[c.id];
-    if (c.type !== "conveyor" || !ids) return c;
-    const known = new Map(bySource.get(c.id) ?? []);
-    for (const p of c.products) known.set(p.id, p);
-    const products = ids.map((id) => known.get(id)!);
-    bySource.set(c.id, new Map(products.map((p) => [p.id, p])));
-    return { ...c, products };
-  });
-  return { at, message: { ...message, components } };
+  return { at, message: registers.decode({ ...message, registers: order }) };
 }
 
 interface Chunk {
@@ -134,7 +107,7 @@ export class Recorder {
   private stopped = false;
   private readonly snapshotTimes: number[] = [];
   /** Previous product registers within the block being filled; every block starts complete. */
-  private registers: Registers = new Map();
+  private registers: Registers = new RegisterEncoder();
   private pendingStateSources = new Set<string>();
   private readonly tracker: EventTracker;
   /** Every product of the whole recording: it is limited in time, not in products. */
@@ -186,7 +159,7 @@ export class Recorder {
     if (this.pending.length === 0) {
       this.pendingStart = at;
       this.pendingContext = [...this.sources.values()].map((s) => ({ ...s }));
-      this.registers = new Map();
+      this.registers = new RegisterEncoder();
       this.pendingStateSources = new Set();
     }
     if (message.kind === "state") this.pendingStateSources.add(message.sourceId);
@@ -235,7 +208,7 @@ export class Recorder {
     const copy = new Recorder(first.context, new Date(Date.parse(this.recordedAt) + first.start).toISOString());
     for (const chunk of chunks) {
       // Every block starts complete.
-      const registers: Restored = new Map();
+      const registers: Restored = new RegisterDecoder();
       for (const line of (await gunzipText(chunk.data)).split("\n")) {
         const { at, message } = restoredEntry(JSON.parse(line) as StoredEntry, registers);
         copy.add(at - first.start, message);
@@ -361,7 +334,7 @@ export class Recording {
   /** Opens a file written by `toFile`. Throws RecordingFileError for anything else. */
   static async fromFile(bytes: Uint8Array): Promise<Recording> {
     let recorder: Recorder | undefined;
-    const registers = new Map() as Restored;
+    const registers: Restored = new RegisterDecoder();
     try {
       const text = new Blob([bytes as BlobPart])
         .stream()
@@ -413,7 +386,7 @@ export class Recording {
       return decoded;
     }
     const pending = gunzipText(this.chunks[index]!.data).then((text) => {
-      const registers: Restored = new Map();
+      const registers: Restored = new RegisterDecoder();
       const entries = text.split("\n").map((line) => restoredEntry(JSON.parse(line) as StoredEntry, registers));
       // Not when the block was dropped from the cache meanwhile.
       if (this.decoded.get(index) === pending) this.ready.set(index, entries);

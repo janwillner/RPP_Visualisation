@@ -127,3 +127,16 @@ What remains is converting: with 4000 products the bridge, the pipe to Node and 
 30 ms per cycle, all of it proportional to the products, although almost none of them change from one cycle to the
 next. Sending and converting only what changed (phase 2) removes that cost; a faster conversion in the bridge would
 only reduce it.
+
+## Sending only the changed products
+
+Since ADR 0013 the web app connects with `/ws?changes=1` and gets each `state` in register form: per conveyor only
+the products that changed, plus the ids of the whole register.
+
+| 4000 to 4800 products | Whole states | Register form |
+| --- | --- | --- |
+| State message (simulator, 4083 products) | 757 KB | 25 KB, most of it the id list |
+| To one browser | 17 MB/s (PLC, 4135 products) | 0.9 MB/s (simulator) |
+| Receiving in the browser (`pnpm bench`, 4800 products, 4 % changed) | 11.0 ms | 1.2 ms (parse, check, decode) |
+
+The gateway's own cost is unchanged by this: reading and mapping still handle every product in every cycle.

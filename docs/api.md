@@ -65,7 +65,8 @@ Messages of one source arrive in order: a new `config` comes before the first `s
 
 **Slow clients.** If a client cannot keep up and the server has more than about 1 MB queued for it, the server drops
 `state` messages for that client until it catches up. `status` and `config` messages are never dropped. A client
-therefore must not assume it sees every snapshot; each `state` is complete on its own.
+therefore must not assume it sees every snapshot; each `state` is complete on its own (in register form, see "Only
+what changed", the server sends every product after a dropped one).
 
 **Handling messages.** A client typically does this:
 
@@ -83,6 +84,16 @@ detector saw it) and moves with the belt. While it lies on the belt, its X in th
 `latchPose.x + beltPosition − latchBeltPosition`. The conveyor's coordinate system is its `pose` moved by its
 `originShift`, with X along the belt. `state`, `previousState` and `lastClientId` tell what happened to it last and who
 did it. While a product is `picked`, it hangs at the gripper finger `fingerId` (or the flange) of robot `lastClientId`.
+
+**Only what changed.** A register can hold thousands of products, and a `state` is sent every 20 ms, but only a few
+products change from one state to the next. Connect to `/ws?changes=1` to get states in register form: each `state`
+has `registers`, per conveyor id the ids of its whole register in order, and that conveyor's `products` hold only the
+products that changed since the previous `state` of the same source. Keep the products of the previous state per
+source and conveyor, and build the register in the order of `registers`, taking each product from `products` if it is
+there and from the previous state otherwise. The first `state` of each source after connecting lists every product, and
+so does the next `state` after the server dropped one for a slow client, so a client never has to ask again. Without
+`?changes=1` every `state` is whole, as described above. The web app connects with `?changes=1`; ADR 0013 explains the
+choice.
 
 ## Compatibility
 
