@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuXtsLoop" Id="{8926d95c-3bb4-4209-8cbd-c96a4ea16cac}" SpecialFunc="None">
+  <POU Name="_FB_VisuXtsLoop" Id="{e3eeb8fc-93e4-4ce7-9b9a-454fa271e258}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -10,8 +10,7 @@ DESCRIPTION:<br>
 One visualised XTS loop (e.g. Fxx): movers circulating on a closed track of XTS motor modules, e.g. two<br>
 straights joined at each end by two CURVE_LEFT modules, standing in the local X-Z plane.<br>
 Typical cycle:<br>
-  fb_Fxx.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 20, vi_str_Name := 'Fxx',<br>
-      vi_str_Path := 'MAIN.fb_Fxx.vo_Visu');<br>
+  fb_Fxx.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 20, vi_str_Name := 'Fxx');<br>
   fb_Fxx.m_Configure(vi_Pose := LoopPose, vi_lr_ToolOffset := 120, vi_lr_MoverLength := 100,<br>
       vi_lr_MoverWidth := 60);<br>
   fb_Fxx.m_SetModule(vi_un_Module := 1, vi_e_Kind := E_VisuModuleKind.STRAIGHT); and so on, in order<br>

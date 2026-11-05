@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoIdh" Id="{ed87301d-6e91-4027-9df1-59dac2a47667}" SpecialFunc="None">
+  <POU Name="P_VisuDemoIdh" Id="{6df27bd2-3249-4553-adbb-28ced4937222}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -80,12 +80,9 @@ END_VAR]]></Declaration>
 (****************************************************************************************************)
 (* REGISTRATION (idempotent, every cycle)                                                           *)
 (****************************************************************************************************)
-fb_IdhInfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 6, vi_str_Name := 'IDH infeed',
-	vi_str_Path := 'P_VisuDemoIdh.fb_IdhInfeed.vo_Visu');
-fb_IdhTray.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 7, vi_str_Name := 'Tray belt',
-	vi_str_Path := 'P_VisuDemoIdh.fb_IdhTray.vo_Visu');
-fb_Idh.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 30, vi_str_Name := 'IDH',
-	vi_str_Path := 'P_VisuDemoIdh.fb_Idh.vo_Visu');
+fb_IdhInfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 6, vi_str_Name := 'IDH infeed');
+fb_IdhTray.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 7, vi_str_Name := 'Tray belt');
+fb_Idh.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 30, vi_str_Name := 'IDH');
 
 
 (****************************************************************************************************)

@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuVision" Id="{068031fe-3dc9-4b9d-a7a6-6fd88b888256}" SpecialFunc="None">
+  <POU Name="_FB_VisuVision" Id="{9f8c285a-f17f-473d-9b08-82e1bded2956}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -8,8 +8,7 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 One visualised vision system: a camera over a conveyor. Typical cycle:<br>
-  fb_Vision.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 60, vi_str_Name := 'Vision 1',<br>
-      vi_str_Path := 'MAIN.fb_Vision.vo_Visu');<br>
+  fb_Vision.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 60, vi_str_Name := 'Vision 1');<br>
   fb_Vision.m_Configure(vi_Pose := LensPose, vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300,<br>
       vi_lr_WorkingDistance := 800);<br>
   fb_Vision.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 1, vi_lr_Start := 800, vi_lr_End := 1200);<br>

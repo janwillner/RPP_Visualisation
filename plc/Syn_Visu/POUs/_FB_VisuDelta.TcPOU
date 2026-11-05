@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuDelta" Id="{c58f04fa-639e-40a0-9196-4153dd8f42de}" SpecialFunc="None">
+  <POU Name="_FB_VisuDelta" Id="{07213205-bd3a-4bb8-9ba9-63cf1d6f5113}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -8,8 +8,7 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 One visualised Delta robot. Typical cycle:<br>
-  fb_Delta.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 10, vi_str_Name := 'Delta 1',<br>
-      vi_str_Path := 'MAIN.fb_Delta.vo_Visu');<br>
+  fb_Delta.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 10, vi_str_Name := 'Delta 1');<br>
   fb_Delta.m_Configure(vi_Pose := BasePose, vi_lr_BaseRadius := 200, vi_lr_EffectorRadius := 50,<br>
       vi_lr_UpperArmLength := 400, vi_lr_LowerArmLength := 1000);<br>
   fb_Delta.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 50);<br>

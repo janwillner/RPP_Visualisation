@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuSensor" Id="{b2859c4b-6ebe-4772-a437-9a8b16dec500}" SpecialFunc="None">
+  <POU Name="_FB_VisuSensor" Id="{ab4e15bb-e52f-4283-b48b-218a4f695fb4}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -8,8 +8,7 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 One visualised product sensor, e.g. a light barrier at the side of a conveyor. Typical cycle:<br>
-  fb_Sensor.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 61, vi_str_Name := 'Sensor 1',<br>
-      vi_str_Path := 'MAIN.fb_Sensor.vo_Visu');<br>
+  fb_Sensor.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 61, vi_str_Name := 'Sensor 1');<br>
   fb_Sensor.m_Configure(vi_Pose := HeadPose, vi_lr_BeamLength := 500);<br>
   fb_Sensor.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 1, vi_lr_Start := 500, vi_lr_End := 500);<br>
   fb_Sensor.m_SetSignal(vi_b_Signal := b_BeamInterrupted);<br>

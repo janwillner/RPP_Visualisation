@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuComponent" Id="{6c64e922-1967-49a8-a5e9-b2cd6732a3b9}" SpecialFunc="None">
+  <POU Name="_FB_VisuComponent" Id="{74ed3966-b66d-47b6-a159-4d6bdd7b34f4}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -12,11 +12,18 @@ the config version and the DC timestamps. Not used directly.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
+Syn_Visu 8.0.0  ¦ 2026-11-05 ¦ J.Willner ¦ m_Register without vi_str_Path: the symbol path comes from the instance path<br>
 ****************************************************************************************************)
+{attribute 'reflection'}
 FUNCTION_BLOCK ABSTRACT _FB_VisuComponent
 VAR
 	RefManifest							: REFERENCE TO ST_VisuManifest;	// set by m_Register
 	udn_ComponentId						: UDINT;	// [-] manifest id, 0 = not registered
+	(* Device tree path of this instance, e.g. 'RPP_Visu.Syn_Visu_Demo.MAIN.fb_Infeed', set by TwinCAT at initialisation. *)
+	{attribute 'instance-path'}
+	{attribute 'noinit'}
+	str_InstancePath					: STRING(255);
+	str_SymbolPath						: STRING(255);	// symbol path of vo_Visu for the manifest, from str_InstancePath on the first m_Register
 END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[]]></ST>
@@ -97,6 +104,8 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 Adds this component to the manifest; increments nConfigVersion when the entry is new.<br>
 Idempotent: call it every cycle, which also keeps the manifest reference valid after an online change.<br>
+The symbol path the gateway reads comes from the instance's own path (see m_SymbolPath and<br>
+VISU_un_INSTANCE_PATH_SKIP).<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
 FALSE for vi_udn_Id = 0, an id already used by a different entry, or a full manifest.<br>
@@ -108,7 +117,6 @@ END_VAR
 VAR_INPUT
 	vi_udn_Id							: UDINT;	// [-] unique, > 0
 	vi_str_Name							: STRING(80);	// display name
-	vi_str_Path							: STRING(255);	// symbol path of this instance's vo_Visu, e.g. 'MAIN.fb_Infeed.vo_Visu'
 END_VAR
 VAR
 	e_TempType							: E_VisuComponentType;
@@ -124,6 +132,9 @@ e_TempType := m_ComponentType();
 IF vi_udn_Id = 0 OR e_TempType = E_VisuComponentType.NONE THEN
 	RETURN;
 END_IF
+IF str_SymbolPath = '' THEN
+	str_SymbolPath := m_SymbolPath();
+END_IF
 
 (* An existing entry with the same id must match exactly. *)
 un_TempIndex := 0;
@@ -131,7 +142,7 @@ WHILE un_TempIndex < vio_Manifest.nCount AND un_TempIndex < VISU_GlobalConst_Par
 	IF vio_Manifest.aEntries[un_TempIndex].nId = vi_udn_Id THEN
 		m_Register := vio_Manifest.aEntries[un_TempIndex].eType = e_TempType
 					AND vio_Manifest.aEntries[un_TempIndex].sName = vi_str_Name
-					AND vio_Manifest.aEntries[un_TempIndex].sPath = vi_str_Path;
+					AND vio_Manifest.aEntries[un_TempIndex].sPath = str_SymbolPath;
 		IF m_Register THEN
 			udn_ComponentId := vi_udn_Id;
 		END_IF
@@ -147,11 +158,66 @@ END_IF
 vio_Manifest.aEntries[vio_Manifest.nCount].nId := vi_udn_Id;
 vio_Manifest.aEntries[vio_Manifest.nCount].eType := e_TempType;
 vio_Manifest.aEntries[vio_Manifest.nCount].sName := vi_str_Name;
-vio_Manifest.aEntries[vio_Manifest.nCount].sPath := vi_str_Path;
+vio_Manifest.aEntries[vio_Manifest.nCount].sPath := str_SymbolPath;
 vio_Manifest.nCount := vio_Manifest.nCount + 1;
 vio_Manifest.nConfigVersion := vio_Manifest.nConfigVersion + 1;
 udn_ComponentId := vi_udn_Id;
 m_Register := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SymbolPath" Id="{d483971a-3180-44a8-bbb8-89e791f3c82a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Symbol path of this instance's vo_Visu as the gateway reads it, from the instance path TwinCAT sets: the<br>
+first VISU_un_INSTANCE_PATH_SKIP segments (TwinCAT project, PLC project) are left out, '.vo_Visu' is appended.<br>
+E.g. 'RPP_Visu.Syn_Visu_Demo.P_VisuDemoDelta.fb_Infeed1' -> 'P_VisuDemoDelta.fb_Infeed1.vo_Visu'.<br>
+An instance path with fewer segments is taken whole.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SymbolPath : STRING(255)
+VAR
+	un_TempRead							: UINT;	// [-] byte index in str_InstancePath
+	un_TempWrite						: UINT;	// [-] byte index in the result
+	un_TempDots							: UINT;	// [-] dots passed
+END_VAR
+VAR CONSTANT
+	un_MAX_INDEX						: UINT := 255;	// [-] last byte of a STRING(255), its terminating zero
+	by_DOT								: BYTE := 16#2E;	// '.'
+	str_SUFFIX							: STRING(15) := '.vo_Visu';	// every component's contract structure
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(* Skip the leading segments, up to and including the VISU_un_INSTANCE_PATH_SKIP-th dot. *)
+un_TempRead := 0;
+un_TempDots := 0;
+WHILE un_TempDots < VISU_GlobalConst_Param.VISU_un_INSTANCE_PATH_SKIP AND un_TempRead < un_MAX_INDEX
+	AND str_InstancePath[un_TempRead] <> 0
+DO
+	IF str_InstancePath[un_TempRead] = by_DOT THEN
+		un_TempDots := un_TempDots + 1;
+	END_IF
+	un_TempRead := un_TempRead + 1;
+END_WHILE
+IF un_TempDots < VISU_GlobalConst_Param.VISU_un_INSTANCE_PATH_SKIP THEN
+	un_TempRead := 0;
+END_IF
+
+(* The rest of the instance path, then the contract structure. *)
+un_TempWrite := 0;
+WHILE un_TempRead < un_MAX_INDEX AND str_InstancePath[un_TempRead] <> 0 AND un_TempWrite < un_MAX_INDEX DO
+	m_SymbolPath[un_TempWrite] := str_InstancePath[un_TempRead];
+	un_TempRead := un_TempRead + 1;
+	un_TempWrite := un_TempWrite + 1;
+END_WHILE
+un_TempRead := 0;
+WHILE str_SUFFIX[un_TempRead] <> 0 AND un_TempWrite < un_MAX_INDEX DO
+	m_SymbolPath[un_TempWrite] := str_SUFFIX[un_TempRead];
+	un_TempRead := un_TempRead + 1;
+	un_TempWrite := un_TempWrite + 1;
+END_WHILE
+m_SymbolPath[un_TempWrite] := 0;]]></ST>
       </Implementation>
     </Method>
   </POU>

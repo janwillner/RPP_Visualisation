@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoFxx" Id="{1b8c62f6-75a2-47d6-ae83-da39ccf1d5ec}" SpecialFunc="None">
+  <POU Name="P_VisuDemoFxx" Id="{ebe71f08-77d7-4c72-aecc-7913ba558a40}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -71,12 +71,9 @@ END_VAR]]></Declaration>
 (****************************************************************************************************)
 (* REGISTRATION (idempotent, every cycle)                                                           *)
 (****************************************************************************************************)
-fb_FxxInfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 4, vi_str_Name := 'Fxx infeed',
-	vi_str_Path := 'P_VisuDemoFxx.fb_FxxInfeed.vo_Visu');
-fb_FxxOutfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 5, vi_str_Name := 'Fxx outfeed',
-	vi_str_Path := 'P_VisuDemoFxx.fb_FxxOutfeed.vo_Visu');
-fb_Fxx.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 20, vi_str_Name := 'Fxx',
-	vi_str_Path := 'P_VisuDemoFxx.fb_Fxx.vo_Visu');
+fb_FxxInfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 4, vi_str_Name := 'Fxx infeed');
+fb_FxxOutfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 5, vi_str_Name := 'Fxx outfeed');
+fb_Fxx.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 20, vi_str_Name := 'Fxx');
 
 
 (****************************************************************************************************)

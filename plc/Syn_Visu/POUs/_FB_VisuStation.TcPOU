@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuStation" Id="{212ed1ce-bd83-4ccc-aa14-f23790819578}" SpecialFunc="None">
+  <POU Name="_FB_VisuStation" Id="{8626b648-f218-4675-b1c1-1369a0f79dc6}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -10,8 +10,7 @@ DESCRIPTION:<br>
 One visualised station: a client at a conveyor that works on the products in its zones, e.g. a reject<br>
 unit, a labeller, a printer or a check weigher. It is drawn only from the bodies it describes. Typical cycle<br>
 of a reject unit:<br>
-  fb_Reject.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 70, vi_str_Name := 'Reject unit',<br>
-      vi_str_Path := 'MAIN.fb_Reject.vo_Visu');<br>
+  fb_Reject.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 70, vi_str_Name := 'Reject unit');<br>
   fb_Reject.m_Configure(vi_Pose := StationPose);<br>
   fb_Reject.m_SetBody(vi_un_Body := 1, ...);   // housing<br>
   fb_Reject.m_SetBody(vi_un_Body := 2, ...);   // pusher<br>

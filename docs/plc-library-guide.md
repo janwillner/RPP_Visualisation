@@ -72,6 +72,7 @@ says so in its status.
 
 | Library `SynVisu` | Protocol version | Gateway |
 | --- | --- | --- |
+| 8.0.x | 14 | releases from protocol 14 on; `m_Register` without `vi_str_Path` (remove it from every call, section 3.2) |
 | 7.0.x | 14 | releases from protocol 14 on (product poses in the conveyor's coordinate system) |
 | 6.0.x | 13 | releases from protocol 13 on (generic product client, station) |
 | 5.1.x | 12 | protocol 12; the status bar also shows the library version |
@@ -122,9 +123,8 @@ VAR
 	InfeedPose							: SynVisu.ST_VisuPose := (fX := 0, fY := 0, fZ := 800);
 END_VAR
 
-(* 1. Register: id, display name, symbol path of this instance's vo_Visu *)
-fb_Infeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed',
-	vi_str_Path := 'MAIN.fb_Infeed.vo_Visu');
+(* 1. Register: id and display name; the symbol path comes from the instance itself *)
+fb_Infeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed');
 
 (* 2. Configure *)
 fb_Infeed.m_Configure(vi_Pose := InfeedPose, vi_lr_Length := 3000, vi_lr_Width := 400);
@@ -145,18 +145,25 @@ fb_Infeed.m_SetBeltPosition(lr_InfeedBeltPosition);
 
 ### 3.2 The symbol path
 
-`vi_str_Path` is the full symbol path of the instance's output `vo_Visu`, exactly as ADS sees it:
+The manifest tells the gateway where each component's output `vo_Visu` lies, as a symbol path exactly as ADS sees
+it. Since library 8.0 every component finds it itself: TwinCAT gives each instance its path in the device tree
+(attribute `instance-path`), `m_Register` leaves out the leading segments that are not part of the symbol path and
+appends `.vo_Visu`:
 
-| Where the instance is declared | `vi_str_Path` |
+| Where the instance is declared | Symbol path in the manifest |
 | --- | --- |
-| `PROGRAM MAIN`, variable `fb_Infeed` | `'MAIN.fb_Infeed.vo_Visu'` |
-| A program `P_Line1`, variable `fb_Delta1` | `'P_Line1.fb_Delta1.vo_Visu'` |
-| Inside an FB instance `MAIN.fb_Cell.fb_Robot` | `'MAIN.fb_Cell.fb_Robot.vo_Visu'` |
-| In a GVL `GVL_Machine`, variable `fb_Outfeed` | `'GVL_Machine.fb_Outfeed.vo_Visu'` |
+| `PROGRAM MAIN`, variable `fb_Infeed` | `MAIN.fb_Infeed.vo_Visu` |
+| A program `P_Line1`, variable `fb_Delta1` | `P_Line1.fb_Delta1.vo_Visu` |
+| Inside an FB instance `MAIN.fb_Cell.fb_Robot` | `MAIN.fb_Cell.fb_Robot.vo_Visu` |
+| In a GVL `GVL_Machine`, variable `fb_Outfeed` | `GVL_Machine.fb_Outfeed.vo_Visu` |
 
-A wrong path is the most common mistake: the gateway then reports a discovery error for that component (see
-[Troubleshooting](#18-troubleshooting)). Inside your own wrapper FBs, pass the wrapper's path in and append to it
-(`CONCAT(vi_str_Path, '.fb_Conveyor.vo_Visu')`, see [section 15](#15-wrapping-existing-machine-code)).
+The device tree path starts with the TwinCAT project and the PLC project, e.g.
+`RPP_Visu.Syn_Visu_Demo.P_VisuDemoDelta.fb_Infeed1` in the demo; the library parameter
+`VISU_un_INSTANCE_PATH_SKIP` (default 2) says how many leading segments are left out. A project whose path has more
+segments before the program or GVL sets it in the library parameters of its `SynVisu` reference. If the gateway
+reports a discovery error for every component, the instance paths show what to set it to: `str_InstancePath` and the
+resulting `str_SymbolPath` of any component instance in the online view (see [Troubleshooting](#18-troubleshooting)).
+A component works its path out once; after changing the parameter, reset the PLC (cold) or download it.
 
 ## 4. Coordinates
 
@@ -589,11 +596,10 @@ On real machines the values come from the machine's own data structures (queues,
 references). The proven way is a small layer of wrapper FBs in the application, e.g. a folder `SYNVIS`:
 
 - **One main FB** (e.g. `_FB_SYNVIS_Main`) that owns all wrapper instances and is called once per cycle in the fast
-  task, with its own symbol path as input:
-  `fb_SYNVIS_Main(vi_str_Path := 'TCATx_Program_Fast.fb_SYNVIS_Main');`
-- **One wrapper FB per kind of unit** (a queue, a PPH, an IDH, ...). It holds the `SynVisu` FB instance, converts the
-  machine's data in a method `m_Cyclic(...)` and appends to the path it gets:
-  `fb_Conveyor.m_Register(..., vi_str_Path := CONCAT(vi_str_Path, '.fb_Conveyor.vo_Visu'));`
+  task.
+- **One wrapper FB per kind of unit** (a queue, a PPH, an IDH, ...). It holds the `SynVisu` FB instance and converts
+  the machine's data in a method `m_Cyclic(...)`. However deep the instance is nested, it registers with its id and
+  name only: `fb_Conveyor.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := ..., vi_str_Name := ...);`
 - **Constants** (ids, product sizes, finger sizes) in one GVL, e.g. `SYNVIS_GlobalConst`.
 - **Pick and place across units:** a product is picked by one unit (its queue) and placed by another (an outfeed
   queue or the robot's gripper releasing it). A shared helper FB that remembers which robot carries which product
@@ -616,6 +622,7 @@ The array sizes are library parameters (`SynVisu.VISU_GlobalConst_Param`):
 | `VISU_un_MAX_FINGERS` | 8 | gripper |
 | `VISU_un_MAX_BODIES` | 16 | detector or station |
 | `VISU_un_MAX_MODULES` | 64 | XTS track |
+| `VISU_un_INSTANCE_PATH_SKIP` | 2 | PLC: leading segments of an instance's device tree path that are not part of its symbol path, TwinCAT project and PLC project (section 3.2) |
 
 Methods that would exceed a limit return FALSE and change nothing. A machine with more than 32 components can split
 them over several PLCs (ADS ports); the gateway reads several sources and shows them side by side.
@@ -624,7 +631,7 @@ them over several PLCs (ADS ports); the gateway reads several sources and shows 
 
 - [ ] `SynVisu` referenced; library version matches the gateway's protocol version (section 2.2).
 - [ ] `GVL_Visu.stManifest` declared (or the gateway's `manifestPath` set).
-- [ ] Every component registered every cycle with a unique id > 0 and the exact symbol path of its `vo_Visu`.
+- [ ] Every component registered every cycle with a unique id > 0; the paths in the manifest match the ADS symbols.
 - [ ] Poses checked in the measuring mode: conveyors start where they start, robots stand where they stand.
 - [ ] Every conveyor: product types set, belt position reported every cycle before latching,
       `m_RemoveProductsBeyond` called every cycle.
@@ -644,7 +651,8 @@ in the gateway log. Configuration warnings appear in the web app.
 | Symptom / message | Cause | Fix |
 | --- | --- | --- |
 | "PLC reports protocol version X, but this gateway expects Y" | Library and gateway versions differ | Update the library or the gateway (section 2.2) |
-| "Symbol has expected type ST_Visu... but is missing" | `vi_str_Path` does not point at the instance's `vo_Visu` | Correct the path (section 3.2); watch for renamed programs or instances |
+| "Symbol has expected type ST_Visu... but is missing", for every component | The manifest paths keep a project prefix, or lose a segment | Set `VISU_un_INSTANCE_PATH_SKIP` to the number of segments before the program or GVL (section 3.2) |
+| "Symbol has expected type ST_Visu... but is missing", for one component | Its instance is not visible to ADS, e.g. hidden by an attribute | Check the symbol in the ADS symbol table |
 | "Cannot read ...stConfig" | Symbol exists but cannot be read, e.g. hidden by an attribute or the PLC is stopped | Check the symbol in the ADS symbol table; start the PLC |
 | Component missing in the tree, no error | `m_Register` not called, id 0, id used twice, or manifest full | Call it every cycle with a unique id; check its return value |
 | "zone references unknown conveyor N" | Zone's conveyor id is not a registered conveyor | Use `fb_Belt.m_Id()`; register the conveyor |

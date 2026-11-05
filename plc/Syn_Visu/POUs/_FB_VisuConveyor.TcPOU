@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuConveyor" Id="{47f357f2-3508-415e-8027-9ff8b6853d9e}" SpecialFunc="None">
+  <POU Name="_FB_VisuConveyor" Id="{aa18a4e1-9269-4685-8a4d-aa171346d20a}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -8,8 +8,7 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 One visualised conveyor. Typical cycle:<br>
-  fb_Infeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed',<br>
-      vi_str_Path := 'MAIN.fb_Infeed.vo_Visu');<br>
+  fb_Infeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed');<br>
   fb_Infeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := 5000, vi_lr_Width := 400);<br>
   fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40);<br>
   fb_Infeed.m_SetBeltPosition(lr_AxisPosition);  // or m_SetModuloBeltPosition for a modulo axis<br>

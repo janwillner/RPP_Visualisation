@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoDelta" Id="{2d1b7ebc-fd96-42a3-8023-89588d6bf62d}" SpecialFunc="None">
+  <POU Name="P_VisuDemoDelta" Id="{647f7a59-4aac-458b-a247-2ec235a4b967}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -161,24 +161,15 @@ lr_Step := lr_TCP_SPEED * lr_Dt;
 (****************************************************************************************************)
 (* REGISTRATION (idempotent, every cycle)                                                           *)
 (****************************************************************************************************)
-fb_Infeed1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed 1',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Infeed1.vo_Visu');
-fb_Infeed2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 2, vi_str_Name := 'Infeed 2',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Infeed2.vo_Visu');
-fb_Outfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 3, vi_str_Name := 'Outfeed',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Outfeed.vo_Visu');
-fb_Delta1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 10, vi_str_Name := 'Delta 1',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Delta1.vo_Visu');
-fb_Delta2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 11, vi_str_Name := 'Delta 2',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Delta2.vo_Visu');
-fb_Delta3.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 12, vi_str_Name := 'Delta 3',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Delta3.vo_Visu');
-fb_Vision1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 50, vi_str_Name := 'Vision 1',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Vision1.vo_Visu');
-fb_Barrier2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 51, vi_str_Name := 'Light barrier 2',
-	vi_str_Path := 'P_VisuDemoDelta.fb_Barrier2.vo_Visu');
-fb_RejectUnit.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 60, vi_str_Name := 'Reject unit',
-	vi_str_Path := 'P_VisuDemoDelta.fb_RejectUnit.vo_Visu');
+fb_Infeed1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed 1');
+fb_Infeed2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 2, vi_str_Name := 'Infeed 2');
+fb_Outfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 3, vi_str_Name := 'Outfeed');
+fb_Delta1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 10, vi_str_Name := 'Delta 1');
+fb_Delta2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 11, vi_str_Name := 'Delta 2');
+fb_Delta3.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 12, vi_str_Name := 'Delta 3');
+fb_Vision1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 50, vi_str_Name := 'Vision 1');
+fb_Barrier2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 51, vi_str_Name := 'Light barrier 2');
+fb_RejectUnit.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 60, vi_str_Name := 'Reject unit');
 
 
 (****************************************************************************************************)

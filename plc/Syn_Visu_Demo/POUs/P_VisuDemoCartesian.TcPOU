@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoCartesian" Id="{0163ed05-fd49-42fd-b40d-c173077815de}" SpecialFunc="None">
+  <POU Name="P_VisuDemoCartesian" Id="{c58f1b2d-3e67-4ba9-afdc-0de155b5a733}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -91,12 +91,9 @@ END_VAR]]></Declaration>
 (****************************************************************************************************)
 (* REGISTRATION (idempotent, every cycle)                                                           *)
 (****************************************************************************************************)
-fb_CartInfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 8, vi_str_Name := 'Cartesian infeed',
-	vi_str_Path := 'P_VisuDemoCartesian.fb_CartInfeed.vo_Visu');
-fb_CartOutfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 9, vi_str_Name := 'Cartesian outfeed',
-	vi_str_Path := 'P_VisuDemoCartesian.fb_CartOutfeed.vo_Visu');
-fb_Cartesian.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 40, vi_str_Name := 'Cartesian',
-	vi_str_Path := 'P_VisuDemoCartesian.fb_Cartesian.vo_Visu');
+fb_CartInfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 8, vi_str_Name := 'Cartesian infeed');
+fb_CartOutfeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 9, vi_str_Name := 'Cartesian outfeed');
+fb_Cartesian.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 40, vi_str_Name := 'Cartesian');
 
 
 (****************************************************************************************************)

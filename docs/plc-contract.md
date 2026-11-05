@@ -196,7 +196,7 @@ the FBs fill them in their output `vo_Visu`, so application code does not write 
 | `ST_VisuPose`, `ST_VisuPlanarPose`, `ST_VisuPosition` | MCS poses and positions |
 | `VISU_GlobalConst` | `VISU_un_PROTOCOL_VERSION` (contract version; `ST_VisuManifest` initialises to it), `VISU_str_LIBRARY_VERSION` (this library's version, reported in the manifest), `VISU_lr_DEG_TO_RAD`, `VISU_lr_XTS_MODULE_LENGTH` (250 mm) |
 | `VISU_GlobalConst_Param` | Array sizes: `VISU_un_MAX_MANIFEST_ENTRIES` (32), `VISU_un_MAX_PRODUCTS` (4800), `VISU_un_PRODUCT_INDEX_SIZE` (16384, slots of a conveyor's product index by id: a power of two, at least twice `VISU_un_MAX_PRODUCTS`), `VISU_un_MAX_PRODUCT_TYPES` (8), `VISU_un_MAX_ZONES` (8), `VISU_un_MAX_MOVERS` (40), `VISU_un_MAX_FINGERS` (8, per gripper), `VISU_un_MAX_BODIES` (16, per detector or station), `VISU_un_MAX_MODULES` (64, per XTS track) |
-| `_FC_GetVersionSynVisu` | Library version at runtime (7.2.0) |
+| `_FC_GetVersionSynVisu` | Library version at runtime (8.0.0) |
 
 ### Methods
 
@@ -207,7 +207,7 @@ All component FBs:
 
 | Method | Purpose |
 | --- | --- |
-| `m_Register(vio_Manifest, vi_udn_Id, vi_str_Name, vi_str_Path)` | Adds the component to the manifest (bumps `nConfigVersion` when new). `vi_str_Path` is the symbol path of the instance's `vo_Visu`. Idempotent: call it every cycle, which also keeps `nProtocolVersion` and `sLibraryVersion` current and the manifest reference valid after an online change |
+| `m_Register(vio_Manifest, vi_udn_Id, vi_str_Name)` | Adds the component to the manifest (bumps `nConfigVersion` when new) with the symbol path of the instance's `vo_Visu`, taken from its device tree path (attribute `instance-path`, the first `VISU_un_INSTANCE_PATH_SKIP` segments left out). Idempotent: call it every cycle, which also keeps `nProtocolVersion` and `sLibraryVersion` current and the manifest reference valid after an online change |
 | `m_Id()` | Manifest id given to `m_Register`, 0 before |
 | `m_SetFault(vi_b_Active, vi_str_Message)` | Sets or clears the component's fault; it stays until cleared with `m_SetFault(FALSE, '')` |
 | `m_SetOriginShift(vi_lr_X, vi_lr_Y := 0, vi_lr_Z := 0)` | Moves the component's coordinate system from its pose (local frame, mm); for a conveyor the belt coordinates count from there |
@@ -341,12 +341,9 @@ VAR
 	fb_Vision1							: SynVisu._FB_VisuVision;
 END_VAR
 
-fb_Infeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed',
-	vi_str_Path := 'MAIN.fb_Infeed.vo_Visu');
-fb_Delta1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 10, vi_str_Name := 'Delta 1',
-	vi_str_Path := 'MAIN.fb_Delta1.vo_Visu');
-fb_Vision1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 50, vi_str_Name := 'Vision 1',
-	vi_str_Path := 'MAIN.fb_Vision1.vo_Visu');
+fb_Infeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed');
+fb_Delta1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 10, vi_str_Name := 'Delta 1');
+fb_Vision1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 50, vi_str_Name := 'Vision 1');
 
 fb_Infeed.m_Configure(vi_Pose := InfeedPose, vi_lr_Length := 5000, vi_lr_Width := 400);
 fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40);

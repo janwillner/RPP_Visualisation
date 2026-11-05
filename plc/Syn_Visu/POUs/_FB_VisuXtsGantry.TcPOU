@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuXtsGantry" Id="{e258240d-815f-404f-8267-99bc35d2d4eb}" SpecialFunc="None">
+  <POU Name="_FB_VisuXtsGantry" Id="{22ace47e-7e26-4927-8bbd-1e5eee00bc8b}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -9,8 +9,7 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 One visualised XTS gantry (e.g. IDH): a straight track of XTS motor modules on a common Z axis, each mover<br>
 with an X axis and a gripper flange at its end. Typical cycle:<br>
-  fb_Idh.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 30, vi_str_Name := 'IDH',<br>
-      vi_str_Path := 'MAIN.fb_Idh.vo_Visu');<br>
+  fb_Idh.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 30, vi_str_Name := 'IDH');<br>
   fb_Idh.m_Configure(vi_Pose := TrackPose, vi_lr_XMin := 0, vi_lr_XMax := 700, vi_lr_ZMin := -100, vi_lr_ZMax := 0, vi_lr_ToolOffsetX := 150, vi_lr_ToolOffsetZ := -350,<br>
       vi_lr_MoverLength := 155, vi_lr_MoverWidth := 80);<br>
   FOR un_Module := 1 TO 6 DO<br>

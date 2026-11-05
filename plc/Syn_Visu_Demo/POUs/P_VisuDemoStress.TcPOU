@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoStress" Id="{71cb3b8b-0b13-4d29-8ae1-09b3bba4aeb6}" SpecialFunc="None">
+  <POU Name="P_VisuDemoStress" Id="{2d102d67-9935-4575-b392-a272043d8fe5}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -79,8 +79,7 @@ un_Target := MIN(DEMO_GlobalVar.DEMO_un_StressProducts, VISU_GlobalConst_Param.V
 IF un_Target = 0 AND NOT b_Registered THEN
 	RETURN;
 END_IF
-fb_StressBelt.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 14, vi_str_Name := 'Stress belt',
-	vi_str_Path := 'P_VisuDemoStress.fb_StressBelt.vo_Visu');
+fb_StressBelt.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 14, vi_str_Name := 'Stress belt');
 IF NOT b_Registered THEN
 	b_Registered := TRUE;
 	lr_EntryStart := lr_BeltPosition;

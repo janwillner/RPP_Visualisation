@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoSpacing" Id="{8731253f-3cca-41b2-8d1c-e338e7c13761}" SpecialFunc="None">
+  <POU Name="P_VisuDemoSpacing" Id="{413df878-e01a-46e3-ac91-18c8bf8d57ab}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -71,10 +71,8 @@ END_VAR]]></Declaration>
 (****************************************************************************************************)
 (* REGISTRATION (idempotent, every cycle)                                                           *)
 (****************************************************************************************************)
-fb_SpcBelt.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 13, vi_str_Name := 'Spacing belt',
-	vi_str_Path := 'P_VisuDemoSpacing.fb_SpcBelt.vo_Visu');
-fb_Spc.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 21, vi_str_Name := 'Spacer',
-	vi_str_Path := 'P_VisuDemoSpacing.fb_Spc.vo_Visu');
+fb_SpcBelt.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 13, vi_str_Name := 'Spacing belt');
+fb_Spc.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 21, vi_str_Name := 'Spacer');
 
 
 (****************************************************************************************************)
