@@ -77,6 +77,10 @@ _Avoid_: encoder value (when meaning the position itself)
 The PLC's list of products currently tracked on a conveyor.
 _Avoid_: data register, product buffer
 
+**Register form**:
+A state in which each conveyor lists only the products that changed since the previous state of its source, plus the ids of its whole product register in order (ADR 0013). Recordings store states in register form; the web app receives them so.
+_Avoid_: delta, diff state
+
 **Client**:
 A component that works on the products of a conveyor: a robot, a detector or a station. Every product names the client that changed it last and the state it had before.
 _Avoid_: consumer, handler
