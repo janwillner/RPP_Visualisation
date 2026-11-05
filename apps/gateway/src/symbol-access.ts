@@ -16,7 +16,12 @@ export interface SymbolAccess {
    * `ChangedEntries`: the entries that changed since its previous read in the same session. A new session (another
    * `changes` value) starts with every entry. Adapters that cannot do this return the whole arrays.
    */
-  sumRead(paths: readonly string[], options?: { changes?: string }): Promise<unknown[]>;
+  sumRead(paths: readonly string[], options?: SumReadOptions): Promise<unknown[]>;
+}
+
+export interface SumReadOptions {
+  /** The session to read product registers as changes in (ADR 0013); without it every array comes whole. */
+  changes?: string;
 }
 
 /**

@@ -1,4 +1,4 @@
-import type { AddressInfo } from "node:net";
+import type { AddressInfo, Socket } from "node:net";
 import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import {
@@ -1183,6 +1183,54 @@ describe("WebSocket clients", () => {
       server.close();
     }
   });
+
+  it("drops states for a client that cannot keep up and then sends it every product again", async () => {
+    const t = setup([infeed]);
+    const ids = Array.from({ length: 3000 }, (_, i) => i + 1);
+    let assigned = false;
+    const fill = () => register(t.plc, ids.map((nId) => ({ nId, eState: assigned ? E_VisuProductState.ASSIGNED : E_VisuProductState.DETECTED })));
+    fill();
+    await t.gateway.cycle();
+    const server = await startServer({ gateway: t.gateway, port: 0, host: "127.0.0.1" });
+    const port = (server.address() as AddressInfo).port;
+    const published: StateMessage[] = [];
+    t.gateway.subscribe((m) => m.kind === "state" && published.push(m));
+    try {
+      const client = await connect(port, "?changes=1");
+      await t.gateway.cycle();
+      await waitFor(() => client.states.length === 1);
+
+      // The browser stops reading: its socket buffer on the server fills up. Meanwhile every product changes in one
+      // state (large), and a product enters in the next (small): a state dropped then holds a product that no later
+      // state lists again.
+      (client.socket as unknown as { _socket: Socket })._socket.pause();
+      const cycles = 40;
+      for (let i = 0; i < cycles; i++) {
+        if (i % 2 === 0) assigned = !assigned;
+        else ids.push(ids.length + 1);
+        fill();
+        await t.gateway.cycle();
+      }
+      (client.socket as unknown as { _socket: Socket })._socket.resume();
+      // Nothing changes any more; states go on until the buffer has drained and the client got one again.
+      const received = client.states.length;
+      const caughtUp = () => client.states.length > received && client.states.at(-1)?.registers?.[10]?.length === ids.length;
+      for (let i = 0; i < 200 && !caughtUp(); i++) {
+        await t.gateway.cycle();
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      await waitFor(caughtUp);
+      const last = published.at(-1)!;
+
+      expect(received).toBeLessThan(cycles + 1);
+      const decoder = new RegisterDecoder();
+      const decoded = client.states.map((s) => decoder.decode(s));
+      expect(decoded.at(-1)!.components).toEqual(last.components);
+      client.socket.close();
+    } finally {
+      server.close();
+    }
+  }, 30_000);
 });
 
 describe("gateway registers read as changes", () => {
@@ -1240,5 +1288,38 @@ describe("gateway registers read as changes", () => {
     expect(states.map((s) => productsOf(s).map((p) => p.id))).toEqual([[1, 2], [1, 2]]);
     // No lost connection on the way: the gap is closed within the cycle.
     expect(messages.some((m) => m.kind === "status" && m.status.lastError !== undefined)).toBe(false);
+  });
+
+  it("reads in a new session, with every entry, after a lost connection and after a new config", async () => {
+    const t = setup([infeed]);
+    const sessions: (string | undefined)[] = [];
+    const sumRead = t.plc.sumRead.bind(t.plc);
+    t.plc.sumRead = (paths, options) => {
+      sessions.push(options?.changes);
+      return sumRead(paths, options);
+    };
+    register(t.plc, [{ nId: 1 }, { nId: 2 }]);
+    await t.gateway.cycle();
+    await t.gateway.cycle();
+
+    // Products change while the connection is lost.
+    t.plc.setOnline(false);
+    await t.gateway.cycle();
+    register(t.plc, [{ nId: 2 }, { nId: 3 }]);
+    t.plc.setOnline(true);
+    t.advance(RECONNECT_MS);
+    await t.gateway.cycle();
+    await t.gateway.cycle();
+
+    t.plc.get<ST_VisuManifest>(MANIFEST_PATH).nConfigVersion = 2;
+    await t.gateway.cycle();
+    await t.gateway.cycle();
+
+    const distinct = [...new Set(sessions)];
+    expect(distinct).toHaveLength(3);
+    expect(distinct.every((s) => s !== undefined)).toBe(true);
+    // Each session is read in a row: a new one is never mixed with an old one.
+    expect(sessions.filter((s, i) => i > 0 && s !== sessions[i - 1])).toEqual(distinct.slice(1));
+    expect(productsOf(t.states().at(-1)!).map((p) => p.id)).toEqual([2, 3]);
   });
 });

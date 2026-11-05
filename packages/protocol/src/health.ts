@@ -9,6 +9,9 @@ const spread = (description: string) =>
     })
     .describe(description);
 
+/** The most recent state snapshots the acquisition figures cover: about 5 s at the default 20 ms cycle. */
+export const ACQUISITION_WINDOW = 250;
+
 /**
  * How reading one source performs, for diagnosing large machines: timings and sizes over the most recent snapshots,
  * and checks of the conveyors' product registers.
@@ -18,7 +21,9 @@ export const AcquisitionStatsSchema = z
     window: z
       .number()
       .int()
-      .describe("Number of state snapshots the averages and maxima cover: the most recent ones, up to 250."),
+      .describe(
+        `Number of state snapshots the averages and maxima cover: the most recent ones, up to ${ACQUISITION_WINDOW}.`,
+      ),
     readMs: spread(
       "Time to read every component state of the source in one sum-read, ms: the PLC access including the ADS bridge.",
     ),

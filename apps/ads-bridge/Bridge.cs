@@ -141,30 +141,32 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
         var symbols = paths.Select(Require).ToList();
         var buffers = symbols.Select(s => s.Buffer).ToList();
 
-        // One sum-read: each symbol whole, its counted arrays as far as the previous count plus a reserve.
-        var parts = new List<(int Symbol, Segment Segment)>();
-        for (int i = 0; i < symbols.Count; i++)
+        // One sum-read: each symbol whole, its counted arrays as far as the previous count plus a reserve. If a register
+        // counts more entries than were read (many added at once), everything is read again with the new count: reading
+        // only the missing entries later could mix two PLC cycles, with entries moved up in between.
+        for (bool fits = false; !fits;)
         {
-            foreach (var segment in ReadPlan.Segments(symbols[i].ByteSize, symbols[i].CountedArrays, symbols[i].EntriesToRead))
-                parts.Add((i, segment));
-        }
-        ReadParts(symbols, buffers, parts, paths);
-
-        // Entries counted beyond what was read (many added at once) follow in a second sum-read.
-        var missing = new List<(int Symbol, Segment Segment)>();
-        for (int i = 0; i < symbols.Count; i++)
-        {
-            var arrays = symbols[i].CountedArrays;
-            for (int k = 0; k < arrays.Count; k++)
+            var parts = new List<(int Symbol, Segment Segment)>();
+            for (int i = 0; i < symbols.Count; i++)
             {
-                var a = arrays[k];
-                int count = a.CountIn(buffers[i]);
-                int read = symbols[i].EntriesToRead[k];
-                if (count > read) missing.Add((i, new Segment(a.Offset + read * a.ElementSize, (count - read) * a.ElementSize)));
-                symbols[i].EntriesToRead[k] = ReadPlan.WithReserve(count, a.Capacity);
+                foreach (var segment in ReadPlan.Segments(symbols[i].ByteSize, symbols[i].CountedArrays, symbols[i].EntriesToRead))
+                    parts.Add((i, segment));
+            }
+            ReadParts(symbols, buffers, parts, paths);
+
+            fits = true;
+            for (int i = 0; i < symbols.Count; i++)
+            {
+                var arrays = symbols[i].CountedArrays;
+                for (int k = 0; k < arrays.Count; k++)
+                {
+                    // Counts are clamped to the capacity, so a second pass reads at least every counted entry.
+                    int count = arrays[k].CountIn(buffers[i]);
+                    if (count > symbols[i].EntriesToRead[k]) fits = false;
+                    symbols[i].EntriesToRead[k] = ReadPlan.WithReserve(count, arrays[k].Capacity);
+                }
             }
         }
-        if (missing.Count > 0) ReadParts(symbols, buffers, missing, paths);
 
         if (changes != null && changes != _changesSession)
         {

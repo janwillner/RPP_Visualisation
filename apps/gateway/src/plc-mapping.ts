@@ -112,6 +112,8 @@ function mapValue(
   if (schema instanceof z.ZodObject) {
     const s = structure(raw, path);
     const result: Record<string, unknown> = { ...fixed };
+    // `memory` reaches the arrays of the top structure only: adapters give only those as changes (a product register
+    // is a member of a component state). Arrays nested deeper always come whole.
     for (const f of planFor(schema, s, fixed, path)) {
       const value = s[f.member];
       result[f.key] =
@@ -146,8 +148,12 @@ function mapArray(
   if (!Array.isArray(raw)) throw new TypeError(`${path} is not an array`);
   const entries = typeof count === "number" ? raw.slice(0, Math.max(0, Math.min(count, raw.length))) : raw;
   // Mapped before the bValid filter, so that an error names the entry's index in the PLC array.
-  const valid = (e: unknown) => !(typeof e === "object" && e !== null && "bValid" in e) || (e as { bValid: unknown }).bValid;
-  return entries.flatMap((e, i) => (valid(e) ? [mapValue(schema.element, e, `${path}[${i}]`)] : []));
+  return entries.flatMap((e, i) => (isValidEntry(e) ? [mapValue(schema.element, e, `${path}[${i}]`)] : []));
+}
+
+/** An array entry in use: one without a `bValid` member, or with `bValid` TRUE. */
+function isValidEntry(e: unknown): boolean {
+  return !(typeof e === "object" && e !== null && "bValid" in e) || Boolean((e as { bValid: unknown }).bValid);
 }
 
 /**
@@ -162,9 +168,12 @@ function mapChangedEntries(
 ): unknown[] {
   const before = memory.get(path);
   const known = new Map<number, unknown>();
+  // Ids are unique in a register (the library refuses to latch one twice). Should two entries share one anyway (shown
+  // as duplicate products in /health), both are published with the data of one; an invalid one never hides a valid one.
   for (const e of raw.$changed) {
-    const valid = !("bValid" in e) || e.bValid;
-    known.set(Number(e.nId), valid ? mapValue(schema.element, e, `${path}[id ${String(e.nId)}]`) : null);
+    const id = Number(e.nId);
+    if (isValidEntry(e)) known.set(id, mapValue(schema.element, e, `${path}[id ${String(e.nId)}]`));
+    else if (!known.get(id)) known.set(id, null);
   }
   const next = new Map<number, unknown>();
   const result: unknown[] = [];
@@ -176,6 +185,11 @@ function mapChangedEntries(
   }
   memory.set(path, next);
   return result;
+}
+
+/** The count member of an array member: `aZones` → `nZoneCount`, `aBodies` → `nBodyCount`. */
+export function countMemberOf(arrayMember: string): string {
+  return `n${singular(arrayMember.slice(1))}Count`;
 }
 
 /** `zones` → `zone`, `bodies` → `body`: the count member is named after one entry. */

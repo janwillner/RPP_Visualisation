@@ -1,4 +1,5 @@
-import { SymbolNotFoundError, type ChangedEntries, type SymbolAccess } from "./symbol-access";
+import { countMemberOf } from "./plc-mapping";
+import { SymbolNotFoundError, type ChangedEntries, type SumReadOptions, type SymbolAccess } from "./symbol-access";
 
 interface Entry {
   type: string;
@@ -46,7 +47,7 @@ export class InMemoryPlc implements SymbolAccess {
     return this.symbols.get(path)?.type;
   }
 
-  async sumRead(paths: readonly string[], options: { changes?: string } = {}): Promise<unknown[]> {
+  async sumRead(paths: readonly string[], options: SumReadOptions = {}): Promise<unknown[]> {
     this.ensureOnline();
     const values = paths.map((p) => structuredClone(this.resolve(p)));
     const { changes } = options;
@@ -88,7 +89,7 @@ function withChangedEntries(value: unknown, path: string, previous: Map<string, 
   if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
   const structure = value as Record<string, unknown>;
   for (const [member, entries] of Object.entries(structure)) {
-    const count = structure[countMember(member)];
+    const count = structure[countMemberOf(member)];
     if (!Array.isArray(entries) || typeof count !== "number") continue;
     const counted = entries.slice(0, count) as Record<string, unknown>[];
     if (!counted.every((e) => typeof e === "object" && e !== null && "nId" in e)) continue;
@@ -107,11 +108,4 @@ function withChangedEntries(value: unknown, path: string, previous: Map<string, 
     structure[member] = changed;
   }
   return structure;
-}
-
-/** `aProducts` → `nProductCount`, `aBodies` → `nBodyCount`, as the contract names count members. */
-function countMember(member: string): string {
-  const name = member.slice(1);
-  const one = name.endsWith("ies") ? `${name.slice(0, -3)}y` : name.endsWith("s") ? name.slice(0, -1) : name;
-  return `n${one}Count`;
 }

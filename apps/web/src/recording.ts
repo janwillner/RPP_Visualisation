@@ -48,24 +48,18 @@ interface Entry {
  */
 type StoredEntry = RecordingEntry;
 
-/** The registers of the states stored so far in a block: each block starts with whole registers. */
-type Registers = RegisterEncoder;
-
-/** The registers of the states restored so far. */
-type Restored = RegisterDecoder;
-
-/** The entry to store for `message`; `registers` holds the previous states and is updated. */
-function storedEntry(at: number, message: GatewayMessage, raw: string, registers: Registers): string {
+/** The entry to store for `message`; `encoder` holds the registers of the previous states and is updated. */
+function storedEntry(at: number, message: GatewayMessage, raw: string, encoder: RegisterEncoder): string {
   if (message.kind !== "state") return `{"at":${at},"message":${raw}}`;
-  const { registers: order, ...changed } = registers.encode(message);
+  const { registers: order, ...changed } = encoder.encode(message);
   return JSON.stringify({ at, message: changed, registers: order });
 }
 
-/** Restores stored entries in order; `registers` holds the products of each source's previous state. */
-function restoredEntry(stored: StoredEntry, registers: Restored): Entry {
+/** Restores stored entries in order; `decoder` holds the products of each source's previous state. */
+function restoredEntry(stored: StoredEntry, decoder: RegisterDecoder): Entry {
   const { at, message, registers: order } = stored;
   if (message.kind !== "state" || !order) return { at, message };
-  return { at, message: registers.decode({ ...message, registers: order }) };
+  return { at, message: decoder.decode({ ...message, registers: order }) };
 }
 
 interface Chunk {
@@ -106,8 +100,8 @@ export class Recorder {
   private lastAt = 0;
   private stopped = false;
   private readonly snapshotTimes: number[] = [];
-  /** Previous product registers within the block being filled; every block starts complete. */
-  private registers: Registers = new RegisterEncoder();
+  /** The product registers of the block being filled; every block starts with whole registers. */
+  private encoder = new RegisterEncoder();
   private pendingStateSources = new Set<string>();
   private readonly tracker: EventTracker;
   /** Every product of the whole recording: it is limited in time, not in products. */
@@ -159,11 +153,11 @@ export class Recorder {
     if (this.pending.length === 0) {
       this.pendingStart = at;
       this.pendingContext = [...this.sources.values()].map((s) => ({ ...s }));
-      this.registers = new RegisterEncoder();
+      this.encoder = new RegisterEncoder();
       this.pendingStateSources = new Set();
     }
     if (message.kind === "state") this.pendingStateSources.add(message.sourceId);
-    const line = storedEntry(at, message, raw, this.registers);
+    const line = storedEntry(at, message, raw, this.encoder);
     this.pending.push(line);
     this.pendingBytes += line.length;
     this.pendingEnd = at;
@@ -208,9 +202,9 @@ export class Recorder {
     const copy = new Recorder(first.context, new Date(Date.parse(this.recordedAt) + first.start).toISOString());
     for (const chunk of chunks) {
       // Every block starts complete.
-      const registers: Restored = new RegisterDecoder();
+      const decoder = new RegisterDecoder();
       for (const line of (await gunzipText(chunk.data)).split("\n")) {
-        const { at, message } = restoredEntry(JSON.parse(line) as StoredEntry, registers);
+        const { at, message } = restoredEntry(JSON.parse(line) as StoredEntry, decoder);
         copy.add(at - first.start, message);
       }
     }
@@ -334,7 +328,7 @@ export class Recording {
   /** Opens a file written by `toFile`. Throws RecordingFileError for anything else. */
   static async fromFile(bytes: Uint8Array): Promise<Recording> {
     let recorder: Recorder | undefined;
-    const registers: Restored = new RegisterDecoder();
+    const decoder = new RegisterDecoder();
     try {
       const text = new Blob([bytes as BlobPart])
         .stream()
@@ -346,7 +340,7 @@ export class Recording {
           recorder = new Recorder(...checkedHeader(line));
           continue;
         }
-        const { at, message } = restoredEntry(JSON.parse(line) as StoredEntry, registers);
+        const { at, message } = restoredEntry(JSON.parse(line) as StoredEntry, decoder);
         recorder.add(at, message);
       }
     } catch (error) {
@@ -386,8 +380,8 @@ export class Recording {
       return decoded;
     }
     const pending = gunzipText(this.chunks[index]!.data).then((text) => {
-      const registers: Restored = new RegisterDecoder();
-      const entries = text.split("\n").map((line) => restoredEntry(JSON.parse(line) as StoredEntry, registers));
+      const decoder = new RegisterDecoder();
+      const entries = text.split("\n").map((line) => restoredEntry(JSON.parse(line) as StoredEntry, decoder));
       // Not when the block was dropped from the cache meanwhile.
       if (this.decoded.get(index) === pending) this.ready.set(index, entries);
       return entries;

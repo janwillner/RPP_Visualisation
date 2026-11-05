@@ -7,7 +7,8 @@ import type { Product, StateMessage } from "./model";
  * order. The WebSocket sends this form to clients that ask for it (`/ws?changes=1`); recording files store it too.
  *
  * Encoder and decoder each remember the previous register of every conveyor; they stay in step as long as the decoder
- * gets every state the encoder made, in order. A state encoded `full` (every product listed) starts a decoder afresh.
+ * gets every state the encoder made, in order. A state with every product listed (`withRegisters`) starts a decoder
+ * afresh.
  */
 
 /** How far ahead of the expected place a product is looked for before the whole register is indexed. */
@@ -61,16 +62,16 @@ export class RegisterEncoder {
   private readonly sources = new Map<string, Registers>();
 
   /**
-   * `state` in register form: per conveyor only the products that changed since the previous state of its source, or
-   * every product with `full`. Remembers the registers either way.
+   * `state` in register form: per conveyor only the products that changed since the previous state of its source
+   * (every product for the first). Remembers the registers.
    */
-  encode(state: StateMessage, full = false): StateMessage {
+  encode(state: StateMessage): StateMessage {
     const previous = this.sources.get(state.sourceId);
     const next: Registers = new Map();
     const registers: Record<string, number[]> = {};
     const components = state.components.map((c) => {
       if (c.type !== "conveyor") return c;
-      const before = full ? undefined : previous?.get(c.id);
+      const before = previous?.get(c.id);
       const changed: Product[] = [];
       const ids: number[] = [];
       let j = 0;

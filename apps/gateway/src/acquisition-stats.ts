@@ -1,7 +1,4 @@
-import type { AcquisitionStats as AcquisitionReport, ComponentState } from "@rpp/protocol";
-
-/** Snapshots the averages and maxima cover: about 5 s at the default 20 ms cycle. */
-export const ACQUISITION_WINDOW = 250;
+import { ACQUISITION_WINDOW, type AcquisitionStats as AcquisitionReport, type ComponentState } from "@rpp/protocol";
 
 /** The most recent values of one measurement, up to ACQUISITION_WINDOW of them. */
 class Window {

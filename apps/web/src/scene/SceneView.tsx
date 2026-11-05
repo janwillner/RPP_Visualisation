@@ -32,6 +32,7 @@ import type {
 } from "./scene-model";
 import { availableSnapPoints, buildMachineScene, emptyScene } from "./scene-model";
 import { isTap, nearestOnScreen, snapRadiusPx, type ScreenPoint } from "./picking";
+import { ProductGroups, isGrouped, partitionProducts, type ProductGroup } from "./product-groups";
 import type { ConfigMessage, ProductState } from "@rpp/protocol";
 
 export interface Layers {
@@ -268,13 +269,13 @@ function placeBetween(mesh: THREE.Object3D | null, a: Vec3 | undefined, b: Vec3 
 }
 
 /** Structural signature: re-render React only when the set of drawn objects changes. */
-function signature(m: SceneModel): string {
+function signature(m: SceneModel, groups: ProductGroups): string {
   return [
     m.conveyors.map((c) => `${c.id}:${c.length}:${c.width}`).join(","),
     // Products on the belt are drawn in groups (`ProductInstances`): only a new group or a larger one counts. The few
     // drawn one by one (placeholders, carried products) count each.
-    productGroups(m.products).map((g) => `${g.key}:${g.capacity}`).join(","),
-    m.products.filter((p) => !INSTANCED.has(p.display)).map((p) => `${p.key}:${p.state}`).join(","),
+    groups.of(m.products).map((g) => `${g.key}:${g.capacity}`).join(","),
+    m.products.filter((p) => !isGrouped(p)).map((p) => `${p.key}:${p.state}`).join(","),
     m.deltas.map((d) => d.id + ":" + d.baseRadius + ":" + d.effectorRadius).join(","),
     m.zones.map((w) => `${w.componentId}:${w.conveyorId}:${w.length}`).join(","),
     m.snapPoints.filter((p) => !p.moving).map((p) => p.key).join(","),
@@ -385,6 +386,8 @@ function SourceContent(props: {
   const productIndex = useRef(new Map<string, SceneProduct>());
   /** Per product group the products it draws this frame (`ProductInstances`). */
   const groupMembers = useRef(new Map<string, SceneProduct[]>());
+  /** The product groups and the instances allocated to each so far. */
+  const productGroups = useMemo(() => new ProductGroups(), []);
   // A new config can change geometry without changing ids: force a structural update.
   useEffect(() => {
     sig.current = "";
@@ -394,21 +397,10 @@ function SourceContent(props: {
   useFrame(() => {
     const model = machine.current.sources.find((s) => s.sourceId === sourceId)?.scene ?? EMPTY;
     latest.current = model;
-    const index = new Map<string, SceneProduct>();
-    const members = new Map<string, SceneProduct[]>();
-    for (const p of model.products) {
-      if (!INSTANCED.has(p.display)) {
-        index.set(p.key, p);
-        continue;
-      }
-      const key = groupKey(p);
-      const list = members.get(key);
-      if (list) list.push(p);
-      else members.set(key, [p]);
-    }
-    productIndex.current = index;
+    const { members, single } = partitionProducts(model.products);
+    productIndex.current = single;
     groupMembers.current = members;
-    const s = signature(model);
+    const s = signature(model, productGroups);
     if (s !== sig.current) {
       sig.current = s;
       setStructure(model);
@@ -445,7 +437,7 @@ function SourceContent(props: {
           </Html>
         </group>
       ))}
-      {productGroups(structure.products).map((g) => (
+      {productGroups.of(structure.products).map((g) => (
         <ProductInstances
           key={`${g.key}:${g.capacity}`}
           group={g}
@@ -455,7 +447,7 @@ function SourceContent(props: {
         />
       ))}
       {structure.products
-        .filter((p) => !INSTANCED.has(p.display))
+        .filter((p) => !isGrouped(p))
         .map((p) => (
           <ProductMesh
             key={p.key}
@@ -763,36 +755,6 @@ function productGeometry(p: SceneProduct): THREE.BufferGeometry {
     return solid;
   }
   return new THREE.BoxGeometry(length, height, width);
-}
-
-/** Products drawn many at once: on the belt, normal or missed. Placeholders and carried products are few. */
-const INSTANCED: ReadonlySet<ProductDisplay> = new Set<ProductDisplay>(["normal", "missed"]);
-
-/** Products that share one instanced mesh: the same look and the same solid (shape and size). */
-interface ProductGroup {
-  key: string;
-  /** Any of its products, for the solid and the look. */
-  sample: SceneProduct;
-  /** Instances allocated: a power of two, so a register growing by a few does not rebuild the mesh. */
-  capacity: number;
-}
-
-function groupKey(p: SceneProduct): string {
-  const { length, width, height } = p.size;
-  return `${p.display}|${p.shape}|${length}|${width}|${height}|${p.cornerRadius}`;
-}
-
-/** The groups the products on the belt fall into, each with room for its products. */
-function productGroups(products: readonly SceneProduct[]): ProductGroup[] {
-  const groups = new Map<string, { sample: SceneProduct; count: number }>();
-  for (const p of products) {
-    if (!INSTANCED.has(p.display)) continue;
-    const key = groupKey(p);
-    const g = groups.get(key);
-    if (g) g.count += 1;
-    else groups.set(key, { sample: p, count: 1 });
-  }
-  return [...groups].map(([key, g]) => ({ key, sample: g.sample, capacity: Math.max(64, 2 ** Math.ceil(Math.log2(g.count))) }));
 }
 
 const ONE = new THREE.Vector3(1, 1, 1);
