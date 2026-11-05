@@ -609,6 +609,7 @@ The array sizes are library parameters (`SynVisu.VISU_GlobalConst_Param`):
 | --- | --- | --- |
 | `VISU_un_MAX_MANIFEST_ENTRIES` | 32 | PLC (components) |
 | `VISU_un_MAX_PRODUCTS` | 4800 | conveyor |
+| `VISU_un_PRODUCT_INDEX_SIZE` | 16384 | conveyor: slots of its product index by id; a power of two, at least twice `VISU_un_MAX_PRODUCTS` (32 KB per conveyor) |
 | `VISU_un_MAX_PRODUCT_TYPES` | 8 | conveyor |
 | `VISU_un_MAX_ZONES` | 8 | robot, detector or station |
 | `VISU_un_MAX_MOVERS` | 40 | XTS gantry or loop |

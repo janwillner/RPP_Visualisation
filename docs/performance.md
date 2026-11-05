@@ -180,3 +180,25 @@ already with changes on the WebSocket):
 
 Screenshots of both versions, also close up, show the same picture. A panel PC has a much weaker GPU and CPU; measure
 there before relying on these numbers.
+
+## The register on the PLC (library 7.2.0)
+
+`m_FindProduct` searched the register entry by entry, and `m_LatchProduct`, `m_SetProductState`,
+`m_MoveProduct` and `m_RemoveProduct` all call it; removing a product moved the entries behind it one by one, and
+`m_RemoveProductsBeyond` copied each entry that stayed. Since library 7.2.0 a conveyor keeps an index from product
+id to register entry (`VISU_un_PRODUCT_INDEX_SIZE` slots, 32 KB per conveyor, rebuilt after the register was
+rearranged; if it is too small for the register, the search falls back to going through it), and moves entries with
+`MEMMOVE`: `m_RemoveProductsBeyond` in runs, usually one, since the products leaving are the oldest at the front.
+The contract and the methods' behaviour do not change.
+
+Demo PLC, 10 ms task, 3990 products on the stress belt, task execution time of all demo programs (about 57 µs without
+products):
+
+| | 7.1.0 | 7.2.0 |
+| --- | --- | --- |
+| Mean | 143.5 µs | 86.5 µs |
+| Maximum | 899 µs | 395 µs |
+
+Checked through the gateway over 1500 snapshots with 4000 products: the register kept its order, no product was read
+twice or went missing, and the state changes that find their product by id (rejections on the stress belt, every
+robot state on the other belts) all happened.

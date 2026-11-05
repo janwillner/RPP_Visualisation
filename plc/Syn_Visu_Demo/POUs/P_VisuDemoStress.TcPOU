@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoStress" Id="{6b3ed6da-097a-4f22-898e-84897cd039c0}" SpecialFunc="None">
+  <POU Name="P_VisuDemoStress" Id="{71cb3b8b-0b13-4d29-8ae1-09b3bba4aeb6}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -18,6 +18,7 @@ PROGRAM P_VisuDemoStress
 VAR
 	fb_StressBelt						: _FB_VisuConveyor;
 	b_Registered						: BOOL;	// the stress belt is in the manifest
+	b_On								: BOOL;	// DEMO_un_StressProducts was above 0 in the previous cycle
 
 	(* Belt *)
 	lr_Dt								: LREAL;	// [s] cycle time
@@ -109,6 +110,15 @@ fb_StressBelt.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := DEMO_GlobalConst.
 lr_BeltPosition := lr_BeltPosition + lr_STRESS_SPEED * lr_Dt;
 fb_StressBelt.m_SetBeltPosition(lr_BeltPosition);
 
+(* Switched on: start from an empty belt and fill it up, so a measurement always gets the load asked for. *)
+IF DEMO_GlobalVar.DEMO_un_StressProducts > 0 AND NOT b_On THEN
+	fb_StressBelt.m_RemoveProductsBeyond(-1.0E12);
+	lr_EntryStart := lr_BeltPosition;
+	lr_NextRow := lr_BeltPosition;
+	un_FillRow := 0;
+END_IF
+b_On := DEMO_GlobalVar.DEMO_un_StressProducts > 0;
+
 (* Rows filled in from the belt end down to where the entering rows have got to, a few per cycle. *)
 un_FilledNow := 0;
 WHILE un_FilledNow < un_STRESS_FILL_ROWS
@@ -119,6 +129,10 @@ AND DEMO_GlobalVar.DEMO_un_StressProducts > 0 DO
 	un_FilledNow := un_FilledNow + 1;
 END_WHILE
 
+(* While switched off no rows enter: switched on again, the next one enters at the start, not rows behind it. *)
+IF lr_BeltPosition - lr_NextRow > lr_STRESS_PITCH THEN
+	lr_NextRow := lr_BeltPosition;
+END_IF
 IF lr_BeltPosition >= lr_NextRow AND DEMO_GlobalVar.DEMO_un_StressProducts > 0 THEN
 	udn_RowFirstId[udn_RowCount MOD (VISU_GlobalConst_Param.VISU_un_MAX_PRODUCTS / 10 + 1)] := DEMO_GlobalVar.DEMO_udn_NextId;
 	m_LatchRow(lr_STRESS_PITCH / 2 - (lr_BeltPosition - lr_NextRow));

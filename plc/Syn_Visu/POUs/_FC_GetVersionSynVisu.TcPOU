@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FC_GetVersionSynVisu" Id="{4831b604-3725-47d8-a6a3-0896a1f3d7c9}" SpecialFunc="None">
+  <POU Name="_FC_GetVersionSynVisu" Id="{c79f5119-8be0-4bba-a0c7-a43276ed1518}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -22,6 +22,7 @@ Syn_Visu 5.1.0  ¦ 2026-11-01 ¦ J.Willner ¦ Manifest sLibraryVersion: the visu
 Syn_Visu 6.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Generic product client (nLastClientId, ePreviousState), station (protocol 13)<br>
 Syn_Visu 7.0.0  ¦ 2026-11-02 ¦ J.Willner ¦ Product poses in the conveyor's coordinate system (protocol 14)<br>
 Syn_Visu 7.1.0  ¦ 2026-11-05 ¦ J.Willner ¦ VISU_un_MAX_PRODUCTS 4800: registers for machines with thousands of products<br>
+Syn_Visu 7.2.0  ¦ 2026-11-05 ¦ J.Willner ¦ Conveyor: product index by id, registers rearranged with MEMMOVE<br>
 ****************************************************************************************************)
 FUNCTION _FC_GetVersionSynVisu : UINT
 VAR_INPUT
@@ -30,7 +31,7 @@ END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[CASE vi_n_VersionElement OF
 	1: _FC_GetVersionSynVisu := 7;
-	2: _FC_GetVersionSynVisu := 1;
+	2: _FC_GetVersionSynVisu := 2;
 	3: _FC_GetVersionSynVisu := 0;
 ELSE
 	_FC_GetVersionSynVisu := 16#FFFF;
