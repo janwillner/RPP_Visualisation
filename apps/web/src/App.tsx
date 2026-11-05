@@ -956,6 +956,9 @@ function StatusBar(props: {
       <button className={errors.length ? "bad link" : "muted link"} onClick={() => setShowErrors((v) => !v)}>
         {errors.length} discovery error{errors.length === 1 ? "" : "s"}
       </button>
+      <a className="muted link statusbar-api" href="/docs" target="_blank" rel="noopener" title="API documentation of the gateway">
+        API
+      </a>
       <span className="muted statusbar-version" title="Version of this visualisation">
         v{APP_VERSION}
       </span>

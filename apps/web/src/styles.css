@@ -580,7 +580,8 @@ h3 {
 }
 
 /* The release version sits at the far right of the status bar. */
-.statusbar .statusbar-version {
+/* The API link and the version sit at the right end. */
+.statusbar .statusbar-api {
   margin-left: auto;
 }
 
@@ -650,6 +651,10 @@ button.link {
   background: none;
   border: none;
   padding: 0;
+  text-decoration: underline;
+}
+
+a.link {
   text-decoration: underline;
 }
 
@@ -845,6 +850,13 @@ button.link {
   }
 
   button.link {
+    min-height: 44px;
+    padding: 0 4px;
+  }
+
+  a.link {
+    display: inline-flex;
+    align-items: center;
     min-height: 44px;
     padding: 0 4px;
   }

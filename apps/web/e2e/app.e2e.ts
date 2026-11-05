@@ -291,3 +291,19 @@ test("loads the app in parts, none over 800 KB", async ({ request }) => {
     expect(bytes, script).toBeLessThan(800 * 1024);
   }
 });
+
+test("opens the gateway's API documentation from the status bar", async ({ page, context }) => {
+  await openApp(page);
+  const [docs] = await Promise.all([context.waitForEvent("page"), page.getByRole("link", { name: "API" }).click()]);
+  await docs.waitForLoadState();
+  expect(new URL(docs.url()).pathname).toBe("/docs");
+  await expect(docs).toHaveTitle("RPP visualisation API");
+  await expect(docs.locator("#ref-state")).toBeVisible();
+  // Every link within the page leads to a heading on it.
+  const broken = await docs.evaluate(() =>
+    [...document.querySelectorAll<HTMLAnchorElement>('main a[href^="#"]')]
+      .map((a) => a.getAttribute("href")!)
+      .filter((href) => !document.getElementById(decodeURIComponent(href.slice(1)))),
+  );
+  expect(broken).toEqual([]);
+});
