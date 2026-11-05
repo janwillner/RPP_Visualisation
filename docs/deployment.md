@@ -143,6 +143,13 @@ state snapshot) and `libraryVersion` (the `Syn_Visu` version the PLC runs, from 
 status is 200 while every source is connected and 503 otherwise, so a monitoring system can check it without reading
 the body.
 
+## API documentation
+
+Every instance serves the documentation of its own version at `http://<host>:<port>/docs`, also linked as "API" in the
+status bar. It covers the WebSocket messages, `/health`, the recording files, the server options, the PLC contract and
+the PLC library guide; `/docs/schema.json` gives the same messages as JSON Schema. Other programs, e.g. an MES or a
+dashboard, can read the machine data from the WebSocket with it (ADR 0012). Like the app, it has no authentication.
+
 ## Troubleshooting
 
 | Symptom | Check |

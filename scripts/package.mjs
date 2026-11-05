@@ -23,6 +23,8 @@ const WINSW_URL = "https://github.com/winsw/winsw/releases/download/v2.12.0/WinS
 const WINSW_SHA256 = "05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209b3a0da";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// Keep in step with DOC_FILES in apps/gateway/src/docs-texts.ts.
+const DOC_FILES = ["api.md", "plc-contract.md", "plc-library-guide.md"];
 const cache = join(root, ".cache", "package");
 const version = resolveVersion();
 // "+" separates the commit in the version; file names and download links keep a plain "-".
@@ -51,8 +53,15 @@ await build({
   external: ["bufferutil", "utf-8-validate"],
   // CommonJS dependencies call require() for Node built-ins, which an ESM bundle does not provide by itself.
   banner: { js: 'import { createRequire as __createRequire } from "node:module"; const require = __createRequire(import.meta.url);' },
-  // The release version reported at /health and in the log (apps/gateway/src/version.ts).
-  define: { __RPP_VERSION__: JSON.stringify(version) },
+  define: {
+    // The release version reported at /health and in the log (apps/gateway/src/version.ts).
+    __RPP_VERSION__: JSON.stringify(version),
+    // The Markdown texts of the API documentation at /docs (apps/gateway/src/docs-texts.ts), so the package needs
+    // no docs folder.
+    __RPP_DOCS__: JSON.stringify(
+      Object.fromEntries(DOC_FILES.map((file) => [file, readFileSync(join(root, "docs", file), "utf8")])),
+    ),
+  },
   logLevel: "warning",
 });
 
