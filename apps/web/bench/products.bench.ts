@@ -68,6 +68,25 @@ function stateAt(products: number, i: number): StateMessage {
   return { kind: "state", sourceId: "bench", configVersion: 1, timestamp: belt.timestamp, tRel: i * CYCLE_MS, components: [belt] };
 }
 
+/**
+ * 50 states as the register decoder gives them, in a loop: from one to the next, one product of 25 changes its state
+ * (a new object), every other product is the same object as before.
+ */
+function decodedStates(products: number): StateMessage[] {
+  const base = stateAt(products, 0).components[0]!;
+  if (base.type !== "conveyor") throw new Error("conveyor expected");
+  const changed = base.products.map((p) => ({ ...p, state: p.state === "detected" ? "assigned" : "detected" }) as const);
+  return Array.from({ length: 50 }, (_, j) => {
+    const belt: ConveyorState = {
+      ...base,
+      beltPosition: j * 6,
+      // Product k changes at state k % 25 and back 25 states later.
+      products: base.products.map((p, k) => ((j - (k % 25) + 50) % 50 < 25 ? changed[k]! : p)),
+    };
+    return { kind: "state", sourceId: "bench", configVersion: 1, timestamp: String(j), tRel: j * CYCLE_MS, components: [belt] };
+  });
+}
+
 for (const products of PRODUCT_COUNTS) {
   describe(`${products} products on one conveyor`, () => {
     const states = [0, 1, 2].map((i) => stateAt(products, i));
@@ -97,12 +116,29 @@ for (const products of PRODUCT_COUNTS) {
       history.add(at, states[(at / CYCLE_MS) % 3]!, source);
     });
 
+    // Live, states come from the register decoder: unchanged products are the same objects as in the previous state.
+    const live = decodedStates(products);
+    const liveHistory = new ProductHistory(5000, 120_000);
+    let liveAt = 0;
+    bench("follow the products of a decoded state message (product history, live)", () => {
+      liveAt += CYCLE_MS;
+      liveHistory.add(liveAt, live[(liveAt / CYCLE_MS) % live.length]!, source);
+    });
+
     const replay = Recorder.replayBuffer();
     replay.add(0, config);
     let recorded = 0;
     bench("keep a state message in the replay buffer", () => {
       recorded += CYCLE_MS;
       replay.add(recorded, states[(recorded / CYCLE_MS) % 3]!, json);
+    });
+
+    const liveReplay = Recorder.replayBuffer();
+    liveReplay.add(0, config);
+    let liveRecorded = 0;
+    bench("keep a decoded state message in the replay buffer (live)", () => {
+      liveRecorded += CYCLE_MS;
+      liveReplay.add(liveRecorded, live[(liveRecorded / CYCLE_MS) % live.length]!, json);
     });
 
     const sources = [{ sourceId: "bench", config, snapshots: states, renderTime: CYCLE_MS * 1.5, online: true }];

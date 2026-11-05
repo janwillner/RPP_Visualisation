@@ -10,8 +10,38 @@ import type { Product, StateMessage } from "./model";
  * gets every state the encoder made, in order. A state encoded `full` (every product listed) starts a decoder afresh.
  */
 
-/** Per conveyor id its register by product id. */
-type Registers = Map<number, Map<number, Product>>;
+/** How far ahead of the expected place a product is looked for before the whole register is indexed. */
+const LOOKAHEAD = 8;
+
+/**
+ * A conveyor's previous register. Registers keep their order (new products at the end, removed ones drop out), so the
+ * products of the next state are found by walking along it; it is indexed by id only when that fails.
+ */
+class Register {
+  private byId?: Map<number, number>;
+
+  constructor(readonly products: readonly Product[]) {}
+
+  /** True once indexed: a product is then found anywhere at no extra cost. */
+  get indexed(): boolean {
+    return this.byId !== undefined;
+  }
+
+  /** Where the product with `id` lies, looking from `from` on first; -1 if it is not in the register. */
+  indexOf(id: number, from: number): number {
+    const end = Math.min(from + LOOKAHEAD, this.products.length);
+    for (let j = from; j < end; j++) if (this.products[j]!.id === id) return j;
+    if (!this.byId) {
+      this.byId = new Map();
+      // The first of two equal ids, as the walk finds it.
+      for (let j = this.products.length - 1; j >= 0; j--) this.byId.set(this.products[j]!.id, j);
+    }
+    return this.byId.get(id) ?? -1;
+  }
+}
+
+/** Per conveyor id its register. */
+type Registers = Map<number, Register>;
 
 /** Two JSON values alike: the same primitives, arrays and object members (in any member order). */
 export function sameValue(a: unknown, b: unknown): boolean {
@@ -41,16 +71,20 @@ export class RegisterEncoder {
     const components = state.components.map((c) => {
       if (c.type !== "conveyor") return c;
       const before = full ? undefined : previous?.get(c.id);
-      const register = new Map<number, Product>();
       const changed: Product[] = [];
       const ids: number[] = [];
+      let j = 0;
       for (const p of c.products) {
-        register.set(p.id, p);
         ids.push(p.id);
-        const old = before?.get(p.id);
-        if (!old || !sameValue(old, p)) changed.push(p);
+        // Past the end of the previous register a product is new, unless the order changed and the register is indexed
+        // already (listing an unchanged product costs only bytes).
+        const k = before && (j < before.products.length || before.indexed) ? before.indexOf(p.id, j) : -1;
+        if (k >= 0) j = k + 1;
+        const old = k >= 0 ? before!.products[k] : undefined;
+        // The same object has not changed: the gateway's mapping and the decoder keep unchanged products.
+        if (!old || (old !== p && !sameValue(old, p))) changed.push(p);
       }
-      next.set(c.id, register);
+      next.set(c.id, new Register(c.products));
       registers[c.id] = ids;
       return { ...c, products: changed };
     });
@@ -91,19 +125,26 @@ export class RegisterDecoder {
       if (c.type !== "conveyor") return c;
       const ids = order?.[c.id];
       if (!ids) {
-        next.set(c.id, new Map(c.products.map((p) => [p.id, p])));
+        next.set(c.id, new Register(c.products));
         return c;
       }
       const listed = new Map(c.products.map((p) => [p.id, p]));
       const before = previous?.get(c.id);
-      const register = new Map<number, Product>();
+      let j = 0;
       const products = ids.map((id) => {
-        const p = listed.get(id) ?? before?.get(id);
+        const changed = listed.get(id);
+        if (changed) {
+          // Listed: changed or new (at the end); not looked for, the walk just steps over it.
+          if (before?.products[j]?.id === id) j++;
+          return changed;
+        }
+        const k = before ? before.indexOf(id, j) : -1;
+        if (k >= 0) j = k + 1;
+        const p = k >= 0 ? before!.products[k] : undefined;
         if (!p) throw new RegisterGapError(`Product ${id} of conveyor ${c.id} (${state.sourceId}) is not known`);
-        register.set(id, p);
         return p;
       });
-      next.set(c.id, register);
+      next.set(c.id, new Register(products));
       return { ...c, products };
     });
     this.sources.set(state.sourceId, next);

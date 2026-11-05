@@ -156,6 +156,23 @@ Over 300 cycles both published the same products; of 1.47 million compared by id
 changed by the application between the two reads (products pushed on the spacing belt, state changes by the robots).
 A gateway cycle with thousands of products now fits well into 20 ms.
 
+## Skipping unchanged products in the browser
+
+The register decoder gives an unchanged product as the same object as in the previous state, and so does the
+gateway's mapping. The product history compares a product only when it is another object (it still checks every
+product for passing the belt end, since the belt moves it); the register encoder (gateway server, recorder, replay
+buffer) and decoder find each product by walking along the previous register in its order instead of building a map
+of every product per state, and index a register by id only when its order changed.
+
+`pnpm bench`, 4800 products, one in 25 changed per state, as the browser gets them live (mean per state message):
+
+| | Before | After |
+| --- | --- | --- |
+| Receive (parse, check, decode) | 0.84 ms | 0.66 ms |
+| Product history | 1.90 ms | 0.58 ms |
+| Replay buffer | 0.69 ms | 0.45 ms |
+| Together | 3.43 ms | 1.69 ms |
+
 ## Drawing thousands of products
 
 Every product used to be a mesh of its own with its own geometry, material and edge lines and its own frame callback,
