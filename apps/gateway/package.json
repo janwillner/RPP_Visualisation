@@ -10,12 +10,15 @@
   "dependencies": {
     "@rpp/protocol": "workspace:*",
     "ads-client": "^2.1.0",
+    "marked": "^18.1.3",
+    "ws": "^8.18.3",
     "zod": "^3.25.76",
-    "ws": "^8.18.3"
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/ws": "^8.18.1",
+    "ajv": "^8.20.0",
     "tsx": "^4.20.3"
   }
 }

@@ -21,7 +21,7 @@ Contents:
 10. [XTS tracks and their motor modules](#10-xts-tracks-and-their-motor-modules)
 11. [XTS gantry](#11-xts-gantry)
 12. [XTS loop](#12-xts-loop)
-13. [Vision system and product sensor](#13-vision-system-and-product-sensor)
+13. [Vision system, product sensor and station](#13-vision-system-product-sensor-and-station)
 14. [Faults](#14-faults)
 15. [Wrapping existing machine code](#15-wrapping-existing-machine-code)
 16. [Limits](#16-limits)

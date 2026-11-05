@@ -1,0 +1,279 @@
+# RPP visualisation API
+
+The RPP visualisation shows packaging machines in 3D, read-only, built from what their PLCs report. Its server, the
+gateway, reads one or more PLCs over ADS and passes on what it reads. This API lets your own programs receive the same
+data: an MES, a dashboard, a logger, a test tool. It is read-only: nothing you send reaches a PLC.
+
+The gateway serves this documentation at `/docs` (e.g. `http://<ipc>:8080/docs`). Each server documents the version it
+runs: the reference further down is generated from its protocol schemas, and the examples are real messages of its
+built-in simulator.
+
+## Overview
+
+One HTTP port (8080 by default) serves:
+
+| Endpoint                | What it is                                                                                      |
+| ----------------------- | ----------------------------------------------------------------------------------------------- |
+| `ws://<host>:<port>/ws` | WebSocket with the machine data: `status`, `config` and `state` messages as JSON.               |
+| `GET /health`           | Health of every PLC as JSON, for monitoring: 200 while all are connected, else 503.             |
+| `GET /docs`             | This page.                                                                                      |
+| `GET /docs/schema.json` | JSON Schema of the messages, the health report and the recording file lines.                   |
+| `GET /`                 | The web app.                                                                                    |
+
+There is no authentication. Anyone who can reach the port can read the data, so keep the port inside the machine
+network.
+
+## Concepts
+
+**Source.** A PLC runtime the gateway reads, named by `sourceId` as `ads:<AmsNetId>:<port>`, e.g.
+`ads:5.80.201.232.1.1:851` (`sim` for the simulator). One gateway may read several sources. Every message names its
+source, and everything you keep should be keyed by it.
+
+**Component.** One part of the machine the PLC registers: a conveyor, a Delta robot, an XTS gantry, an XTS loop, a
+Cartesian robot, a vision system, a product sensor or a station. Its `id` comes from the PLC's manifest and is unique
+**only within its source**; `(sourceId, id)` identifies a component.
+
+**Config and state.** What a component *is* (its type, size, pose, zones, product types) comes once in a `config`
+message. What it *does* (belt position, products, robot axes, faults) comes in every `state` message, about every
+20 ms. A state belongs to the config with the same `configVersion`.
+
+**Coordinates and units.** Every value is in millimetres and degrees, in the MCS (machine coordinate system):
+right-handed, Z up, X in the product flow direction. A component's `pose` places its local frame in the MCS; the
+descriptions in the reference say which frame each value is in.
+
+**Time.** `state.timestamp` and every component's `timestamp` are PLC times (EtherCAT distributed clock, ns, as decimal
+strings, since they exceed the precision of a JSON number). `state.tRel` is the same time in milliseconds since the
+gateway connected to that PLC, as a plain number: use it to interpolate between snapshots. It starts again from 0 after
+every reconnect.
+
+## The WebSocket
+
+Connect to `ws://<host>:<port>/ws` (`wss` is not offered). The server sends; it ignores whatever the client sends.
+
+Right after you connect, you get for every source:
+
+1. a `status` message: is the PLC connected?
+2. its current `config`, if the gateway has discovered that PLC.
+
+After that, the server sends:
+
+- a `state` for every source in every acquisition cycle (20 ms by default, `--cycle-ms`) while its PLC is connected;
+- a `status` whenever a PLC connects or drops out. After a drop-out, the gateway tries again every 5 s;
+- a new `config` when the PLC's configuration changes (a new `configVersion`), and after every reconnect.
+
+Messages of one source arrive in order: a new `config` comes before the first `state` that belongs to it.
+
+**Slow clients.** If a client cannot keep up and the server has more than about 1 MB queued for it, the server drops
+`state` messages for that client until it catches up. `status` and `config` messages are never dropped. A client
+therefore must not assume it sees every snapshot; each `state` is complete on its own.
+
+**Handling messages.** A client typically does this:
+
+- Switch on `kind`; ignore kinds you do not know.
+- On `config`: check `protocolVersion` (see below), then store the config per `sourceId`, replacing the old one. Report
+  `errors`: they name PLC entries that were left out.
+- On `state`: look up the config of its `sourceId`. If there is none, or its `configVersion` differs, skip the state.
+  Otherwise match each `components[i]` to its config by `id`.
+- On `status`: show the source as offline while `status.plcConnected` is false. Keep its last config to show what was
+  there.
+- On close: connect again after a short wait. The server sends status and config again.
+
+**Products.** A conveyor's `products` is its product register. A product's position is given at its latch (the moment a
+detector saw it) and moves with the belt. While it lies on the belt, its X in the conveyor's coordinate system is
+`latchPose.x + beltPosition − latchBeltPosition`. The conveyor's coordinate system is its `pose` moved by its
+`originShift`, with X along the belt. `state`, `previousState` and `lastClientId` tell what happened to it last and who
+did it. While a product is `picked`, it hangs at the gripper finger `fingerId` (or the flange) of robot `lastClientId`.
+
+## Compatibility
+
+- **Ignore what you do not know.** New fields may appear in any message and in any object, and new values of `kind` and
+  of a component's `type` may appear. A client must ignore them and not fail. The JSON Schema therefore allows extra
+  properties.
+- **The protocol version changes with every change of meaning.** When a field is removed, renamed or changes its
+  meaning, `PROTOCOL_VERSION` goes up. `config.protocolVersion` and `/health`'s `protocolVersion` report it.
+- **Check the version.** Before you read a `config`, compare its `protocolVersion` with the version your client was
+  written for. If they differ, tell the user rather than show wrong data. `/docs/schema.json` always describes the
+  version the server runs.
+
+## Example clients
+
+Each example connects, keeps the configs per source, reads states only for the matching config, and connects again
+after the connection closes. They print the belt position and the number of products of every conveyor once a second.
+
+### JavaScript (browser, or Node 22 and newer)
+
+Browsers and Node 22+ have `WebSocket` built in.
+
+```js
+const url = "ws://localhost:8080/ws";
+const PROTOCOL_VERSION = 14; // the version this client was written for
+const configs = new Map(); // sourceId -> config message
+let lastPrint = 0;
+
+function connect() {
+  const ws = new WebSocket(url);
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    switch (msg.kind) {
+      case "status":
+        console.log(`${msg.sourceName}: ${msg.status.plcConnected ? "connected" : "offline"}`);
+        break;
+      case "config":
+        if (msg.protocolVersion !== PROTOCOL_VERSION) {
+          console.warn(`${msg.sourceId} speaks protocol ${msg.protocolVersion}, expected ${PROTOCOL_VERSION}`);
+          configs.delete(msg.sourceId);
+          break;
+        }
+        for (const e of msg.errors) console.warn(`${msg.sourceId}: ${e.path ?? ""} ${e.message}`);
+        configs.set(msg.sourceId, msg);
+        break;
+      case "state": {
+        const config = configs.get(msg.sourceId);
+        if (!config || config.configVersion !== msg.configVersion) break;
+        if (Date.now() - lastPrint < 1000) break;
+        lastPrint = Date.now();
+        for (const c of msg.components) {
+          if (c.type !== "conveyor") continue;
+          const name = config.components.find((k) => k.id === c.id)?.name;
+          console.log(`${name}: belt ${c.beltPosition.toFixed(0)} mm, ${c.products.length} products`);
+        }
+        break;
+      }
+      // other kinds: ignore
+    }
+  };
+  ws.onclose = () => setTimeout(connect, 2000);
+}
+
+connect();
+```
+
+On older Node versions, install the `ws` package and add `import WebSocket from "ws";`.
+
+### Python
+
+Needs the `websockets` package (`pip install websockets`).
+
+```python
+import asyncio
+import json
+import time
+
+import websockets
+
+URL = "ws://localhost:8080/ws"
+PROTOCOL_VERSION = 14  # the version this client was written for
+
+
+async def main():
+    configs = {}  # sourceId -> config message
+    last_print = 0.0
+    while True:
+        try:
+            async with websockets.connect(URL, max_size=None) as ws:
+                async for raw in ws:
+                    msg = json.loads(raw)
+                    kind = msg.get("kind")
+                    if kind == "status":
+                        state = "connected" if msg["status"]["plcConnected"] else "offline"
+                        print(f"{msg['sourceName']}: {state}")
+                    elif kind == "config":
+                        if msg["protocolVersion"] != PROTOCOL_VERSION:
+                            print(f"{msg['sourceId']} speaks protocol {msg['protocolVersion']}")
+                            configs.pop(msg["sourceId"], None)
+                            continue
+                        for e in msg["errors"]:
+                            print(f"{msg['sourceId']}: {e.get('path', '')} {e['message']}")
+                        configs[msg["sourceId"]] = msg
+                    elif kind == "state":
+                        config = configs.get(msg["sourceId"])
+                        if not config or config["configVersion"] != msg["configVersion"]:
+                            continue
+                        if time.monotonic() - last_print < 1:
+                            continue
+                        last_print = time.monotonic()
+                        names = {c["id"]: c["name"] for c in config["components"]}
+                        for c in msg["components"]:
+                            if c["type"] == "conveyor":
+                                print(f"{names.get(c['id'])}: belt {c['beltPosition']:.0f} mm, "
+                                      f"{len(c['products'])} products")
+                    # other kinds: ignore
+        except (OSError, websockets.ConnectionClosed):
+            await asyncio.sleep(2)
+
+
+asyncio.run(main())
+```
+
+`max_size=None` matters: a `config` or `state` of a large machine can exceed the library's default limit of 1 MB.
+
+## Monitoring with /health
+
+`GET /health` answers with a `HealthReport`: the release, the protocol version and, per source, whether its PLC is
+connected, the last error, the time of the newest state and the PLC library's version. The HTTP status is 200 while
+every source is connected, else 503, so a plain HTTP check works:
+
+```sh
+curl -fsS http://localhost:8080/health
+```
+
+```powershell
+Invoke-RestMethod http://localhost:8080/health
+```
+
+## Recording files
+
+The web app can record what it receives and save it as a `.rpprec` file. Other programs can read such a file:
+
+- The file is gzip-compressed UTF-8 text with one JSON object per line.
+- The first line is the header (`RecordingFileHeader`). Its `format` is `rpp-recording`. `formatVersion` (currently 1)
+  is the version of this layout, and `protocolVersion` the version of the messages in the file. `sources` holds every
+  source as it was when the recording started, with its last status and config.
+- Every other line is a `RecordingEntry`: a gateway message as described above, with `at`, its arrival time in ms after
+  the start.
+- To keep files small, a `state` holds per conveyor only the products that changed since that conveyor's previous
+  state in the file. `registers` lists, per conveyor id, the ids of the whole register in order. To restore the full
+  register, keep the products of each conveyor's previous state by id, update them with the ones in the line, and take
+  them in the order of `registers`.
+
+```python
+import gzip
+import json
+
+with gzip.open("rpp-recording-20260101-120000.rpprec", "rt", encoding="utf-8") as f:
+    header = json.loads(f.readline())
+    assert header["format"] == "rpp-recording" and header["formatVersion"] == 1
+    previous = {}  # (sourceId, conveyor id) -> {product id: product}
+    for line in f:
+        entry = json.loads(line)
+        msg = entry["message"]
+        if msg["kind"] == "state":
+            for c in msg["components"]:
+                order = entry.get("registers", {}).get(str(c["id"]))
+                if c["type"] != "conveyor" or order is None:
+                    continue
+                key = (msg["sourceId"], c["id"])
+                known = {**previous.get(key, {}), **{p["id"]: p for p in c["products"]}}
+                c["products"] = [known[i] for i in order]
+                previous[key] = {p["id"]: p for p in c["products"]}
+        print(entry["at"], msg["kind"])
+```
+
+## Protocol versions
+
+The current version is in the box at the top of this page. The latest changes:
+
+| Version | Change                                                                                                                      |
+| ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 14      | A product's `latchPose` is given in its conveyor's coordinate system (its pose plus origin shift, X along the belt). ADR 0010. |
+| 13      | Products name their last client and their state before that change: `lastClientId`, `previousState`. ADR 0009.            |
+| 12      | XTS gantries and loops describe their track as a chain of motor modules (`modules`), each with its own fault. ADR 0008.   |
+
+The ADRs (architecture decision records) are in the source repository under `docs/adr/`. The gateway accepts only
+PLCs that report its own protocol version, so a server never mixes versions.
+
+## The PLC side
+
+What the PLC has to provide, so that the gateway finds and reads it, is described in the last two sections of this
+page: the [PLC contract](plc-contract.md) (the structures of the library `Syn_Visu`) and the
+[PLC library guide](plc-library-guide.md) for PLC programmers.

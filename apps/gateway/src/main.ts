@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 import { AdsBridgeSymbolAccess } from "./ads-bridge-symbol-access";
 import { AdsSymbolAccess } from "./ads-symbol-access";
 import { combineGateways, createGateway, type Gateway } from "./gateway";
-import { OptionsError, resolveGatewayOptions, type GatewayOptions } from "./options";
-import { HEALTH_PATH, startServer, WS_PATH } from "./server";
+import { helpText, OptionsError, resolveGatewayOptions, type GatewayOptions } from "./options";
+import { DOCS_PATH, HEALTH_PATH, startServer, WS_PATH } from "./server";
 import { createSimulator } from "./simulator";
 import type { SymbolAccess } from "./symbol-access";
 import { APP_VERSION } from "./version";
@@ -24,28 +24,7 @@ try {
 }
 
 if (options.help) {
-  console.log(`Usage: gateway [options]
-  --config <file>            JSON file with any of the options below in camelCase (e.g. "adsPort": 851);
-                             relative paths in it resolve against its folder; command-line flags win
-  --driver sim|ads|ads-tcp   PLC driver (default: sim)
-                             ads:     official Beckhoff ADS library via the .NET bridge (local AMS router,
-                                      no route needed; build it with "pnpm build:bridge")
-                             ads-tcp: pure TCP client (ads-client); needs a route or AMS TCP loopback
-  --ams-net-id <id>          ADS target AmsNetId (default: 127.0.0.1.1.1); a remote IPC needs an ADS route
-  --ads-port <port>          ADS target port (default: 851)
-                             Several PLCs: "sources": [{ "name": "...", "amsNetId": "...", "adsPort": 851 }]
-                             in the config file instead of these two (ads driver only)
-  --ads-bridge <exe|dll>     ADS bridge (default: AdsBridge.exe next to the packaged gateway,
-                             else apps/ads-bridge/bin/Release/net9.0/AdsBridge.dll)
-  --router-address <host>    ads-tcp only: ADS router host when not using the local router
-  --router-port <port>       ads-tcp only: ADS router TCP port (default: 48898)
-  --local-ams-net-id <id>    ads-tcp only: local AmsNetId when connecting through a remote router
-  --cycle-ms <ms>            Acquisition cycle (default: 20)
-  --config-recheck-ms <ms>   Re-read the full config at this interval to catch live changes (default: 1000, 0 = off)
-  --manifest-path <symbol>   Symbol path of the application's manifest (default: GVL_Visu.stManifest)
-  --port <port>              HTTP + WebSocket port (default: 8080)
-  --host <addr>              Bind address (default: all interfaces)
-  --static-dir <dir>         Built web app to serve (default: web/ next to the packaged gateway, else apps/web/dist)`);
+  console.log(helpText());
   process.exit(0);
 }
 
@@ -105,7 +84,7 @@ const server = await startServer({
 // ASCII only: the service log is read in consoles and editors with other code pages.
 console.log(
   `RPP visualisation ${APP_VERSION}: gateway (${options.driver}) listening on http://${options.host ?? "localhost"}:${options.port}` +
-    ` - WebSocket ${WS_PATH}, health ${HEALTH_PATH}${options.staticDir ? `, serving ${options.staticDir}` : ", no static web app"}`,
+    ` - WebSocket ${WS_PATH}, health ${HEALTH_PATH}, API docs ${DOCS_PATH}${options.staticDir ? `, serving ${options.staticDir}` : ", no static web app"}`,
 );
 console.log(`Sources: ${runtimes.map((r) => `${r.name} (${r.gateway.sourceId})`).join(", ")}`);
 

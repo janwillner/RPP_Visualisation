@@ -45,6 +45,77 @@ export interface OptionsEnvironment {
 
 export class OptionsError extends Error {}
 
+/** One command-line option as `--help` and the API documentation (`/docs`) show it. */
+export interface OptionHelp {
+  /** Flag with its argument, e.g. `--port <port>`. */
+  flag: string;
+  /** Lines of the description. */
+  text: string[];
+}
+
+/** Every command-line option; in a `--config` file each is the camelCase key (`--ads-port` → `"adsPort"`). */
+export const OPTION_HELP: readonly OptionHelp[] = [
+  {
+    flag: "--config <file>",
+    text: [
+      'JSON file with any of the options below in camelCase (e.g. "adsPort": 851);',
+      "relative paths in it resolve against its folder; command-line flags win",
+    ],
+  },
+  {
+    flag: "--driver sim|ads|ads-tcp",
+    text: [
+      "PLC driver (default: sim)",
+      "ads:     official Beckhoff ADS library via the .NET bridge (local AMS router,",
+      '         no route needed; build it with "pnpm build:bridge")',
+      "ads-tcp: pure TCP client (ads-client); needs a route or AMS TCP loopback",
+    ],
+  },
+  { flag: "--ams-net-id <id>", text: ["ADS target AmsNetId (default: 127.0.0.1.1.1); a remote IPC needs an ADS route"] },
+  {
+    flag: "--ads-port <port>",
+    text: [
+      "ADS target port (default: 851)",
+      'Several PLCs: "sources": [{ "name": "...", "amsNetId": "...", "adsPort": 851 }]',
+      "in the config file instead of these two (ads driver only)",
+    ],
+  },
+  {
+    flag: "--ads-bridge <exe|dll>",
+    text: [
+      "ADS bridge (default: AdsBridge.exe next to the packaged gateway,",
+      "else apps/ads-bridge/bin/Release/net9.0/AdsBridge.dll)",
+    ],
+  },
+  { flag: "--router-address <host>", text: ["ads-tcp only: ADS router host when not using the local router"] },
+  { flag: "--router-port <port>", text: ["ads-tcp only: ADS router TCP port (default: 48898)"] },
+  { flag: "--local-ams-net-id <id>", text: ["ads-tcp only: local AmsNetId when connecting through a remote router"] },
+  { flag: "--cycle-ms <ms>", text: ["Acquisition cycle (default: 20)"] },
+  {
+    flag: "--config-recheck-ms <ms>",
+    text: ["Re-read the full config at this interval to catch live changes (default: 1000, 0 = off)"],
+  },
+  {
+    flag: "--manifest-path <symbol>",
+    text: ["Symbol path of the application's manifest (default: GVL_Visu.stManifest)"],
+  },
+  { flag: "--port <port>", text: ["HTTP + WebSocket port (default: 8080)"] },
+  { flag: "--host <addr>", text: ["Bind address (default: all interfaces)"] },
+  {
+    flag: "--static-dir <dir>",
+    text: ["Built web app to serve (default: web/ next to the packaged gateway, else apps/web/dist)"],
+  },
+];
+
+/** The `--help` text. */
+export function helpText(): string {
+  const width = 27;
+  const lines = OPTION_HELP.flatMap(({ flag, text }) =>
+    text.map((line, i) => `  ${(i === 0 ? flag : "").padEnd(width)}${line}`),
+  );
+  return ["Usage: gateway [options]", ...lines].join("\n");
+}
+
 const stringKeys = ["driver", "amsNetId", "routerAddress", "localAmsNetId", "host", "manifestPath"] as const;
 /** String settings holding paths; relative ones resolve against the config file's folder or the working directory. */
 const pathKeys = ["adsBridge", "staticDir"] as const;
