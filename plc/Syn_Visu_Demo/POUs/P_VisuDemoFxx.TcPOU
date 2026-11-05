@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoFxx" Id="{ca40ae38-382c-45b3-8242-df5de463319c}" SpecialFunc="None">
+  <POU Name="P_VisuDemoFxx" Id="{7cf41d6a-6932-4989-a2f4-a63ae7edb70b}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -152,11 +152,13 @@ fb_Fxx.m_SetModuleFault(vi_un_Module := un_LOOP_STRAIGHT_MODULES + 1,
 fb_Fxx.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER,
 	vi_lr_Height := DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT);
 fb_Fxx.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_FxxInfeed.m_Id(), vi_lr_Start := lr_LOOP_X,
-	vi_lr_End := lr_LOOP_X + lr_LOOP_RELEASE, vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_LOOP_X);
+	vi_lr_End := lr_LOOP_X + lr_LOOP_RELEASE, vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_LOOP_X,
+	vi_lr_StartY := 0, vi_lr_EndY := 0);
 fb_Fxx.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_FxxOutfeed.m_Id(),
 	vi_lr_Start := lr_LOOP_X + lr_LOOP_PLACE - lr_FXX_OUTFEED_X - 300,
 	vi_lr_End := lr_LOOP_X + lr_LOOP_PLACE - lr_FXX_OUTFEED_X + 100,
-	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_LOOP_X + lr_LOOP_PLACE - lr_FXX_OUTFEED_X);
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_LOOP_X + lr_LOOP_PLACE - lr_FXX_OUTFEED_X,
+	vi_lr_StartY := 0, vi_lr_EndY := 0);
 m_Step();
 
 

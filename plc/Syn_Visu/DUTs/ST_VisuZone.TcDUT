@@ -14,6 +14,10 @@ STRUCT
 	(* mm along the conveyor's local X, like fStart / fEnd: position of the robot's conveyor coordinate system (CCS)
 	   on this conveyor. Drawn as a dashed line across the zone. *)
 	fCcsOffset : LREAL;
+	(* mm along the conveyor's local Y (from its origin, like the products' latch pose): the zone's sides across
+	   the belt, in any order. fStartY = fEndY = the whole belt width. Clipped to the belt when drawn. *)
+	fStartY : LREAL;
+	fEndY : LREAL;
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

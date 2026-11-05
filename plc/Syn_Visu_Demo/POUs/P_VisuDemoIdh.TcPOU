@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoIdh" Id="{f8012303-7cee-4048-88df-abd66a2d517c}" SpecialFunc="None">
+  <POU Name="P_VisuDemoIdh" Id="{c4670023-852c-4841-8706-f6ed942a67a9}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -149,11 +149,12 @@ fb_Idh.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr
 	vi_lr_Height := DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT);
 fb_Idh.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_IdhInfeed.m_Id(), vi_lr_Start := lr_GANTRY_X,
 	vi_lr_End := lr_GANTRY_X + UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH, vi_lr_AllocationOffset := 0,
-	vi_lr_CcsOffset := lr_GANTRY_X);
+	vi_lr_CcsOffset := lr_GANTRY_X, vi_lr_StartY := 0, vi_lr_EndY := 0);
 fb_Idh.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_IdhTray.m_Id(),
 	vi_lr_Start := lr_GANTRY_X - lr_TRAY_X,
 	vi_lr_End := lr_GANTRY_X - lr_TRAY_X + UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH,
-	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_GANTRY_X - lr_TRAY_X);
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_GANTRY_X - lr_TRAY_X,
+	vi_lr_StartY := 0, vi_lr_EndY := 0);
 m_Step();
 
 

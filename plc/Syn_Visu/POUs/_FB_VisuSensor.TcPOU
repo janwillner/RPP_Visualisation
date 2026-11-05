@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuSensor" Id="{52e583a5-4898-48b8-ab6b-e0c3026df952}" SpecialFunc="None">
+  <POU Name="_FB_VisuSensor" Id="{1a6727c6-7590-42d8-9e01-939d100fe907}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -11,7 +11,7 @@ One visualised product sensor, e.g. a light barrier at the side of a conveyor. T
   fb_Sensor.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 61, vi_str_Name := 'Sensor 1');<br>
   fb_Sensor.m_Configure(vi_Pose := HeadPose, vi_lr_BeamLength := 500);<br>
   fb_Sensor.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 1, vi_lr_Start := 500, vi_lr_End := 500,<br>
-      vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 500);<br>
+      vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 500, vi_lr_StartY := 0, vi_lr_EndY := 0);<br>
   fb_Sensor.m_SetSignal(vi_b_Signal := b_BeamInterrupted);<br>
 The pose is the sensor head; its beam runs along the local +Y. m_Configure describes body 1 (head) and<br>
 body 2 (beam); further bodies may be added with m_SetBody.<br>

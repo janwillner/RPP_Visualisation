@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FC_GetVersionSynVisu" Id="{78dc6219-23c5-499e-82aa-d5bd956d6b60}" SpecialFunc="None">
+  <POU Name="_FC_GetVersionSynVisu" Id="{25b125a2-65d0-4462-bf3b-8eccde539b0a}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -25,6 +25,7 @@ Syn_Visu 7.1.0  ¦ 2026-11-05 ¦ J.Willner ¦ VISU_un_MAX_PRODUCTS 4800: registe
 Syn_Visu 7.2.0  ¦ 2026-11-05 ¦ J.Willner ¦ Conveyor: product index by id, registers rearranged with MEMMOVE<br>
 Syn_Visu 8.0.0  ¦ 2026-11-05 ¦ J.Willner ¦ m_Register without vi_str_Path: the symbol path comes from the instance path<br>
 Syn_Visu 8.0.0  ¦ 2026-11-05 ¦ J.Willner ¦ Methods without default values: every call lists all inputs (TwinCAT 4024)<br>
+Syn_Visu 9.0.0  ¦ 2026-11-05 ¦ J.Willner ¦ Zones bounded across the belt: m_SetZone vi_lr_StartY, vi_lr_EndY (protocol 15)<br>
 ****************************************************************************************************)
 FUNCTION _FC_GetVersionSynVisu : UINT
 VAR_INPUT
@@ -32,7 +33,7 @@ VAR_INPUT
 END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[CASE vi_n_VersionElement OF
-	1: _FC_GetVersionSynVisu := 8;
+	1: _FC_GetVersionSynVisu := 9;
 	2: _FC_GetVersionSynVisu := 0;
 	3: _FC_GetVersionSynVisu := 0;
 ELSE

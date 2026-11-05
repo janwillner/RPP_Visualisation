@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoSpacing" Id="{9e193389-bca0-42a2-aac3-f1384ae511d6}" SpecialFunc="None">
+  <POU Name="P_VisuDemoSpacing" Id="{0eb5c535-c7c4-46fd-afa3-cafb3a2381eb}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -104,10 +104,11 @@ FOR un_Module := 1 TO 2 * (un_SPC_STRAIGHT_MODULES + 2) DO
 END_FOR
 fb_Spc.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_SpcBelt.m_Id(),
 	vi_lr_Start := lr_SPC_LOOP_END_X - lr_SPC_STRAIGHT, vi_lr_End := lr_SPC_LOOP_END_X - lr_SPC_STRAIGHT + lr_SPC_TAKE_WINDOW,
-	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_SPC_LOOP_END_X - lr_SPC_STRAIGHT);
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_SPC_LOOP_END_X - lr_SPC_STRAIGHT,
+	vi_lr_StartY := 0, vi_lr_EndY := 0);
 fb_Spc.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_SpcBelt.m_Id(),
 	vi_lr_Start := lr_SPC_RELEASE_MIN_X, vi_lr_End := lr_SPC_RELEASE_MAX_X, vi_lr_AllocationOffset := 0,
-	vi_lr_CcsOffset := lr_SPC_RELEASE_MIN_X);
+	vi_lr_CcsOffset := lr_SPC_RELEASE_MIN_X, vi_lr_StartY := 0, vi_lr_EndY := 0);
 
 
 (****************************************************************************************************)

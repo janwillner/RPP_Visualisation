@@ -107,17 +107,19 @@ export function emptyProduct(): ST_VisuProduct {
 }
 
 function emptyZone(): ST_VisuZone {
-  return { nConveyorId: 0, fStart: 0, fEnd: 0, fAllocationOffset: 0, fCcsOffset: 0 };
+  return { nConveyorId: 0, fStart: 0, fEnd: 0, fAllocationOffset: 0, fCcsOffset: 0, fStartY: 0, fEndY: 0 };
 }
 
-/** A zone as tests and the simulator write it; the allocation offset defaults to 0. */
-export type ZoneSpec = Omit<ST_VisuZone, "fAllocationOffset" | "fCcsOffset"> & {
+/** A zone as tests and the simulator write it; the offsets and the Y bounds (whole belt width) default to 0. */
+export type ZoneSpec = Omit<ST_VisuZone, "fAllocationOffset" | "fCcsOffset" | "fStartY" | "fEndY"> & {
   fAllocationOffset?: number;
   fCcsOffset?: number;
+  fStartY?: number;
+  fEndY?: number;
 };
 
 function zoneList(spec: { zones?: ZoneSpec[] }): ST_VisuZone[] {
-  return (spec.zones ?? []).map((z) => ({ fAllocationOffset: 0, fCcsOffset: 0, ...z }));
+  return (spec.zones ?? []).map((z) => ({ fAllocationOffset: 0, fCcsOffset: 0, fStartY: 0, fEndY: 0, ...z }));
 }
 
 /** Every config's origin shift; zero unless given. */

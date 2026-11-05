@@ -72,6 +72,7 @@ says so in its status.
 
 | Library `SynVisu` | Protocol version | Gateway |
 | --- | --- | --- |
+| 9.0.x | 15 | releases from protocol 15 on; `m_SetZone` has `vi_lr_StartY`, `vi_lr_EndY` (add `vi_lr_StartY := 0, vi_lr_EndY := 0` to every call for the whole belt width, section 6) |
 | 8.0.x | 14 | releases from protocol 14 on; `m_Register` without `vi_str_Path` (remove it from every call, section 3.2); methods without default values, every call lists all inputs (section 3.3) |
 | 7.0.x | 14 | releases from protocol 14 on (product poses in the conveyor's coordinate system) |
 | 6.0.x | 13 | releases from protocol 13 on (generic product client, station) |
@@ -170,7 +171,7 @@ A component works its path out once; after changing the parameter, reset the PLC
 
 Call every method with all its inputs. Since library 8.0 the methods have no default values: an input left out
 works only from TwinCAT 3.1 Build 4026, and machine projects still run on 4024. The compiler names a call that
-misses one ("Function 'm_SetZone' requires exactly '6' inputs"). Each input's comment says which value means
+misses one ("Function 'm_SetZone' requires exactly '8' inputs"). Each input's comment says which value means
 "none", e.g. `vi_lr_AllocationOffset := 0` (no limit), `vi_udn_MoverId := 0`, `vi_str_FaultMessage := ''`; a
 standard XTS module is `vi_lr_Length := SynVisu.VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH`.
 
@@ -296,12 +297,16 @@ fb_Infeed.m_RemoveProductsBeyond(3000 + 300);
 
 A zone is a stretch of a conveyor that belongs to a component: where a robot picks or places, where a detector
 detects, where a station works. All robots, detectors and stations have zones; the visualisation draws them alike.
+A zone spans the whole belt width, or only a lane of it when its sides across the belt are given, e.g. a robot
+that picks only from the left half of the belt.
 
 ```st
 fb_Delta1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(),
-	vi_lr_Start := 1100, vi_lr_End := 1900, vi_lr_AllocationOffset := 300, vi_lr_CcsOffset := 1100);
+	vi_lr_Start := 1100, vi_lr_End := 1900, vi_lr_AllocationOffset := 300, vi_lr_CcsOffset := 1100, vi_lr_StartY := 0, vi_lr_EndY := 0);
+(* Places only on the left half of the outfeed (400 mm wide, its origin on the centre line). *)
 fb_Delta1.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_Outfeed.m_Id(),
-	vi_lr_Start := 1200, vi_lr_End := 1800, vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 1200);
+	vi_lr_Start := 1200, vi_lr_End := 1800, vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 1200,
+	vi_lr_StartY := 0, vi_lr_EndY := 200, vi_lr_StartY := 0, vi_lr_EndY := 0);
 ```
 
 | Input | Meaning |
@@ -311,6 +316,7 @@ fb_Delta1.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_Outfeed.m_Id(),
 | `vi_lr_Start`, `vi_lr_End` | Belt coordinates in mm (from the belt start or its origin shift). `Start = End` draws a line across the belt, e.g. for a light barrier. |
 | `vi_lr_AllocationOffset` | mm before `End` up to which the robot may still allocate products; drawn as its own area. 0 = no limit. |
 | `vi_lr_CcsOffset` | Belt coordinate of the component's conveyor coordinate system (CCS), drawn as a dashed line. It should lie inside the zone. |
+| `vi_lr_StartY`, `vi_lr_EndY` | The zone's sides across the belt in mm, along the conveyor's local Y from its origin shift (like a product's latch pose; 0 = the belt's centre line without a shift), in any order. Equal (e.g. both 0) = the whole belt width. A zone reaching past the belt is drawn up to its edges, with a warning. |
 
 `m_ClearZones()` removes all zones, e.g. when a format change uses fewer zones.
 
@@ -524,7 +530,7 @@ LensPose.fZ := InfeedPose.fZ + 800;
 fb_Vision1.m_Configure(vi_Pose := LensPose, vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300,
 	vi_lr_WorkingDistance := 800);
 fb_Vision1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(), vi_lr_Start := 800, vi_lr_End := 1200,
-	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 1000);
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 1000, vi_lr_StartY := 0, vi_lr_EndY := 0);
 ```
 
 `vi_Pose` is the lens, looking along its local −Z. `m_Configure` draws a housing, the lens and the field of view as a
@@ -538,7 +544,7 @@ FB: `SynVisu._FB_VisuSensor`.
 (* Head at the belt side, the beam across the belt (local +Y) *)
 fb_Barrier1.m_Configure(vi_Pose := HeadPose, vi_lr_BeamLength := 500);
 fb_Barrier1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(), vi_lr_Start := 300, vi_lr_End := 300,
-	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 300);
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 300, vi_lr_StartY := 0, vi_lr_EndY := 0);
 fb_Barrier1.m_SetSignal(b_BeamInterrupted);	// every cycle: the beam lights up while TRUE
 ```
 
@@ -573,7 +579,7 @@ fb_RejectUnit.m_SetBody(vi_un_Body := 2, vi_e_Shape := SynVisu.E_VisuBodyShape.B
 	vi_e_Role := SynVisu.E_VisuBodyRole.STRUCTURE, vi_Pose := BodyPose, vi_lr_Length := 120, vi_lr_Width := 30,
 	vi_lr_Height := 50, vi_lr_TopLength := 0, vi_lr_TopWidth := 0);
 fb_RejectUnit.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Outfeed.m_Id(), vi_lr_Start := 3000, vi_lr_End := 3000,
-	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 3000);
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 3000, vi_lr_StartY := 0, vi_lr_EndY := 0);
 
 (* Every cycle: the pusher lights up while it pushes *)
 fb_RejectUnit.m_SetBodyActive(vi_un_Body := 2, vi_b_Active := b_PusherOut);
@@ -673,6 +679,7 @@ in the gateway log. Configuration warnings appear in the web app.
 | "Cannot read ...stConfig" | Symbol exists but cannot be read, e.g. hidden by an attribute or the PLC is stopped | Check the symbol in the ADS symbol table; start the PLC |
 | Component missing in the tree, no error | `m_Register` not called, id 0, id used twice, or manifest full | Call it every cycle with a unique id; check its return value |
 | "zone references unknown conveyor N" | Zone's conveyor id is not a registered conveyor | Use `fb_Belt.m_Id()`; register the conveyor |
+| "zone on ... reaches past the belt" | `vi_lr_StartY` / `vi_lr_EndY` beyond the belt edges | Keep them within ± half the belt width from the centre line (minus the origin shift's Y) |
 | "CCS of the zone ... lies outside the zone" | `vi_lr_CcsOffset` not between start and end | Correct the CCS or the zone |
 | "the track modules do not close the loop (N mm apart)" | Missing, extra or wrong-kind module in an XTS loop | Check the module list against the hardware |
 | "product #n hangs from finger f, which robot #r does not have" | `vi_udn_FingerId` beyond the defined fingers | Define the finger or pass 0 |
