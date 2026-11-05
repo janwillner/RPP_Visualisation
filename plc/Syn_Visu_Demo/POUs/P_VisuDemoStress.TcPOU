@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoStress" Id="{c119e2df-75e9-4bbd-991f-6816305f718e}" SpecialFunc="None">
+  <POU Name="P_VisuDemoStress" Id="{6b3ed6da-097a-4f22-898e-84897cd039c0}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -89,6 +89,8 @@ END_IF
 (* Set back to 0 the belt keeps its length and runs empty. *)
 IF un_Target > 0 AND (un_Target + un_STRESS_LANES - 1) / un_STRESS_LANES <> un_Rows THEN
 	un_Rows := (un_Target + un_STRESS_LANES - 1) / un_STRESS_LANES;
+	(* The entering rows have covered at most the old length: a longer belt is filled in beyond it. *)
+	lr_EntryStart := lr_BeltPosition - MIN(lr_BeltLength, lr_BeltPosition - lr_EntryStart);
 	lr_BeltLength := UINT_TO_LREAL(un_Rows) * lr_STRESS_PITCH;
 	un_FillRow := 0;
 END_IF

@@ -71,3 +71,34 @@ The demo application (`plc/Syn_Visu_Demo`) has a stress belt at Y = 11000, off b
 
 Write down the PLC, the runtime (e.g. 4026 user mode or a real-time core), the task cycle time and the numbers with
 every measurement, so measurements on different machines can be compared.
+
+## Measured on a PLC (2026-11-05)
+
+Development PC, TwinCAT 4026 user-mode runtime (not real-time), demo application on port 852 with a 10 ms task and
+library 7.1.0, gateway with the ADS bridge at its default 20 ms cycle, one browser stand-in connected (receives, does
+not draw). Each stage ran 40 s after the belt had filled; the last row is a 120 s run with the stress belt full. The
+other demo belts add about 120 products. Averages and maxima over the last 250 snapshots.
+
+| Stress belt | Products read | PLC task, last / max | Read (`readMs`) | Map (`mapMs`) | State message | States/s | To one browser |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| off | 119 | 58 / 209 µs | 5.9 / 19.8 ms | 0.6 / 0.8 ms | 30 KB | 31.6 | 1.0 MB/s |
+| 1000 | 1133 | 76 / 243 µs | 11.4 / 22.4 ms | 2.2 / 2.8 ms | 218 KB | 31.7 | 6.9 MB/s |
+| 2000 | 2123 | 91 / 444 µs | 15.9 / 31.2 ms | 3.9 / 5.3 ms | 401 KB | 31.0 | 12.1 MB/s |
+| 4000 | 4135 | 130 / 927 µs | 23.4 / 38.3 ms | 7.5 / 10.6 ms | 773 KB | 22.5 | 17.4 MB/s |
+
+Over the whole run (about 9000 snapshots, products entering and leaving all the time) the gateway counted no
+duplicate and no flickering product, and the PLC task never exceeded its cycle time.
+
+What this says:
+
+- Reading costs time even with few products: about 6 ms for 119 products, because the bridge reads every conveyor's
+  whole array (`VISU_un_MAX_PRODUCTS` entries of about 72 bytes, some 340 KB per conveyor and cycle) and converts only
+  the counted ones. Reading only the counted entries comes first.
+- The gateway does not reach its 20 ms cycle: about 32 snapshots per second without load, 22 with 4000 products,
+  where reading alone takes longer than a cycle.
+- One browser receives 17 MB/s at 4000 products. Sending only what changed (phase 2) is what brings this down.
+- The library's cost on the PLC grows with the register: peaks of about 0.9 ms at 4000 products. Not measured per
+  method; the likely causes are `m_RemoveProductsBeyond` moving the register up entry by entry and the linear search
+  in `m_FindProduct`. Harmless in a 10 ms task, noticeable in a 1 to 2 ms task.
+- No register read caught the PLC rearranging a register here. This runtime is not real-time, so check again on an
+  IPC with a real-time core; `/health` keeps counting.
