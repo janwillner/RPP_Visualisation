@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { enumValue, type PlcEnum } from "./plc-contract";
+import { isChangedEntries } from "./symbol-access";
 
 /**
  * Maps a PLC structure (library Syn_Visu) to a neutral protocol value, guided by the protocol's zod schema, so that
@@ -15,10 +16,24 @@ import { enumValue, type PlcEnum } from "./plc-contract";
  * - A 64-bit timestamp becomes a decimal string.
  *
  * A missing member throws a TypeError, which discovery reports for that entry only.
+ *
+ * An array may come as changes (`ChangedEntries`, ADR 0013): then only its changed entries are mapped, and the others
+ * are the mapped entries of the previous call with the same `memory` (the same objects).
  */
-export function mapPlc<S extends z.ZodTypeAny>(schema: S, raw: unknown, fixed: Record<string, unknown> = {}): z.infer<S> {
-  return mapValue(schema, raw, "", fixed) as z.infer<S>;
+export function mapPlc<S extends z.ZodTypeAny>(
+  schema: S,
+  raw: unknown,
+  fixed: Record<string, unknown> = {},
+  memory: EntryMemory = new Map(),
+): z.infer<S> {
+  return mapValue(schema, raw, "", fixed, memory) as z.infer<S>;
 }
+
+/** Per array (by its path in the structure) the mapped entries of the previous call by id; null for invalid ones. */
+export type EntryMemory = Map<string, Map<number, unknown>>;
+
+/** An array came as changes, but names an entry that neither changed nor was mapped before. */
+export class UnknownEntryError extends Error {}
 
 /**
  * PLC values of enumerations that do not count from 0 in the order of the protocol's options, keyed by those options:
@@ -82,7 +97,13 @@ function planFor(schema: z.ZodObject<z.ZodRawShape>, raw: Record<string, unknown
   return fields;
 }
 
-function mapValue(schema: z.ZodTypeAny, raw: unknown, path: string, fixed: Record<string, unknown> = {}): unknown {
+function mapValue(
+  schema: z.ZodTypeAny,
+  raw: unknown,
+  path: string,
+  fixed: Record<string, unknown> = {},
+  memory?: EntryMemory,
+): unknown {
   if (schema instanceof z.ZodNullable) {
     const s = structure(raw, path);
     if (!("bActive" in s)) throw new TypeError(`${path} has no bActive member`);
@@ -95,7 +116,7 @@ function mapValue(schema: z.ZodTypeAny, raw: unknown, path: string, fixed: Recor
       const value = s[f.member];
       result[f.key] =
         f.schema instanceof z.ZodArray
-          ? mapArray(f.schema, value, f.countMember && s[f.countMember], `${path}.${f.key}`)
+          ? mapArray(f.schema, value, f.countMember && s[f.countMember], `${path}.${f.key}`, memory)
           : mapValue(f.schema, value, `${path}.${f.key}`);
     }
     return result;
@@ -114,12 +135,47 @@ function mapValue(schema: z.ZodTypeAny, raw: unknown, path: string, fixed: Recor
   return raw;
 }
 
-function mapArray(schema: z.ZodArray<z.ZodTypeAny>, raw: unknown, count: unknown, path: string): unknown[] {
+function mapArray(
+  schema: z.ZodArray<z.ZodTypeAny>,
+  raw: unknown,
+  count: unknown,
+  path: string,
+  memory?: EntryMemory,
+): unknown[] {
+  if (isChangedEntries(raw)) return mapChangedEntries(schema, raw, path, memory);
   if (!Array.isArray(raw)) throw new TypeError(`${path} is not an array`);
   const entries = typeof count === "number" ? raw.slice(0, Math.max(0, Math.min(count, raw.length))) : raw;
   // Mapped before the bValid filter, so that an error names the entry's index in the PLC array.
   const valid = (e: unknown) => !(typeof e === "object" && e !== null && "bValid" in e) || (e as { bValid: unknown }).bValid;
   return entries.flatMap((e, i) => (valid(e) ? [mapValue(schema.element, e, `${path}[${i}]`)] : []));
+}
+
+/**
+ * An array as changes: its changed entries mapped, the others taken from `memory`; invalid entries (`bValid` FALSE)
+ * are left out as in a whole array. Remembers the entries of this call for the next one.
+ */
+function mapChangedEntries(
+  schema: z.ZodArray<z.ZodTypeAny>,
+  raw: { $ids: number[]; $changed: Record<string, unknown>[] },
+  path: string,
+  memory: EntryMemory = new Map(),
+): unknown[] {
+  const before = memory.get(path);
+  const known = new Map<number, unknown>();
+  for (const e of raw.$changed) {
+    const valid = !("bValid" in e) || e.bValid;
+    known.set(Number(e.nId), valid ? mapValue(schema.element, e, `${path}[id ${String(e.nId)}]`) : null);
+  }
+  const next = new Map<number, unknown>();
+  const result: unknown[] = [];
+  for (const id of raw.$ids) {
+    const entry = known.has(id) ? known.get(id) : before?.get(id);
+    if (entry === undefined) throw new UnknownEntryError(`${path}: entry ${id} is neither changed nor known`);
+    next.set(id, entry);
+    if (entry !== null) result.push(entry);
+  }
+  memory.set(path, next);
+  return result;
 }
 
 /** `zones` → `zone`, `bodies` → `body`: the count member is named after one entry. */

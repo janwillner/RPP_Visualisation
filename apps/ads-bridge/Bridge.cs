@@ -42,6 +42,9 @@ internal sealed record ResolvedSymbol(
     /// Every byte the conversion uses is read again each time; entries beyond a count may be stale but are never used.
     /// </summary>
     public byte[] Buffer { get; } = new byte[ByteSize];
+
+    /// <summary>Per counted array its entries of the previous read as changes, by id (ADR 0013).</summary>
+    public Dictionary<uint, byte[]>[] PreviousEntries { get; } = CountedArrays.Select(_ => new Dictionary<uint, byte[]>()).ToArray();
 }
 
 /// <summary>Handles gateway requests against one ADS target. Not thread-safe; requests are processed in order.</summary>
@@ -54,6 +57,8 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
     private ISymbolLoader? _loader;
     private readonly Dictionary<string, ResolvedSymbol> _symbols = new();
     private bool _symbolsChanged;
+    /// <summary>The session registers are read as changes in; another one starts with every entry.</summary>
+    private string? _changesSession;
 
     public JsonNode? Handle(JsonObject request)
     {
@@ -62,7 +67,7 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
         {
             "typeOf" => TypeOf(request["path"]!.GetValue<string>()),
             "read" => Read(request["path"]!.GetValue<string>()),
-            "sumRead" => SumRead(request["paths"]!.AsArray().Select(p => p!.GetValue<string>()).ToList()),
+            "sumRead" => SumRead(request["paths"]!.AsArray().Select(p => p!.GetValue<string>()).ToList(), request["changes"]?.GetValue<string>()),
             _ => throw new InvalidOperationException($"Unknown op '{op}'"),
         };
     }
@@ -71,6 +76,7 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
     public void Reset()
     {
         _symbols.Clear();
+        _changesSession = null;
         _loader = null;
         _client?.Dispose();
         _client = null;
@@ -119,7 +125,11 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
 
     private JsonNode? Read(string path) => SumRead([path])[0]?.DeepClone();
 
-    private JsonNode SumRead(IReadOnlyList<string> paths)
+    /// <summary>
+    /// Reads several symbols in one go. With <paramref name="changes"/> (a session chosen by the gateway) registers come
+    /// as changes since the previous read of the same session; a new session starts with every entry.
+    /// </summary>
+    private JsonNode SumRead(IReadOnlyList<string> paths, string? changes = null)
     {
         if (_symbolsChanged)
         {
@@ -156,8 +166,13 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
         }
         if (missing.Count > 0) ReadParts(symbols, buffers, missing, paths);
 
+        if (changes != null && changes != _changesSession)
+        {
+            _changesSession = changes;
+            foreach (var symbol in _symbols.Values) foreach (var previous in symbol.PreviousEntries) previous.Clear();
+        }
         var result = new JsonArray();
-        for (int i = 0; i < symbols.Count; i++) result.Add(ValueConverter.Convert(symbols[i], buffers[i]));
+        for (int i = 0; i < symbols.Count; i++) result.Add(ValueConverter.Convert(symbols[i], buffers[i], changes != null));
         return result;
     }
 

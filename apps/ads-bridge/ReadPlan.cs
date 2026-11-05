@@ -5,9 +5,10 @@ namespace AdsBridge;
 
 /// <summary>
 /// A large array directly in a symbol's structure that has a count member (<c>aProducts</c> and <c>nProductCount</c>):
-/// only its counted entries need reading. Offsets are in bytes from the start of the symbol.
+/// only its counted entries need reading. Offsets are in bytes from the start of the symbol. <c>IdOffset</c> is where
+/// an entry's <c>nId</c> (UDINT) lies in it, if it has one: then the array can be read as changes (ADR 0013).
 /// </summary>
-internal sealed record CountedArray(int Offset, int ElementSize, int Capacity, int CountOffset, int CountSize, bool CountSigned)
+internal sealed record CountedArray(int Offset, int ElementSize, int Capacity, int CountOffset, int CountSize, bool CountSigned, int? IdOffset)
 {
     /// <summary>The count member's value in the symbol's bytes, limited to the array's capacity.</summary>
     public int CountIn(ReadOnlySpan<byte> symbol)
@@ -63,9 +64,18 @@ internal static class ReadPlan
             if (count?.DataType == null || count.ByteSize is not (1 or 2 or 4)) continue;
             bool signed = count.DataType.Name.ToUpperInvariant() is "SINT" or "INT" or "DINT";
             result.Add(new CountedArray(member.ByteOffset, array.ElementType.ByteSize, array.Dimensions.ElementCount,
-                count.ByteOffset, count.ByteSize, signed));
+                count.ByteOffset, count.ByteSize, signed, IdOffsetOf(array.ElementType)));
         }
         return result.OrderBy(a => a.Offset).ToList();
+    }
+
+    /// <summary>Offset of an entry's <c>nId</c> member, a 4-byte integer; null for entries without one.</summary>
+    private static int? IdOffsetOf(IDataType type)
+    {
+        while (type is IAliasType alias && alias.BaseType != null) type = alias.BaseType;
+        if (type is not IStructType structure) return null;
+        var id = structure.AllMembers.FirstOrDefault(m => m.InstanceName == "nId");
+        return id is { ByteSize: 4 } ? id.ByteOffset : null;
     }
 
     /// <summary>

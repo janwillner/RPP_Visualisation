@@ -10,6 +10,7 @@ import {
 import { AcquisitionStatsRecorder } from "./acquisition-stats";
 import { COMPONENTS, componentKind, mapConfig, mapState as mapComponentState } from "./components";
 import { MANIFEST_PATH, enumValue, type ST_VisuManifest } from "./plc-contract";
+import { UnknownEntryError, type EntryMemory } from "./plc-mapping";
 import { SymbolNotFoundError, type SymbolAccess } from "./symbol-access";
 
 export interface GatewayOptions {
@@ -72,6 +73,8 @@ export function combineGateways(gateways: readonly Gateway[]): MessageSource {
 interface ActiveComponent {
   config: ComponentConfig;
   statePath: string;
+  /** Its mapped register entries of the previous read, for registers read as changes (ADR 0013). */
+  memory: EntryMemory;
 }
 
 interface Discovery {
@@ -152,7 +155,7 @@ export function createGateway({
       try {
         const raw = await plc.read(`${entry.sPath}.stConfig`);
         const config = mapConfig(kind, identity, raw);
-        active.push({ config, statePath: `${entry.sPath}.stState` });
+        active.push({ config, statePath: `${entry.sPath}.stState`, memory: new Map() });
       } catch (error) {
         // A missing member or an unexpected shape affects this entry only; connection errors propagate.
         if (!(error instanceof SymbolNotFoundError) && !(error instanceof TypeError)) throw error;
@@ -167,26 +170,42 @@ export function createGateway({
   }
 
   function mapState(component: ActiveComponent, raw: unknown): ComponentState {
-    return mapComponentState(component.config, raw);
+    return mapComponentState(component.config, raw, component.memory);
+  }
+
+  /** Registers are read as changes within a session; a new one starts with every entry (ADR 0013). */
+  let session = 0;
+  const changesSession = () => `${sourceId}#${session}`;
+  /** Starts a new session: the next read gives every entry, mapped afresh. */
+  function restartChanges(current: Discovery): void {
+    session += 1;
+    for (const a of current.active) a.memory.clear();
   }
 
   /**
    * Reads the manifest's protocol and config version together with all states in one sum-read, so a change
    * is detected in the same snapshot. Returns false (and publishes nothing) when either version changed.
    */
-  async function publishSnapshot(current: Discovery): Promise<boolean> {
+  async function publishSnapshot(current: Discovery, retry = true): Promise<boolean> {
     const readStart = performance.now();
-    const [protocolVersion, configVersion, ...raws] = await plc.sumRead([
-      protocolVersionPath,
-      configVersionPath,
-      ...current.active.map((a) => a.statePath),
-    ]);
+    const [protocolVersion, configVersion, ...raws] = await plc.sumRead(
+      [protocolVersionPath, configVersionPath, ...current.active.map((a) => a.statePath)],
+      { changes: changesSession() },
+    );
     if (protocolVersion !== current.config.protocolVersion || configVersion !== current.config.configVersion) {
       return false;
     }
     if (current.active.length === 0) return true;
     const mapStart = performance.now();
-    const components = current.active.map((a, i) => mapState(a, raws[i]));
+    let components: ComponentState[];
+    try {
+      components = current.active.map((a, i) => mapState(a, raws[i]));
+    } catch (error) {
+      // Out of step with the PLC access (e.g. a restarted ADS bridge): read again with every entry.
+      if (!(error instanceof UnknownEntryError) || !retry) throw error;
+      restartChanges(current);
+      return publishSnapshot(current, false);
+    }
     stats.recordSnapshot(mapStart - readStart, performance.now() - mapStart, components);
     const newest = components.reduce((max, c) => (BigInt(c.timestamp) > max ? BigInt(c.timestamp) : max), 0n);
     t0 ??= newest;
@@ -207,6 +226,7 @@ export function createGateway({
     discovery = next;
     t0 = undefined;
     stats.restart();
+    restartChanges(next);
     lastConfigCheck = now();
     emit(next.config);
     return next;
@@ -218,6 +238,7 @@ export function createGateway({
     const next = await discover();
     if (JSON.stringify(next.config) === JSON.stringify(current.config)) return current;
     discovery = next;
+    restartChanges(next);
     emit(next.config);
     return next;
   }

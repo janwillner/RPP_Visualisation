@@ -140,3 +140,18 @@ the products that changed, plus the ids of the whole register.
 | Receiving in the browser (`pnpm bench`, 4800 products, 4 % changed) | 11.0 ms | 1.2 ms (parse, check, decode) |
 
 The gateway's own cost is unchanged by this: reading and mapping still handle every product in every cycle.
+
+## Reading only the changed products
+
+The bridge compares every register entry's bytes with the previous read by `nId` and converts and passes on only the
+changed ones; the gateway maps only those (ADR 0013). Measured on the demo PLC with about 4900 products, two gateways
+reading alternately, one through a bridge giving whole registers and one giving changes:
+
+| | Whole registers | Changes |
+| --- | --- | --- |
+| Read (`readMs`, bridge, pipe, parse) | 24.9 ms (max 50.8) | 3.0 ms (max 6.0) |
+| Map (`mapMs`) | 9.1 ms | 0.9 ms |
+
+Over 300 cycles both published the same products; of 1.47 million compared by id, the 1334 that differed were all
+changed by the application between the two reads (products pushed on the spacing belt, state changes by the robots).
+A gateway cycle with thousands of products now fits well into 20 ms.

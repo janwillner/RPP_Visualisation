@@ -52,8 +52,9 @@ export class AdsBridgeSymbolAccess implements SymbolAccess {
     return ((await this.request({ op: "typeOf", path }, path)) as string | null) ?? undefined;
   }
 
-  async sumRead(paths: readonly string[]): Promise<unknown[]> {
-    return (await this.request({ op: "sumRead", paths }, paths.join(", "))) as unknown[];
+  async sumRead(paths: readonly string[], options: { changes?: string } = {}): Promise<unknown[]> {
+    const changes = options.changes === undefined ? {} : { changes: options.changes };
+    return (await this.request({ op: "sumRead", paths, ...changes }, paths.join(", "))) as unknown[];
   }
 
   close(): void {

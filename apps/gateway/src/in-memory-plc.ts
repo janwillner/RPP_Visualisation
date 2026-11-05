@@ -1,4 +1,4 @@
-import { SymbolNotFoundError, type SymbolAccess } from "./symbol-access";
+import { SymbolNotFoundError, type ChangedEntries, type SymbolAccess } from "./symbol-access";
 
 interface Entry {
   type: string;
@@ -12,6 +12,8 @@ interface Entry {
 export class InMemoryPlc implements SymbolAccess {
   private readonly symbols = new Map<string, Entry>();
   private online = true;
+  /** Registers read as changes: the session, and per path and array the previous entries as JSON by id. */
+  private changes: { session: string; previous: Map<string, Map<number, string>> } | undefined;
 
   /** Registers a symbol with a private copy of `value`; change it later through `get`. */
   define(path: string, type: string, value: unknown): void {
@@ -44,9 +46,14 @@ export class InMemoryPlc implements SymbolAccess {
     return this.symbols.get(path)?.type;
   }
 
-  async sumRead(paths: readonly string[]): Promise<unknown[]> {
+  async sumRead(paths: readonly string[], options: { changes?: string } = {}): Promise<unknown[]> {
     this.ensureOnline();
-    return paths.map((p) => structuredClone(this.resolve(p)));
+    const values = paths.map((p) => structuredClone(this.resolve(p)));
+    const { changes } = options;
+    if (changes === undefined) return values;
+    if (this.changes?.session !== changes) this.changes = { session: changes, previous: new Map() };
+    const previous = this.changes.previous;
+    return values.map((v, i) => withChangedEntries(v, paths[i]!, previous));
   }
 
   private ensureOnline(): void {
@@ -70,4 +77,41 @@ export class InMemoryPlc implements SymbolAccess {
     }
     throw new SymbolNotFoundError(path);
   }
+}
+
+/**
+ * A value as the ADS bridge gives it when asked for changes (ADR 0013): each counted array of entries with an `nId`
+ * directly in the structure (`aProducts` with `nProductCount`) becomes `ChangedEntries`, its counted entries compared
+ * with the previous read of the same path.
+ */
+function withChangedEntries(value: unknown, path: string, previous: Map<string, Map<number, string>>): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const structure = value as Record<string, unknown>;
+  for (const [member, entries] of Object.entries(structure)) {
+    const count = structure[countMember(member)];
+    if (!Array.isArray(entries) || typeof count !== "number") continue;
+    const counted = entries.slice(0, count) as Record<string, unknown>[];
+    if (!counted.every((e) => typeof e === "object" && e !== null && "nId" in e)) continue;
+    const key = `${path}|${member}`;
+    const before = previous.get(key);
+    const now = new Map<number, string>();
+    const changed: ChangedEntries = { $ids: [], $changed: [] };
+    for (const e of counted) {
+      const id = Number(e.nId);
+      const json = JSON.stringify(e, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v));
+      now.set(id, json);
+      changed.$ids.push(id);
+      if (before?.get(id) !== json) changed.$changed.push(e);
+    }
+    previous.set(key, now);
+    structure[member] = changed;
+  }
+  return structure;
+}
+
+/** `aProducts` → `nProductCount`, `aBodies` → `nBodyCount`, as the contract names count members. */
+function countMember(member: string): string {
+  const name = member.slice(1);
+  const one = name.endsWith("ies") ? `${name.slice(0, -3)}y` : name.endsWith("s") ? name.slice(0, -1) : name;
+  return `n${one}Count`;
 }

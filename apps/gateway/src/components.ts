@@ -20,7 +20,7 @@ import {
 } from "@rpp/protocol";
 import type { z } from "zod";
 import { E_VisuComponentType, PLC_TYPES } from "./plc-contract";
-import { mapPlc } from "./plc-mapping";
+import { mapPlc, type EntryMemory } from "./plc-mapping";
 
 export type ComponentKind = ComponentConfig["type"];
 
@@ -93,8 +93,8 @@ export function mapConfig(kind: ComponentKind, identity: ComponentIdentity, raw:
  * The PLC reports a state for every possible finger or body; only as many as the config has are kept, also in the
  * entries of lists such as movers.
  */
-export function mapState(config: ComponentConfig, raw: unknown): ComponentState {
-  const state = mapPlc(COMPONENTS[config.type].state, raw, { type: config.type, id: config.id }) as ComponentState;
+export function mapState(config: ComponentConfig, raw: unknown, memory?: EntryMemory): ComponentState {
+  const state = mapPlc(COMPONENTS[config.type].state, raw, { type: config.type, id: config.id }, memory) as ComponentState;
   return withConfiguredCounts(state, config);
 }
 

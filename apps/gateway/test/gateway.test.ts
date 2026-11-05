@@ -13,6 +13,7 @@ import {
 } from "@rpp/protocol";
 import { RECONNECT_MS, combineGateways, createGateway } from "../src/gateway";
 import { InMemoryPlc } from "../src/in-memory-plc";
+import type { SymbolAccess } from "../src/symbol-access";
 import { startServer } from "../src/server";
 import {
   cartesian,
@@ -1181,5 +1182,63 @@ describe("WebSocket clients", () => {
     } finally {
       server.close();
     }
+  });
+});
+
+describe("gateway registers read as changes", () => {
+  function register(plc: InMemoryPlc, products: { nId: number; eState?: number }[]) {
+    const state = plc.get<ST_VisuConveyor>(infeed.path).stState;
+    state.nProductCount = products.length;
+    products.forEach((p, i) => {
+      state.aProducts[i] = { ...emptyProduct(), bValid: true, nProductType: 1, ...p };
+    });
+  }
+  const productsOf = (s: StateMessage) => s.components.flatMap((c) => (c.type === "conveyor" ? c.products : []));
+
+  it("maps only the products that changed and keeps the others as the same objects", async () => {
+    const t = setup([infeed]);
+    register(t.plc, [{ nId: 1 }, { nId: 2 }, { nId: 3 }]);
+    const states: StateMessage[] = [];
+    t.gateway.subscribe((m) => m.kind === "state" && states.push(m));
+    await t.gateway.cycle();
+    register(t.plc, [{ nId: 2, eState: E_VisuProductState.ASSIGNED }, { nId: 3 }, { nId: 4 }]);
+    await t.gateway.cycle();
+
+    const [before, after] = states.map(productsOf);
+    expect(after!.map((p) => [p.id, p.state])).toEqual([[2, "assigned"], [3, "detected"], [4, "detected"]]);
+    expect(after![1]).toBe(before![2]);
+    expect(after![0]).not.toBe(before![1]);
+  });
+
+  it("reads every entry again when the PLC access has lost the previous read, e.g. after the ADS bridge restarted", async () => {
+    const plc = new InMemoryPlc();
+    defineMachine(plc, [infeed]);
+    // Answers with changes as if it remembered more than it does: the ids of products it does not send.
+    let forget = false;
+    const access: SymbolAccess = {
+      read: (path) => plc.read(path),
+      typeOf: (path) => plc.typeOf(path),
+      async sumRead(paths, options) {
+        const values = await plc.sumRead(paths, options);
+        if (!forget) return values;
+        forget = false;
+        return values.map((v) => {
+          const products = (v as { aProducts?: { $ids: number[] } }).aProducts;
+          return products ? { ...(v as object), aProducts: { $ids: [...products.$ids, 99], $changed: [] } } : v;
+        });
+      },
+    };
+    const gateway = createGateway({ plc: access, sourceId: "plc1" });
+    const messages: GatewayMessage[] = [];
+    gateway.subscribe((m) => messages.push(m));
+    register(plc, [{ nId: 1 }, { nId: 2 }]);
+    await gateway.cycle();
+    forget = true;
+    await gateway.cycle();
+
+    const states = messages.filter((m): m is StateMessage => m.kind === "state");
+    expect(states.map((s) => productsOf(s).map((p) => p.id))).toEqual([[1, 2], [1, 2]]);
+    // No lost connection on the way: the gap is closed within the cycle.
+    expect(messages.some((m) => m.kind === "status" && m.status.lastError !== undefined)).toBe(false);
   });
 });
