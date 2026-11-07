@@ -1,57 +1,31 @@
-# Deploying to a Beckhoff IPC
+# Installing on a Beckhoff IPC
 
-The decision and its reasons are in [ADR 0004](adr/0004-deploy-as-self-contained-windows-service.md). Every deployment uses a package from a GitHub release: on every `v*` tag the Release workflow typechecks, tests, builds `rpp-visualisation-<version>-win-x64.zip` and attaches it to the release (see [Releasing](#releasing)). Packages built locally with `pnpm package` are only for trying the package out, never for an IPC.
-
-This guide is for commissioning and service technicians. It covers installing the visualisation on an IPC, configuring it, updating it and troubleshooting it.
-
-## Releasing
-
-Every deployment goes through GitHub, so each installed version can be traced to a tag, a passed CI run and a release page. Do not copy a locally built zip (`dist/`) to an IPC: its version carries a commit suffix (`0.1.0+aa29151`, `.dirty` with uncommitted changes) and no CI run vouches for it.
-
-1. Merge the changes into `main`. With a new `Syn_Visu` version, its `.library` and `.compiled-library` are in `plc/library/` (the package takes the newest compiled one).
-2. Set the release version in the root `package.json` (`"version": "X.Y.Z"`) and commit it to `main`.
-3. Tag and push:
-
-   ```powershell
-   git tag -a vX.Y.Z -m "vX.Y.Z: <what changed>"
-   git push origin main vX.Y.Z
-   ```
-
-4. Wait for the Release workflow (`gh run watch` or the Actions tab). Only when it passes does the release carry the zip.
-5. Download the zip from the release page (`https://github.com/janwillner/RPP_Visualisation/releases/tag/vX.Y.Z`) or with `gh release download vX.Y.Z -R janwillner/RPP_Visualisation`, and install it as described below.
-
-A new protocol version needs the gateway release and the `Syn_Visu` version in the PLC to change together: download the PLC project first, then install the release.
+For commissioning and service technicians. Use only the zip from a GitHub release (`rpp-visualisation-X.Y.Z-win-x64.zip`).
 
 ## Requirements
 
-- Windows 10/11 x64, build 1607 or newer (LTSC 2019/2021 included), with TwinCAT 3.
-- The PLC project uses the `Syn_Visu` library, installed under the title `SynVisu`. Its version must match the protocol version of the gateway release. The package brings the matching one as a compiled library without source code, `plc\Syn_Visu_<version>.compiled-library`: install it on the engineering PC in XAE (PLC → Library Repository → Install) and reference it in the PLC project. The repo keeps both forms in `plc/library/`: `.library` with the source, `.compiled-library` for handing out.
-- Administrator rights for installation. The IPC needs no internet access, and no Node or .NET installation.
+- [ ] Windows 10/11 x64, build 1607 or newer (LTSC 2019/2021 included), with TwinCAT 3
+- [ ] Administrator rights (no internet, Node or .NET needed)
+- [ ] PLC project references the `Syn_Visu` library of the version in the package: on the engineering PC install `plc\Syn_Visu_<version>.compiled-library` (XAE: PLC → Library Repository → Install), reference it and download the PLC project
+- [ ] Remote PLCs only: ADS route and firewall, see [Several IPCs](#several-ipcs)
 
-## Install
+## Install or update
 
-1. Download `rpp-visualisation-X.Y.Z-win-x64.zip` from the GitHub release ([Releasing](#releasing)), copy it to the IPC and unzip it to any folder.
-2. Run this in an elevated PowerShell in that folder:
+1. Unzip the release zip on the IPC.
+2. In that folder, in an elevated PowerShell:
 
    ```powershell
    .\install.ps1
    ```
 
-   The script:
-   - copies the program files next to `C:\Program Files\RPP_Visualisation\` while the services still run, then stops every installed `RPP_Visualisation` service and swaps the new files in. If the swap fails (a file is open, e.g. in the virus scanner), the old version stays installed and its services are started again.
-   - creates `C:\ProgramData\RPP_Visualisation\config.json` with default values if it does not exist yet; an existing file is left unchanged
-   - registers every instance again and starts it (automatic start, restart after a crash, priority `BelowNormal`)
-   - adds a firewall rule for the HTTP port
-   - checks that every instance answers on `/health` (up to 20 s each)
+3. The script ends green. Red: read the instance name and error shown, fix (usually `config.json` or the port) and run it again. Yellow "PLC not connected": fine, the service connects once the PLC runs.
+4. Open `http://<ipc-address>:8080` from another PC on the machine network.
 
-   If an instance does not start or does not answer, for example because of a broken `config.json` or an HTTP port already in use, the others still start and the script ends with a red message that names the instance and shows the end of its error log. A PLC that is not connected yet is only a yellow warning with the reason: the service connects as soon as the PLC answers.
-3. Open `http://<ipc-address>:8080` in a browser on another computer on the machine network.
-
-The service can start before TwinCAT is running. It connects as soon as the PLC answers.
+Updating and rolling back are the same: run `install.ps1` from the zip of the wanted release. `config.json` and logs are kept. Installed version: status bar of the page, `/health` (`version`) or `C:\Program Files\RPP_Visualisation\VERSION`.
 
 ## Configure
 
-The configuration lives in `C:\ProgramData\RPP_Visualisation\config.json`:
+File: `C:\ProgramData\RPP_Visualisation\config.json` (created by the first install, never overwritten).
 
 ```json
 {
@@ -65,47 +39,37 @@ The configuration lives in `C:\ProgramData\RPP_Visualisation\config.json`:
 }
 ```
 
-| Key | Meaning |
+| Key | Set to |
 | --- | --- |
-| `driver` | `ads` on an IPC. `sim` runs the built-in simulator without a PLC. |
-| `amsNetId` | ADS target. `127.0.0.1.1.1` is the runtime on this IPC; another IPC needs an ADS route (see below). |
-| `adsPort` | PLC runtime port: 851 for the first runtime, 852 for the second, and so on. |
-| `port` | HTTP and WebSocket port of the page. |
-| `cycleMs` | Acquisition cycle in milliseconds. |
-| `configRecheckMs` | How often the full configuration is re-read to catch live changes (0 = off). |
-| `manifestPath` | Symbol path of the manifest in the PLC. Change it only if the PLC application declares the manifest in a GVL with another name. |
+| `driver` | `ads`; `sim` for the simulator without a PLC |
+| `amsNetId` | `127.0.0.1.1.1` for this IPC, otherwise the AmsNetId of the remote IPC |
+| `adsPort` | PLC runtime: 851, 852, ... |
+| `port` | HTTP port of the page |
+| `cycleMs` | Acquisition cycle in ms |
+| `configRecheckMs` | Re-read of the configuration in ms, 0 = off |
+| `manifestPath` | Only change if the PLC declares the manifest in another GVL |
 
-The file may also contain any other gateway option in camelCase; `node.exe gateway.mjs --help` lists them all. Unknown keys and wrong types stop the service with a message in the log.
+More options: `node.exe gateway.mjs --help` in `C:\Program Files\RPP_Visualisation\` (keys in camelCase). Unknown keys or wrong types stop the service.
 
-Restart the service after editing the file: `Restart-Service RPP_Visualisation`. If you change `port`, run `install.ps1` again so the firewall rule follows.
+After editing: `Restart-Service RPP_Visualisation`. After changing `port`: run `install.ps1` again (firewall rule).
 
-**Several PLC runtimes on one IPC:** each runtime gets its own service with its own config file, ADS port and HTTP port:
+### Several runtimes on one IPC
+
+One service per runtime, each with its own ADS port and HTTP port:
 
 ```powershell
 .\install.ps1 -Instance 852 -AdsPort 852 -Port 8081
 ```
 
-This creates the service `RPP_Visualisation_852` with `C:\ProgramData\RPP_Visualisation\config-852.json`. A new instance needs `-Port`, and `-AdsPort` or `-AmsNetId`, so it cannot collide with the default instance. All instances share the program files, so running `install.ps1` without parameters later updates every instance. `Get-Help .\install.ps1 -Detailed` lists all parameters.
+Creates the service `RPP_Visualisation_852` with `config-852.json`. A new instance needs `-Port` and `-AdsPort` or `-AmsNetId`. A later `.\install.ps1` without parameters updates all instances. All parameters: `Get-Help .\install.ps1 -Detailed`.
 
-## Recording and playback
+### Several IPCs
 
-The round button with the red dot, bottom right in the 3D view, records the machine's motion: every PLC with its configuration, faults and products. Press it again (■) to stop. The recording shows its length and size while it runs, and stops by itself after 10 minutes. It is kept in this browser tab only.
+One visualisation can show the PLCs of several IPCs in one view.
 
-After stopping, the player bar along the bottom of the 3D view plays it back. While playing back the view has a coloured frame and says "Playback"; "Live" returns to the live machine.
-- ▶ / ❚❚ (Space) plays and pauses; ◀︎ ▶︎ (← →) step one snapshot; the slider jumps to any moment (Home and End to the start and end).
-- The speed goes from 0.1× to 2×. Selecting, the inspector, hiding components, the layers and measuring work as live.
-- **Save** downloads the recording as `rpp-recording-<date>-<time>.rpprec` (about 1.6 MB per minute). **Open** in the recording bar (the arrow left of the record button slides it out) plays such a file, also on another PC. Recordings from another release with a different protocol version are refused.
-- The page warns before closing while a recording is not saved, and asks before an unsaved recording is replaced.
-
-Embedded in TwinCAT HMI, the browser control may block downloads. Then record and save in a normal browser on the same IPC.
-
-## Reading other IPCs over an ADS route
-
-One visualisation can read the PLCs of several IPCs, for example when a machine's modules run on separate IPCs. It shows all of them in one 3D view. Install it on one IPC (or the HMI PC) with TwinCAT; it reads the other IPCs through TwinCAT's own ADS router.
-
-1. **Create an ADS route** from the IPC running the visualisation to every other IPC, as usual in TwinCAT: in XAE choose *Choose Target System → Search (Ethernet) → Add Route*, or use *Router → Edit Routes* in the TwinCAT tray menu. You need the target's user name and password once; the visualisation stores none.
-2. **Open the ADS port in the firewall** between the IPCs: TCP 48898 (and UDP 48899 for the route search).
-3. **List the PLCs** under `sources` in `config.json` instead of `amsNetId` / `adsPort`:
+1. Create an ADS route from this IPC to every other IPC (XAE: *Choose Target System → Search (Ethernet) → Add Route*, or tray: *Router → Edit Routes*).
+2. Open TCP 48898 (and UDP 48899 for the route search) between the IPCs.
+3. Replace `amsNetId` / `adsPort` in `config.json` with `sources`:
 
    ```json
    {
@@ -118,32 +82,18 @@ One visualisation can read the PLCs of several IPCs, for example when a machine'
    }
    ```
 
-   `name` is optional (default `<AmsNetId>:<port>`) and `adsPort` defaults to 851. A second runtime on the same IPC is its own entry with the same AmsNetId. Restart the service afterwards. Running `install.ps1` again for an update does not change the list.
+   `name` is optional, `adsPort` defaults to 851. A second runtime on the same IPC is its own entry.
+4. `Restart-Service RPP_Visualisation`.
 
-All PLCs must report positions in the same MCS of the machine. Component ids need to be unique only within one PLC. Every PLC is read on its own: if one IPC is not reachable, the others stay live, its components stay visible but faded, and the status bar shows "PLC: 1/2 online" with the reason in its list. In the embedded HMI page a red note in the 3D view names the PLC instead. A product that passes from one PLC's component to another's is shown as two products, one per PLC.
+All PLCs must report positions in the same machine coordinate system (MCS). For a single remote PLC, `.\install.ps1 -AmsNetId 5.12.34.56.1.1` writes the config on first install.
 
-For one remote PLC only, the installer can write the config: `.\install.ps1 -AmsNetId 5.12.34.56.1.1`.
+### TwinCAT HMI
 
-## Embedding in TwinCAT HMI
+1. Add a **Web Browser** control to an HMI content page and make it fill the page.
+2. Source: `http://<IPC name or IP>:<port>/?embedded`, e.g. `http://192.168.1.10:8080/?embedded` (not `localhost`).
+3. Open the HMI over **http** (e.g. port 1010), not https: browsers block an http frame inside an https page.
 
-Service technicians can open the visualisation on the machine's touch panel (13 to 19 inch) as a page of the machine HMI. Mouse and touch both work; on a touch panel the controls are finger-sized.
-
-1. In the TwinCAT HMI project, add a **Web Browser** control (or another iframe based control) to a content page.
-2. Set its source to `http://<IPC host name or IP>:<port>/?embedded`, for example `http://192.168.1.10:8080/?embedded`.
-   - Use the IPC's name or address, not `localhost`: the panel may be a separate client of the HMI server.
-   - `<port>` is the instance's `port` (8080 by default, one port per instance).
-   - `?embedded` hides the title and the status bar, because the HMI page has its own header. Leave it out to get the full page, e.g. in a separate browser.
-3. Make the control fill the page. The handles on the 3D view's left and right edge open the components panel and the inspector. The inspector starts closed, the components panel too below 1600 px width; each panel remembers the choice.
-
-**Requirement: the HMI runs over http.** The visualisation is served over http only. A browser blocks an http frame inside an https page (mixed content), so embedding works only when the HMI itself is opened over http (for example port 1010, not the https port 1020). The installer's firewall rule already opens the instance port.
-
-Over http the browser offers no clipboard, so the measure list's copy buttons are hidden there.
-
-## Update and roll back
-
-To update, run `install.ps1` from the newer release zip. To roll back, run it from the zip of the older release (every release stays downloadable on GitHub). `config.json` and the logs are kept either way.
-
-Which version is installed: the installer names the new and the replaced version (`Installing RPP visualisation 1.2.0, replacing 1.1.0`), the page shows it at the right end of its status bar, `/health` reports it as `version`, and `C:\Program Files\RPP_Visualisation\VERSION` holds it. A release built from a tag has a plain version such as `1.2.0`; a build from the repo adds its commit, e.g. `0.1.0+aa29151` (`.dirty` when it had uncommitted changes), so two such builds are never mistaken for the same release. The status bar also shows the `Syn_Visu` version of the PLC (from library 5.1.0 on; with several PLCs in their list under "PLC: n/m online").
+Downloads (saving recordings) may be blocked in the HMI control; use a normal browser then.
 
 ## Uninstall
 
@@ -151,32 +101,20 @@ Which version is installed: the installer names the new and the replaced version
 & "C:\Program Files\RPP_Visualisation\uninstall.ps1"
 ```
 
-This removes all services, the program files and the firewall rules. `C:\ProgramData\RPP_Visualisation\` is kept unless you pass `-RemoveData`. To remove only one additional instance, pass `-Instance 852`.
+Removes services, program files and firewall rules. Add `-RemoveData` to delete `C:\ProgramData\RPP_Visualisation\` too, or `-Instance 852` to remove only that instance.
 
 ## Monitoring
 
-`GET http://<host>:<port>/health` returns the state of every PLC source as JSON: `ok`, `version` (this release),
-`protocolVersion` and per source `sourceId`, `name`, `plcConnected`, `lastError`, `lastStateAt` (time of the newest
-state snapshot), `libraryVersion` (the `Syn_Visu` version the PLC runs, from library 5.1.0 on) and `acquisition`
-(read and map times, state message size, products, register anomalies; `docs/performance.md`). The HTTP
-status is 200 while every source is connected and 503 otherwise, so a monitoring system can check it without reading
-the body.
-
-## API documentation
-
-Every instance serves the documentation of its own version at `http://<host>:<port>/docs`, also linked as "API" in the
-status bar. It covers the WebSocket messages, `/health`, the recording files, the server options, the PLC contract and
-the PLC library guide; `/docs/schema.json` gives the same messages as JSON Schema. Other programs, e.g. an MES or a
-dashboard, can read the machine data from the WebSocket with it (ADR 0012). Like the app, it has no authentication.
+`http://<ipc>:<port>/health`: HTTP 200 when every PLC is connected, 503 otherwise; the JSON body names the failing source and its `lastError`.
 
 ## Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
-| The page does not load | `Get-Service RPP_Visualisation` shows `Running`. The firewall rule exists. The port in `config.json` is the one you opened. |
-| The page loads but says the PLC is not connected | TwinCAT is in Run mode and the PLC is running. `adsPort` matches the runtime. |
-| A remote PLC reports "Target machine could not be found" | The ADS route from this IPC to the target is missing or uses another AmsNetId; check *Router → Edit Routes*. Firewall: TCP 48898. |
-| Protocol version mismatch is shown | The gateway release and the `Syn_Visu` version in the PLC project do not match. Install the matching release. |
-| The service will not start, or the ADS bridge is blocked | Look at the logs. Check whether SmartScreen or the virus scanner blocked `AdsBridge.exe`; if so, add `C:\Program Files\RPP_Visualisation\` as an exception. |
+| Page does not load | `Get-Service RPP_Visualisation` is `Running`; firewall rule exists; `port` matches |
+| PLC not connected | TwinCAT in Run mode, PLC running, `adsPort` correct |
+| Remote PLC: "Target machine could not be found" | ADS route missing or wrong AmsNetId (*Router → Edit Routes*); TCP 48898 open |
+| Protocol version mismatch | `Syn_Visu` version in the PLC does not match the release; install the matching pair |
+| Service does not start / ADS bridge blocked | Read the logs; add `C:\Program Files\RPP_Visualisation\` as exception in SmartScreen or the virus scanner |
 
-Logs are written to `C:\ProgramData\RPP_Visualisation\logs\` and rotated automatically: `<service>.out.log` holds the gateway output, `<service>.err.log` holds errors, and `<service>.wrapper.log` holds service starts, stops and restarts.
+Logs in `C:\ProgramData\RPP_Visualisation\logs\`: `<service>.err.log` (errors), `<service>.out.log` (output), `<service>.wrapper.log` (starts, stops, restarts).
