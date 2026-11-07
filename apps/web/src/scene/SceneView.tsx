@@ -5,7 +5,8 @@ import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { AXES, OVERLAY, PRODUCT, SOLID, STAGE, STATUS } from "../palette";
 import type { CameraPose } from "../view-settings";
-import type { SceneFeed, SourceInfo } from "../connection";
+import type { SceneFeed } from "../connection";
+import type { SourceInfo } from "../sources";
 import type {
   ProductDisplay,
   SceneAllocation,
@@ -72,7 +73,7 @@ export interface SceneViewProps {
   /** The live gateway or a recording being played back. */
   feed: SceneFeed;
   /** The PLC sources, each drawn on its own. */
-  sources: SourceInfo[];
+  sources: readonly SourceInfo[];
   layers: Layers;
   selection: Selection;
   onSelect: (selection: Selection) => void;

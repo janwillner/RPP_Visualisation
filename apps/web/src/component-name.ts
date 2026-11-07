@@ -1,4 +1,4 @@
-import type { SourceInfo } from "./connection";
+import type { SourceInfo } from "./sources";
 
 /** A component's name from its source's config; `fallback` (default `#id`) when the config does not list it. */
 export function componentName(source: SourceInfo | undefined, id: number, fallback = `#${id}`): string {

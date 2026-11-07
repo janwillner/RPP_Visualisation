@@ -1,45 +1,19 @@
 import { useSyncExternalStore } from "react";
-import {
-  GatewayMessageSchema,
-  RegisterDecoder,
-  RegisterGapError,
-  type ConfigMessage,
-  type GatewayMessage,
-  type GatewayStatus,
-  type StateMessage,
-} from "@rpp/protocol";
+import { GatewayMessageSchema, RegisterDecoder, RegisterGapError, type GatewayMessage, type StateMessage } from "@rpp/protocol";
 import { METRICS_WINDOW_MS } from "./metrics";
 import { ProductHistory, type ProductEvent, type ProductStep } from "./product-history";
 import type { SceneSource } from "./scene/scene-model";
+import { Sources, type SourceInfo } from "./sources";
 
-/** Render this far behind the newest snapshot so there is always a later sample to interpolate to. */
-export const RENDER_DELAY_MS = 40;
 /** Data older than this is flagged as stale in the UI. */
 export const STALE_AFTER_MS = 500;
-/** Snapshots kept for interpolation. */
-const BUFFER_MS = 1000;
 
 export type SocketState = "connecting" | "open" | "closed";
-
-/** What the UI knows about one PLC source. */
-export interface SourceInfo {
-  sourceId: string;
-  name: string;
-  /** Undefined while the gateway connection is down. */
-  status: GatewayStatus | undefined;
-  /** The last config, kept while the source is offline. */
-  config: ConfigMessage | undefined;
-}
-
-/** Whether the gateway currently reads this source's PLC (false for all while the gateway connection is down). */
-export function isOnline(snapshot: GatewaySnapshot, source: SourceInfo): boolean {
-  return snapshot.socket === "open" && source.status?.plcConnected === true;
-}
 
 export interface GatewaySnapshot {
   socket: SocketState;
   /** In the order the gateway first reported them. */
-  sources: SourceInfo[];
+  sources: readonly SourceInfo[];
   protocolError: string | undefined;
 }
 
@@ -58,61 +32,12 @@ export interface SceneFeed {
 /** Receives every valid message from the gateway with its JSON and arrival time (performance.now()). */
 export type MessageListener = (message: GatewayMessage, raw: string, arrival: number) => void;
 
-/** Snapshot buffer and clock of one source; every source has its own tRel axis. */
-export class SourceBuffer {
-  snapshots: StateMessage[] = [];
-  /** Local arrival time per buffered snapshot (same order as `snapshots`). */
-  private arrivals: number[] = [];
-  private lastArrival = 0;
-
-  /** Newest buffered state, if any. */
-  latest(): StateMessage | undefined {
-    return this.snapshots.at(-1);
-  }
-
-  /** Milliseconds since the last state message arrived. */
-  dataAge(now = performance.now()): number | undefined {
-    return this.lastArrival ? now - this.lastArrival : undefined;
-  }
-
-  /**
-   * Time on the source's tRel axis to render now, delayed by RENDER_DELAY_MS and never past the newest sample.
-   * Local time is mapped to tRel with the smallest observed (arrival − tRel) over the buffer, so a late
-   * arrival never pulls the clock backwards.
-   */
-  renderTime(now = performance.now()): number {
-    const latest = this.latest();
-    if (!latest) return 0;
-    let offset = Infinity;
-    for (let i = 0; i < this.snapshots.length; i++) offset = Math.min(offset, this.arrivals[i]! - this.snapshots[i]!.tRel);
-    return Math.min(latest.tRel, now - offset - RENDER_DELAY_MS);
-  }
-
-  clear(): void {
-    this.snapshots = [];
-    this.arrivals = [];
-  }
-
-  push(message: StateMessage): void {
-    // tRel restarts when the gateway rediscovers (e.g. after a reconnect): drop the old timeline.
-    if (message.tRel < (this.latest()?.tRel ?? -Infinity)) this.clear();
-    this.lastArrival = performance.now();
-    this.snapshots.push(message);
-    this.arrivals.push(this.lastArrival);
-    const oldest = message.tRel - BUFFER_MS;
-    while (this.snapshots.length > 2 && this.snapshots[0]!.tRel < oldest) {
-      this.snapshots.shift();
-      this.arrivals.shift();
-    }
-  }
-}
-
 /**
- * Connection to the gateway's WebSocket: keeps config, status and a short buffer of state snapshots per PLC source.
- * Per-frame consumers read `buffer(sourceId)` and `sceneSources()` directly; React UI subscribes via `useGateway`.
+ * Connection to the gateway's WebSocket: folds its messages into `Sources` on the performance.now() axis.
+ * Per-frame consumers read `sceneSources()` directly; React UI subscribes via `useGateway`.
  */
 export class GatewayStore implements SceneFeed {
-  private readonly buffers = new Map<string, SourceBuffer>();
+  private readonly sources = new Sources();
   private readonly messageListeners = new Set<MessageListener>();
   // Product events are kept a little longer than the metrics look back.
   private readonly products = new ProductHistory(undefined, 2 * METRICS_WINDOW_MS);
@@ -155,8 +80,8 @@ export class GatewayStore implements SceneFeed {
   getSnapshot = () => this.snapshot;
 
   /** Every source as it is now, where a recording starts. */
-  recordingContext(): SourceInfo[] {
-    return this.snapshot.sources.map((s) => ({ ...s }));
+  recordingContext(): readonly SourceInfo[] {
+    return this.sources.all;
   }
 
   /** Every message from now on, e.g. for recording. */
@@ -166,7 +91,13 @@ export class GatewayStore implements SceneFeed {
   }
 
   latestState(sourceId: string): StateMessage | undefined {
-    return this.buffer(sourceId).latest();
+    return this.sources.latestState(sourceId);
+  }
+
+  /** Milliseconds since the source's last state arrived; undefined before any. */
+  dataAge(sourceId: string, now = performance.now()): number | undefined {
+    const at = this.sources.lastStateAt(sourceId);
+    return at === undefined ? undefined : now - at;
   }
 
   productHistory(sourceId: string, conveyorId: number, productId: number) {
@@ -178,40 +109,14 @@ export class GatewayStore implements SceneFeed {
     return { events: this.products.events(now - windowMs, now), now, since: this.firstStateAt ?? now };
   }
 
-  /** The snapshot buffer of a source; empty for an unknown one. */
-  buffer(sourceId: string): SourceBuffer {
-    let buffer = this.buffers.get(sourceId);
-    if (!buffer) this.buffers.set(sourceId, (buffer = new SourceBuffer()));
-    return buffer;
-  }
-
   /** Every source with its config, snapshots and render time, as the machine scene takes them. */
   sceneSources(now = performance.now()): SceneSource[] {
-    return this.snapshot.sources.map((s) => {
-      const buffer = this.buffer(s.sourceId);
-      return {
-        sourceId: s.sourceId,
-        config: s.config,
-        snapshots: buffer.snapshots,
-        renderTime: buffer.renderTime(now),
-        online: isOnline(this.snapshot, s),
-      };
-    });
+    return this.sources.sceneSources(now);
   }
 
   private update(patch: Partial<GatewaySnapshot>): void {
     this.snapshot = { ...this.snapshot, ...patch };
     for (const l of this.listeners) l();
-  }
-
-  /** Replaces one source's info, adding the source when it is new. */
-  private updateSource(sourceId: string, patch: Partial<SourceInfo>): void {
-    const sources = [...this.snapshot.sources];
-    const i = sources.findIndex((s) => s.sourceId === sourceId);
-    const current = sources[i] ?? { sourceId, name: sourceId, status: undefined, config: undefined };
-    if (i < 0) sources.push({ ...current, ...patch });
-    else sources[i] = { ...current, ...patch };
-    this.update({ sources });
   }
 
   private connect(): void {
@@ -229,7 +134,9 @@ export class GatewayStore implements SceneFeed {
     socket.onclose = () => {
       if (this.socket !== socket) return;
       this.socket = undefined;
-      this.update({ socket: "closed", sources: this.snapshot.sources.map((s) => ({ ...s, status: undefined })) });
+      // Recorded like the gateway's own status, so recordings show the outage too.
+      for (const message of this.sources.gatewayLost()) this.dispatch(message, JSON.stringify(message));
+      this.update({ socket: "closed" });
       if (this.stopped) return;
       this.retryTimer = setTimeout(() => this.connect(), this.retryMs);
       this.retryMs = Math.min(this.retryMs * 2, 5000);
@@ -263,26 +170,24 @@ export class GatewayStore implements SceneFeed {
         return;
       }
     }
+    this.dispatch(message, data);
+  }
+
+  /** Hands a message to the listeners and applies it. */
+  private dispatch(message: GatewayMessage, raw: string): void {
     const arrival = performance.now();
-    for (const l of this.messageListeners) l(message, data, arrival);
-    const source = this.snapshot.sources.find((s) => s.sourceId === message.sourceId);
-    switch (message.kind) {
-      case "status":
-        this.updateSource(message.sourceId, { name: message.sourceName, status: message.status });
-        break;
-      case "config":
-        // A new config version starts a new timeline; a refreshed config of the same version does not.
-        if (message.configVersion !== source?.config?.configVersion) this.buffer(message.sourceId).clear();
-        this.updateSource(message.sourceId, { config: message });
-        this.update({ protocolError: undefined });
-        break;
-      case "state":
-        if (message.configVersion !== source?.config?.configVersion) break;
-        this.buffer(message.sourceId).push(message);
-        this.products.add(arrival, message, source);
-        this.firstStateAt ??= arrival;
-        break;
+    for (const l of this.messageListeners) l(message, raw, arrival);
+    const source = this.sources.apply(arrival, message);
+    if (message.kind === "state") {
+      if (message.configVersion !== source.config?.configVersion) return;
+      this.products.add(arrival, message, source);
+      this.firstStateAt ??= arrival;
+      return;
     }
+    this.update({
+      sources: this.sources.all,
+      ...(message.kind === "config" ? { protocolError: undefined } : {}),
+    });
   }
 }
 

@@ -7,7 +7,7 @@ import {
   type Product,
   type StateMessage,
 } from "@rpp/protocol";
-import type { SourceInfo } from "../src/connection";
+import type { SourceInfo } from "../src/sources";
 import { ProductHistory } from "../src/product-history";
 import { Recorder, Recording } from "../src/recording";
 

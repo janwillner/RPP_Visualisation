@@ -55,5 +55,9 @@ export const RecordingEntrySchema = z
       )
       .optional(),
   })
-  .describe("Every line after the header: one gateway message with its arrival time.");
+  .describe(
+    "Every line after the header: one gateway message with its arrival time. When the browser lost the gateway, it " +
+      "records a `status` per source as if the gateway had sent it: `plcConnected` false, `lastError` " +
+      "\"Connection to the gateway lost\".",
+  );
 export type RecordingEntry = z.infer<typeof RecordingEntrySchema>;

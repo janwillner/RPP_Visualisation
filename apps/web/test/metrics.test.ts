@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PROTOCOL_VERSION, type ComponentConfig, type Product, type StateMessage } from "@rpp/protocol";
-import type { SourceInfo } from "../src/connection";
+import type { SourceInfo } from "../src/sources";
 import { metrics } from "../src/metrics";
 import { ProductHistory, type ProductEvent } from "../src/product-history";
 

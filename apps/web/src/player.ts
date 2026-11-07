@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type { StateMessage } from "@rpp/protocol";
-import type { SceneFeed, SourceInfo } from "./connection";
+import type { SceneFeed } from "./connection";
+import type { SourceInfo } from "./sources";
 import { eventTime, playFrom, seek, step, tick, type PlaybackClock, type PlaybackView, type Recording } from "./recording";
 import type { SceneSource } from "./scene/scene-model";
 
@@ -13,7 +14,7 @@ export interface PlayerSnapshot {
   speed: number;
   durationMs: number;
   /** Every source as it was at `time`. */
-  sources: SourceInfo[];
+  sources: readonly SourceInfo[];
 }
 
 /**

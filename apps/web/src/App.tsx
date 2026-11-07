@@ -4,12 +4,11 @@ import {
   GatewayStore,
   STALE_AFTER_MS,
   defaultGatewayUrl,
-  isOnline,
   useGateway,
   type GatewaySnapshot,
   type SceneFeed,
-  type SourceInfo,
 } from "./connection";
+import { isOnline, type SourceInfo } from "./sources";
 import {
   PlayerBar,
   PlayerBarToggle,
@@ -99,7 +98,7 @@ function usePanelWidth(storageKey: string): [number | undefined, (px: number) =>
   return [width, set];
 }
 
-function machineMetrics(feed: SceneFeed, sources: SourceInfo[]): MachineMetrics {
+function machineMetrics(feed: SceneFeed, sources: readonly SourceInfo[]): MachineMetrics {
   const { events, now, since } = feed.productEvents(METRICS_WINDOW_MS);
   return metrics(events, now, since, sources);
 }
@@ -109,7 +108,7 @@ const windowText = (m: MachineMetrics) => `last ${Math.round(m.windowMs / 1000)}
 const rate = (perMin: number) => perMin.toFixed(1);
 
 /** The machine's figures over the last minute, while nothing is selected. */
-function MetricsOverview({ figures, sources }: { figures: MachineMetrics; sources: SourceInfo[] }) {
+function MetricsOverview({ figures, sources }: { figures: MachineMetrics; sources: readonly SourceInfo[] }) {
   const named = (x: { sourceId: string; name: string }) => {
     const source = sources.length > 1 ? sources.find((s) => s.sourceId === x.sourceId) : undefined;
     return source ? `${source.name} · ${x.name}` : x.name;
@@ -379,8 +378,8 @@ export function App() {
 }
 
 /** Sources the gateway cannot read right now (all of them while the gateway connection is down). */
-function offlineSources(gateway: GatewaySnapshot): SourceInfo[] {
-  return gateway.sources.filter((s) => !isOnline(gateway, s));
+function offlineSources(gateway: GatewaySnapshot): readonly SourceInfo[] {
+  return gateway.sources.filter((s) => !isOnline(s));
 }
 
 /** Embedded there is no status bar: a red note in the 3D view tells that (part of) the machine is not live. */
@@ -702,7 +701,7 @@ function ComponentTree(props: {
       {grouped ? (
         <ul className="sources">
           {sources.map((source) => {
-            const online = isOnline(gateway, source);
+            const online = isOnline(source);
             return (
               <li key={source.sourceId} className={hidden.has(source.sourceId) ? "hidden" : ""}>
                 <div className="source-head">
@@ -759,7 +758,7 @@ function EyeIcon({ open }: { open: boolean }) {
 function Inspector(props: {
   /** The live gateway or the recording being played back. */
   feed: SceneFeed;
-  sources: SourceInfo[];
+  sources: readonly SourceInfo[];
   selection: Selection;
   modelRef: React.RefObject<MachineScene | undefined>;
   faults: SourcedFaults[];
@@ -900,8 +899,8 @@ function Json({ value }: { value: unknown }) {
 /** Milliseconds since the newest data of the stalest connected source; undefined before any data. */
 function dataAge(store: GatewayStore, gateway: GatewaySnapshot): number | undefined {
   const ages = gateway.sources
-    .filter((s) => s.status?.plcConnected)
-    .map((s) => store.buffer(s.sourceId).dataAge())
+    .filter(isOnline)
+    .map((s) => store.dataAge(s.sourceId))
     .filter((a): a is number => a !== undefined);
   return ages.length ? Math.max(...ages) : undefined;
 }
@@ -965,7 +964,7 @@ function StatusBar(props: {
       {showSources && several && (
         <ul className="errors sources-list">
           {gateway.sources.map((source) => {
-            const connected = isOnline(gateway, source);
+            const connected = isOnline(source);
             // A connected PLC can still be unusable, e.g. with another protocol version: show its first error.
             const problem = connected ? source.config?.errors[0]?.message : source.status?.lastError;
             return (

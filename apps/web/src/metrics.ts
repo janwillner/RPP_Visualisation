@@ -1,5 +1,5 @@
 import { componentName } from "./component-name";
-import type { SourceInfo } from "./connection";
+import type { SourceInfo } from "./sources";
 import { clientAction, type ClientAction, type ProductEvent } from "./product-history";
 
 /** The metrics look back this far. */
