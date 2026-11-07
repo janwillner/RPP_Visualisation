@@ -33,7 +33,7 @@ import type {
 } from "./scene-model";
 import { availableSnapPoints, buildMachineScene, emptyScene, trackSignature } from "./scene-model";
 import { MachineFrame, SourceFrame } from "./scene-frame";
-import { isTap, nearestOnScreen, snapRadiusPx, type ScreenPoint } from "./picking";
+import { PressTracker, pickOnScreen, type PointerSample, type Projection, type ScreenPoint } from "./picking";
 import { isGrouped, type ProductGroup } from "./product-groups";
 import type { ConfigMessage, ProductState } from "@rpp/protocol";
 
@@ -1306,76 +1306,44 @@ function MeasureLayer(props: {
   onMeasureRef.current = onMeasure;
 
   /** The snap point under a screen position, for the given pointer type's snap radius. */
-  const pick = (at: ScreenPoint, pointerType: string): SnapPoint | undefined => {
-    const width = gl.domElement.clientWidth;
-    const height = gl.domElement.clientHeight;
-    const v = new THREE.Vector3();
-    const candidates: { item: SnapPoint; screen: ScreenPoint; depth: number }[] = [];
-    for (const point of availableSnapPoints(machine.scene.snapPoints, layers)) {
-      v.set(...point.position).project(camera);
-      if (v.z < -1 || v.z > 1) continue;
-      candidates.push({
-        item: point,
-        screen: { x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height },
-        depth: camera.position.distanceTo(new THREE.Vector3(...point.position)),
-      });
-    }
-    return nearestOnScreen(candidates, at, snapRadiusPx(pointerType));
-  };
+  const pick = (at: ScreenPoint, pointerType: string): SnapPoint | undefined =>
+    pickOnScreen(availableSnapPoints(machine.scene.snapPoints, layers), at, pointerType, projection(camera, gl.domElement));
   const pickRef = useRef(pick);
   pickRef.current = pick;
 
   useEffect(() => {
     const el = gl.domElement;
-    const fingers = new Set<number>();
-    let press: { start: ScreenPoint; type: string; multi: boolean } | null = null;
-    const position = (e: PointerEvent): ScreenPoint => {
+    // A finger may slide to adjust its choice; a mouse drag moves the camera instead.
+    const presses = new PressTracker({ touchSlides: true, primaryOnly: true });
+    const sample = (e: PointerEvent): PointerSample => {
       const r = el.getBoundingClientRect();
-      return { x: e.clientX - r.left, y: e.clientY - r.top };
+      return { pointerId: e.pointerId, pointerType: e.pointerType, button: e.button, x: e.clientX - r.left, y: e.clientY - r.top };
     };
     const onMove = (e: PointerEvent) => {
       // A finger only points while it touches; with two fingers down the camera moves.
-      if (e.pointerType === "touch" && (!fingers.has(e.pointerId) || fingers.size > 1)) return;
-      pointer.current = { ...position(e), type: e.pointerType };
+      if (e.pointerType === "touch" && (!presses.isDown(e.pointerId) || presses.pointers > 1)) return;
+      const { x, y } = sample(e);
+      pointer.current = { x, y, type: e.pointerType };
     };
     const onLeave = (e: PointerEvent) => {
       if (e.pointerType !== "touch") pointer.current = null;
     };
     const onDown = (e: PointerEvent) => {
-      if (e.pointerType === "touch") {
-        fingers.add(e.pointerId);
-        if (fingers.size > 1) {
-          if (press) press.multi = true;
-          pointer.current = null;
-          return;
-        }
-      }
-      if (e.button !== 0) {
-        press = null;
-        return;
-      }
-      pointer.current = { ...position(e), type: e.pointerType };
-      press = { start: position(e), type: e.pointerType, multi: false };
+      const s = sample(e);
+      presses.pointerDown(s);
+      if (presses.pointers > 1) pointer.current = null;
+      else if (e.button === 0) pointer.current = { x: s.x, y: s.y, type: e.pointerType };
     };
     const onUp = (e: PointerEvent) => {
-      const p = press;
-      if (e.pointerType === "touch") {
-        fingers.delete(e.pointerId);
-        pointer.current = null;
-        if (fingers.size > 0) return;
-      }
-      press = null;
-      if (!p || p.multi) return;
-      // A finger may slide to adjust its choice; a mouse drag moves the camera instead.
-      const at = position(e);
-      if (p.type !== "touch" && !isTap(p.start, at, p.type)) return;
+      const at = presses.pointerUp(sample(e));
+      if (e.pointerType === "touch") pointer.current = null;
+      if (!at) return;
       // Picked at the release position, not from the last frame: a quick tap may start and end within one frame.
-      const candidate = pickRef.current(at, p.type);
+      const candidate = pickRef.current(at, e.pointerType);
       if (candidate) onMeasureRef.current(candidate);
     };
     const onCancel = (e: PointerEvent) => {
-      fingers.delete(e.pointerId);
-      press = null;
+      presses.pointerCancel(e.pointerId);
       if (e.pointerType === "touch") pointer.current = null;
     };
     el.style.cursor = "crosshair";
@@ -2018,33 +1986,26 @@ function Stage({ bounds }: { bounds: MachineBounds }) {
 const DPR = 1;
 
 export function SceneView(props: SceneViewProps) {
-  // The last press on the canvas: a selection counts only if it was a tap, not a camera drag or a pinch.
-  const press = useRef<{ start: ScreenPoint; end: ScreenPoint; type: string; multi: boolean } | null>(null);
-  const pointersDown = useRef(new Set<number>());
+  // The presses on the canvas: a selection counts only after a tap, not a camera drag or a pinch.
+  const presses = useMemo(() => new PressTracker(), []);
   // Set when a tap ends; an object's click clears it again, otherwise the tap hit empty space.
   const emptyTap = useRef(false);
   const latestProps = useRef(props);
   latestProps.current = props;
-  const wasTap = () => {
-    const p = press.current;
-    return !p || (!p.multi && isTap(p.start, p.end, p.type));
-  };
   const onSelect = (selection: Selection) => {
     emptyTap.current = false;
-    if (wasTap()) props.onSelect(selection);
+    if (presses.lastWasTap) props.onSelect(selection);
   };
 
   // Releases are watched on the window: OrbitControls follows a drag on the document, so it may end outside the
   // canvas. A cancelled pointer (e.g. the browser took over the touch) makes the press no tap.
   useEffect(() => {
     const release = (e: PointerEvent, cancelled: boolean) => {
-      if (!pointersDown.current.delete(e.pointerId)) return;
-      const p = press.current;
-      if (!p) return;
-      if (cancelled) p.multi = true;
-      if (pointersDown.current.size > 0) return;
-      p.end = { x: e.clientX, y: e.clientY };
-      if (!wasTap()) return;
+      if (cancelled) {
+        presses.pointerCancel(e.pointerId);
+        return;
+      }
+      if (!presses.pointerUp(clientSample(e))) return;
       // R3F reports a missed click only below 2 px of travel, too strict for a finger: decide here instead. The
       // click, and with it an object's onClick, follows this pointerup before the timeout runs.
       emptyTap.current = true;
@@ -2070,14 +2031,7 @@ export function SceneView(props: SceneViewProps) {
       dpr={DPR}
       // Neutral tone mapping keeps the palette colours of lit parts close to what they are.
       gl={{ toneMapping: THREE.NeutralToneMapping }}
-      onPointerDown={(e) => {
-        if (pointersDown.current.size > 0 && press.current) press.current.multi = true;
-        else {
-          const at = { x: e.clientX, y: e.clientY };
-          press.current = { start: at, end: at, type: e.pointerType, multi: false };
-        }
-        pointersDown.current.add(e.pointerId);
-      }}
+      onPointerDown={(e) => presses.pointerDown(clientSample(e.nativeEvent))}
     >
       <SceneContent {...props} onSelect={onSelect} />
       {/* One finger orbits, two pinch and pan; in measure mode one finger picks a point instead. */}
@@ -2087,6 +2041,22 @@ export function SceneView(props: SceneViewProps) {
       />
     </Canvas>
   );
+}
+
+/** A pointer event in client coordinates. */
+function clientSample(e: PointerEvent): PointerSample {
+  return { pointerId: e.pointerId, pointerType: e.pointerType, button: e.button, x: e.clientX, y: e.clientY };
+}
+
+/** Where a renderer point lies on `canvas` through `camera`, and how far from the camera. */
+function projection(camera: THREE.Camera, canvas: HTMLCanvasElement): Projection {
+  const v = new THREE.Vector3();
+  return (position) => {
+    v.set(...position).project(camera);
+    if (v.z < -1 || v.z > 1) return undefined;
+    const screen = { x: ((v.x + 1) / 2) * canvas.clientWidth, y: ((1 - v.y) / 2) * canvas.clientHeight };
+    return { screen, depth: camera.position.distanceTo(new THREE.Vector3(...position)) };
+  };
 }
 
 /** OrbitControls ignores a one-finger gesture whose action is none of THREE.TOUCH. */
