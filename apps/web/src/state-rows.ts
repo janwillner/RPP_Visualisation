@@ -1,5 +1,5 @@
 import type { ComponentState } from "@rpp/protocol";
-import { faultText } from "./scene/scene-model";
+import { faultText, singular } from "./machine-facts";
 
 /**
  * A component's live values for the inspector, read from its state without knowing its type: every value the PLC
@@ -39,10 +39,6 @@ type Fields = Record<string, unknown>;
 const isObject = (v: unknown): v is Fields => typeof v === "object" && v !== null && !Array.isArray(v);
 const isPosition = (v: unknown): v is { x: number; y: number; z: number } =>
   isObject(v) && Object.keys(v).join() === "x,y,z";
-
-function singular(title: string): string {
-  return title.endsWith("s") ? title.slice(0, -1) : title;
-}
 
 export function stateRows(state: ComponentState): StateRows {
   const values: StateValue[] = [];

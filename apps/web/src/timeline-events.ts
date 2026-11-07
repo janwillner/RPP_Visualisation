@@ -1,7 +1,6 @@
 import type { Fault, GatewayMessage } from "@rpp/protocol";
-import { componentName } from "./component-name";
 import type { SourceInfo } from "./sources";
-import { faultText, isMissed } from "./scene/scene-model";
+import { componentName, faultText, isMissed, singular } from "./machine-facts";
 
 /**
  * Moments worth finding again in a recording, marked on its timeline: a fault appears, a source goes offline or
@@ -90,11 +89,6 @@ export class EventTracker {
     this.faults.set(message.sourceId, faults);
     this.missed.set(message.sourceId, missed);
   }
-}
-
-/** "movers" → "mover", "modules" → "module". */
-function singular(list: string): string {
-  return list.endsWith("s") ? list.slice(0, -1) : list;
 }
 
 /** The moment of the next event after `time` (direction 1) or the previous one before it (-1); undefined if none. */

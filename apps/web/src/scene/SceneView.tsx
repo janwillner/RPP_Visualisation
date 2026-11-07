@@ -1,6 +1,6 @@
 import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree, type ThreeElements, type ThreeEvent } from "@react-three/fiber";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { AXES, OVERLAY, PRODUCT, SOLID, STAGE, STATUS } from "../palette";
@@ -31,9 +31,10 @@ import type {
   SceneFaultLabel,
   SourcedFaults,
 } from "./scene-model";
-import { availableSnapPoints, buildMachineScene, emptyScene } from "./scene-model";
-import { isTap, nearestOnScreen, snapRadiusPx, type ScreenPoint } from "./picking";
-import { ProductGroups, isGrouped, partitionProducts, type ProductGroup } from "./product-groups";
+import { availableSnapPoints, buildMachineScene, emptyScene, trackSignature } from "./scene-model";
+import { MachineFrame, SourceFrame } from "./scene-frame";
+import { PressTracker, pickOnScreen, type PointerSample, type Projection, type ScreenPoint } from "./picking";
+import { isGrouped, type ProductGroup } from "./product-groups";
 import type { ConfigMessage, ProductState } from "@rpp/protocol";
 
 export interface Layers {
@@ -226,10 +227,10 @@ function OfflineScope({ offline, children }: { offline: boolean; children: React
 }
 
 /** A fault message hanging above its component or mover; follows a moving mover. */
-function FaultLabel({ label, latest }: { label: SceneFaultLabel; latest: MutableRefObject<SceneModel> }) {
+function FaultLabel({ label, frame }: { label: SceneFaultLabel; frame: SourceFrame }) {
   const group = useRef<THREE.Group>(null);
   useFrame(() => {
-    const live = latest.current.faultLabels.find((l) => l.key === label.key);
+    const live = frame.part("faultLabels", label.key);
     if (live) group.current?.position.set(...live.position);
   });
   return (
@@ -269,67 +270,23 @@ function placeBetween(mesh: THREE.Object3D | null, a: Vec3 | undefined, b: Vec3 
   mesh.scale.set(1, length, 1);
 }
 
-/** Structural signature: re-render React only when the set of drawn objects changes. */
-function signature(m: SceneModel, groups: ProductGroups): string {
-  return [
-    m.conveyors.map((c) => `${c.id}:${c.length}:${c.width}:${c.body}:${c.axis.originX}:${c.axis.originY}`).join(","),
-    // Products on the belt are drawn in groups (`ProductInstances`): only a new group or a larger one counts. The few
-    // drawn one by one (placeholders, carried products) count each.
-    groups.of(m.products).map((g) => `${g.key}:${g.capacity}`).join(","),
-    m.products.filter((p) => !isGrouped(p)).map((p) => `${p.key}:${p.state}`).join(","),
-    m.deltas.map((d) => d.id + ":" + d.baseRadius + ":" + d.effectorRadius).join(","),
-    m.zones.map((w) => `${w.componentId}:${w.conveyorId}:${w.length}:${w.width}`).join(","),
-    m.snapPoints.filter((p) => !p.moving).map((p) => p.key).join(","),
-    m.gantries.map((g) => `${g.id}:${trackSignature(g.modules)}:${g.movers.map((x) => x.id).join("/")}`).join(","),
-    m.boxAreas.map((a) => `${a.robotId}:${a.size.join("/")}`).join(","),
-    m.limitAreas.map((a) => `${a.robotId}:${a.size.join("/")}`).join(","),
-    m.zones.map((w) => (w.allocation ? w.allocation.length : 0)).join(","),
-    m.loops.map((l) => `${l.id}:${trackSignature(l.modules)}:${l.movers.map((x) => x.id).join("/")}`).join(","),
-    m.cartesians.map((c) => `${c.id}:${c.parts.map((p) => p.size.join("/")).join("/")}:${c.flange ? 1 : 0}`).join(","),
-    m.fingers.map((f) => `${f.key}:${f.diameter}:${f.height}`).join(","),
-    m.bodies.map((b) => `${b.key}:${b.shape}:${b.role}:${b.size.length}/${b.size.width}/${b.size.height}`).join(","),
-    // Faults change colours and labels. Every fault of a shown component or mover has exactly one label, so the
-    // labels also stand for the red tint of the parts.
-    m.faultLabels.map((l) => `${l.key}:${l.message}`).join(","),
-  ].join("|");
-}
-
 const EMPTY_MACHINE: MachineScene = { sources: [], snapPoints: [], origins: [], faults: [] };
-
-/** Structural signature of what is drawn across sources: measure dots, origins, camera bounds, online state. */
-function machineSignature(m: MachineScene): string {
-  return [
-    m.sources.map((s) => `${s.sourceId}:${s.online}:${s.scene.conveyors.length}:${s.scene.deltas.length}`).join(","),
-    m.snapPoints.filter((p) => !p.moving).map((p) => p.key).join(","),
-    m.origins.map((o) => `${o.sourceId}:${o.componentId}`).join(","),
-  ].join("|");
-}
 
 function SceneContent(props: SceneViewProps) {
   const { feed, sources, layers, selection, modelRef, measureMode, onMeasure, measurePoints, hidden, onFaults } = props;
   // In measure mode a click measures; selecting works only through the component tree.
   const onSelect = measureMode ? () => {} : props.onSelect;
-  const machine = useRef<MachineScene>(EMPTY_MACHINE);
+  const machine = useMemo(() => new MachineFrame(), []);
   const [structure, setStructure] = useState<MachineScene>(EMPTY_MACHINE);
-  const sig = useRef("");
-  const faultSig = useRef("");
 
   // Priority −1: runs before the sources' frame callbacks, which read the scene built here.
   useFrame(() => {
     // Products get snap points only while measuring: with thousands of products they cost most of the frame.
     const model = buildMachineScene(feed.frame(), hidden, { productSnapPoints: measureMode });
-    machine.current = model;
     modelRef.current = model;
-    const s = machineSignature(model);
-    if (s !== sig.current) {
-      sig.current = s;
-      setStructure(model);
-    }
-    const f = JSON.stringify(model.faults);
-    if (f !== faultSig.current) {
-      faultSig.current = f;
-      onFaults(model.faults);
-    }
+    const changes = machine.next(model);
+    if (changes.structure) setStructure(model);
+    if (changes.faults) onFaults(model.faults);
   }, -1);
 
   const bounds = useMemo(
@@ -344,7 +301,7 @@ function SceneContent(props: SceneViewProps) {
     <>
       <McsAxes />
       <MeasurePoints points={measurePoints} />
-      {measureMode && <MeasureLayer latest={machine} structure={structure} layers={layers} onMeasure={onMeasure} />}
+      {measureMode && <MeasureLayer machine={machine} structure={structure} layers={layers} onMeasure={onMeasure} />}
       <Stage bounds={bounds} />
       {sources.map((source) => (
         <SourceContent
@@ -369,82 +326,54 @@ function SceneContent(props: SceneViewProps) {
   );
 }
 
-/** Everything one PLC source draws, with its manifest ids; faded while the source is offline. */
-function SourceContent(props: {
-  sourceId: string;
-  config: ConfigMessage | undefined;
-  online: boolean;
-  machine: MutableRefObject<MachineScene>;
+/** What the view of one kind of scene part draws from. */
+interface PartViewContext {
+  /** The scene as of the last structural change: which objects exist. */
+  structure: SceneModel;
+  /** The scene of this frame: where they are now. */
+  frame: SourceFrame;
   layers: Layers;
-  hidden: ReadonlySet<string>;
   selection: LocalSelection;
-  onSelect: (s: LocalSelection) => void;
-}) {
-  const { sourceId, config, online, machine, layers, hidden, selection, onSelect } = props;
-  const latest = useRef<SceneModel>(EMPTY);
-  const [structure, setStructure] = useState<SceneModel>(EMPTY);
-  const sig = useRef("");
-  const productIndex = useRef(new Map<string, SceneProduct>());
-  /** Per product group the products it draws this frame (`ProductInstances`). */
-  const groupMembers = useRef(new Map<string, SceneProduct[]>());
-  /** The product groups and the instances allocated to each so far. */
-  const productGroups = useMemo(() => new ProductGroups(), []);
-  // A new config can change geometry without changing ids: force a structural update.
-  useEffect(() => {
-    sig.current = "";
-  }, [config, hidden]);
+  isSelected(componentId: number): boolean;
+  onSelect(selection: LocalSelection): void;
+}
 
-  // Priority -0.5: after the machine scene is built, before the products' frame callbacks read what is built here.
-  useFrame(() => {
-    const model = machine.current.sources.find((s) => s.sourceId === sourceId)?.scene ?? EMPTY;
-    latest.current = model;
-    const { members, single } = partitionProducts(model.products);
-    productIndex.current = single;
-    groupMembers.current = members;
-    const s = signature(model, productGroups);
-    if (s !== sig.current) {
-      sig.current = s;
-      setStructure(model);
-    }
-  }, -0.5);
-
-  const productByKey = (key: string) => productIndex.current.get(key);
-  const isSelected = (id: number) => selection?.kind === "component" && selection.id === id;
-
-  return (
-    <OfflineScope offline={!online}>
-      {structure.conveyors.map((c) => (
-        <group key={c.id} ref={(o) => applyTransform(o, c.transform)}>
-          <FaultScope faulted={c.fault !== null}>
-            {c.body && (
-              <SolidBox
-                size={[c.length, 0.05, c.width]}
-                position={[c.length / 2, -0.025, 0]}
-                userData={{ label: c.name }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelect({ kind: "component", id: c.id });
-                }}
-              >
-                <meshStandardMaterial color={isSelected(c.id) ? SOLID.selectedStructure : SOLID.belt} roughness={0.85} />
-              </SolidBox>
-            )}
-            <ConveyorAxis
-              conveyor={c}
-              selected={isSelected(c.id)}
-              onSelect={() => onSelect({ kind: "component", id: c.id })}
-            />
-          </FaultScope>
-          <Html position={[0, 0.06, -c.width / 2]} className="label" zIndexRange={[10, 0]}>
-            {c.name}
-          </Html>
-        </group>
-      ))}
-      {productGroups.of(structure.products).map((g) => (
+/**
+ * How every kind of scene part is drawn, in drawing order. Null for the kinds drawn across sources (snap points,
+ * origins) or not drawn at all; a new kind in `SceneModel` has to be listed here.
+ */
+const PART_VIEWS: { [K in keyof SceneModel]: ((v: PartViewContext) => ReactNode) | null } = {
+  conveyors: ({ structure, isSelected, onSelect }) =>
+    structure.conveyors.map((c) => (
+      <group key={c.id} ref={(o) => applyTransform(o, c.transform)}>
+        <FaultScope faulted={c.fault !== null}>
+          {c.body && (
+            <SolidBox
+              size={[c.length, 0.05, c.width]}
+              position={[c.length / 2, -0.025, 0]}
+              userData={{ label: c.name }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect({ kind: "component", id: c.id });
+              }}
+            >
+              <meshStandardMaterial color={isSelected(c.id) ? SOLID.selectedStructure : SOLID.belt} roughness={0.85} />
+            </SolidBox>
+          )}
+          <ConveyorAxis conveyor={c} selected={isSelected(c.id)} onSelect={() => onSelect({ kind: "component", id: c.id })} />
+        </FaultScope>
+        <Html position={[0, 0.06, -c.width / 2]} className="label" zIndexRange={[10, 0]}>
+          {c.name}
+        </Html>
+      </group>
+    )),
+  products: ({ structure, frame, selection, onSelect }) => (
+    <>
+      {frame.productGroups.map((g) => (
         <ProductInstances
           key={`${g.key}:${g.capacity}`}
           group={g}
-          members={groupMembers}
+          frame={frame}
           selected={selection?.kind === "product" ? selection : undefined}
           onSelect={onSelect}
         />
@@ -456,90 +385,124 @@ function SourceContent(props: {
             key={p.key}
             product={p}
             selected={selection?.kind === "product" && selection.conveyorId === p.conveyorId && selection.productId === p.productId}
-            lookup={productByKey}
+            lookup={(key) => frame.single.get(key)}
             onSelect={onSelect}
           />
         ))}
-      {structure.deltas.map((d) => (
-        <DeltaMesh
-          key={d.id}
-          delta={d}
-          latest={latest}
-          showTcp={layers.tcpMarkers}
-          selected={isSelected(d.id)}
-          onSelect={onSelect}
-        />
-      ))}
-      {structure.gantries.map((g) => (
-        <GantryMesh key={g.id} gantry={g} latest={latest} selected={isSelected(g.id)} onSelect={onSelect} />
-      ))}
-      {structure.loops.map((l) => (
-        <LoopMesh key={l.id} loop={l} latest={latest} selected={isSelected(l.id)} onSelect={onSelect} />
-      ))}
-      {structure.cartesians.map((c) => (
-        <CartesianMesh key={c.id} robot={c} latest={latest} selected={isSelected(c.id)} onSelect={onSelect} />
-      ))}
-      {structure.bodies.map((b) =>
-        (b.role === "beam" || b.role === "fieldOfView") && !layers.zones ? null : (
-          <BodyMesh key={b.key} body={b} latest={latest} selected={isSelected(b.componentId)} onSelect={onSelect} />
-        ),
-      )}
-      {structure.fingers.map((f) => (
-        <FingerMesh key={f.key} finger={f} latest={latest} selected={isSelected(f.robotId)} onSelect={onSelect} />
-      ))}
-      {layers.workingAreas &&
-        structure.boxAreas.map((a) => (
-          <BoxAreaMesh
-            key={`box:${a.robotId}`}
-            area={a}
-            color={isSelected(a.robotId) ? SELECT_COLOR : OVERLAY.workingArea}
-            fillOpacity={0.1}
-          />
-        ))}
-      {layers.limitAreas &&
-        structure.limitAreas.map((a) => (
-          <BoxAreaMesh
-            key={`limit:${a.robotId}`}
-            area={a}
-            color={isSelected(a.robotId) ? SELECT_COLOR : OVERLAY.limitArea}
-            fillOpacity={0.06}
-          />
-        ))}
-      {layers.workingAreas &&
-        structure.workingAreas.map((w) => (
-          <WorkingAreaMesh key={w.robotId} area={w} color={isSelected(w.robotId) ? SELECT_COLOR : OVERLAY.workingArea} />
-        ))}
-      {layers.zones &&
-        structure.zones.map((w, i) => (
+    </>
+  ),
+  deltas: ({ structure, frame, layers, isSelected, onSelect }) =>
+    structure.deltas.map((d) => (
+      <DeltaMesh key={d.id} delta={d} frame={frame} showTcp={layers.tcpMarkers} selected={isSelected(d.id)} onSelect={onSelect} />
+    )),
+  gantries: ({ structure, frame, isSelected, onSelect }) =>
+    structure.gantries.map((g) => (
+      <GantryMesh key={g.id} gantry={g} frame={frame} selected={isSelected(g.id)} onSelect={onSelect} />
+    )),
+  loops: ({ structure, frame, isSelected, onSelect }) =>
+    structure.loops.map((l) => <LoopMesh key={l.id} loop={l} frame={frame} selected={isSelected(l.id)} onSelect={onSelect} />),
+  cartesians: ({ structure, frame, isSelected, onSelect }) =>
+    structure.cartesians.map((c) => (
+      <CartesianMesh key={c.id} robot={c} frame={frame} selected={isSelected(c.id)} onSelect={onSelect} />
+    )),
+  bodies: ({ structure, frame, layers, isSelected, onSelect }) =>
+    structure.bodies.map((b) =>
+      (b.role === "beam" || b.role === "fieldOfView") && !layers.zones ? null : (
+        <BodyMesh key={b.key} body={b} frame={frame} selected={isSelected(b.componentId)} onSelect={onSelect} />
+      ),
+    ),
+  fingers: ({ structure, frame, isSelected, onSelect }) =>
+    structure.fingers.map((f) => (
+      <FingerMesh key={f.key} finger={f} frame={frame} selected={isSelected(f.robotId)} onSelect={onSelect} />
+    )),
+  boxAreas: ({ structure, layers, isSelected }) =>
+    layers.workingAreas &&
+    structure.boxAreas.map((a) => (
+      <BoxAreaMesh
+        key={`box:${a.robotId}`}
+        area={a}
+        color={isSelected(a.robotId) ? SELECT_COLOR : OVERLAY.workingArea}
+        fillOpacity={0.1}
+      />
+    )),
+  limitAreas: ({ structure, layers, isSelected }) =>
+    layers.limitAreas &&
+    structure.limitAreas.map((a) => (
+      <BoxAreaMesh
+        key={`limit:${a.robotId}`}
+        area={a}
+        color={isSelected(a.robotId) ? SELECT_COLOR : OVERLAY.limitArea}
+        fillOpacity={0.06}
+      />
+    )),
+  workingAreas: ({ structure, layers, isSelected }) =>
+    layers.workingAreas &&
+    structure.workingAreas.map((w) => (
+      <WorkingAreaMesh key={w.robotId} area={w} color={isSelected(w.robotId) ? SELECT_COLOR : OVERLAY.workingArea} />
+    )),
+  zones: ({ structure, layers, isSelected }) =>
+    layers.zones && (
+      <>
+        {structure.zones.map((w, i) => (
           <group key={`${w.componentId}:${i}`} ref={(o) => applyTransform(o, w.transform)}>
-            <mesh
-              position={[0, 0.003, 0]}
-              renderOrder={OVERLAY_ORDER}
-              userData={{ label: `Zone (#${w.componentId})` }}
-            >
+            <mesh position={[0, 0.003, 0]} renderOrder={OVERLAY_ORDER} userData={{ label: `Zone (#${w.componentId})` }}>
               <boxGeometry args={[w.length, 0.004, w.width]} />
-              <OverlayMaterial
-                color={OVERLAY.zone}
-                opacity={isSelected(w.componentId) ? 0.55 : 0.3}
-              />
+              <OverlayMaterial color={OVERLAY.zone} opacity={isSelected(w.componentId) ? 0.55 : 0.3} />
             </mesh>
-            <Outline
-              points={rectangle(w.length, w.width, 0.007)}
-              color={isSelected(w.componentId) ? SELECT_COLOR : OVERLAY.zone}
-            />
+            <Outline points={rectangle(w.length, w.width, 0.007)} color={isSelected(w.componentId) ? SELECT_COLOR : OVERLAY.zone} />
             {w.allocation && (
-              <AllocationMesh
-                allocation={w.allocation}
-                zone={w}
-                color={OVERLAY.allocation}
-                selected={isSelected(w.componentId)}
-              />
+              <AllocationMesh allocation={w.allocation} zone={w} color={OVERLAY.allocation} selected={isSelected(w.componentId)} />
             )}
           </group>
         ))}
-      {layers.zones &&
-        structure.zones.map((w, i) => <CcsLine key={`ccs:${w.componentId}:${i}`} transform={w.ccs} width={w.width} />)}
-      {layers.faultLabels && structure.faultLabels.map((l) => <FaultLabel key={l.key} label={l} latest={latest} />)}
+        {structure.zones.map((w, i) => (
+          <CcsLine key={`ccs:${w.componentId}:${i}`} transform={w.ccs} width={w.width} />
+        ))}
+      </>
+    ),
+  faultLabels: ({ structure, frame, layers }) =>
+    layers.faultLabels && structure.faultLabels.map((l) => <FaultLabel key={l.key} label={l} frame={frame} />),
+  snapPoints: null,
+  origins: null,
+  faults: null,
+  warnings: null,
+};
+
+/** Everything one PLC source draws, with its manifest ids; faded while the source is offline. */
+function SourceContent(props: {
+  sourceId: string;
+  config: ConfigMessage | undefined;
+  online: boolean;
+  machine: MachineFrame;
+  layers: Layers;
+  hidden: ReadonlySet<string>;
+  selection: LocalSelection;
+  onSelect: (s: LocalSelection) => void;
+}) {
+  const { sourceId, config, online, machine, layers, hidden, selection, onSelect } = props;
+  const frame = useMemo(() => new SourceFrame(), []);
+  const [structure, setStructure] = useState<SceneModel>(EMPTY);
+  // A new config can change geometry without changing ids: force a structural update.
+  useEffect(() => frame.invalidate(), [frame, config, hidden]);
+
+  // Priority -0.5: after the machine scene is built, before the parts' frame callbacks read what is taken here.
+  useFrame(() => {
+    const model = machine.source(sourceId) ?? EMPTY;
+    if (frame.next(model)) setStructure(model);
+  }, -0.5);
+
+  const context: PartViewContext = {
+    structure,
+    frame,
+    layers,
+    selection,
+    isSelected: (id) => selection?.kind === "component" && selection.id === id,
+    onSelect,
+  };
+
+  return (
+    <OfflineScope offline={!online}>
+      {Object.entries(PART_VIEWS).map(([kind, view]) => view && <Fragment key={kind}>{view(context)}</Fragment>)}
     </OfflineScope>
   );
 }
@@ -744,16 +707,16 @@ const FINGER_COLORS = { active: SOLID.gripperActive, idle: SOLID.aluMid, rod: SO
  */
 function FingerMesh(props: {
   finger: SceneFinger;
-  latest: MutableRefObject<SceneModel>;
+  frame: SourceFrame;
   selected: boolean;
   onSelect: (s: LocalSelection) => void;
 }) {
-  const { finger, latest, selected, onSelect } = props;
+  const { finger, frame, selected, onSelect } = props;
   const body = useRef<THREE.Group>(null);
   const rod = useRef<THREE.Mesh>(null);
   const material = useRef<THREE.MeshStandardMaterial>(null);
   useFrame(() => {
-    const live = latest.current.fingers.find((f) => f.key === finger.key);
+    const live = frame.part("fingers", finger.key);
     if (body.current) {
       body.current.visible = Boolean(live);
       if (live) applyTransform(body.current, live.transform);
@@ -832,11 +795,11 @@ const MISSED_COLOR_OBJECT = new THREE.Color(MISSED_COLOR);
  */
 function ProductInstances(props: {
   group: ProductGroup;
-  members: MutableRefObject<Map<string, SceneProduct[]>>;
+  frame: SourceFrame;
   selected: { conveyorId: number; productId: number } | undefined;
   onSelect: (s: LocalSelection) => void;
 }) {
-  const { group, members, selected, onSelect } = props;
+  const { group, frame, selected, onSelect } = props;
   const { sample, capacity } = group;
   const mesh = useRef<THREE.InstancedMesh>(null);
   /** The products drawn this frame, by instance index, for picking. */
@@ -873,7 +836,7 @@ function ProductInstances(props: {
   useFrame(() => {
     const m = mesh.current;
     if (!m) return;
-    const list = members.current.get(group.key) ?? [];
+    const list = frame.members.get(group.key) ?? [];
     const n = Math.min(list.length, capacity);
     for (let i = 0; i < n; i++) {
       const p = list[i]!;
@@ -1016,11 +979,11 @@ const BODY_COLORS = { structure: SOLID.profile, sensor: SOLID.sensor, beam: OVER
  */
 function BodyMesh(props: {
   body: SceneBody;
-  latest: MutableRefObject<SceneModel>;
+  frame: SourceFrame;
   selected: boolean;
   onSelect: (s: LocalSelection) => void;
 }) {
-  const { body, latest, selected, onSelect } = props;
+  const { body, frame, selected, onSelect } = props;
   const overlay = body.role === "beam" || body.role === "fieldOfView";
   const fill = useRef<THREE.MeshBasicMaterial>(null);
   const solid = useRef<THREE.MeshStandardMaterial>(null);
@@ -1032,7 +995,7 @@ function BodyMesh(props: {
   );
   useEffect(() => () => geometry.dispose(), [geometry]);
   useFrame(() => {
-    const active = latest.current.bodies.find((b) => b.key === body.key)?.active ?? false;
+    const active = frame.part("bodies", body.key)?.active ?? false;
     if (fill.current) fill.current.opacity = active ? 0.55 : body.role === "beam" ? 0.25 : 0.08;
     // A faulted part keeps its red tint, a selected one the selection colour.
     if (solid.current && !body.faulted && !selected) solid.current.color.set(active ? SOLID.bodyActive : BODY_COLORS[body.role]);
@@ -1136,12 +1099,12 @@ const TRIAD = [
 
 function DeltaMesh(props: {
   delta: SceneDelta;
-  latest: MutableRefObject<SceneModel>;
+  frame: SourceFrame;
   showTcp: boolean;
   selected: boolean;
   onSelect: (s: LocalSelection) => void;
 }) {
-  const { delta, latest, showTcp, selected, onSelect } = props;
+  const { delta, frame, showTcp, selected, onSelect } = props;
   const { id, name, baseRadius, effectorRadius } = delta;
   const base = useRef<THREE.Group>(null);
   const effector = useRef<THREE.Group>(null);
@@ -1177,7 +1140,7 @@ function DeltaMesh(props: {
   }, [baseRadius, effectorRadius]);
 
   useFrame(() => {
-    const d = latest.current.deltas.find((x) => x.id === id);
+    const d = frame.part("deltas", id);
     if (!d) return;
     applyTransform(base.current, d.base);
     if (effector.current) {
@@ -1329,12 +1292,12 @@ function MeasurePoints({ points }: { points: MeasurePoint[] }) {
  *   choice, lifting the finger measures it. Two fingers move the camera and measure nothing.
  */
 function MeasureLayer(props: {
-  latest: MutableRefObject<MachineScene>;
+  machine: MachineFrame;
   structure: MachineScene;
   layers: Layers;
   onMeasure: (point: SnapPoint) => void;
 }) {
-  const { latest, structure, layers, onMeasure } = props;
+  const { machine, structure, layers, onMeasure } = props;
   const { camera, gl } = useThree();
   const pointer = useRef<(ScreenPoint & { type: string }) | null>(null);
   const marker = useRef<THREE.Group>(null);
@@ -1343,76 +1306,44 @@ function MeasureLayer(props: {
   onMeasureRef.current = onMeasure;
 
   /** The snap point under a screen position, for the given pointer type's snap radius. */
-  const pick = (at: ScreenPoint, pointerType: string): SnapPoint | undefined => {
-    const width = gl.domElement.clientWidth;
-    const height = gl.domElement.clientHeight;
-    const v = new THREE.Vector3();
-    const candidates: { item: SnapPoint; screen: ScreenPoint; depth: number }[] = [];
-    for (const point of availableSnapPoints(latest.current.snapPoints, layers)) {
-      v.set(...point.position).project(camera);
-      if (v.z < -1 || v.z > 1) continue;
-      candidates.push({
-        item: point,
-        screen: { x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height },
-        depth: camera.position.distanceTo(new THREE.Vector3(...point.position)),
-      });
-    }
-    return nearestOnScreen(candidates, at, snapRadiusPx(pointerType));
-  };
+  const pick = (at: ScreenPoint, pointerType: string): SnapPoint | undefined =>
+    pickOnScreen(availableSnapPoints(machine.scene.snapPoints, layers), at, pointerType, projection(camera, gl.domElement));
   const pickRef = useRef(pick);
   pickRef.current = pick;
 
   useEffect(() => {
     const el = gl.domElement;
-    const fingers = new Set<number>();
-    let press: { start: ScreenPoint; type: string; multi: boolean } | null = null;
-    const position = (e: PointerEvent): ScreenPoint => {
+    // A finger may slide to adjust its choice; a mouse drag moves the camera instead.
+    const presses = new PressTracker({ touchSlides: true, primaryOnly: true });
+    const sample = (e: PointerEvent): PointerSample => {
       const r = el.getBoundingClientRect();
-      return { x: e.clientX - r.left, y: e.clientY - r.top };
+      return { pointerId: e.pointerId, pointerType: e.pointerType, button: e.button, x: e.clientX - r.left, y: e.clientY - r.top };
     };
     const onMove = (e: PointerEvent) => {
       // A finger only points while it touches; with two fingers down the camera moves.
-      if (e.pointerType === "touch" && (!fingers.has(e.pointerId) || fingers.size > 1)) return;
-      pointer.current = { ...position(e), type: e.pointerType };
+      if (e.pointerType === "touch" && (!presses.isDown(e.pointerId) || presses.pointers > 1)) return;
+      const { x, y } = sample(e);
+      pointer.current = { x, y, type: e.pointerType };
     };
     const onLeave = (e: PointerEvent) => {
       if (e.pointerType !== "touch") pointer.current = null;
     };
     const onDown = (e: PointerEvent) => {
-      if (e.pointerType === "touch") {
-        fingers.add(e.pointerId);
-        if (fingers.size > 1) {
-          if (press) press.multi = true;
-          pointer.current = null;
-          return;
-        }
-      }
-      if (e.button !== 0) {
-        press = null;
-        return;
-      }
-      pointer.current = { ...position(e), type: e.pointerType };
-      press = { start: position(e), type: e.pointerType, multi: false };
+      const s = sample(e);
+      presses.pointerDown(s);
+      if (presses.pointers > 1) pointer.current = null;
+      else if (e.button === 0) pointer.current = { x: s.x, y: s.y, type: e.pointerType };
     };
     const onUp = (e: PointerEvent) => {
-      const p = press;
-      if (e.pointerType === "touch") {
-        fingers.delete(e.pointerId);
-        pointer.current = null;
-        if (fingers.size > 0) return;
-      }
-      press = null;
-      if (!p || p.multi) return;
-      // A finger may slide to adjust its choice; a mouse drag moves the camera instead.
-      const at = position(e);
-      if (p.type !== "touch" && !isTap(p.start, at, p.type)) return;
+      const at = presses.pointerUp(sample(e));
+      if (e.pointerType === "touch") pointer.current = null;
+      if (!at) return;
       // Picked at the release position, not from the last frame: a quick tap may start and end within one frame.
-      const candidate = pickRef.current(at, p.type);
+      const candidate = pickRef.current(at, e.pointerType);
       if (candidate) onMeasureRef.current(candidate);
     };
     const onCancel = (e: PointerEvent) => {
-      fingers.delete(e.pointerId);
-      press = null;
+      presses.pointerCancel(e.pointerId);
       if (e.pointerType === "touch") pointer.current = null;
     };
     el.style.cursor = "crosshair";
@@ -1529,11 +1460,11 @@ const XTS_COLORS = {
  */
 function GantryMesh(props: {
   gantry: SceneGantry;
-  latest: MutableRefObject<SceneModel>;
+  frame: SourceFrame;
   selected: boolean;
   onSelect: (s: LocalSelection) => void;
 }) {
-  const { gantry, latest, selected, onSelect } = props;
+  const { gantry, frame, selected, onSelect } = props;
   const { id, name, moverLength, moverWidth } = gantry;
   const track = useRef<THREE.Group>(null);
   const carriages = useRef<(THREE.Object3D | null)[]>([]);
@@ -1547,7 +1478,7 @@ function GantryMesh(props: {
   };
 
   useFrame(() => {
-    const g = latest.current.gantries.find((x) => x.id === id);
+    const g = frame.part("gantries", id);
     if (!g) return;
     applyTransform(track.current, g.track);
     gantry.movers.forEach((m, i) => {
@@ -1611,11 +1542,6 @@ function GantryMesh(props: {
       </FaultScope>
     </group>
   );
-}
-
-/** What of a track's modules changes their meshes. */
-function trackSignature(modules: readonly SceneTrackModule[]): string {
-  return modules.map((m) => `${m.length}/${m.turn}/${m.across.join("/")}/${m.depth.join("/")}`).join(";");
 }
 
 /** Gap at each end of a track module, metres, so that the joints between modules show. */
@@ -1693,11 +1619,11 @@ function TrackModuleMeshes(props: {
 /** XTS loop: the oval track, movers turning with the tangent, and each mover's tool point. */
 function LoopMesh(props: {
   loop: SceneLoop;
-  latest: MutableRefObject<SceneModel>;
+  frame: SourceFrame;
   selected: boolean;
   onSelect: (s: LocalSelection) => void;
 }) {
-  const { loop, latest, selected, onSelect } = props;
+  const { loop, frame, selected, onSelect } = props;
   const { id, name, moverLength, moverWidth } = loop;
   const base = useRef<THREE.Group>(null);
   const movers = useRef<(THREE.Group | null)[]>([]);
@@ -1708,7 +1634,7 @@ function LoopMesh(props: {
   };
 
   useFrame(() => {
-    const l = latest.current.loops.find((x) => x.id === id);
+    const l = frame.part("loops", id);
     if (!l) return;
     applyTransform(base.current, l.base);
     loop.movers.forEach((m, i) => {
@@ -1773,11 +1699,11 @@ const CARTESIAN_COLORS: Record<SceneCartesian["parts"][number]["key"], string> =
  */
 function CartesianMesh(props: {
   robot: SceneCartesian;
-  latest: MutableRefObject<SceneModel>;
+  frame: SourceFrame;
   selected: boolean;
   onSelect: (s: LocalSelection) => void;
 }) {
-  const { robot, latest, selected, onSelect } = props;
+  const { robot, frame, selected, onSelect } = props;
   const { id, name } = robot;
   const parts = useRef<(THREE.Mesh | null)[]>([]);
   const flange = useRef<THREE.Group>(null);
@@ -1788,7 +1714,7 @@ function CartesianMesh(props: {
   };
 
   useFrame(() => {
-    const live = latest.current.cartesians.find((x) => x.id === id);
+    const live = frame.part("cartesians", id);
     if (!live) return;
     live.parts.forEach((p, i) => applyTransform(parts.current[i] ?? null, p.transform));
     if (flange.current) {
@@ -2060,33 +1986,26 @@ function Stage({ bounds }: { bounds: MachineBounds }) {
 const DPR = 1;
 
 export function SceneView(props: SceneViewProps) {
-  // The last press on the canvas: a selection counts only if it was a tap, not a camera drag or a pinch.
-  const press = useRef<{ start: ScreenPoint; end: ScreenPoint; type: string; multi: boolean } | null>(null);
-  const pointersDown = useRef(new Set<number>());
+  // The presses on the canvas: a selection counts only after a tap, not a camera drag or a pinch.
+  const presses = useMemo(() => new PressTracker(), []);
   // Set when a tap ends; an object's click clears it again, otherwise the tap hit empty space.
   const emptyTap = useRef(false);
   const latestProps = useRef(props);
   latestProps.current = props;
-  const wasTap = () => {
-    const p = press.current;
-    return !p || (!p.multi && isTap(p.start, p.end, p.type));
-  };
   const onSelect = (selection: Selection) => {
     emptyTap.current = false;
-    if (wasTap()) props.onSelect(selection);
+    if (presses.lastWasTap) props.onSelect(selection);
   };
 
   // Releases are watched on the window: OrbitControls follows a drag on the document, so it may end outside the
   // canvas. A cancelled pointer (e.g. the browser took over the touch) makes the press no tap.
   useEffect(() => {
     const release = (e: PointerEvent, cancelled: boolean) => {
-      if (!pointersDown.current.delete(e.pointerId)) return;
-      const p = press.current;
-      if (!p) return;
-      if (cancelled) p.multi = true;
-      if (pointersDown.current.size > 0) return;
-      p.end = { x: e.clientX, y: e.clientY };
-      if (!wasTap()) return;
+      if (cancelled) {
+        presses.pointerCancel(e.pointerId);
+        return;
+      }
+      if (!presses.pointerUp(clientSample(e))) return;
       // R3F reports a missed click only below 2 px of travel, too strict for a finger: decide here instead. The
       // click, and with it an object's onClick, follows this pointerup before the timeout runs.
       emptyTap.current = true;
@@ -2112,14 +2031,7 @@ export function SceneView(props: SceneViewProps) {
       dpr={DPR}
       // Neutral tone mapping keeps the palette colours of lit parts close to what they are.
       gl={{ toneMapping: THREE.NeutralToneMapping }}
-      onPointerDown={(e) => {
-        if (pointersDown.current.size > 0 && press.current) press.current.multi = true;
-        else {
-          const at = { x: e.clientX, y: e.clientY };
-          press.current = { start: at, end: at, type: e.pointerType, multi: false };
-        }
-        pointersDown.current.add(e.pointerId);
-      }}
+      onPointerDown={(e) => presses.pointerDown(clientSample(e.nativeEvent))}
     >
       <SceneContent {...props} onSelect={onSelect} />
       {/* One finger orbits, two pinch and pan; in measure mode one finger picks a point instead. */}
@@ -2129,6 +2041,22 @@ export function SceneView(props: SceneViewProps) {
       />
     </Canvas>
   );
+}
+
+/** A pointer event in client coordinates. */
+function clientSample(e: PointerEvent): PointerSample {
+  return { pointerId: e.pointerId, pointerType: e.pointerType, button: e.button, x: e.clientX, y: e.clientY };
+}
+
+/** Where a renderer point lies on `canvas` through `camera`, and how far from the camera. */
+function projection(camera: THREE.Camera, canvas: HTMLCanvasElement): Projection {
+  const v = new THREE.Vector3();
+  return (position) => {
+    v.set(...position).project(camera);
+    if (v.z < -1 || v.z > 1) return undefined;
+    const screen = { x: ((v.x + 1) / 2) * canvas.clientWidth, y: ((1 - v.y) / 2) * canvas.clientHeight };
+    return { screen, depth: camera.position.distanceTo(new THREE.Vector3(...position)) };
+  };
 }
 
 /** OrbitControls ignores a one-finger gesture whose action is none of THREE.TOUCH. */

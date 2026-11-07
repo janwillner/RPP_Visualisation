@@ -19,6 +19,7 @@ products on one conveyor:
 | product history | following the products of one state message |
 | replay buffer | keeping one state message in the replay buffer |
 | machine scene | building the scene, once per frame (16.7 ms per frame at 60 Hz for everything) |
+| scene frame | the 3D view taking the scene: what changed and the product groups (`scene-frame.ts`), once per frame |
 
 Compare runs before and after a change on the same PC. Do not read the absolute numbers as those of the running
 system: Vitest starts Node with `--conditions development`, which makes the gateway's mapping about ten times slower
