@@ -338,8 +338,8 @@ export interface SimulatorOptions {
 export function createSimulator(options: SimulatorOptions = {}): Simulator {
   const random = mulberry32(options.seed ?? Date.now());
   const plc = new InMemoryPlc();
-  const belt = (b: { x: number; y: number; length: number }) =>
-    conveyor({ pose: { fX: b.x, fY: b.y, fZ: BELT_Z }, length: b.length, width: 400, productTypes });
+  const belt = (b: { x: number; y: number; length: number }, body = true) =>
+    conveyor({ pose: { fX: b.x, fY: b.y, fZ: BELT_Z }, length: b.length, width: 400, productTypes, body });
   // Rows on the buffer belt: the products beyond its end until they are removed must fit into the register too.
   const bufferRows = Math.ceil(
     Math.min(options.products ?? 0, MAX_PRODUCTS - BUFFER.lanes * Math.ceil(REMOVE_BEYOND_END / BUFFER.pitch + 1)) /
@@ -378,7 +378,8 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
       }),
     },
     { id: FXX_INFEED.id, name: "Fxx infeed", path: FXX_INFEED.path, kind: "conveyor", value: belt(FXX_INFEED) },
-    { id: FXX_OUTFEED.id, name: "Fxx outfeed", path: FXX_OUTFEED.path, kind: "conveyor", value: belt(FXX_OUTFEED) },
+    // A conveyor without a body: only its products and axis are drawn.
+    { id: FXX_OUTFEED.id, name: "Fxx outfeed", path: FXX_OUTFEED.path, kind: "conveyor", value: belt(FXX_OUTFEED, false) },
     { id: IDH_INFEED.id, name: "IDH infeed", path: IDH_INFEED.path, kind: "conveyor", value: belt(IDH_INFEED) },
     { id: TRAY.id, name: "Tray belt", path: TRAY.path, kind: "conveyor", value: belt(TRAY) },
     {

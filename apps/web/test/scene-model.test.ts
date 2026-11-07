@@ -48,6 +48,7 @@ function conveyorConfig(overrides: Partial<ConveyorConfig> = {}): ConveyorConfig
     length: 3000,
     width: 400,
     productTypes: [{ id: 1, length: 100, width: 80, height: 40, shape: "box", cornerRadius: 0 }],
+    body: true,
     originShift: { x: 0, y: 0, z: 0 },
     ...overrides,
   };
@@ -1337,10 +1338,18 @@ describe("scene model: conveyor coordinate system and origin shift", () => {
     expect(scene.warnings).toEqual([]);
   });
 
-  it("warns when a zone's CCS lies outside the zone", () => {
+  it("draws a zone's CCS outside the zone without a warning while it lies on the belt", () => {
     const scene = buildScene(config(belt, deltaConfig({ zones: [pickZone({ ccsOffset: 2000 })] })), [], 0);
 
-    expect(scene.warnings).toEqual(["Delta 1: CCS of the zone on Infeed (2000 mm) lies outside the zone (1200 to 1800 mm)"]);
+    closeTo(scene.zones[0]!.ccs.position, [2, 0.8, 0]);
+    expect(scene.warnings).toEqual([]);
+  });
+
+  it("warns when a zone's CCS lies past a belt end, and draws it there", () => {
+    const scene = buildScene(config(belt, deltaConfig({ zones: [pickZone({ ccsOffset: 3200 })] })), [], 0);
+
+    closeTo(scene.zones[0]!.ccs.position, [3.2, 0.8, 0]);
+    expect(scene.warnings).toEqual(["Delta 1: CCS of the zone on Infeed (3200 mm) lies outside the belt (0 to 3000 mm)"]);
   });
 
   it("counts a conveyor's belt coordinates from its shifted origin", () => {
@@ -1389,14 +1398,42 @@ describe("scene model: conveyor coordinate system and origin shift", () => {
     closeTo(snapAt(scene, "Delta 1 zone on Infeed · start, right").mcs, [1200, -20, 800]);
   });
 
-  it("clips a zone reaching past the belt at its edges and warns", () => {
+  it("draws a zone reaching past the belt's sides as reported, without a warning", () => {
     const scene = buildScene(config(belt, deltaConfig({ zones: [pickZone({ startY: -300, endY: 100 })] })), [], 0);
 
-    expect(scene.zones[0]!.width).toBeCloseTo(0.3);
-    closeTo(scene.zones[0]!.transform.position, [1.5, 0.8, 0.05]);
-    closeTo(snapAt(scene, "Delta 1 zone on Infeed · start, right").mcs, [1200, -200, 800]);
+    expect(scene.zones[0]!.width).toBeCloseTo(0.4);
+    closeTo(scene.zones[0]!.transform.position, [1.5, 0.8, 0.1]);
+    closeTo(snapAt(scene, "Delta 1 zone on Infeed · start, right").mcs, [1200, -300, 800]);
+    expect(scene.warnings).toEqual([]);
+  });
+
+  it("runs the conveying direction axis from the conveyor's shifted origin along its X axis", () => {
+    const shifted = conveyorConfig({ originShift: { x: 500, y: -20, z: 0 } });
+    const scene = buildScene(config(shifted), [], 0);
+
+    // In the belt's frame, metres: X along the belt, Y across it.
+    expect(scene.conveyors[0]!.axis).toEqual({ originX: 0.5, originY: -0.02 });
+  });
+
+  it("draws a conveyor without a body only by its axis: no belt edges to snap to, its zones stay", () => {
+    const bare = conveyorConfig({ body: false });
+    const scene = buildScene(config(bare, deltaConfig({ zones: [pickZone()] })), [], 0);
+
+    expect(scene.conveyors[0]!.body).toBe(false);
+    const labels = scene.snapPoints.map((p) => p.label).filter((l) => l.startsWith("Infeed"));
+    expect(labels).toEqual(["Infeed · origin", "Infeed · end centre"]);
+    expect(scene.zones).toHaveLength(1);
+  });
+
+  it("draws a zone reaching past a belt end as reported, with a warning in belt coordinates", () => {
+    const shifted = conveyorConfig({ originShift: { x: 500, y: 0, z: 0 } });
+    const zone = pickZone({ start: 2000, end: 2600, ccsOffset: 2200 });
+    const scene = buildScene(config(shifted, deltaConfig({ zones: [zone] })), [], 0);
+
+    expect(scene.zones[0]!.length).toBeCloseTo(0.6);
+    closeTo(snapAt(scene, "Delta 1 zone on Infeed · end, left").mcs, [3100, 200, 800]);
     expect(scene.warnings).toEqual([
-      "Delta 1: zone on Infeed (Y -300 to 100 mm) reaches past the belt; drawn up to its edges",
+      "Delta 1: zone on Infeed (2000 to 2600 mm) reaches past the belt (-500 to 2500 mm)",
     ]);
   });
 

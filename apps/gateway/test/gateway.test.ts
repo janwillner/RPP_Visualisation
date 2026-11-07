@@ -165,6 +165,7 @@ describe("gateway discovery", () => {
           { id: 2, length: 90, width: 90, height: 60, shape: "cylinder", cornerRadius: 0 },
           { id: 3, length: 140, width: 90, height: 40, shape: "roundedBox", cornerRadius: 20 },
         ],
+        body: true,
         originShift: { x: 0, y: 0, z: 0 },
       },
       {
@@ -208,6 +209,15 @@ describe("gateway discovery", () => {
         { conveyorId: 10, start: 2000, end: 2400, allocationOffset: 0, startY: 0, endY: 0 },
       ],
     });
+  });
+
+  it("publishes whether a conveyor is drawn with a body", async () => {
+    const bare: MachineComponent = { ...infeed, id: 11, path: "MAIN.fbBare.stVisu", value: conveyor({ body: false }) };
+    const t = setup([infeed, bare]);
+    await t.gateway.cycle();
+
+    const conveyors = t.configs()[0]!.components.filter((c) => c.type === "conveyor");
+    expect(conveyors.map((c) => c.type === "conveyor" && c.body)).toEqual([true, false]);
   });
 
   it("publishes each zone's CCS offset and every component's origin shift, zero when not set", async () => {

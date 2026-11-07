@@ -76,6 +76,9 @@ describe("simulator", () => {
       return c?.type === "conveyor" ? c.products.length : 0;
     };
     expect(productsOn("Fxx outfeed")).toBeGreaterThan(0);
+    // The Fxx outfeed is a conveyor without a body: only its products and axis are drawn.
+    const bodiless = config.components.filter((c) => c.type === "conveyor" && !c.body).map((c) => c.name);
+    expect(bodiless).toEqual(["Fxx outfeed"]);
     expect(productsOn("Tray belt")).toBeGreaterThan(0);
     expect(productsOn("Cartesian outfeed")).toBeGreaterThan(0);
 

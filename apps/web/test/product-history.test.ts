@@ -29,6 +29,7 @@ const config: ConfigMessage = {
       length: 3000,
       width: 400,
       productTypes: [],
+      body: true,
       originShift: { x: 0, y: 0, z: 0 },
     },
   ],

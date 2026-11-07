@@ -1,4 +1,4 @@
-# PLC contract (library `Syn_Visu`, protocol version 15)
+# PLC contract (library `Syn_Visu`, protocol version 16)
 
 This is the PLC side of the contract the gateway reads. It is implemented by the TwinCAT library project in
 `plc/Syn_Visu` (solution `plc/RPP_Visu.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
@@ -58,6 +58,10 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   `ePreviousState` equals `eState` until the first change after the latch; setting the same state again keeps it.
 - Fault: every component state, every XTS mover and every track module (`aModuleStates[i]`) carries `stFault : ST_VisuFault` (`bActive`, `sMessage` STRING(80)). While `bActive` is TRUE the visualisation draws the component, or only that mover or module, red and shows `sMessage` ("Fault" if empty) above it, in the component list, in the inspector and as a mark on the recording's timeline. There is one fault per component, mover or module at a time and no severity. Faults are live state: they are read every cycle and not interpolated.
 - `fBeltPosition` is a continuous position in mm (no modulo). For modulo axes use `_FB_VisuConveyor.m_SetModuloBeltPosition`.
+- Conveyor body: `bBody` (default TRUE, `m_SetBodyVisible`) draws the belt as a body. FALSE is a conveyor without
+  one (e.g. products pushed by movers, a virtual queue): only its products, zones and axis are drawn, and its belt
+  corners are no snap points. Every conveyor shows its X axis on the belt surface: a small ball at its shifted
+  origin, a line along the belt and the conveying direction arrow at the belt end; the ball selects the conveyor.
 - Product latch pose = bottom centre of the product when it was latched, **in the conveyor's
   coordinate system**: from the conveyor's `stPose` moved by its `stOriginShift`, `fX` along the conveying direction,
   `fY` across the belt, `fZ` up (0 on the belt surface), `fRz` from the belt's X axis. The visualisation moves the
@@ -82,12 +86,14 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   which a robot may still allocate products in the zone, so it does not move out of the zone while approaching. The
   allocation area runs from `fStart` to `fEnd − fAllocationOffset` (never beyond `fStart`); 0 = no allocation limit.
 - Zone CCS: `fCcsOffset` is the belt coordinate (like `fStart` / `fEnd`) of the component's conveyor coordinate system
-  (CCS) on that conveyor. It is drawn as a black dashed line across the zone, in the zones layer, and is a
-  measure-mode snap point. A CCS outside its zone raises a warning.
+  (CCS) on that conveyor. It is drawn as a solid violet line across the zone, above every other zone overlay (also
+  where it meets the allocation limit), in the zones layer, and is a measure-mode snap point. The CCS may lie outside
+  its zone, but must lie on the belt (between its start and end); else the visualisation warns and draws it there.
+- Zone along the belt: a zone reaching past the belt start or end is drawn as reported and raises a warning.
 - Zone across the belt: `fStartY` and `fEndY` are the zone's sides across the belt, mm along the conveyor's local Y
   from its origin shift (the conveyor's coordinate system, like a product's latch pose), in any order.
-  `fStartY = fEndY` (e.g. both 0) spans the whole belt width. A zone reaching past the belt is drawn up to its
-  edges and raises a warning. Area, allocation area, CCS line and snap points lie between the two sides.
+  `fStartY = fEndY` (e.g. both 0) spans the whole belt width. A zone may reach past the belt's sides: it is drawn
+  as reported, without a warning. Area, allocation area, CCS line and snap points lie between the two sides.
 - Origin shift: every config has `stOriginShift : ST_VisuPosition`, mm in the component's local frame from `stPose`
   (no rotation), where the component's coordinate system lies; 0 = at the pose. The origin triad and the local
   measuring coordinates are shown from there. For a conveyor the belt coordinates also count from it: a zone's
@@ -165,6 +171,7 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
 - Protocol version 14 gives the product's `stLatchPose` in the conveyor's coordinate system instead of the MCS
   (ADR 0010).
 - Protocol version 15 added the zones' `fStartY` and `fEndY`: a zone may cover only part of the belt width.
+- Protocol version 16 added the conveyor's `bBody`: a conveyor may have no body.
 
 ## What the library contains
 
@@ -201,7 +208,7 @@ the FBs fill them in their output `vo_Visu`, so application code does not write 
 | `ST_VisuPose`, `ST_VisuPlanarPose`, `ST_VisuPosition` | MCS poses and positions |
 | `VISU_GlobalConst` | `VISU_un_PROTOCOL_VERSION` (contract version; `ST_VisuManifest` initialises to it), `VISU_str_LIBRARY_VERSION` (this library's version, reported in the manifest), `VISU_lr_DEG_TO_RAD`, `VISU_lr_XTS_MODULE_LENGTH` (250 mm) |
 | `VISU_GlobalConst_Param` | Array sizes: `VISU_un_MAX_MANIFEST_ENTRIES` (32), `VISU_un_MAX_PRODUCTS` (4800), `VISU_un_PRODUCT_INDEX_SIZE` (16384, slots of a conveyor's product index by id: a power of two, at least twice `VISU_un_MAX_PRODUCTS`), `VISU_un_MAX_PRODUCT_TYPES` (8), `VISU_un_MAX_ZONES` (8), `VISU_un_MAX_MOVERS` (40), `VISU_un_MAX_FINGERS` (8, per gripper), `VISU_un_MAX_BODIES` (16, per detector or station), `VISU_un_MAX_MODULES` (64, per XTS track) |
-| `_FC_GetVersionSynVisu` | Library version at runtime (9.0.0) |
+| `_FC_GetVersionSynVisu` | Library version at runtime (9.1.0) |
 
 ### Methods
 
@@ -276,6 +283,7 @@ every cycle, also stamps the component's state.
 | Method | Purpose |
 | --- | --- |
 | `m_Configure(vi_Pose, vi_lr_Length, vi_lr_Width)` | Pose of the belt start and size |
+| `m_SetBodyVisible(vi_b_Visible)` | Whether the belt is drawn as a body (default TRUE); FALSE for a conveyor without one |
 | `m_SetProductType(vi_udn_Id, vi_lr_Length, vi_lr_Width, vi_lr_Height, vi_e_Shape, vi_lr_CornerRadius)` | Adds or updates a product type: a box, a cylinder (length and width are its diameters along and across the conveying direction: equal for round, different for oval products) or a box with rounded vertical edges (pouches, flow packs) |
 | `m_SetBeltPosition(vi_lr_Position)` | Belt position (continuous, mm) and state timestamp; call once per cycle |
 | `m_SetModuloBeltPosition(vi_lr_ModuloPosition, vi_lr_ModuloPeriod, vi_b_Reset)` | Same for a modulo axis; unwraps to a continuous position |

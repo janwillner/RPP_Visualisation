@@ -66,7 +66,7 @@ _Avoid_: API spec, Swagger
 ## Conveyors and products
 
 **Conveyor**:
-A belt or chain that moves products along its local X axis (the conveying direction).
+A belt or chain that moves products along its local X axis (the conveying direction). A conveyor without a body has no belt of its own to draw (e.g. products pushed along by movers); it is shown only by its products, zones and axis.
 _Avoid_: band, belt (when meaning the whole component)
 
 **Belt position**:
@@ -226,5 +226,5 @@ A client at a conveyor that works on the products in its zones without kinematic
 _Avoid_: generic component, unit, device
 
 **Body**:
-One solid a component is drawn from as its PLC describes it: a box, a cylinder or a frustum with a role (a machine part, a sensing part, a beam, a field of view).
+One solid a component is drawn from as its PLC describes it: a box, a cylinder or a frustum with a role (a machine part, a sensing part, a beam, a field of view). A conveyor's body is its belt, drawn from its length and width, not described by the PLC; the PLC only says whether it has one (see Conveyor).
 _Avoid_: shape (a product type has a shape), part

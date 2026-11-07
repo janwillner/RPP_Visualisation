@@ -45,8 +45,8 @@ export const OVERLAY = {
   /** Detector bodies with these roles; they light up when active. */
   beam: "#ffd54f",
   fieldOfView: "#4fc3f7",
-  /** The conveyor coordinate system line on a belt. */
-  ccs: "#f1f4f8",
+  /** The conveyor coordinate system line on a belt; apart from the zone greens and the rejected violet. */
+  ccs: "#b388ff",
   setpoint: "#ffee58",
   snapPoint: "#ffffff",
   xtsTool: "#ffb74d",

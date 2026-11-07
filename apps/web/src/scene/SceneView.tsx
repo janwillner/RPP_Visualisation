@@ -271,7 +271,7 @@ function placeBetween(mesh: THREE.Object3D | null, a: Vec3 | undefined, b: Vec3 
 /** Structural signature: re-render React only when the set of drawn objects changes. */
 function signature(m: SceneModel, groups: ProductGroups): string {
   return [
-    m.conveyors.map((c) => `${c.id}:${c.length}:${c.width}`).join(","),
+    m.conveyors.map((c) => `${c.id}:${c.length}:${c.width}:${c.body}:${c.axis.originX}:${c.axis.originY}`).join(","),
     // Products on the belt are drawn in groups (`ProductInstances`): only a new group or a larger one counts. The few
     // drawn one by one (placeholders, carried products) count each.
     groups.of(m.products).map((g) => `${g.key}:${g.capacity}`).join(","),
@@ -415,22 +415,24 @@ function SourceContent(props: {
       {structure.conveyors.map((c) => (
         <group key={c.id} ref={(o) => applyTransform(o, c.transform)}>
           <FaultScope faulted={c.fault !== null}>
-            <SolidBox
-              size={[c.length, 0.05, c.width]}
-              position={[c.length / 2, -0.025, 0]}
-              userData={{ label: c.name }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelect({ kind: "component", id: c.id });
-              }}
-            >
-              <meshStandardMaterial color={isSelected(c.id) ? SOLID.selectedStructure : SOLID.belt} roughness={0.85} />
-            </SolidBox>
-            {/* Conveying direction */}
-            <mesh position={[c.length + 0.06, 0, 0]} rotation={[0, 0, -Math.PI / 2]} raycast={noRaycast}>
-              <coneGeometry args={[0.04, 0.12, 16]} />
-              <meshStandardMaterial color={SOLID.beltArrow} roughness={0.6} />
-            </mesh>
+            {c.body && (
+              <SolidBox
+                size={[c.length, 0.05, c.width]}
+                position={[c.length / 2, -0.025, 0]}
+                userData={{ label: c.name }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelect({ kind: "component", id: c.id });
+                }}
+              >
+                <meshStandardMaterial color={isSelected(c.id) ? SOLID.selectedStructure : SOLID.belt} roughness={0.85} />
+              </SolidBox>
+            )}
+            <ConveyorAxis
+              conveyor={c}
+              selected={isSelected(c.id)}
+              onSelect={() => onSelect({ kind: "component", id: c.id })}
+            />
           </FaultScope>
           <Html position={[0, 0.06, -c.width / 2]} className="label" zIndexRange={[10, 0]}>
             {c.name}
@@ -541,25 +543,65 @@ function SourceContent(props: {
   );
 }
 
+/** Height of the conveyor axis above the belt surface, so the line does not flicker against the belt. */
+const AXIS_LIFT = 0.004;
+
 /**
- * A zone's conveyor coordinate system: a black dashed line lying on the belt, across the whole zone width.
+ * A conveyor's X axis on the belt, in its frame: a small ball at its shifted origin, a line along the axis and the
+ * conveying direction arrow at the belt end. The ball selects the conveyor, also one without a body.
  * Renderer local axes: belt X -> x, belt Y -> −z.
+ */
+function ConveyorAxis(props: { conveyor: SceneConveyor; selected: boolean; onSelect: () => void }) {
+  const { conveyor: c, selected, onSelect } = props;
+  const z = -c.axis.originY;
+  const color = selected ? SOLID.selectedStructure : SOLID.beltArrow;
+  return (
+    <>
+      <mesh
+        position={[c.axis.originX, AXIS_LIFT, z]}
+        userData={{ label: c.name }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect();
+        }}
+      >
+        <sphereGeometry args={[0.025, 16, 12]} />
+        <meshStandardMaterial color={color} roughness={0.6} />
+      </mesh>
+      <Line
+        points={[
+          [c.axis.originX, AXIS_LIFT, z],
+          [c.length, AXIS_LIFT, z],
+        ]}
+        color={color}
+        lineWidth={2}
+        raycast={noRaycast}
+      />
+      <mesh position={[c.length + 0.06, AXIS_LIFT, z]} rotation={[0, 0, -Math.PI / 2]} raycast={noRaycast}>
+        <coneGeometry args={[0.04, 0.12, 16]} />
+        <meshStandardMaterial color={color} roughness={0.6} />
+      </mesh>
+    </>
+  );
+}
+
+/**
+ * A zone's conveyor coordinate system: a solid violet line lying on the belt, across the whole zone width. It lies
+ * above every zone overlay (the allocation limit bar's top is 11 mm) and is drawn after them, so the limit bar cannot
+ * hide it when both lie at the same belt coordinate. Renderer local axes: belt X -> x, belt Y -> −z.
  */
 function CcsLine({ transform, width }: { transform: Transform; width: number }) {
   return (
     <group ref={(o) => applyTransform(o, transform)}>
       <Line
         points={[
-          [0, 0.009, -width / 2],
-          [0, 0.009, width / 2],
+          [0, 0.016, -width / 2],
+          [0, 0.016, width / 2],
         ]}
         color={OVERLAY.ccs}
-        lineWidth={2}
-        dashed
-        dashSize={0.03}
-        gapSize={0.02}
+        lineWidth={2.5}
         toneMapped={false}
-        renderOrder={OVERLAY_ORDER}
+        renderOrder={OVERLAY_ORDER + 1}
         raycast={noRaycast}
       />
     </group>

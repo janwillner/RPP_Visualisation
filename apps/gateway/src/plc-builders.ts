@@ -137,6 +137,8 @@ export interface ConveyorSpec {
   length?: number;
   width?: number;
   productTypes?: (Omit<ST_VisuProductType, "eShape" | "fCornerRadius"> & Partial<ST_VisuProductType>)[];
+  /** Drawn as a body; true when not given, like the library's default. */
+  body?: boolean;
   beltPosition?: number;
   timestamp?: bigint;
   products?: Partial<ST_VisuProduct>[];
@@ -158,6 +160,7 @@ export function conveyor(spec: ConveyorSpec = {}): ST_VisuConveyor {
       fWidth: spec.width ?? 400,
       nProductTypeCount: productTypes.length,
       aProductTypes: padded(productTypes, MAX_PRODUCT_TYPES, () => productType({ nId: 0, fLength: 0, fWidth: 0, fHeight: 0 })),
+      bBody: spec.body ?? true,
       ...originShift(spec),
     },
     stState: {

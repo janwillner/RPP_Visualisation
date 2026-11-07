@@ -72,6 +72,7 @@ says so in its status.
 
 | Library `SynVisu` | Protocol version | Gateway |
 | --- | --- | --- |
+| 9.1.x | 16 | releases from protocol 16 on; `m_SetBodyVisible` for a conveyor without a body (section 5.1); no change to existing calls |
 | 9.0.x | 15 | releases from protocol 15 on; `m_SetZone` has `vi_lr_StartY`, `vi_lr_EndY` (add `vi_lr_StartY := 0, vi_lr_EndY := 0` to every call for the whole belt width, section 6) |
 | 8.0.x | 14 | releases from protocol 14 on; `m_Register` without `vi_str_Path` (remove it from every call, section 3.2); methods without default values, every call lists all inputs (section 3.3) |
 | 7.0.x | 14 | releases from protocol 14 on (product poses in the conveyor's coordinate system) |
@@ -206,6 +207,7 @@ on it (up to `VISU_un_MAX_PRODUCTS`, 4800).
 | Call | Meaning |
 | --- | --- |
 | `m_Configure(vi_Pose, vi_lr_Length, vi_lr_Width)` | `vi_Pose` is the centre of the belt start on the belt surface; local +X is the conveying direction, local Z the belt normal |
+| `m_SetBodyVisible(vi_b_Visible)` | TRUE (default) draws the belt as a body. FALSE for a conveyor without one, e.g. products pushed along by XTS movers: only its products, zones and axis are drawn. Length and width still bound the belt coordinates. |
 | `m_SetProductType(vi_udn_Id, vi_lr_Length, vi_lr_Width, vi_lr_Height, vi_e_Shape, vi_lr_CornerRadius)` | One per product type on this belt (up to 8) |
 
 Product shapes (`SynVisu.E_VisuProductShape`):
@@ -315,8 +317,11 @@ fb_Delta1.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_Outfeed.m_Id(),
 | `vi_udn_ConveyorId` | The conveyor's id (`fb_Belt.m_Id()`) |
 | `vi_lr_Start`, `vi_lr_End` | Belt coordinates in mm (from the belt start or its origin shift). `Start = End` draws a line across the belt, e.g. for a light barrier. |
 | `vi_lr_AllocationOffset` | mm before `End` up to which the robot may still allocate products; drawn as its own area. 0 = no limit. |
-| `vi_lr_CcsOffset` | Belt coordinate of the component's conveyor coordinate system (CCS), drawn as a dashed line. It should lie inside the zone. |
-| `vi_lr_StartY`, `vi_lr_EndY` | The zone's sides across the belt in mm, along the conveyor's local Y from its origin shift (like a product's latch pose; 0 = the belt's centre line without a shift), in any order. Equal (e.g. both 0) = the whole belt width. A zone reaching past the belt is drawn up to its edges, with a warning. |
+| `vi_lr_CcsOffset` | Belt coordinate of the component's conveyor coordinate system (CCS), drawn as a solid violet line across the zone. It may lie outside the zone, but must lie on the belt (between its start and end), else a warning. |
+| `vi_lr_StartY`, `vi_lr_EndY` | The zone's sides across the belt in mm, along the conveyor's local Y from its origin shift (like a product's latch pose; 0 = the belt's centre line without a shift), in any order. Equal (e.g. both 0) = the whole belt width. A zone may reach past the belt's sides; it is drawn as reported. |
+
+`vi_lr_Start` and `vi_lr_End` should lie on the belt; a zone reaching past the belt start or end is drawn as
+reported, with a warning.
 
 `m_ClearZones()` removes all zones, e.g. when a format change uses fewer zones.
 
@@ -660,7 +665,7 @@ them over several PLCs (ADS ports); the gateway reads several sources and shows 
       `m_RemoveProductsBeyond` called every cycle.
 - [ ] Products: unique ids per conveyor, states follow the lifecycle (section 5.3), placed products latched as
       `PLACED` on the target and removed from the source.
-- [ ] Zones set in order, conveyor ids from `m_Id()`, CCS inside the zone.
+- [ ] Zones set in order, conveyor ids from `m_Id()`, zone ends and CCS on the belt.
 - [ ] Robots: fingers defined and reported every cycle in the MCS; picked products name the finger.
 - [ ] XTS: modules set in track order, loop closes, mover positions count from the start of module 1, mover ids > 0.
 - [ ] Faults mapped: component faults cleared again, mover and module faults reported every cycle.
@@ -679,8 +684,8 @@ in the gateway log. Configuration warnings appear in the web app.
 | "Cannot read ...stConfig" | Symbol exists but cannot be read, e.g. hidden by an attribute or the PLC is stopped | Check the symbol in the ADS symbol table; start the PLC |
 | Component missing in the tree, no error | `m_Register` not called, id 0, id used twice, or manifest full | Call it every cycle with a unique id; check its return value |
 | "zone references unknown conveyor N" | Zone's conveyor id is not a registered conveyor | Use `fb_Belt.m_Id()`; register the conveyor |
-| "zone on ... reaches past the belt" | `vi_lr_StartY` / `vi_lr_EndY` beyond the belt edges | Keep them within ± half the belt width from the centre line (minus the origin shift's Y) |
-| "CCS of the zone ... lies outside the zone" | `vi_lr_CcsOffset` not between start and end | Correct the CCS or the zone |
+| "zone on ... reaches past the belt (a to b mm)" | `vi_lr_Start` / `vi_lr_End` before the belt start or after its end (a to b: the belt in belt coordinates) | Correct the zone, the belt length or the origin shift |
+| "CCS of the zone ... lies outside the belt (a to b mm)" | `vi_lr_CcsOffset` before the belt start or after its end | Correct the CCS, the belt length or the origin shift |
 | "the track modules do not close the loop (N mm apart)" | Missing, extra or wrong-kind module in an XTS loop | Check the module list against the hardware |
 | "product #n hangs from finger f, which robot #r does not have" | `vi_udn_FingerId` beyond the defined fingers | Define the finger or pass 0 |
 | Products jump or run backwards | Belt position not continuous (modulo axis reported with `m_SetBeltPosition`) | Use `m_SetModuloBeltPosition` |

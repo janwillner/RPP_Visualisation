@@ -78,6 +78,13 @@ export interface SceneConveyor {
   transform: Transform;
   length: number;
   width: number;
+  /**
+   * The conveyor's X axis on the belt surface, metres in the belt's frame (X along the belt, Y across it): drawn from
+   * a ball at its shifted origin to the conveying direction arrow at the belt end.
+   */
+  axis: { originX: number; originY: number };
+  /** False for a conveyor without a body: its belt is not drawn, only its axis, products and zones. */
+  body: boolean;
   /** Fault message to show, null = no fault. */
   fault: string | null;
 }
@@ -502,15 +509,20 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
         transform: toRendererTransform(frame),
         length: c.length * MM,
         width: c.width * MM,
+        axis: { originX: c.originShift.x * MM, originY: c.originShift.y * MM },
+        body: c.body,
         fault,
       });
       ctx.addFault(c.id, null, fault, lifted(toMcs(frame, [c.length / 2, 0, 0]), LABEL_LIFT.conveyor));
       const owner = snapOwner(c, frame);
       const snapPoints = ctx.scene.snapPoints;
       snapPoints.push(owner.at(`${c.name} · origin`, shiftOf(c)));
-      for (const end of ["start", "end"] as const) {
-        for (const [side, y] of sides(c.width)) {
-          snapPoints.push(owner.at(`${c.name} · ${end}, ${side}`, [end === "start" ? 0 : c.length, y, 0]));
+      // Without a body there are no belt edges to measure from.
+      if (c.body) {
+        for (const end of ["start", "end"] as const) {
+          for (const [side, y] of sides(c.width)) {
+            snapPoints.push(owner.at(`${c.name} · ${end}, ${side}`, [end === "start" ? 0 : c.length, y, 0]));
+          }
         }
       }
       snapPoints.push(owner.at(`${c.name} · end centre`, [c.length, 0, 0]));
@@ -788,16 +800,14 @@ export function buildScene(
         const zoneCentre = (win.start + win.end) / 2;
         const name = `${c.name} zone on ${belt.name}`;
         const lane = zoneLane(win, belt);
-        if (lane.clipped) {
-          warnings.push(
-            `${c.name}: zone on ${belt.name} (Y ${win.startY} to ${win.endY} mm) reaches past the belt; drawn up to its edges`,
-          );
+        const beltRange = `${-belt.originShift.x} to ${belt.length - belt.originShift.x} mm`;
+        if (!onBelt(belt, win.start) || !onBelt(belt, win.end)) {
+          warnings.push(`${c.name}: zone on ${belt.name} (${win.start} to ${win.end} mm) reaches past the belt (${beltRange})`);
         }
         const laneCentre = (lane.left + lane.right) / 2;
-        if (win.ccsOffset < Math.min(win.start, win.end) || win.ccsOffset > Math.max(win.start, win.end)) {
-          warnings.push(
-            `${c.name}: CCS of the zone on ${belt.name} (${win.ccsOffset} mm) lies outside the zone (${win.start} to ${win.end} mm)`,
-          );
+        // The CCS may lie outside its zone, but not past the belt.
+        if (!onBelt(belt, win.ccsOffset)) {
+          warnings.push(`${c.name}: CCS of the zone on ${belt.name} (${win.ccsOffset} mm) lies outside the belt (${beltRange})`);
         }
         zones.push({
           componentId: c.id,
@@ -936,19 +946,23 @@ function allocationLimit(zone: Zone): number | undefined {
   return zone.end - direction * Math.min(zone.allocationOffset, length);
 }
 
+/** Whether a belt coordinate (mm from the conveyor's shifted origin) lies between the belt start and end. */
+function onBelt(belt: ConveyorConfig, beltCoordinate: number): boolean {
+  const fromStart = belt.originShift.x + beltCoordinate;
+  return fromStart >= 0 && fromStart <= belt.length;
+}
+
 /**
  * A zone's sides across its belt, mm along the belt's local Y (from its pose; the belt's centre line is 0): the
- * whole belt width when `startY = endY`, else the bounds given in the conveyor's coordinate system, clipped to the belt.
+ * whole belt width when `startY = endY`, else the bounds given in the conveyor's coordinate system, also where they
+ * reach past the belt's sides.
  */
-function zoneLane(zone: Zone, belt: ConveyorConfig): { left: number; right: number; clipped: boolean } {
+function zoneLane(zone: Zone, belt: ConveyorConfig): { left: number; right: number } {
   const edge = belt.width / 2;
-  if (zone.startY === zone.endY) return { left: edge, right: -edge, clipped: false };
-  const left = belt.originShift.y + Math.max(zone.startY, zone.endY);
-  const right = belt.originShift.y + Math.min(zone.startY, zone.endY);
+  if (zone.startY === zone.endY) return { left: edge, right: -edge };
   return {
-    left: Math.min(Math.max(left, -edge), edge),
-    right: Math.min(Math.max(right, -edge), edge),
-    clipped: left > edge || right < -edge,
+    left: belt.originShift.y + Math.max(zone.startY, zone.endY),
+    right: belt.originShift.y + Math.min(zone.startY, zone.endY),
   };
 }
 

@@ -12,7 +12,7 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 15;
+export const PROTOCOL_VERSION = 16;
 
 const mm = (description: string) => z.number().describe(description);
 const deg = (description: string) => z.number().describe(description);
@@ -163,6 +163,11 @@ export const ConveyorConfigSchema = componentConfig(
     length: mm("Belt length along local +X, mm."),
     width: mm("Belt width, mm."),
     productTypes: z.array(ProductTypeSchema).describe("The product types this conveyor carries."),
+    body: z
+      .boolean()
+      .describe(
+        "Whether the belt is drawn as a body; false = a conveyor without one: only its products, zones and axis are drawn.",
+      ),
   },
   "Conveyor: `pose` is the belt start; local +X is the conveying direction, local Z the belt surface normal.",
 );

@@ -125,6 +125,8 @@ export interface ST_VisuConveyorConfig {
   fWidth: number;
   nProductTypeCount: number;
   aProductTypes: ST_VisuProductType[];
+  /** TRUE (the default) = the belt is drawn as a body; FALSE = a conveyor without one. */
+  bBody: boolean;
   /** mm in the local frame from stPose; belt coordinates count from here. */
   stOriginShift: ST_VisuPosition;
 }
