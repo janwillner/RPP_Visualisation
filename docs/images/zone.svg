@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 940 420" width="940" height="420" role="img">
+<title>A zone on a conveyor (top view)</title>
+<style>
+.dg{--text:#1d232b;--muted:#5d6875;--panel:#f4f6f9;--border:#b8c0cb;--accent:#0b6fa4;--belt:#d5dbe3;--ccs:#1d232b;--axis:#7e57c2;--x:#e53935;--y:#43a047;--z:#1e88e5}
+@media (prefers-color-scheme:dark){.dg{--text:#dfe5ec;--muted:#8893a2;--panel:#1f242c;--border:#3a424e;--accent:#4fc3f7;--belt:#3b4656;--ccs:#f1f4f8;--axis:#b388ff;--x:#ef5350;--y:#66bb6a;--z:#42a5f5}}
+.dg text{font:13px system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--text)}
+.dg .s{font-size:11.5px}
+.dg .c{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:11.5px}
+.dg .h{font-weight:600}
+.dg .m{fill:var(--muted)}
+.dg .ink{fill:#14181d}
+.dg .mid{text-anchor:middle}
+.dg .end{text-anchor:end}
+.dg .tx{fill:var(--x)}
+.dg .ty{fill:var(--y)}
+.dg .tz{fill:var(--z)}
+.dg .ln{fill:none;stroke:var(--text);stroke-width:1.4}
+.dg .lm{fill:none;stroke:var(--muted);stroke-width:1}
+.dg .dash{stroke-dasharray:5 4}
+.dg .box{fill:var(--panel);stroke:var(--border);stroke-width:1.2}
+.dg .frame{fill:none;stroke:var(--border);stroke-width:1.2;stroke-dasharray:6 4}
+.dg .acc{fill:none;stroke:var(--accent);stroke-width:1.6}
+.dg .accf{fill:var(--accent)}
+.dg .dot{fill:var(--text)}
+.dg .belt{fill:var(--belt);stroke:var(--border)}
+.dg .zone{fill:#5fd39a;fill-opacity:.3;stroke:#22a86b;stroke-width:1.2}
+.dg .alloc{fill:#22a86b;fill-opacity:.45}
+.dg .ccs{stroke:var(--ccs);stroke-width:2;stroke-dasharray:6 4}
+.dg .axis{fill:none;stroke:var(--axis);stroke-width:2}
+.dg .axisf{fill:var(--axis)}
+.dg .x{stroke:var(--x);stroke-width:2}
+.dg .y{stroke:var(--y);stroke-width:2}
+.dg .z{stroke:var(--z);stroke-width:2}
+.dg .state{stroke:var(--text);stroke-width:1}
+.dg .detected{fill:#a9bbd3}
+.dg .assigned{fill:#f5a524}
+.dg .picked{fill:#5fd39a}
+.dg .rejected{fill:#a78bfa}
+.dg .placed{fill:#2fc6d6}
+.dg .missed{fill:#ff5fa2}
+.dg .mline{fill:none;stroke:#ff5fa2;stroke-width:1.6;stroke-dasharray:5 4}
+.dg .limit{fill:#ff9800;fill-opacity:.12;stroke:#ff9800;stroke-width:1.4;stroke-dasharray:6 4}
+.dg .work{fill:var(--accent);fill-opacity:.1;stroke:var(--accent);stroke-width:1.4}
+.dg .grip{fill:#3d8fe0;stroke:var(--text);stroke-width:1}
+.dg .solid{fill:var(--belt);stroke:var(--text);stroke-width:1}
+.dg .track{fill:none;stroke:var(--muted);stroke-width:14}
+.dg .joint{stroke:var(--panel);stroke-width:2.5}
+.dg .sensorpart{fill:#26c6da;stroke:var(--text);stroke-width:1}
+.dg .active{fill:#5fd39a;stroke:var(--text);stroke-width:1}
+.dg .fov{fill:#4fc3f7;fill-opacity:.18;stroke:#4fc3f7;stroke-width:1.4}
+.dg .beam{stroke:#ffd54f;stroke-width:5;stroke-opacity:.35}
+.dg .beamon{stroke-opacity:1}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--text)"/></marker><marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker><marker id="aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker><marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--axis)"/></marker><marker id="ax" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--x)"/></marker><marker id="ay" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--y)"/></marker><marker id="az" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--z)"/></marker><marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:#ff5fa2"/></marker></defs>
+<text x="60" y="30" class="s h">Zone over the whole belt width (vi_lr_StartY = vi_lr_EndY)</text>
+<rect x="60" y="70" width="720" height="100" class="belt"/>
+<line x1="60" y1="120" x2="778" y2="120" class="axis" marker-end="url(#av)"/>
+<circle cx="60" cy="120" r="5" class="axisf"/>
+<rect x="240" y="70" width="360" height="100" class="zone"/>
+<rect x="240" y="70" width="260" height="100" class="alloc"/>
+<line x1="290" y1="64" x2="290" y2="176" class="ccs"/>
+<text x="290" y="58" class="s mid">CCS</text>
+<text x="380" y="112" class="s mid">allocation area</text>
+<text x="550" y="112" class="s mid">zone</text>
+<line x1="500" y1="52" x2="600" y2="52" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="550" y="44" class="c mid">vi_lr_AllocationOffset</text>
+<line x1="500" y1="52" x2="500" y2="70" class="lm dash"/>
+<line x1="600" y1="52" x2="600" y2="70" class="lm dash"/>
+<line x1="60" y1="170" x2="60" y2="256" class="lm dash"/>
+<line x1="240" y1="170" x2="240" y2="196" class="lm dash"/>
+<line x1="290" y1="176" x2="290" y2="226" class="lm dash"/>
+<line x1="600" y1="170" x2="600" y2="256" class="lm dash"/>
+<line x1="60" y1="192" x2="240" y2="192" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="150" y="186" class="c mid">vi_lr_Start</text>
+<line x1="60" y1="222" x2="290" y2="222" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="175" y="216" class="c mid">vi_lr_CcsOffset</text>
+<line x1="60" y1="252" x2="600" y2="252" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="330" y="246" class="c mid">vi_lr_End</text>
+<text x="66" y="158" class="s">origin</text>
+<text x="60" y="288" class="s h">Zone on a lane: its sides across the belt, along the conveyor's Y from its origin</text>
+<rect x="60" y="300" width="720" height="100" class="belt"/>
+<line x1="60" y1="350" x2="778" y2="350" class="axis" marker-end="url(#av)"/>
+<circle cx="60" cy="350" r="5" class="axisf"/>
+<rect x="240" y="310" width="360" height="40" class="zone"/>
+<text x="420" y="334" class="s mid">zone</text>
+<line x1="600" y1="310" x2="800" y2="310" class="lm dash"/>
+<line x1="780" y1="350" x2="800" y2="350" class="lm dash"/>
+<line x1="800" y1="350" x2="800" y2="312" class="ln" marker-end="url(#a)"/>
+<text x="808" y="334" class="c">vi_lr_EndY</text>
+<text x="808" y="362" class="c">vi_lr_StartY = 0</text>
+</svg>

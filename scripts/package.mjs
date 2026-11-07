@@ -23,8 +23,9 @@ const WINSW_URL = "https://github.com/winsw/winsw/releases/download/v2.12.0/WinS
 const WINSW_SHA256 = "05b82d46ad331cc16bdc00de5c6332c1ef818df8ceefcd49c726553209b3a0da";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-// Keep in step with DOC_FILES in apps/gateway/src/docs-texts.ts.
-const DOC_FILES = ["api.md", "plc-contract.md", "plc-library-guide.md"];
+// The guide the gateway shows at /docs and the folder of its diagrams; keep in step with apps/gateway/src/docs-texts.ts.
+const GUIDE_FILE = "plc-library-guide.md";
+const IMAGES_DIR = "images";
 const cache = join(root, ".cache", "package");
 const version = resolveVersion();
 // "+" separates the commit in the version; file names and download links keep a plain "-".
@@ -56,11 +57,14 @@ await build({
   define: {
     // The release version reported at /health and in the log (apps/gateway/src/version.ts).
     __RPP_VERSION__: JSON.stringify(version),
-    // The Markdown texts of the API documentation at /docs (apps/gateway/src/docs-texts.ts), so the package needs
-    // no docs folder.
-    __RPP_DOCS__: JSON.stringify(
-      Object.fromEntries(DOC_FILES.map((file) => [file, readFileSync(join(root, "docs", file), "utf8")])),
-    ),
+    // The PLC library guide at /docs and its diagrams (apps/gateway/src/docs-texts.ts), so the package needs no docs
+    // folder.
+    __RPP_DOCS__: JSON.stringify({
+      guide: readFileSync(join(root, "docs", GUIDE_FILE), "utf8"),
+      images: Object.fromEntries(
+        readdirSync(join(root, "docs", IMAGES_DIR)).map((file) => [file, readFileSync(join(root, "docs", IMAGES_DIR, file), "utf8")]),
+      ),
+    }),
   },
   logLevel: "warning",
 });

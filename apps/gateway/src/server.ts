@@ -6,7 +6,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import { RegisterEncoder, withRegisters } from "@rpp/protocol";
 import type { MessageSource } from "./gateway";
-import { createApiDocs, DOCS_PATH, DOCS_SCHEMA_PATH } from "./api-docs";
+import { createDocsPage, DOCS_PATH, DOCS_SCHEMA_PATH } from "./docs-page";
 import { watchHealth } from "./health";
 import { APP_VERSION } from "./version";
 
@@ -14,7 +14,7 @@ import { APP_VERSION } from "./version";
 export const WS_PATH = "/ws";
 /** Health of every source as JSON; 200 while all are connected, else 503. */
 export const HEALTH_PATH = "/health";
-export { DOCS_PATH, DOCS_SCHEMA_PATH } from "./api-docs";
+export { DOCS_PATH, DOCS_SCHEMA_PATH } from "./docs-page";
 
 /** Above this many queued bytes, state snapshots to that client are dropped until it catches up. */
 const MAX_BUFFERED_BYTES = 1_000_000;
@@ -54,7 +54,7 @@ export interface ServerOptions {
 export function startServer({ gateway, port, host, staticDir, version = APP_VERSION }: ServerOptions): Promise<Server> {
   const root = staticDir ? resolve(staticDir) : undefined;
   const health = watchHealth(gateway, version);
-  const docs = createApiDocs(version);
+  const docs = createDocsPage(version);
 
   const server = createServer((req, res) => {
     const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
@@ -64,18 +64,18 @@ export function startServer({ gateway, port, host, staticDir, version = APP_VERS
       res.end(JSON.stringify(report));
       return;
     }
-    // The API documentation, also without a built web app (ADR 0012).
+    // The guide to the PLC library, also without a built web app (ADR 0014).
     if (req.method === "GET" && (pathname === DOCS_PATH || pathname === `${DOCS_PATH}/`)) {
-      docs
-        .page(health())
-        .then((html) => {
-          res.writeHead(200, { "content-type": MIME[".html"], "cache-control": "no-store" });
-          res.end(html);
-        })
-        .catch((error: unknown) => {
-          res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
-          res.end(`Cannot build the API documentation: ${(error as Error).message}`);
-        });
+      let html: string;
+      try {
+        html = docs.page(health());
+      } catch (error) {
+        res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+        res.end(`Cannot build the documentation: ${(error as Error).message}`);
+        return;
+      }
+      res.writeHead(200, { "content-type": MIME[".html"], "cache-control": "no-store" });
+      res.end(html);
       return;
     }
     if (req.method === "GET" && pathname === DOCS_SCHEMA_PATH) {

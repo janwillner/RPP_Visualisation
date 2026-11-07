@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 860 330" width="860" height="330" role="img">
+<title>A conveyor's coordinate system and a product's latch pose (top view)</title>
+<style>
+.dg{--text:#1d232b;--muted:#5d6875;--panel:#f4f6f9;--border:#b8c0cb;--accent:#0b6fa4;--belt:#d5dbe3;--ccs:#1d232b;--axis:#7e57c2;--x:#e53935;--y:#43a047;--z:#1e88e5}
+@media (prefers-color-scheme:dark){.dg{--text:#dfe5ec;--muted:#8893a2;--panel:#1f242c;--border:#3a424e;--accent:#4fc3f7;--belt:#3b4656;--ccs:#f1f4f8;--axis:#b388ff;--x:#ef5350;--y:#66bb6a;--z:#42a5f5}}
+.dg text{font:13px system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--text)}
+.dg .s{font-size:11.5px}
+.dg .c{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:11.5px}
+.dg .h{font-weight:600}
+.dg .m{fill:var(--muted)}
+.dg .ink{fill:#14181d}
+.dg .mid{text-anchor:middle}
+.dg .end{text-anchor:end}
+.dg .tx{fill:var(--x)}
+.dg .ty{fill:var(--y)}
+.dg .tz{fill:var(--z)}
+.dg .ln{fill:none;stroke:var(--text);stroke-width:1.4}
+.dg .lm{fill:none;stroke:var(--muted);stroke-width:1}
+.dg .dash{stroke-dasharray:5 4}
+.dg .box{fill:var(--panel);stroke:var(--border);stroke-width:1.2}
+.dg .frame{fill:none;stroke:var(--border);stroke-width:1.2;stroke-dasharray:6 4}
+.dg .acc{fill:none;stroke:var(--accent);stroke-width:1.6}
+.dg .accf{fill:var(--accent)}
+.dg .dot{fill:var(--text)}
+.dg .belt{fill:var(--belt);stroke:var(--border)}
+.dg .zone{fill:#5fd39a;fill-opacity:.3;stroke:#22a86b;stroke-width:1.2}
+.dg .alloc{fill:#22a86b;fill-opacity:.45}
+.dg .ccs{stroke:var(--ccs);stroke-width:2;stroke-dasharray:6 4}
+.dg .axis{fill:none;stroke:var(--axis);stroke-width:2}
+.dg .axisf{fill:var(--axis)}
+.dg .x{stroke:var(--x);stroke-width:2}
+.dg .y{stroke:var(--y);stroke-width:2}
+.dg .z{stroke:var(--z);stroke-width:2}
+.dg .state{stroke:var(--text);stroke-width:1}
+.dg .detected{fill:#a9bbd3}
+.dg .assigned{fill:#f5a524}
+.dg .picked{fill:#5fd39a}
+.dg .rejected{fill:#a78bfa}
+.dg .placed{fill:#2fc6d6}
+.dg .missed{fill:#ff5fa2}
+.dg .mline{fill:none;stroke:#ff5fa2;stroke-width:1.6;stroke-dasharray:5 4}
+.dg .limit{fill:#ff9800;fill-opacity:.12;stroke:#ff9800;stroke-width:1.4;stroke-dasharray:6 4}
+.dg .work{fill:var(--accent);fill-opacity:.1;stroke:var(--accent);stroke-width:1.4}
+.dg .grip{fill:#3d8fe0;stroke:var(--text);stroke-width:1}
+.dg .solid{fill:var(--belt);stroke:var(--text);stroke-width:1}
+.dg .track{fill:none;stroke:var(--muted);stroke-width:14}
+.dg .joint{stroke:var(--panel);stroke-width:2.5}
+.dg .sensorpart{fill:#26c6da;stroke:var(--text);stroke-width:1}
+.dg .active{fill:#5fd39a;stroke:var(--text);stroke-width:1}
+.dg .fov{fill:#4fc3f7;fill-opacity:.18;stroke:#4fc3f7;stroke-width:1.4}
+.dg .beam{stroke:#ffd54f;stroke-width:5;stroke-opacity:.35}
+.dg .beamon{stroke-opacity:1}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--text)"/></marker><marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker><marker id="aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker><marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--axis)"/></marker><marker id="ax" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--x)"/></marker><marker id="ay" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--y)"/></marker><marker id="az" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--z)"/></marker><marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:#ff5fa2"/></marker></defs>
+<line x1="30" y1="60" x2="64" y2="60" class="x" marker-end="url(#ax)"/>
+<line x1="30" y1="60" x2="30" y2="26" class="y" marker-end="url(#ay)"/>
+<text x="68" y="64" class="s tx">X</text>
+<text x="26" y="20" class="s ty">Y</text>
+<text x="40" y="40" class="s m">MCS, top view</text>
+<rect x="90" y="100" width="640" height="130" class="belt"/>
+<line x1="90" y1="92" x2="190" y2="92" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="140" y="86" class="s mid">origin shift (m_SetOriginShift)</text>
+<line x1="190" y1="92" x2="190" y2="100" class="lm dash"/>
+<circle cx="90" cy="165" r="4" class="dot"/>
+<text x="82" y="161" class="c end">vi_Pose</text>
+<text x="82" y="177" class="s m end">belt start</text>
+<line x1="190" y1="165" x2="728" y2="165" class="axis" marker-end="url(#av)"/>
+<circle cx="190" cy="165" r="6" class="axisf"/>
+<line x1="190" y1="165" x2="190" y2="120" class="y" marker-end="url(#ay)"/>
+<text x="196" y="124" class="s ty">Y</text>
+<text x="722" y="157" class="s end">X, conveying direction</text>
+<text x="198" y="220" class="s">the conveyor's coordinate system</text>
+<rect x="295" y="113" width="70" height="44" class="lm dash"/>
+<circle cx="330" cy="135" r="3" class="dot"/>
+<line x1="192" y1="135" x2="327" y2="135" class="ln" marker-end="url(#a)"/>
+<text x="258" y="129" class="c mid">fX</text>
+<line x1="330" y1="163" x2="330" y2="138" class="ln" marker-end="url(#a)"/>
+<text x="336" y="155" class="c">fY</text>
+<text x="330" y="190" class="s mid">latch pose</text>
+<rect x="525" y="113" width="70" height="44" class="state detected"/>
+<circle cx="560" cy="135" r="3" class="dot"/>
+<line x1="368" y1="135" x2="520" y2="135" class="acc" marker-end="url(#aa)"/>
+<text x="444" y="128" class="s mid">belt travel</text>
+<text x="560" y="190" class="s mid">now</text>
+<line x1="90" y1="230" x2="90" y2="258" class="lm dash"/>
+<line x1="730" y1="230" x2="730" y2="258" class="lm dash"/>
+<line x1="90" y1="252" x2="730" y2="252" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="410" y="270" class="c mid">vi_lr_Length</text>
+<line x1="752" y1="100" x2="752" y2="230" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="760" y="169" class="c">vi_lr_Width</text>
+<text x="20" y="300" class="s">Latch pose (vi_LatchPose): bottom centre of the product in the conveyor's coordinate system at the latch, fZ = 0 on the belt surface.</text>
+<text x="20" y="318" class="s">The visualisation moves the product along X by the belt travel since then: fBeltPosition − fLatchBeltPosition.</text>
+</svg>

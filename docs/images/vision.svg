@@ -1,0 +1,96 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 960 320" width="960" height="320" role="img">
+<title>A vision system from the side and from above</title>
+<style>
+.dg{--text:#1d232b;--muted:#5d6875;--panel:#f4f6f9;--border:#b8c0cb;--accent:#0b6fa4;--belt:#d5dbe3;--ccs:#1d232b;--axis:#7e57c2;--x:#e53935;--y:#43a047;--z:#1e88e5}
+@media (prefers-color-scheme:dark){.dg{--text:#dfe5ec;--muted:#8893a2;--panel:#1f242c;--border:#3a424e;--accent:#4fc3f7;--belt:#3b4656;--ccs:#f1f4f8;--axis:#b388ff;--x:#ef5350;--y:#66bb6a;--z:#42a5f5}}
+.dg text{font:13px system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--text)}
+.dg .s{font-size:11.5px}
+.dg .c{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:11.5px}
+.dg .h{font-weight:600}
+.dg .m{fill:var(--muted)}
+.dg .ink{fill:#14181d}
+.dg .mid{text-anchor:middle}
+.dg .end{text-anchor:end}
+.dg .tx{fill:var(--x)}
+.dg .ty{fill:var(--y)}
+.dg .tz{fill:var(--z)}
+.dg .ln{fill:none;stroke:var(--text);stroke-width:1.4}
+.dg .lm{fill:none;stroke:var(--muted);stroke-width:1}
+.dg .dash{stroke-dasharray:5 4}
+.dg .box{fill:var(--panel);stroke:var(--border);stroke-width:1.2}
+.dg .frame{fill:none;stroke:var(--border);stroke-width:1.2;stroke-dasharray:6 4}
+.dg .acc{fill:none;stroke:var(--accent);stroke-width:1.6}
+.dg .accf{fill:var(--accent)}
+.dg .dot{fill:var(--text)}
+.dg .belt{fill:var(--belt);stroke:var(--border)}
+.dg .zone{fill:#5fd39a;fill-opacity:.3;stroke:#22a86b;stroke-width:1.2}
+.dg .alloc{fill:#22a86b;fill-opacity:.45}
+.dg .ccs{stroke:var(--ccs);stroke-width:2;stroke-dasharray:6 4}
+.dg .axis{fill:none;stroke:var(--axis);stroke-width:2}
+.dg .axisf{fill:var(--axis)}
+.dg .x{stroke:var(--x);stroke-width:2}
+.dg .y{stroke:var(--y);stroke-width:2}
+.dg .z{stroke:var(--z);stroke-width:2}
+.dg .state{stroke:var(--text);stroke-width:1}
+.dg .detected{fill:#a9bbd3}
+.dg .assigned{fill:#f5a524}
+.dg .picked{fill:#5fd39a}
+.dg .rejected{fill:#a78bfa}
+.dg .placed{fill:#2fc6d6}
+.dg .missed{fill:#ff5fa2}
+.dg .mline{fill:none;stroke:#ff5fa2;stroke-width:1.6;stroke-dasharray:5 4}
+.dg .limit{fill:#ff9800;fill-opacity:.12;stroke:#ff9800;stroke-width:1.4;stroke-dasharray:6 4}
+.dg .work{fill:var(--accent);fill-opacity:.1;stroke:var(--accent);stroke-width:1.4}
+.dg .grip{fill:#3d8fe0;stroke:var(--text);stroke-width:1}
+.dg .solid{fill:var(--belt);stroke:var(--text);stroke-width:1}
+.dg .track{fill:none;stroke:var(--muted);stroke-width:14}
+.dg .joint{stroke:var(--panel);stroke-width:2.5}
+.dg .sensorpart{fill:#26c6da;stroke:var(--text);stroke-width:1}
+.dg .active{fill:#5fd39a;stroke:var(--text);stroke-width:1}
+.dg .fov{fill:#4fc3f7;fill-opacity:.18;stroke:#4fc3f7;stroke-width:1.4}
+.dg .beam{stroke:#ffd54f;stroke-width:5;stroke-opacity:.35}
+.dg .beamon{stroke-opacity:1}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--text)"/></marker><marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker><marker id="aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker><marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--axis)"/></marker><marker id="ax" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--x)"/></marker><marker id="ay" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--y)"/></marker><marker id="az" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--z)"/></marker><marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:#ff5fa2"/></marker></defs>
+<text x="20" y="24" class="s h">Side view</text>
+<rect x="40" y="250" width="380" height="24" class="belt"/>
+<text x="44" y="290" class="s m">belt surface</text>
+<polygon points="224,90 236,90 310,250 150,250" class="fov"/>
+<rect x="200" y="40" width="60" height="40" class="solid"/>
+<rect x="218" y="80" width="24" height="10" class="sensorpart"/>
+<circle cx="230" cy="90" r="4" class="accf"/>
+<text x="272" y="56" class="s">body 1: housing</text>
+<text x="272" y="76" class="s">body 2: lens</text>
+<text x="205" y="98" class="s end">vi_Pose: the lens,</text>
+<text x="205" y="114" class="s end">looking along its −Z</text>
+<text x="166" y="200" class="s end">body 3: field of view</text>
+<line x1="236" y1="90" x2="350" y2="90" class="lm dash"/>
+<line x1="340" y1="92" x2="340" y2="248" class="ln" marker-end="url(#a)"/>
+<text x="346" y="174" class="c">vi_lr_WorkingDistance</text>
+<line x1="150" y1="274" x2="150" y2="300" class="lm dash"/>
+<line x1="310" y1="274" x2="310" y2="300" class="lm dash"/>
+<line x1="150" y1="296" x2="310" y2="296" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="230" y="312" class="c mid">vi_lr_FieldLength</text>
+<text x="520" y="24" class="s h">Top view</text>
+<rect x="520" y="110" width="360" height="140" class="belt"/>
+<line x1="520" y1="180" x2="878" y2="180" class="axis" marker-end="url(#av)"/>
+<circle cx="520" cy="180" r="5" class="axisf"/>
+<rect x="640" y="110" width="160" height="140" class="zone"/>
+<rect x="640" y="130" width="160" height="100" class="fov"/>
+<line x1="720" y1="104" x2="720" y2="256" class="ccs"/>
+<text x="720" y="98" class="s mid">CCS</text>
+<circle cx="720" cy="180" r="4" class="accf"/>
+<text x="728" y="148" class="s">field of view</text>
+<text x="646" y="244" class="s">zone</text>
+<line x1="640" y1="250" x2="640" y2="276" class="lm dash"/>
+<line x1="800" y1="250" x2="800" y2="304" class="lm dash"/>
+<line x1="520" y1="250" x2="520" y2="304" class="lm dash"/>
+<line x1="520" y1="272" x2="640" y2="272" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="580" y="266" class="c mid">vi_lr_Start</text>
+<line x1="520" y1="300" x2="800" y2="300" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="660" y="294" class="c mid">vi_lr_End</text>
+<line x1="826" y1="130" x2="826" y2="230" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+<line x1="800" y1="130" x2="830" y2="130" class="lm dash"/>
+<line x1="800" y1="230" x2="830" y2="230" class="lm dash"/>
+<text x="834" y="150" class="c">vi_lr_FieldWidth</text>
+</svg>

@@ -1,10 +1,11 @@
-# PLC contract (library `Syn_Visu`, protocol version 16)
+# PLC contract (library `Syn_Visu`, protocol version 18)
 
 This is the PLC side of the contract the gateway reads. It is implemented by the TwinCAT library project in
 `plc/Syn_Visu` (solution `plc/RPP_Visu.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
 and the gateway maps it to the neutral model in `packages/protocol`. Change all three together, and bump
 `VISU_GlobalConst.VISU_un_PROTOCOL_VERSION` / `PROTOCOL_VERSION` on any breaking change. Adding a component type:
-`docs/adding-a-component.md`. How to use the library in a machine project, task by task: `docs/plc-library-guide.md`.
+`docs/adding-a-component.md`. How to use the library in a machine project, task by task, with the reference of every method: `docs/plc-library-guide.md`
+(served by the gateway at `/docs`, ADR 0014).
 
 The library follows the company guideline in `docs/plc-coding-guidelines.md` (`_FB_`, `m_`, `vi_`/`vo_`/`vio_`
 prefixes) except for the contract itself: the structures, their members, the enums and `GVL_Visu.stManifest` keep
@@ -177,230 +178,35 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   (ADR 0010).
 - Protocol version 15 added the zones' `fStartY` and `fEndY`: a zone may cover only part of the belt width.
 - Protocol version 16 added the conveyor's `bBody`: a conveyor may have no body.
-- Protocol version 18 added `stLimitArea` to the XTS gantry and the Cartesian robot (before only the Delta had one).
 - Protocol version 17 added the Cartesian robot's `eAxes` (`E_VisuCartesianAxes`): X, Y, Z, or without the Y or the Z axis.
+- Protocol version 18 added `stLimitArea` to the XTS gantry and the Cartesian robot (before only the Delta had one).
 
 ## What the library contains
 
-Applications use the component function blocks. The structures underneath are the contract the gateway reads;
-the FBs fill them in their output `vo_Visu`, so application code does not write them directly.
+The component function blocks, their methods and the enumerations are listed for PLC programmers in the library
+guide's reference (`docs/plc-library-guide.md`, section 19), which the gateway serves at `/docs`. Keep that
+reference in step with the library. The FBs fill the contract structures below in their output `vo_Visu`;
+application code does not write them.
 
-| Object | Purpose |
+| Structure | Read by the gateway as |
 | --- | --- |
-| `_FB_VisuConveyor` | One conveyor with its product register (methods below) |
-| `_FB_VisuDelta` | One Delta robot (methods below) |
-| `_FB_VisuXtsGantry` | One XTS gantry, e.g. IDH (methods below) |
-| `_FB_VisuXtsLoop` | One XTS loop, e.g. Fxx (methods below) |
-| `_FB_VisuCartesian` | One Cartesian robot (methods below) |
-| `_FB_VisuVision` | One vision system (methods below) |
-| `_FB_VisuSensor` | One product sensor, e.g. a light barrier (methods below) |
-| `_FB_VisuStation` | One station, e.g. a reject unit (methods below) |
-| `_FB_VisuComponent` | Abstract base of all: `m_Register`, `m_Id`, config version and DC timestamps |
-| `_FB_VisuZoneComponent` | Abstract base of every component with zones: `m_SetZone`, `m_ClearZones`; the derived FB tells where its zones lie (`m_Zones`) |
-| `_FB_VisuRobot` | Abstract base of the robots: zones plus `m_SetFinger`, `m_ClearFingers` (`m_Fingers`) |
-| `_FB_VisuXtsTrack` | Abstract base of the XTS kinematics: a robot plus its track of modules (`m_SetModule`, `m_ClearModules`, `m_SetModuleFault`, `m_TrackLength`; `m_Modules`) |
-| `_FB_VisuBodyComponent` | Abstract base of the components drawn from bodies (detectors, stations): zones plus bodies (`m_SetBody`, `m_ClearBodies`, `m_SetBodyActive`); the derived FB tells where they lie (`m_Parts`) |
-| `_FB_VisuDetector` | Abstract base of the detectors |
-| `ST_VisuManifest`, `ST_VisuManifestEntry`, `E_VisuComponentType` | Discovery: which components exist and where |
-| `ST_VisuConveyor` (`stConfig` / `stState`), `ST_VisuProduct`, `ST_VisuProductType` (size, `eShape`, `fCornerRadius`), `E_VisuProductState`, `E_VisuProductShape` | Conveyor contract structure (`_FB_VisuConveyor.vo_Visu`) |
-| `ST_VisuDelta` (`stConfig`: geometry, working area, limit area, zones, fingers / `stState`: actual and setpoint TCP, finger states), `ST_VisuWorkingArea`, `ST_VisuLimitArea`, `ST_VisuZone` | Delta contract structure (`_FB_VisuDelta.vo_Visu`) |
-| `ST_VisuXtsGantry` (`stConfig`: track modules, strokes, gripper offsets, mover size, zones, fingers / `stState`: Z, movers with finger states, module states), `ST_VisuGantryMover` | XTS gantry contract structure (`_FB_VisuXtsGantry.vo_Visu`) |
-| `ST_VisuXtsLoop` (`stConfig`: track modules, tool offset, mover size, zones, fingers / `stState`: movers with finger states, module states), `ST_VisuLoopMover` | XTS loop contract structure (`_FB_VisuXtsLoop.vo_Visu`) |
-| `ST_VisuTrackModule`, `ST_VisuTrackModuleState`, `E_VisuModuleKind` | One module of an XTS track (kind, length) and its live fault |
-| `ST_VisuCartesian` (`stConfig`: X/Y/Z strokes, rail height, zones, fingers / `stState`: X, Y, Z, gripper, finger states) | Cartesian robot contract structure (`_FB_VisuCartesian.vo_Visu`) |
-| `ST_VisuDetector` (`stConfig`: pose, zones, bodies / `stState`: body states), `ST_VisuBody`, `ST_VisuBodyState`, `E_VisuBodyShape`, `E_VisuBodyRole` | Contract structure of a vision system or product sensor (`_FB_VisuDetector.vo_Visu`) |
-| `ST_VisuStation` (`stConfig`: pose, zones, bodies / `stState`: body states) | Contract structure of a station (`_FB_VisuStation.vo_Visu`); its members are a detector's |
-| `ST_VisuFault` | Fault of a component, a mover or a track module: `bActive`, `sMessage` |
-| `ST_VisuFinger`, `ST_VisuFingerState` | Gripper finger (cylinder size) and its live MCS pose and grip state |
-| `ST_VisuPose`, `ST_VisuPlanarPose`, `ST_VisuPosition` | MCS poses and positions |
-| `VISU_GlobalConst` | `VISU_un_PROTOCOL_VERSION` (contract version; `ST_VisuManifest` initialises to it), `VISU_str_LIBRARY_VERSION` (this library's version, reported in the manifest), `VISU_lr_DEG_TO_RAD`, `VISU_lr_XTS_MODULE_LENGTH` (250 mm) |
-| `VISU_GlobalConst_Param` | Array sizes: `VISU_un_MAX_MANIFEST_ENTRIES` (32), `VISU_un_MAX_PRODUCTS` (4800), `VISU_un_PRODUCT_INDEX_SIZE` (16384, slots of a conveyor's product index by id: a power of two, at least twice `VISU_un_MAX_PRODUCTS`), `VISU_un_MAX_PRODUCT_TYPES` (8), `VISU_un_MAX_ZONES` (8), `VISU_un_MAX_MOVERS` (40), `VISU_un_MAX_FINGERS` (8, per gripper), `VISU_un_MAX_BODIES` (16, per detector or station), `VISU_un_MAX_MODULES` (64, per XTS track) |
-| `_FC_GetVersionSynVisu` | Library version at runtime (9.1.0) |
+| `ST_VisuManifest`, `ST_VisuManifestEntry`, `E_VisuComponentType` | Discovery: which components exist and where (`GVL_Visu.stManifest`, declared by the application, ADR 0003) |
+| `ST_VisuConveyor` (`stConfig` / `stState`), `ST_VisuProduct`, `ST_VisuProductType` | Conveyor (`_FB_VisuConveyor.vo_Visu`) |
+| `ST_VisuDelta`, `ST_VisuWorkingArea`, `ST_VisuLimitArea`, `ST_VisuZone` | Delta (`_FB_VisuDelta.vo_Visu`) |
+| `ST_VisuXtsGantry`, `ST_VisuGantryMover` | XTS gantry (`_FB_VisuXtsGantry.vo_Visu`) |
+| `ST_VisuXtsLoop`, `ST_VisuLoopMover` | XTS loop (`_FB_VisuXtsLoop.vo_Visu`) |
+| `ST_VisuTrackModule`, `ST_VisuTrackModuleState` | One module of an XTS track and its live fault |
+| `ST_VisuCartesian` | Cartesian robot (`_FB_VisuCartesian.vo_Visu`) |
+| `ST_VisuDetector`, `ST_VisuBody`, `ST_VisuBodyState` | Vision system or product sensor (`_FB_VisuDetector.vo_Visu`) |
+| `ST_VisuStation` | Station (`_FB_VisuStation.vo_Visu`); its members are a detector's |
+| `ST_VisuFault`, `ST_VisuFinger`, `ST_VisuFingerState` | Faults, gripper fingers and their live poses |
+| `ST_VisuPose`, `ST_VisuPlanarPose`, `ST_VisuPosition` | Poses and positions |
 
-### Methods
-
-Input names carry the guideline prefixes: `vi_` plus the type (`udn_` UDINT, `un_` UINT, `lr_` LREAL, `b_` BOOL,
-`str_` STRING, `e_` enum, none for structures), `vio_` for in-outs, `vo_` for outputs.
-
-All component FBs:
-
-| Method | Purpose |
-| --- | --- |
-| `m_Register(vio_Manifest, vi_udn_Id, vi_str_Name)` | Adds the component to the manifest (bumps `nConfigVersion` when new) with the symbol path of the instance's `vo_Visu`, taken from its device tree path (attribute `instance-path`, the first `VISU_un_INSTANCE_PATH_SKIP` segments left out). Idempotent: call it every cycle, which also keeps `nProtocolVersion` and `sLibraryVersion` current and the manifest reference valid after an online change |
-| `m_Id()` | Manifest id given to `m_Register`, 0 before |
-| `m_SetFault(vi_b_Active, vi_str_Message)` | Sets or clears the component's fault; it stays until cleared with `m_SetFault(FALSE, '')` |
-| `m_SetOriginShift(vi_lr_X, vi_lr_Y, vi_lr_Z)` | Moves the component's coordinate system from its pose (local frame, mm); for a conveyor the belt coordinates count from there |
-
-All configuration methods may be called every cycle: they bump `nConfigVersion` only when a value actually changes,
-and return TRUE in that case.
-
-All robot, detector and station FBs (`_FB_VisuZoneComponent`):
-
-| Method | Purpose |
-| --- | --- |
-| `m_SetZone(vi_un_Zone, vi_udn_ConveyorId, vi_lr_Start, vi_lr_End, vi_lr_AllocationOffset, vi_lr_CcsOffset, vi_lr_StartY, vi_lr_EndY)` | Sets zone `vi_un_Zone` (1-based; set them in order, the count grows to it) on a conveyor, with the component's CCS on it and its sides across the belt (equal: the whole belt width) |
-| `m_ClearZones()` | Removes all zones |
-
-All robot FBs (Delta, XTS gantry, XTS loop, Cartesian; `_FB_VisuRobot`):
-
-| Method | Purpose |
-| --- | --- |
-| `m_SetFinger(vi_un_Finger, vi_lr_Diameter, vi_lr_Height)` | Defines finger `vi_un_Finger` (1-based) of the gripper (for XTS kinematics: of every mover's gripper); the finger count grows to it |
-| `m_ClearFingers()` | Removes the gripper definition |
-| `m_SetLimitArea(vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax)`, `m_ClearLimitArea()` | Sets and activates / removes the limit area (Delta, XTS gantry, Cartesian); an XTS loop has none, there both return FALSE and change nothing |
-
-Both XTS FBs (XTS gantry, XTS loop; `_FB_VisuXtsTrack`):
-
-| Method | Purpose |
-| --- | --- |
-| `m_SetModule(vi_un_Module, vi_e_Kind, vi_lr_Length)` (`VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH` for a standard module) | Sets track module `vi_un_Module` (1-based, in the order the movers run; set them in order, the count grows to it) |
-| `m_ClearModules()` | Removes all track modules |
-| `m_SetModuleFault(vi_un_Module, vi_b_Fault, vi_str_FaultMessage)` | Reports a module's fault; call every cycle with its current state |
-| `m_TrackLength()` | Length of the track along its modules, mm: the range of track positions (on a loop its perimeter) |
-
-All detector and station FBs (vision system, product sensor, station; `_FB_VisuBodyComponent`). `m_Register`, called
-every cycle, also stamps the component's state.
-
-| Method | Purpose |
-| --- | --- |
-| `m_SetBody(vi_un_Body, vi_e_Shape, vi_e_Role, vi_Pose, vi_lr_Length, vi_lr_Width, vi_lr_Height, vi_lr_TopLength, vi_lr_TopWidth)` | Describes body `vi_un_Body` (1-based) the component is drawn from; a detector's `m_Configure` sets the first ones, more may be added (e.g. a bracket); a station describes all of its bodies with it |
-| `m_ClearBodies()` | Removes all bodies, also those `m_Configure` described |
-| `m_SetBodyActive(vi_un_Body, vi_b_Active)` | Lights the body up while TRUE: a beam, a field of view, a pusher at work |
-
-`_FB_VisuVision`:
-
-| Method | Purpose |
-| --- | --- |
-| `m_Configure(vi_Pose, vi_lr_FieldLength, vi_lr_FieldWidth, vi_lr_WorkingDistance)` | Lens pose (looking along its local −Z); bodies 1 to 3: housing, lens, field of view down to the working distance |
-
-`_FB_VisuSensor`:
-
-| Method | Purpose |
-| --- | --- |
-| `m_Configure(vi_Pose, vi_lr_BeamLength)` | Head pose; body 1 the head, body 2 the beam along the local +Y |
-| `m_SetSignal(vi_b_Signal)` | The beam lights up while TRUE (body 2); call once per cycle |
-
-`_FB_VisuStation`:
-
-| Method | Purpose |
-| --- | --- |
-| `m_Configure(vi_Pose)` | Pose of the station's origin; its bodies follow from `m_SetBody` |
-
-`_FB_VisuConveyor`:
-
-| Method | Purpose |
-| --- | --- |
-| `m_Configure(vi_Pose, vi_lr_Length, vi_lr_Width)` | Pose of the belt start and size |
-| `m_SetBodyVisible(vi_b_Visible)` | Whether the belt is drawn as a body (default TRUE); FALSE for a conveyor without one |
-| `m_SetProductType(vi_udn_Id, vi_lr_Length, vi_lr_Width, vi_lr_Height, vi_e_Shape, vi_lr_CornerRadius)` | Adds or updates a product type: a box, a cylinder (length and width are its diameters along and across the conveying direction: equal for round, different for oval products) or a box with rounded vertical edges (pouches, flow packs) |
-| `m_SetBeltPosition(vi_lr_Position)` | Belt position (continuous, mm) and state timestamp; call once per cycle |
-| `m_SetModuloBeltPosition(vi_lr_ModuloPosition, vi_lr_ModuloPeriod, vi_b_Reset)` | Same for a modulo axis; unwraps to a continuous position |
-| `m_LatchProduct(vi_udn_Id, vi_LatchPose, vi_udn_ProductType, vi_lr_LatchBeltPosition, vi_b_UseLatchBeltPosition, vi_e_State, vi_udn_ClientId)` | Adds a product at the current belt position (or at `vi_lr_LatchBeltPosition` with `vi_b_UseLatchBeltPosition`): `DETECTED` where it arrives, with the client that latched it (detector, station); `PLACED` with the robot as client where a robot puts it down |
-| `m_SetProductState(vi_udn_Id, vi_e_State, vi_udn_ClientId, vi_udn_MoverId, vi_udn_FingerId)` | Changes the state (keeping the state before as `ePreviousState`), names the client making the change, the carrying mover and finger |
-| `m_MoveProduct(vi_udn_Id, vi_Pose)` | Puts a product at a new MCS pose at the current belt position, keeping its state, e.g. while a mover pushes it along the belt |
-| `m_RemoveProduct(vi_udn_Id)` | Removes one product, e.g. once a robot has put it down on another conveyor |
-| `m_RemoveProductsBeyond(vi_lr_BeltX)` | Drops invalid entries and products beyond `vi_lr_BeltX` mm along the belt; keeps ASSIGNED and PICKED ones |
-| `m_ProductCount()`, `m_GetProduct(vi_un_Index, vo_Product =>, vo_Pose =>)`, `m_FindProduct(vi_udn_Id)` | Read the register; `vo_Pose` is the product's current MCS pose |
-| `m_BeltPosition()` | Belt position last set |
-
-`_FB_VisuDelta`:
-
-| Method | Purpose |
-| --- | --- |
-| `m_Configure(vi_Pose, vi_lr_BaseRadius, vi_lr_EffectorRadius, vi_lr_UpperArmLength, vi_lr_LowerArmLength)` | Base pose and geometry |
-| `m_SetWorkingArea(vi_lr_Radius, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ConeHeight, vi_lr_ConeBottomRadius)` | Working area |
-| `m_SetTcp(vi_ActualTcp, vi_SetpointTcp)` | Reports the TCP (positions) and the state timestamp; call once per cycle |
-| `m_SetFingerState(vi_un_Finger, vi_Pose, vi_b_Active)` | Reports one finger's MCS pose and grip state; call once per cycle per finger |
-| `m_BasePose()` | Base pose last configured |
-
-`_FB_VisuXtsGantry`:
-
-| Method | Purpose |
-| --- | --- |
-| `m_Configure(vi_Pose, vi_lr_XMin, vi_lr_XMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ToolOffsetX, vi_lr_ToolOffsetZ, vi_lr_MoverLength, vi_lr_MoverWidth)` | Pose, strokes, gripper offsets, mover size; the track from `m_SetModule` |
-| `m_SetZPosition(vi_lr_Z)` | Common Z axis and state timestamp; call once per cycle |
-| `m_SetMoverCount(vi_un_Count)` | Number of mover entries evaluated; entries beyond are invalidated |
-| `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_lr_X, vi_b_GripperActive, vi_FingerStates, vi_b_Fault, vi_str_FaultMessage)` | One mover's actual values, finger states and fault |
-
-`_FB_VisuXtsLoop`:
-
-| Method | Purpose |
-| --- | --- |
-| `m_Configure(vi_Pose, vi_lr_ToolOffset, vi_lr_MoverLength, vi_lr_MoverWidth)` | Pose, tool offset, mover size; the track from `m_SetModule` |
-| `m_SetMoverCount(vi_un_Count)` | Number of mover entries evaluated; entries beyond are invalidated |
-| `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_FingerStates, vi_b_Fault, vi_str_FaultMessage)` | One mover's position along the loop, finger states and fault |
-
-`_FB_VisuCartesian`:
-
-| Method | Purpose |
-| --- | --- |
-| `m_Configure(vi_Pose, vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_RailHeight)` | Pose, strokes, rail height |
-| `m_SetKinematics(vi_e_Axes)` | Which axes the robot has (`E_VisuCartesianAxes`); `XYZ` when never called |
-| `m_SetAxes(vi_lr_X, vi_lr_Y, vi_lr_Z, vi_b_GripperActive)` | Actual axis values (the flange), gripper and state timestamp; call once per cycle |
-| `m_SetFingerState(vi_un_Finger, vi_Pose, vi_b_Active)` | As for the Delta |
-
-## Using it in an application
-
-The manifest is **declared by the application**, not the library (ADR-0003). That keeps the ADS symbol path the gateway
-reads independent of the library's namespace. The gateway expects `GVL_Visu.stManifest`; an application that declares
-the manifest elsewhere sets the gateway option `manifestPath` to that symbol path. Component instances can live anywhere; the
-symbol path of their `vo_Visu` goes into the manifest.
-
-```st
-{attribute 'qualified_only'}
-VAR_GLOBAL
-	(* GVL_Visu (application project) *)
-	stManifest							: SynVisu.ST_VisuManifest;
-END_VAR
-```
-
-```st
-PROGRAM MAIN
-VAR
-	fb_Infeed							: SynVisu._FB_VisuConveyor;
-	fb_Delta1							: SynVisu._FB_VisuDelta;
-	fb_Vision1							: SynVisu._FB_VisuVision;
-END_VAR
-
-fb_Infeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed');
-fb_Delta1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 10, vi_str_Name := 'Delta 1');
-fb_Vision1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 50, vi_str_Name := 'Vision 1');
-
-fb_Infeed.m_Configure(vi_Pose := InfeedPose, vi_lr_Length := 5000, vi_lr_Width := 400);
-fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40,
-	vi_e_Shape := E_VisuProductShape.BOX, vi_lr_CornerRadius := 0);
-fb_Infeed.m_SetProductType(vi_udn_Id := 2, vi_lr_Length := 90, vi_lr_Width := 90, vi_lr_Height := 60,
-	vi_e_Shape := E_VisuProductShape.CYLINDER, vi_lr_CornerRadius := 0);
-fb_Infeed.m_SetModuloBeltPosition(vi_lr_ModuloPosition := <axis modulo position>, vi_lr_ModuloPeriod := <modulo period>,
-	vi_b_Reset := FALSE);
-(* The lens 800 mm above the belt; the vision system sees 400 x 300 mm from 800 to 1200 mm along the belt. *)
-fb_Vision1.m_Configure(vi_Pose := LensPose, vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300,
-	vi_lr_WorkingDistance := 800);
-fb_Vision1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(), vi_lr_Start := 800, vi_lr_End := 1200,
-	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 1000, vi_lr_StartY := 0, vi_lr_EndY := 0);
-IF b_Latched THEN
-	fb_Infeed.m_LatchProduct(vi_udn_Id := udn_NextId, vi_LatchPose := LatchPose, vi_udn_ProductType := 1,
-		vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE, vi_e_State := E_VisuProductState.DETECTED,
-		vi_udn_ClientId := fb_Vision1.m_Id());
-END_IF
-
-fb_Delta1.m_Configure(vi_Pose := DeltaBase, vi_lr_BaseRadius := 200, vi_lr_EffectorRadius := 50,
-	vi_lr_UpperArmLength := 400, vi_lr_LowerArmLength := 1000);
-fb_Delta1.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 50);
-fb_Delta1.m_SetLimitArea(vi_lr_XMin := -500, vi_lr_XMax := 500, vi_lr_YMin := -750, vi_lr_YMax := 750,
-	vi_lr_ZMin := -1500, vi_lr_ZMax := -700);
-fb_Delta1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(), vi_lr_Start := 1100, vi_lr_End := 1900,
-	vi_lr_AllocationOffset := 300, vi_lr_CcsOffset := 0, vi_lr_StartY := 0, vi_lr_EndY := 0);
-fb_Delta1.m_SetTcp(vi_ActualTcp := Tcp, vi_SetpointTcp := TcpSetpoint);
-(* The cup below the flange, turned by the 4th axis: absolute in the MCS. *)
-CupPose.fX := Tcp.fX; CupPose.fY := Tcp.fY; CupPose.fZ := Tcp.fZ; CupPose.fRz := lr_Axis4;
-fb_Delta1.m_SetFingerState(vi_un_Finger := 1, vi_Pose := CupPose, vi_b_Active := b_Vacuum);
-```
-
-The demo project `plc/Syn_Visu_Demo` is a complete example, one program per application, including two XTS loops (one above two belts, one under a belt that spaces products evenly), an XTS gantry, a Cartesian robot and two Cartesian robots with two axes (X-Z, X-Y),
-three Delta grippers: two cups beside the flange turning about Rz (two picks, one place), one finger turning and
-tilting, and five fingers closing when picking and opening when placing, a vision system and a light barrier on the
-Delta infeeds and a reject unit (station) at the Delta outfeed.
+The demo project `plc/Syn_Visu_Demo` is a complete example, one program per application, including two XTS loops (one
+above two belts, one under a belt that spaces products evenly), an XTS gantry, a Cartesian robot and two Cartesian
+robots with two axes (X-Z, X-Y), three Delta grippers: two cups beside the flange turning about Rz (two picks, one
+place), one finger turning and tilting, and five fingers closing when picking and opening when placing, a vision
+system and a light barrier on the Delta infeeds and a reject unit (station) at the Delta outfeed.
 
 ## Discovery
 

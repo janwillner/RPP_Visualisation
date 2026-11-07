@@ -8,11 +8,15 @@ import {
   GatewayMessageSchema,
   HealthReportSchema,
   PROTOCOL_VERSION,
-  RecordingEntrySchema,
-  RecordingFileHeaderSchema,
+  type ConfigMessage,
+  type GatewayMessage,
+  type StateMessage,
+  type StatusMessage,
 } from "@rpp/protocol";
-import { apiExamples, protocolJsonSchema, type JsonSchema } from "../src/api-docs";
+import { DOCS_TITLE, guideBody, protocolJsonSchema, type JsonSchema } from "../src/docs-page";
+import { guideText } from "../src/docs-texts";
 import { combineGateways, createGateway } from "../src/gateway";
+import { watchHealth } from "../src/health";
 import { DOCS_PATH, DOCS_SCHEMA_PATH, startServer } from "../src/server";
 import { createSimulator } from "../src/simulator";
 
@@ -30,14 +34,44 @@ function undescribed(schema: JsonSchema, path: string): string[] {
   return missing;
 }
 
-describe("API documentation", () => {
-  it("describes every field of every message, of /health and of the recording file", () => {
+/** Every `id` and every in-page link target of an HTML page. */
+function anchors(html: string): { ids: string[]; targets: string[] } {
+  return {
+    ids: [...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]!),
+    targets: [...html.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]!),
+  };
+}
+
+describe("PLC library guide at /docs", () => {
+  it("shows every diagram of the guide inline, with ids of its own", () => {
+    const linked = [...guideText().matchAll(/!\[[^\]]*\]\((images\/[^ )]+)/g)].map((m) => m[1]);
+    expect(linked.length).toBeGreaterThanOrEqual(14);
+
+    const { title, content, toc } = guideBody();
+    expect(title).toContain("Syn_Visu");
+    expect(content.match(/<figure class="diagram"><svg /g)).toHaveLength(linked.length);
+    expect(content).not.toContain("<img");
+    // Each diagram's arrow markers are its own: ids are unique on the page and every url(#…) finds one.
+    const { ids } = anchors(content);
+    expect(ids.length).toBe(new Set(ids).size);
+    for (const [, ref] of content.matchAll(/url\(#([^)]+)\)/g)) expect(ids).toContain(ref);
+    // Sections and subsections make the table of contents, with GitHub's anchors.
+    expect(toc.map((e) => e.id)).toEqual(expect.arrayContaining(["1-how-it-works", "5-conveyors-and-products", "19-reference", "193-enumerations"]));
+  });
+
+  it("links only to anchors on the page", () => {
+    const { content } = guideBody();
+    const { ids, targets } = anchors(content);
+    expect(targets.filter((t) => !ids.includes(t))).toEqual([]);
+  });
+
+  it("describes every field of every message, of /health and of the recording file in /docs/schema.json", () => {
     const { definitions } = protocolJsonSchema();
     const missing = Object.entries(definitions!).flatMap(([name, schema]) => undescribed(schema, name));
     expect(missing).toEqual([]);
   });
 
-  it("gives a JSON Schema the simulator's examples pass, and they pass the protocol's own schemas too", async () => {
+  it("gives a JSON Schema that the simulator's messages and the health report pass", async () => {
     const schema = protocolJsonSchema();
     const ajv = new Ajv({ allErrors: true });
     ajv.addSchema(schema);
@@ -46,22 +80,24 @@ describe("API documentation", () => {
       expect(check(value), `${ref}: ${ajv.errorsText(check.errors)}`).toBe(true);
     };
 
-    const examples = await apiExamples("1.2.3");
-    for (const message of [examples.status, examples.config, examples.state]) {
+    const sim = createSimulator({ seed: 1 });
+    const gateway = createGateway({ plc: sim.plc, sourceId: "sim", sourceName: "Simulator" });
+    const health = watchHealth(gateway, "1.2.3");
+    const last: { status?: StatusMessage; config?: ConfigMessage; state?: StateMessage } = {};
+    gateway.subscribe((m: GatewayMessage) => {
+      last[m.kind] = m as never;
+    });
+    for (let i = 0; i < 300; i++) {
+      sim.step(20);
+      await gateway.cycle();
+    }
+    for (const message of [last.status!, last.config!, last.state!]) {
       validate("", message);
       validate(`#/definitions/${message.kind[0]!.toUpperCase()}${message.kind.slice(1)}Message`, message);
       expect(GatewayMessageSchema.parse(message)).toEqual(message);
     }
-    validate("#/definitions/HealthReport", examples.health);
-    validate("#/definitions/RecordingFileHeader", examples.recordingHeader);
-    validate("#/definitions/RecordingEntry", examples.recordingEntry);
-    HealthReportSchema.parse(examples.health);
-    RecordingFileHeaderSchema.parse(examples.recordingHeader);
-    RecordingEntrySchema.parse(examples.recordingEntry);
-
-    // The examples show every component type, with products on a conveyor.
-    expect(new Set(examples.config.components.map((c) => c.type)).size).toBe(8);
-    expect(examples.state.components.some((c) => c.type === "conveyor" && c.products.length > 0)).toBe(true);
+    validate("#/definitions/HealthReport", health());
+    HealthReportSchema.parse(health());
   }, 30_000);
 
   it("lets clients ignore fields they do not know: the schema allows extra properties", () => {
@@ -92,12 +128,13 @@ describe("API documentation", () => {
           expect(page.status).toBe(200);
           expect(page.headers.get("content-type")).toContain("text/html");
           const html = await page.text();
-          expect(html).toContain("<title>RPP visualisation API</title>");
-          for (const id of ["api", "reference", "ref-config", "ref-state", "ref-status", "ref-health", "server-options", "plc-contract", "plc-guide"]) {
-            expect(html).toContain(`id="${id}"`);
-          }
+          expect(html).toContain(`<title>${DOCS_TITLE}</title>`);
+          for (const id of ["1-how-it-works", "2-setting-up-the-project", "19-reference"]) expect(html).toContain(`id="${id}"`);
+          expect(html).toContain('<figure class="diagram">');
           expect(html).toContain("1.2.3");
           expect(html).toContain(`<dd>${PROTOCOL_VERSION}</dd>`);
+          // Only for PLC programmers: no WebSocket reference any more.
+          expect(html).not.toContain('id="ref-state"');
         }
 
         const schema = await fetch(`${base}${DOCS_SCHEMA_PATH}`);

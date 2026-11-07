@@ -47,7 +47,7 @@ export interface OptionsEnvironment {
 
 export class OptionsError extends Error {}
 
-/** One command-line option as `--help` and the API documentation (`/docs`) show it. */
+/** One command-line option as `--help` shows it. */
 export interface OptionHelp {
   /** Flag with its argument, e.g. `--port <port>`. */
   flag: string;

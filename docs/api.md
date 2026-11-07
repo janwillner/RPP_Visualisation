@@ -4,9 +4,10 @@ The RPP visualisation shows packaging machines in 3D, read-only, built from what
 gateway, reads one or more PLCs over ADS and passes on what it reads. This API lets your own programs receive the same
 data: an MES, a dashboard, a logger, a test tool. It is read-only: nothing you send reaches a PLC.
 
-The gateway serves this documentation at `/docs` (e.g. `http://<ipc>:8080/docs`). Each server documents the version it
-runs: the reference further down is generated from its protocol schemas, and the examples are real messages of its
-built-in simulator.
+This document is in the source repository only. The page the gateway serves at `/docs` is the guide for PLC
+programmers (ADR 0014). For programs, every server describes the protocol it runs as JSON Schema at
+`/docs/schema.json` (e.g. `http://<ipc>:8080/docs/schema.json`), generated from its protocol schemas with a
+description of every field.
 
 ## Overview
 
@@ -16,7 +17,7 @@ One HTTP port (8080 by default) serves:
 | ----------------------- | ----------------------------------------------------------------------------------------------- |
 | `ws://<host>:<port>/ws` | WebSocket with the machine data: `status`, `config` and `state` messages as JSON.               |
 | `GET /health`           | Health of every PLC as JSON, for monitoring: 200 while all are connected, else 503.             |
-| `GET /docs`             | This page.                                                                                      |
+| `GET /docs`             | The guide to the PLC library `Syn_Visu`, for PLC programmers.                                   |
 | `GET /docs/schema.json` | JSON Schema of the messages, the health report and the recording file lines.                   |
 | `GET /`                 | The web app.                                                                                    |
 
@@ -39,7 +40,7 @@ message. What it *does* (belt position, products, robot axes, faults) comes in e
 
 **Coordinates and units.** Every value is in millimetres and degrees, in the MCS (machine coordinate system):
 right-handed, Z up, X in the product flow direction. A component's `pose` places its local frame in the MCS; the
-descriptions in the reference say which frame each value is in.
+field descriptions in `/docs/schema.json` say which frame each value is in.
 
 **Time.** `state.timestamp` and every component's `timestamp` are PLC times (EtherCAT distributed clock, ns, as decimal
 strings, since they exceed the precision of a JSON number). `state.tRel` is the same time in milliseconds since the
@@ -274,10 +275,14 @@ with gzip.open("rpp-recording-20260101-120000.rpprec", "rt", encoding="utf-8") a
 
 ## Protocol versions
 
-The current version is in the box at the top of this page. The latest changes:
+The current version is `protocolVersion` in `/health` and in every `config`. The latest changes:
 
 | Version | Change                                                                                                                      |
 | ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 18      | XTS gantries and Cartesian robots may have a `limitArea`, like the Delta.                                                  |
+| 17      | Cartesian robots say which axes they have: `axes` (`xyz`, `xz`, `xy`).                                                     |
+| 16      | A conveyor may have no body: `body`.                                                                                       |
+| 15      | A zone may cover only a lane of its belt: `startY`, `endY`.                                                                |
 | 14      | A product's `latchPose` is given in its conveyor's coordinate system (its pose plus origin shift, X along the belt). ADR 0010. |
 | 13      | Products name their last client and their state before that change: `lastClientId`, `previousState`. ADR 0009.            |
 | 12      | XTS gantries and loops describe their track as a chain of motor modules (`modules`), each with its own fault. ADR 0008.   |
@@ -287,6 +292,6 @@ PLCs that report its own protocol version, so a server never mixes versions.
 
 ## The PLC side
 
-What the PLC has to provide, so that the gateway finds and reads it, is described in the last two sections of this
-page: the [PLC contract](plc-contract.md) (the structures of the library `Syn_Visu`) and the
-[PLC library guide](plc-library-guide.md) for PLC programmers.
+What the PLC has to provide, so that the gateway finds and reads it, is described in the
+[PLC contract](plc-contract.md) (the structures of the library `Syn_Visu`) and in the
+[PLC library guide](plc-library-guide.md) for PLC programmers, which the gateway serves at `/docs`.

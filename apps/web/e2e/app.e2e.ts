@@ -292,13 +292,14 @@ test("loads the app in parts, none over 800 KB", async ({ request }) => {
   }
 });
 
-test("opens the gateway's API documentation from the status bar", async ({ page, context }) => {
+test("opens the PLC library guide from the status bar", async ({ page, context }) => {
   await openApp(page);
-  const [docs] = await Promise.all([context.waitForEvent("page"), page.getByRole("link", { name: "API" }).click()]);
+  const [docs] = await Promise.all([context.waitForEvent("page"), page.getByRole("link", { name: "PLC guide" }).click()]);
   await docs.waitForLoadState();
   expect(new URL(docs.url()).pathname).toBe("/docs");
-  await expect(docs).toHaveTitle("RPP visualisation API");
-  await expect(docs.locator("#ref-state")).toBeVisible();
+  await expect(docs).toHaveTitle("Syn_Visu PLC library guide");
+  await expect(docs.locator('[id="5-conveyors-and-products"]')).toBeVisible();
+  await expect(docs.getByRole("img", { name: "The states of a product" })).toBeVisible();
   // Every link within the page leads to a heading on it.
   const broken = await docs.evaluate(() =>
     [...document.querySelectorAll<HTMLAnchorElement>('main a[href^="#"]')]

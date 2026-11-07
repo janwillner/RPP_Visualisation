@@ -33,7 +33,7 @@ export default defineConfig({
   server: {
     proxy: {
       "/ws": { target: gateway, ws: true },
-      // Served by the gateway too: the API documentation (ADR 0012) and the health report.
+      // Served by the gateway too: the PLC library guide and the JSON Schema (ADR 0014) and the health report.
       "/docs": gateway,
       "/health": gateway,
     },
