@@ -44,7 +44,7 @@ export class Player implements SceneFeed {
 
   getSnapshot = () => this.snapshot;
 
-  sceneSources(now = performance.now()): SceneSource[] {
+  frame(now = performance.now()): SceneSource[] {
     const elapsed = this.lastFrame === undefined ? 0 : now - this.lastFrame;
     this.lastFrame = now;
     const before = this.clock;

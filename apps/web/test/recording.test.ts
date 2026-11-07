@@ -100,6 +100,17 @@ describe("recording: playback at any point in time", () => {
     expect(belt(view, B)).toBe(650);
   });
 
+  it("shows the sources as they were when recording started, before the first message", async () => {
+    const recorder = new Recorder([{ sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: config(A) }]);
+    for (let at = 50; at <= 1000; at += 20) recorder.add(at, state(A, at));
+    const recording = await recorder.stop();
+
+    const view = await recording.viewAt(0);
+    expect(view.sources.map((s) => s.name)).toEqual(["Infeed PLC"]);
+    expect(view.scene[0]!.snapshots).toEqual([]);
+    expect(belt(await recording.viewAt(500), A)).toBe(49);
+  });
+
   it("jumps backwards and forwards", async () => {
     const recording = await threeSeconds();
 

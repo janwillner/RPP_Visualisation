@@ -1,120 +1,33 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import type { GatewayStore } from "./connection";
-import { Player, usePlayer, type PlayerSnapshot } from "./player";
-import {
-  MAX_RECORDING_MS,
-  Recorder,
-  Recording,
-  RecordingFileError,
-  SPEEDS,
-  type TimelineEvent,
-} from "./recording";
+import { usePlayer, type Player, type PlayerSnapshot } from "./player";
+import { SPEEDS, type TimelineEvent } from "./recording";
+import { useViewer, type Viewer, type ViewerSnapshot } from "./viewer";
 
-export type ViewMode = "live" | "playback";
-
-export interface RecordingControls {
-  mode: ViewMode;
-  /** The recorder while recording. */
-  recorder: Recorder | undefined;
-  /** The finished or opened recording, played by `player`. */
-  player: Player | undefined;
+/** What the recording buttons and the player bar need: the viewer's state and commands, plus the bar's own. */
+export interface RecordingControls extends ViewerSnapshot {
+  viewer: Viewer;
   playback: PlayerSnapshot | undefined;
-  /** False while a recording exists that was neither saved nor opened from a file. */
-  saved: boolean;
-  /** Set when the recording stopped by itself (length limit) or a file could not be opened. */
-  notice: string | undefined;
   /** Whether the recording bar is out; it comes out by itself when there is a new recording. */
   barOpen: boolean;
   toggleBar(): void;
-  start(): void;
-  stop(): void;
-  discard(): void;
   open(file: File): void;
-  /** Plays the replay buffer's last minute as a new, unsaved recording. */
-  replay(): void;
-  /** True while the replay buffer holds nothing to replay. */
-  replayEmpty: boolean;
   save(): void;
-  setMode(mode: ViewMode): void;
-  dismissNotice(): void;
 }
 
-/**
- * Record / stop, replaying the last minute, playback and files; one recording at a time, kept in this browser tab
- * (ADR 0006, 0011). `replayBuffer`: the recorder in replay-buffer mode that takes every message of `store`.
- */
-export function useRecordingControls(store: GatewayStore, replayBuffer: Recorder): RecordingControls {
-  const [recorder, setRecorder] = useState<Recorder>();
-  const [player, setPlayer] = useState<Player>();
-  const [mode, setMode] = useState<ViewMode>("live");
-  const [saved, setSaved] = useState(true);
-  const [notice, setNotice] = useState<string>();
+/** Binds the viewer's recordings to the page: the recording bar, files, downloads and the warning before closing. */
+export function useRecordingControls(viewer: Viewer): RecordingControls {
+  const view = useViewer(viewer);
+  const playback = usePlayer(view.player);
   const [barOpen, setBarOpen] = useState(false);
-  const unsubscribe = useRef<() => void>(undefined);
-  /** The recorder being stopped: its compression is still finishing. */
-  const stopping = useRef<Recorder>(undefined);
-  const startedAt = useRef(0);
-  /** True while the replay buffer's minute is being turned into a recording: nothing else may start meanwhile. */
-  const replaying = useRef(false);
-  const playback = usePlayer(player);
 
-  const replaceAllowed = () =>
-    saved || !player || window.confirm("Discard the current recording? It has not been saved.");
-
-  /** Shows `recording` in playback, with the recording bar out. */
-  const show = (recording: Recording, isSaved: boolean, reason?: string) => {
-    player?.pause();
-    setPlayer(new Player(recording));
-    setSaved(isSaved);
-    setMode("playback");
-    setBarOpen(true);
-    setNotice(reason);
-  };
-
-  const finish = (active: Recorder, reason?: string) => {
-    if (stopping.current === active) return;
-    stopping.current = active;
-    unsubscribe.current?.();
-    unsubscribe.current = undefined;
-    // The recorder stays set until its last block is compressed, so nothing can start in between.
-    void active
-      .stop()
-      .then((recording) => show(recording, false, reason))
-      .catch((error: unknown) => setNotice(`The recording could not be finished: ${String(error)}`))
-      .finally(() => {
-        stopping.current = undefined;
-        setRecorder(undefined);
-      });
-  };
-
-  const start = () => {
-    if (recorder || replaying.current || !replaceAllowed()) return;
-    const active = new Recorder(store.recordingContext());
-    const started = performance.now();
-    startedAt.current = started;
-    setPlayer(undefined);
-    setMode("live");
-    setSaved(true);
-    setNotice(undefined);
-    setRecorder(active);
-    unsubscribe.current = store.onMessage((message, raw, arrival) => {
-      if (!active.add(arrival - started, message, raw) && active.full) finish(active, LIMIT_NOTICE);
-    });
-  };
-
-  // The limit also applies while the gateway sends nothing.
   useEffect(() => {
-    if (!recorder) return;
-    const id = setInterval(() => {
-      if (performance.now() - startedAt.current >= MAX_RECORDING_MS) finish(recorder, LIMIT_NOTICE);
-    }, 1000);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recorder]);
+    if (view.player) setBarOpen(true);
+  }, [view.player]);
 
   // An unsaved recording is lost with the page: let the browser ask first.
+  const unsaved = view.recorder !== undefined || (!view.saved && view.player !== undefined);
   useEffect(() => {
-    if (!recorder && (saved || !player)) return;
+    if (!unsaved) return;
     const warn = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       // Older browsers, e.g. some HMI browser controls, ask only with a return value.
@@ -122,76 +35,17 @@ export function useRecordingControls(store: GatewayStore, replayBuffer: Recorder
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [recorder, saved, player]);
-
-  useEffect(() => () => unsubscribe.current?.(), []);
+  }, [unsaved]);
 
   return {
-    mode,
-    recorder,
-    player,
+    ...view,
+    viewer,
     playback,
-    saved,
-    notice,
     barOpen,
     toggleBar: () => setBarOpen((o) => !o),
-    start,
-    stop: () => recorder && finish(recorder),
-    discard: () => {
-      if (!replaceAllowed()) return;
-      player?.pause();
-      setPlayer(undefined);
-      setMode("live");
-      setSaved(true);
-    },
-    open: (file) => {
-      if (recorder || replaying.current || !replaceAllowed()) return;
-      void file
-        .arrayBuffer()
-        .then((bytes) => Recording.fromFile(new Uint8Array(bytes)))
-        .then((recording) => show(recording, true))
-        .catch((error: unknown) =>
-          setNotice(error instanceof RecordingFileError ? error.message : `Cannot open ${file.name}: ${String(error)}`),
-        );
-    },
-    replay: () => {
-      if (recorder || replaying.current || replayBuffer.empty || !replaceAllowed()) return;
-      replaying.current = true;
-      void replayBuffer
-        .snapshot()
-        .then((recording) => recording && show(recording, false))
-        .catch((error: unknown) => setNotice(`The last minute could not be replayed: ${String(error)}`))
-        .finally(() => (replaying.current = false));
-    },
-    // Read when the button renders, which looks again now and then while the buffer is empty.
-    get replayEmpty() {
-      return replayBuffer.empty;
-    },
-    save: () => {
-      if (!player) return;
-      void player.recording
-        .toFile()
-        .then((bytes) => {
-          download(bytes as BlobPart, fileName(player.recording.recordedAt));
-          setSaved(true);
-        })
-        .catch((error: unknown) => setNotice(`The recording could not be saved: ${String(error)}`));
-    },
-    setMode: (next) => {
-      // Back to live pauses, so the playback clock does not count the time spent live.
-      if (next === "live") player?.pause();
-      setMode(next);
-    },
-    dismissNotice: () => setNotice(undefined),
+    open: (file) => void viewer.open(file.name, async () => new Uint8Array(await file.arrayBuffer())),
+    save: () => void viewer.save().then((file) => file && download(file.bytes as BlobPart, file.name)),
   };
-}
-
-const LIMIT_NOTICE = `The recording stopped at its limit of ${MAX_RECORDING_MS / 60_000} minutes.`;
-
-function fileName(recordedAt: string): string {
-  const d = new Date(recordedAt);
-  const two = (n: number) => String(n).padStart(2, "0");
-  return `rpp-recording-${d.getFullYear()}${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}.rpprec`;
 }
 
 function download(bytes: BlobPart, name: string): void {
@@ -226,7 +80,7 @@ export function RecordButton({ controls }: { controls: RecordingControls }) {
   useTicking(recorder !== undefined, 250);
   if (recorder) {
     return (
-      <button className="record-toggle recording" title="Stop recording" aria-label="Stop recording" onClick={controls.stop}>
+      <button className="record-toggle recording" title="Stop recording" aria-label="Stop recording" onClick={() => void controls.viewer.stopRecording()}>
         <span className="stop-icon" aria-hidden />
         <span className="record-time">
           {formatTime(recorder.durationMs)} · {(recorder.bytes / 1024 / 1024).toFixed(1)} MB
@@ -240,7 +94,7 @@ export function RecordButton({ controls }: { controls: RecordingControls }) {
       title="Record the machine's motion"
       aria-label="Record"
       disabled={mode === "playback"}
-      onClick={controls.start}
+      onClick={() => controls.viewer.record()}
     >
       <span className="record-icon" aria-hidden />
     </button>
@@ -249,15 +103,13 @@ export function RecordButton({ controls }: { controls: RecordingControls }) {
 
 /** Replays the last minute, right of the record button; not while recording. */
 export function ReplayButton({ controls }: { controls: RecordingControls }) {
-  // Until the first message arrives, look again now and then.
-  useTicking(controls.replayEmpty, 1000);
   return (
     <button
       className="replay-toggle"
       title="Replay the last minute"
       aria-label="Replay the last minute"
-      disabled={controls.recorder !== undefined || controls.replayEmpty}
-      onClick={controls.replay}
+      disabled={controls.recorder !== undefined || !controls.canReplay}
+      onClick={() => void controls.viewer.replay()}
     >
       <ReplayIcon />
     </button>
@@ -326,7 +178,7 @@ export function PlayerBar({ controls }: { controls: RecordingControls }) {
   /** Runs a playback action, going into playback first if the view is live. */
   const play = (action: (p: Player) => void) => () => {
     if (!player) return;
-    if (mode === "live") controls.setMode("playback");
+    if (mode === "live") controls.viewer.setMode("playback");
     action(player);
   };
   return (
@@ -385,7 +237,7 @@ export function PlayerBar({ controls }: { controls: RecordingControls }) {
         Save
       </button>
       <OpenButton controls={controls} />
-      <button className="live" disabled={mode === "live"} onClick={() => controls.setMode("live")}>
+      <button className="live" disabled={mode === "live"} onClick={() => controls.viewer.setMode("live")}>
         Live
       </button>
       <button
@@ -393,7 +245,7 @@ export function PlayerBar({ controls }: { controls: RecordingControls }) {
         title="Discard the recording"
         aria-label="Discard"
         disabled={empty}
-        onClick={controls.discard}
+        onClick={() => controls.viewer.discard()}
       >
         ✕
       </button>

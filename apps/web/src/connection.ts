@@ -19,8 +19,9 @@ export interface GatewaySnapshot {
 
 /** What the 3D view and the inspector read every frame: the live gateway or a recording being played back. */
 export interface SceneFeed {
-  /** Every source as the machine scene takes it, at `now` (performance.now()). */
-  sceneSources(now?: number): SceneSource[];
+  /** Every source as the machine scene takes it, at `now` (performance.now()); called once per drawn frame, it moves
+   * the playback clock on. */
+  frame(now?: number): SceneSource[];
   /** A source's newest state, e.g. for the inspector. */
   latestState(sourceId: string): StateMessage | undefined;
   /** What has happened to a product so far, and the current moment on the same clock. */
@@ -34,7 +35,7 @@ export type MessageListener = (message: GatewayMessage, raw: string, arrival: nu
 
 /**
  * Connection to the gateway's WebSocket: folds its messages into `Sources` on the performance.now() axis.
- * Per-frame consumers read `sceneSources()` directly; React UI subscribes via `useGateway`.
+ * Per-frame consumers call `frame()`; React UI subscribes via `useGateway`.
  */
 export class GatewayStore implements SceneFeed {
   private readonly sources = new Sources();
@@ -110,7 +111,7 @@ export class GatewayStore implements SceneFeed {
   }
 
   /** Every source with its config, snapshots and render time, as the machine scene takes them. */
-  sceneSources(now = performance.now()): SceneSource[] {
+  frame(now = performance.now()): SceneSource[] {
     return this.sources.sceneSources(now);
   }
 

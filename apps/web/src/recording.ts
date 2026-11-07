@@ -263,7 +263,7 @@ export class Recording {
   async load(t: number): Promise<void> {
     const { first, last, earlier } = this.range(t);
     const loads: Promise<Entry[]>[] = [];
-    for (let i = first; i <= last; i++) loads.push(this.decode(i));
+    for (let i = Math.max(first, 0); i <= last; i++) loads.push(this.decode(i));
     for (const i of earlier.values()) loads.push(this.decode(i));
     await Promise.all(loads);
   }
@@ -272,7 +272,7 @@ export class Recording {
   view(t: number): PlaybackView | undefined {
     const { first, last, earlier } = this.range(t);
     const blocks: Entry[][] = [];
-    for (let i = first; i <= last; i++) {
+    for (let i = Math.max(first, 0); i <= last; i++) {
       const entries = this.ready.get(i);
       if (!entries) return undefined;
       blocks.push(entries);

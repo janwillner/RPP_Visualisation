@@ -17,7 +17,7 @@ import {
   usePlaybackKeys,
   useRecordingControls,
 } from "./RecordingControls";
-import { Recorder } from "./recording";
+import { Viewer } from "./viewer";
 import {
   componentKey,
   formatPointCopy,
@@ -188,21 +188,19 @@ function useTick(intervalMs: number): number {
 
 export function App() {
   const store = useMemo(() => new GatewayStore(defaultGatewayUrl()), []);
-  // Always keeps the last minute of the store's messages, for the replay button (ADR 0011).
-  const [replayBuffer, replayOrigin] = useMemo(
-    () => [Recorder.replayBuffer(), performance.now()] as const,
-    [],
+  // Live or a recording; it keeps the replay buffer from now on (ADR 0011).
+  const viewer = useMemo(
+    () => new Viewer(store, () => window.confirm("Discard the current recording? It has not been saved.")),
+    [store],
   );
   useEffect(() => {
-    const unsubscribe = store.onMessage((message, raw, arrival) =>
-      replayBuffer.add(arrival - replayOrigin, message, raw),
-    );
+    viewer.start();
     store.start();
     return () => {
       store.stop();
-      unsubscribe();
+      viewer.stop();
     };
-  }, [store, replayBuffer, replayOrigin]);
+  }, [store, viewer]);
   const gateway = useGateway(store);
   // Layers, hidden components and camera come back as they were left on this device.
   const initialView = useMemo(loadViewSettings, []);
@@ -260,12 +258,10 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const recording = useRecordingControls(store, replayBuffer);
+  const recording = useRecordingControls(viewer);
   usePlaybackKeys(recording);
   // While playing back, the tree, the 3D view and the inspector show the recording instead of the live data.
-  const playback = recording.mode === "playback" ? recording.playback : undefined;
-  const shown: GatewaySnapshot = playback ? { socket: "open", sources: playback.sources, protocolError: undefined } : gateway;
-  const feed: SceneFeed = playback && recording.player ? recording.player : store;
+  const playback = recording.mode === "playback";
 
   const camera = (action: CameraPreset) => setCameraRequest((r) => ({ action, seq: r.seq + 1 }));
   const toggle = (key: keyof Layers) => setLayers((l) => ({ ...l, [key]: !l[key] }));
@@ -300,7 +296,7 @@ export function App() {
       </header>
       <aside className="panel left" hidden={!leftOpen}>
         <ComponentTree
-          gateway={shown}
+          sources={recording.sources}
           selection={selection}
           onSelect={setSelection}
           hidden={hidden}
@@ -316,8 +312,8 @@ export function App() {
         onContextMenu={(e) => e.preventDefault()}
       >
         <SceneView
-          feed={feed}
-          sources={shown.sources}
+          feed={viewer}
+          sources={recording.sources}
           layers={layers}
           selection={selection}
           onSelect={setSelection}
@@ -345,7 +341,7 @@ export function App() {
         {recording.notice && (
           <div className="recording-notice" role="status">
             {recording.notice}
-            <button className="link" aria-label="Close" onClick={recording.dismissNotice}>
+            <button className="link" aria-label="Close" onClick={() => viewer.dismissNotice()}>
               ×
             </button>
           </div>
@@ -365,8 +361,8 @@ export function App() {
       </main>
       <aside className="panel right" hidden={!rightOpen}>
         <Inspector
-          feed={feed}
-          sources={shown.sources}
+          feed={viewer}
+          sources={recording.sources}
           selection={selection}
           modelRef={modelRef}
           faults={faults}
@@ -645,17 +641,17 @@ function ProductLegend(props: {
  * online state and an eye for the whole source.
  */
 function ComponentTree(props: {
-  gateway: GatewaySnapshot;
+  sources: readonly SourceInfo[];
   selection: Selection;
   onSelect: (s: Selection) => void;
   hidden: ReadonlySet<string>;
   onToggleHidden: (key: string) => void;
   faults: SourcedFaults[];
 }) {
-  const { gateway, selection, onSelect, hidden, onToggleHidden, faults } = props;
-  const grouped = gateway.sources.length > 1;
+  const { selection, onSelect, hidden, onToggleHidden, faults } = props;
+  const grouped = props.sources.length > 1;
   // A source that never answered has no config and appears only in the status bar.
-  const sources = gateway.sources.filter((s) => s.config !== undefined);
+  const sources = props.sources.filter((s) => s.config !== undefined);
   const components = (source: SourceInfo) => (
     <ul className="tree">
       {(source.config?.components ?? []).map((c) => {
