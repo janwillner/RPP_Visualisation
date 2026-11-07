@@ -19,7 +19,7 @@ pnpm monorepo (pnpm 12 via corepack; prefix with `corepack` if `pnpm` is not on 
 - `pnpm dev:web`: Vite dev server that proxies `/ws` to the gateway (override with `GATEWAY_URL`)
 - `pnpm build`: builds `apps/web/dist`. `pnpm build:bridge`: builds the .NET ADS bridge (`apps/ads-bridge`, needs the .NET 9 SDK).
 - `pnpm start -- --driver ads --ams-net-id <id>` serves the built app plus the WebSocket on one port (`--help` lists the options; `--config <file>` reads them from JSON, flags win).
-- `pnpm package`: builds the self-contained Windows package for IPCs, `dist/rpp-visualisation-<version>-win-x64.zip` (Windows, .NET SDK), with the newest compiled PLC library `plc/library/Syn_Visu_<version>.compiled-library` (export it from XAE with "Save as compiled library" when releasing a library version). Deployment: `docs/deployment.md`, ADR 0004; install scripts in `deploy/windows/`.
+- `pnpm package`: builds the self-contained Windows package locally (for trying it out only; IPCs get the package of a GitHub release, made by the Release workflow on a `v*` tag, see `docs/deployment.md` "Releasing"), `dist/rpp-visualisation-<version>-win-x64.zip` (Windows, .NET SDK), with the newest compiled PLC library `plc/library/Syn_Visu_<version>.compiled-library` (export it from XAE with "Save as compiled library" when releasing a library version). Deployment: `docs/deployment.md`, ADR 0004; install scripts in `deploy/windows/`.
 
 ## Architecture
 
