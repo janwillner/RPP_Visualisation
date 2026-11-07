@@ -26,7 +26,7 @@
 
 .PARAMETER AmsNetId
     AmsNetId of the PLC, written only into a newly created config file. Default: 127.0.0.1.1.1 (this IPC).
-    Another IPC needs an ADS route from this IPC to it (docs/deployment.md, "Reading other IPCs over an ADS route").
+    Another IPC needs an ADS route from this IPC to it (DEPLOYMENT.md, "Several IPCs").
     Several PLCs in one view: list them under "sources" in the config file instead.
 
 .PARAMETER AdsPort
