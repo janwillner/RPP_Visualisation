@@ -593,6 +593,39 @@ describe("scene model: measure mode", () => {
     expect(corner.layer).toBe("limitAreas");
   });
 
+  it("draws an XTS gantry's limit area as a box in its frame, like a Delta's", () => {
+    const gantry = gantryConfig({ limitArea: { xMin: 0, xMax: 200, yMin: 500, yMax: 1500, zMin: -600, zMax: -400 } });
+    const scene = buildScene(config(belt, gantry), [], 0);
+    const [area] = scene.limitAreas;
+    expect(area!.robotId).toBe(30);
+    // Centre (100, 1000, −500) in the gantry frame, turned by 90° about Z: MCS (2000, −400, 1000).
+    closeTo(rendererToMcs(area!.transform.position), [2000, -400, 1000], 4);
+    closeTo(area!.size, [0.2, 1, 0.2]);
+    const corner = snap(scene, "IDH limit area · bottom, Y min, X max");
+    closeTo(corner.local.point, [200, 500, -600]);
+    closeTo(corner.mcs, [2500, -300, 900]);
+    expect(corner.layer).toBe("limitAreas");
+  });
+
+  it("draws a Cartesian robot's limit area flat where its bounds are equal, with its corners once", () => {
+    const robot = cartesianConfig({
+      axes: "xz",
+      limitArea: { xMin: 100, xMax: 900, yMin: 0, yMax: 0, zMin: -500, zMax: -100 },
+    });
+    const scene = buildScene(config(belt, robot), [], 0);
+    const [area] = scene.limitAreas;
+    expect(area!.robotId).toBe(50);
+    closeTo(rendererToMcs(area!.transform.position), [6500, 0, 1700], 4);
+    closeTo(area!.size, [0.8, 0.001, 0.4]);
+    const corners = scene.snapPoints.filter((p) => p.label.startsWith("Cartesian limit area"));
+    expect(corners).toHaveLength(4);
+    closeTo(snap(scene, "Cartesian limit area · top, X max").mcs, [6900, 0, 1900]);
+  });
+
+  it("has no limit area for robots without one, and none for an XTS loop", () => {
+    expect(buildScene(config(belt, gantryConfig(), cartesianConfig(), loopConfig()), [], 0).limitAreas).toEqual([]);
+  });
+
   it("has no limit area for a Delta without one", () => {
     expect(buildScene(config(belt, deltaConfig()), [], 0).limitAreas).toEqual([]);
   });
@@ -757,6 +790,7 @@ function gantryConfig(overrides: Partial<XtsGantryConfig> = {}): XtsGantryConfig
     toolOffsetZ: -400,
     moverLength: 155,
     moverWidth: 80,
+    limitArea: null,
     zones: [],
     fingers: [],
     originShift: { x: 0, y: 0, z: 0 },
@@ -856,6 +890,7 @@ function cartesianConfig(overrides: Partial<CartesianConfig> = {}): CartesianCon
     sourceId: "plc1",
     name: "Cartesian",
     pose: { x: 6000, y: 0, z: 2000, rx: 0, ry: 0, rz: 0 },
+    axes: "xyz",
     xMin: 0,
     xMax: 1200,
     yMin: 0,
@@ -863,6 +898,7 @@ function cartesianConfig(overrides: Partial<CartesianConfig> = {}): CartesianCon
     zMin: -600,
     zMax: 0,
     railHeight: 1200,
+    limitArea: null,
     zones: [],
     fingers: [],
     originShift: { x: 0, y: 0, z: 0 },
@@ -962,6 +998,63 @@ describe("scene model: Cartesian robot", () => {
     expect(idle!.flange).toBeNull();
     expect(idle!.axes).toBeNull();
     expect(idle!.parts.map((p) => p.key)).toEqual(["rail left", "rail right", "bridge", "carriage", "column"]);
+  });
+});
+
+describe("scene model: Cartesian robot without a Y axis (X, Z)", () => {
+  // The state's y = 250 is ignored: Y is always 0.
+  const scene = buildScene(config(cartesianConfig({ axes: "xz" })), [snapshot(0, [cartesianState()])], 0);
+  const [robot] = scene.cartesians;
+  const part = (key: string) => robot!.parts.find((p) => p.key === key)!;
+  const byLabel = new Map(scene.snapPoints.map((p) => [p.label, p]));
+
+  it("hangs carriage and column from a fixed beam at Y = 0 instead of rails and bridge", () => {
+    expect(robot!.parts.map((p) => p.key)).toEqual(["beam", "carriage", "column"]);
+    expect(robot!.axes).toEqual({ x: 600, y: 0, z: -400 });
+    closeTo(rendererToMcs(robot!.flange!.position), [6600, 0, 1600], 4);
+    // Beam on top of railHeight, spanning the X stroke plus margins.
+    closeTo(rendererToMcs(part("beam").transform.position), [6600, 0, 3250], 4);
+    closeTo(part("beam").size, [1.44, 0.14, 0.1]);
+    closeTo(rendererToMcs(part("carriage").transform.position), [6600, 0, 3250], 4);
+  });
+
+  it("draws the reachable flange area as a flat rectangle in the X-Z plane", () => {
+    const [area] = scene.boxAreas;
+    closeTo(rendererToMcs(area!.transform.position), [6600, 0, 1700], 4);
+    closeTo(area!.size, [1.2, 0.001, 0.6]);
+  });
+
+  it("offers the beam ends and four stroke-space corners instead of rail ends", () => {
+    closeTo(byLabel.get("Cartesian · beam, X min end")!.mcs, [5880, 0, 3200]);
+    expect([...byLabel.keys()].some((l) => l.includes("rail"))).toBe(false);
+    const corners = [...byLabel.keys()].filter((l) => l.startsWith("Cartesian stroke space"));
+    expect(corners).toHaveLength(4);
+    closeTo(byLabel.get("Cartesian stroke space · top, X max")!.mcs, [7200, 0, 2000]);
+  });
+});
+
+describe("scene model: Cartesian robot without a Z axis (X, Y)", () => {
+  // The state's z = −400 is ignored: the flange stays at zMin = −600.
+  const scene = buildScene(config(cartesianConfig({ axes: "xy" })), [snapshot(0, [cartesianState()])], 0);
+  const [robot] = scene.cartesians;
+  const part = (key: string) => robot!.parts.find((p) => p.key === key)!;
+  const byLabel = new Map(scene.snapPoints.map((p) => [p.label, p]));
+
+  it("keeps rails and bridge and ends a column of fixed length at zMin", () => {
+    expect(robot!.parts.map((p) => p.key)).toEqual(["rail left", "rail right", "bridge", "carriage", "column"]);
+    expect(robot!.axes).toEqual({ x: 600, y: 250, z: -600 });
+    closeTo(rendererToMcs(robot!.flange!.position), [6600, 250, 1400], 4);
+    closeTo(part("column").size, [0.09, 0.09, 1.9]);
+    closeTo(rendererToMcs(part("column").transform.position), [6600, 250, 1400 + 950], 4);
+  });
+
+  it("draws the reachable flange area as a flat rectangle at zMin", () => {
+    const [area] = scene.boxAreas;
+    closeTo(rendererToMcs(area!.transform.position), [6600, 500, 1400], 4);
+    closeTo(area!.size, [1.2, 1, 0.001]);
+    const corners = [...byLabel.keys()].filter((l) => l.startsWith("Cartesian stroke space"));
+    expect(corners).toHaveLength(4);
+    closeTo(byLabel.get("Cartesian stroke space · end, X max")!.mcs, [7200, 1000, 1400]);
   });
 });
 

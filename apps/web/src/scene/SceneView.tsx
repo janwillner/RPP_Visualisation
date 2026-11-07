@@ -1761,12 +1761,13 @@ const CARTESIAN_COLORS: Record<SceneCartesian["parts"][number]["key"], string> =
   "rail left": SOLID.profile,
   "rail right": SOLID.profile,
   bridge: SOLID.aluDark,
+  beam: SOLID.aluDark,
   carriage: SOLID.aluLight,
   column: SOLID.aluMid,
 };
 
 /**
- * Cartesian robot: rails, bridge, carriage and column as boxes, and a flange plate at the column's lower end (green
+ * Cartesian robot: rails, bridge (or a fixed beam without a Y axis), carriage and column as boxes, and a flange plate at the column's lower end (green
  * while the gripper is active and no fingers are configured).
  */
 function CartesianMesh(props: {
@@ -1796,8 +1797,8 @@ function CartesianMesh(props: {
     cup.current?.color.set(live.gripperActive ? XTS_COLORS.cupActive : XTS_COLORS.cup);
   });
 
-  // Labelled at a rail, which does not move.
-  const rail = robot.parts.find((p) => p.key === "rail left");
+  // Labelled at a rail or the beam, which do not move.
+  const rail = robot.parts.find((p) => p.key === "rail left") ?? robot.parts.find((p) => p.key === "beam");
   return (
     <group userData={{ label: name }}>
       <FaultScope faulted={robot.fault !== null}>

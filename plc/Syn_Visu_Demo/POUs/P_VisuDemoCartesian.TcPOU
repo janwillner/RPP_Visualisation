@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemoCartesian" Id="{aba35c8b-7c87-4ab5-9d8b-02aa63e4ce78}" SpecialFunc="None">
+  <POU Name="P_VisuDemoCartesian" Id="{d5e22a24-ae42-4c62-9790-0f1f0f48b7a7}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -153,6 +153,9 @@ CartPose.fZ := lr_CART_Z;
 CartPose.fRz := -90;
 fb_Cartesian.m_Configure(vi_Pose := CartPose, vi_lr_XMin := 0, vi_lr_XMax := 1200, vi_lr_YMin := 0, vi_lr_YMax := 1000,
 	vi_lr_ZMin := -600, vi_lr_ZMax := 0, vi_lr_RailHeight := lr_CART_RAIL_HEIGHT);
+(* Limit area in the robot frame (flange coordinates): X only up to the infeed, Z not into the top 100 mm. *)
+fb_Cartesian.m_SetLimitArea(vi_lr_XMin := 0, vi_lr_XMax := 1000, vi_lr_YMin := 0, vi_lr_YMax := 1000,
+	vi_lr_ZMin := -600, vi_lr_ZMax := -100);
 (* A cup in the middle carries the product, two jaws close beside it. *)
 fb_Cartesian.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER,
 	vi_lr_Height := lr_CART_CUP_HEIGHT);

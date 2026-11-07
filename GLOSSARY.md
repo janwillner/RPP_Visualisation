@@ -124,12 +124,16 @@ A closed XTS track, usually two straights joined at each end by two curve module
 _Avoid_: Fxx (when meaning the kinematics), oval, carousel
 
 **Cartesian robot**:
-A robot with linear X, Y and Z axes on two fixed rails and a gripper head that turns about C and tilts about A.
+A robot with linear X, Y and Z axes on two fixed rails and a gripper head that turns about C and tilts about A. It may lack the Y axis (X-Z: a fixed beam instead of rails and bridge) or the Z axis (X-Y: a column of fixed length); its **axes** say which.
 _Avoid_: portal, gantry (that is always the XTS gantry), linear robot
 
 **Bridge**:
 The beam of a Cartesian robot that spans its rails and travels along them in Y.
 _Avoid_: portal beam, crossbar
+
+**Beam**:
+The fixed beam along X of a Cartesian robot without a Y axis; the carriage travels on it.
+_Avoid_: bridge (that travels), rail
 
 **Carriage**:
 The slide of a Cartesian robot that travels along the bridge in X and carries the column.
@@ -184,7 +188,7 @@ The volume the PLC allows a robot to move in.
 _Avoid_: work area, workspace, reach (reach is what the kinematics allow)
 
 **Limit area**:
-A box around a Delta robot that further restricts its working area, so that neighbouring robots cannot collide.
+A box around a Delta robot, an XTS gantry or a Cartesian robot that further restricts its working area, so that neighbouring robots cannot collide. An XTS loop has none.
 _Avoid_: collision zone, safety box, limit zone
 
 **Zone**:

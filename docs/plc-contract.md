@@ -16,7 +16,7 @@ their Beckhoff-style names, because the gateway reads them.
 | --- | --- |
 | `plc/RPP_Visu.sln` | TwinCAT solution with both PLC projects |
 | `plc/Syn_Visu/` | The library project: structures, enums, constants and the component function blocks. No task, no application code. |
-| `plc/Syn_Visu_Demo/` | The demo application. It references the installed library like any machine project, so it also tests the library from the outside. ADS port 852. `PlcTask` calls `P_VisuDemo`, which sets the shared cycle time and fault phase (`DEMO_GlobalVar`) and calls one program per application: `P_VisuDemoDelta`, `P_VisuDemoFxx`, `P_VisuDemoIdh`, `P_VisuDemoCartesian`, `P_VisuDemoSpacing`, and the load test `P_VisuDemoStress` (off unless `DEMO_GlobalVar.DEMO_un_StressProducts` is set; `docs/performance.md`). Shared constants (belt height and width, product, suction cup, fault timing) are in `DEMO_GlobalConst`, the manifest in `GVL_Visu`. |
+| `plc/Syn_Visu_Demo/` | The demo application. It references the installed library like any machine project, so it also tests the library from the outside. ADS port 852. `PlcTask` calls `P_VisuDemo`, which sets the shared cycle time and fault phase (`DEMO_GlobalVar`) and calls one program per application: `P_VisuDemoDelta`, `P_VisuDemoFxx`, `P_VisuDemoIdh`, `P_VisuDemoCartesian`, `P_VisuDemoCartesianAxes` (a Cartesian robot without Y axis and one without Z axis, `m_SetKinematics`), `P_VisuDemoSpacing`, and the load test `P_VisuDemoStress` (off unless `DEMO_GlobalVar.DEMO_un_StressProducts` is set; `docs/performance.md`). Shared constants (belt height and width, product, suction cup, fault timing) are in `DEMO_GlobalConst`, the manifest in `GVL_Visu`. |
 | `plc/library/Syn_Visu_<version>.library` | The exported library with its source, committed for every released version. |
 | `plc/library/Syn_Visu_<version>.compiled-library` | The same version compiled, without source code. `pnpm package` puts the newest one into the deployment package (`plc/`); machine projects install it from there. |
 
@@ -37,7 +37,7 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   `stOriginShift` → `originShift`, `aZones` → `zones`, `nConveyorId` → `conveyorId`.
 - An array `aZones` is cut to its count member, named after one entry: `nZoneCount`, `nBodyCount`. Without a count
   member the whole array is read. Entries with a `bValid` member are kept only while it is TRUE.
-- A structure for a value that may be absent (a fault, the Delta's limit area) has a `bActive` member: FALSE means
+- A structure for a value that may be absent (a fault, a robot's limit area) has a `bActive` member: FALSE means
   none.
 - An enumeration's value is the index of the protocol's option (`E_VisuProductShape.CYLINDER` = 1 = `"cylinder"`).
 - Live states of the config's lists sit in `aFingerStates` and `aBodyStates`; the gateway keeps as many as the config
@@ -76,9 +76,11 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   base's local +X, arms 2 and 3 follow counter-clockwise (seen from above) at 120°; 0° = upper arm horizontal,
   positive = downward. The effector stays turned with the base; a 4th axis shows only through the finger poses. The TCP's
   axis triad and the flange frame keep the MCS axes, however the robot is mounted.
-- Delta limit area: an optional axis-aligned box in the robot frame (relative to the base centre, turned with the
-  base pose) that further restricts the working area, e.g. so that neighbouring robots cannot collide. It is drawn
-  only while `stLimitArea.bActive` is TRUE.
+- Limit area (Delta, XTS gantry, Cartesian robot; not the XTS loop): an optional axis-aligned box in the robot frame
+  (relative to its `stPose`, turned with it: the frame its working area is given in, the base centre of a Delta, the
+  gantry's track start, the Cartesian robot's axis zero) that further restricts the working area, e.g. so that
+  neighbouring robots cannot collide. It is drawn only while `stLimitArea.bActive` is TRUE; equal bounds make a flat
+  box. `_FB_VisuRobot` sets it for all three through `m_LimitArea`, which tells it where `stLimitArea` lies.
 - Zone: a stretch of a conveyor that belongs to a component, set with `m_SetZone(vi_un_Zone, ...)` (1-based, in
   order): where a robot picks or places, where a detector detects. What the component does there is its own business;
   the visualisation draws every zone alike. `fStart = fEnd` is a line across the belt, e.g. for a light barrier.
@@ -122,7 +124,10 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   carriage on the bridge travelling in X and a vertical column (Z) ending at the gripper flange. Local frame: origin at
   axis X = Y = 0, Z up; the flange is at (X, Y, Z). Only actual values are reported; gripper rotations (e.g. C and A)
   show only through the finger poses. The parts are drawn with fixed sizes derived from the strokes; the working-area
-  box is the flange volume.
+  box is the flange volume. `eAxes` (`E_VisuCartesianAxes`) may leave out an axis: `XZ` has no Y axis, a fixed beam
+  along local X at `fRailHeight` replaces rails and bridge and Y is always 0 (`fYMin`, `fYMax` and `fY` are ignored);
+  `XY` has no Z axis, the column has a fixed length and the flange stays at `fZMin` (`fZMax` and `fZ` are ignored).
+  The working area is then a flat rectangle.
 - Components drawn from bodies (detectors and stations, `_FB_VisuBodyComponent`): drawn only from the bodies they
   describe (`aBodies`, at most `VISU_GlobalConst_Param.VISU_un_MAX_BODIES`): a box, a cylinder (length and width are
   its diameters) or a frustum (bottom `fLength` × `fWidth`, top `fTopLength` × `fTopWidth`), standing on its bottom
@@ -172,6 +177,8 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   (ADR 0010).
 - Protocol version 15 added the zones' `fStartY` and `fEndY`: a zone may cover only part of the belt width.
 - Protocol version 16 added the conveyor's `bBody`: a conveyor may have no body.
+- Protocol version 18 added `stLimitArea` to the XTS gantry and the Cartesian robot (before only the Delta had one).
+- Protocol version 17 added the Cartesian robot's `eAxes` (`E_VisuCartesianAxes`): X, Y, Z, or without the Y or the Z axis.
 
 ## What the library contains
 
@@ -240,6 +247,7 @@ All robot FBs (Delta, XTS gantry, XTS loop, Cartesian; `_FB_VisuRobot`):
 | --- | --- |
 | `m_SetFinger(vi_un_Finger, vi_lr_Diameter, vi_lr_Height)` | Defines finger `vi_un_Finger` (1-based) of the gripper (for XTS kinematics: of every mover's gripper); the finger count grows to it |
 | `m_ClearFingers()` | Removes the gripper definition |
+| `m_SetLimitArea(vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax)`, `m_ClearLimitArea()` | Sets and activates / removes the limit area (Delta, XTS gantry, Cartesian); an XTS loop has none, there both return FALSE and change nothing |
 
 Both XTS FBs (XTS gantry, XTS loop; `_FB_VisuXtsTrack`):
 
@@ -301,7 +309,6 @@ every cycle, also stamps the component's state.
 | --- | --- |
 | `m_Configure(vi_Pose, vi_lr_BaseRadius, vi_lr_EffectorRadius, vi_lr_UpperArmLength, vi_lr_LowerArmLength)` | Base pose and geometry |
 | `m_SetWorkingArea(vi_lr_Radius, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ConeHeight, vi_lr_ConeBottomRadius)` | Working area |
-| `m_SetLimitArea(vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax)`, `m_ClearLimitArea()` | Sets and activates / removes the limit area |
 | `m_SetTcp(vi_ActualTcp, vi_SetpointTcp)` | Reports the TCP (positions) and the state timestamp; call once per cycle |
 | `m_SetFingerState(vi_un_Finger, vi_Pose, vi_b_Active)` | Reports one finger's MCS pose and grip state; call once per cycle per finger |
 | `m_BasePose()` | Base pose last configured |
@@ -328,6 +335,7 @@ every cycle, also stamps the component's state.
 | Method | Purpose |
 | --- | --- |
 | `m_Configure(vi_Pose, vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_RailHeight)` | Pose, strokes, rail height |
+| `m_SetKinematics(vi_e_Axes)` | Which axes the robot has (`E_VisuCartesianAxes`); `XYZ` when never called |
 | `m_SetAxes(vi_lr_X, vi_lr_Y, vi_lr_Z, vi_b_GripperActive)` | Actual axis values (the flange), gripper and state timestamp; call once per cycle |
 | `m_SetFingerState(vi_un_Finger, vi_Pose, vi_b_Active)` | As for the Delta |
 
@@ -389,7 +397,7 @@ CupPose.fX := Tcp.fX; CupPose.fY := Tcp.fY; CupPose.fZ := Tcp.fZ; CupPose.fRz :=
 fb_Delta1.m_SetFingerState(vi_un_Finger := 1, vi_Pose := CupPose, vi_b_Active := b_Vacuum);
 ```
 
-The demo project `plc/Syn_Visu_Demo` is a complete example, one program per application, including two XTS loops (one above two belts, one under a belt that spaces products evenly), an XTS gantry and a Cartesian robot,
+The demo project `plc/Syn_Visu_Demo` is a complete example, one program per application, including two XTS loops (one above two belts, one under a belt that spaces products evenly), an XTS gantry, a Cartesian robot and two Cartesian robots with two axes (X-Z, X-Y),
 three Delta grippers: two cups beside the flange turning about Rz (two picks, one place), one finger turning and
 tilting, and five fingers closing when picking and opening when placing, a vision system and a light barrier on the
 Delta infeeds and a reject unit (station) at the Delta outfeed.
@@ -420,6 +428,7 @@ accepts; it came without a protocol change.
 | `E_VisuBodyShape` (UINT) | `BOX` 0, `CYLINDER` 1, `FRUSTUM` 2 |
 | `E_VisuBodyRole` (UINT) | `STRUCTURE` 0, `SENSOR` 1, `BEAM` 2, `FIELD_OF_VIEW` 3 |
 | `E_VisuModuleKind` (UINT) | `STRAIGHT` 0, `CURVE_LEFT` 1, `CURVE_RIGHT` 2 |
+| `E_VisuCartesianAxes` (UINT) | `XYZ` 0, `XZ` 1 (no Y axis), `XY` 2 (no Z axis) |
 
 Values are part of the contract: append, never renumber. The gateway reads a value as the index of the protocol's
 option, so they count from 0 without gaps.

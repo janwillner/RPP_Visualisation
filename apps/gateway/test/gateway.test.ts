@@ -34,6 +34,7 @@ import {
 import {
   E_VisuBodyRole,
   E_VisuBodyShape,
+  E_VisuCartesianAxes,
   E_VisuModuleKind,
   E_VisuProductShape,
   E_VisuProductState,
@@ -211,6 +212,21 @@ describe("gateway discovery", () => {
     });
   });
 
+  it("publishes the limit areas of an XTS gantry and a Cartesian robot, which the base FB fills alike", async () => {
+    const box = { fXMin: 0, fXMax: 200, fYMin: 100, fYMax: 900, fZMin: -500, fZMax: -100 };
+    const limitedGantry: MachineComponent = { ...gantry, value: xtsGantry({ limitArea: box }) };
+    const cart: MachineComponent = { ...portal, value: cartesian({ limitArea: box }) };
+    const t = setup([infeed, limitedGantry, cart]);
+    await t.gateway.cycle();
+
+    const [config] = t.configs();
+    expect(config!.errors).toEqual([]);
+    const expected = { xMin: 0, xMax: 200, yMin: 100, yMax: 900, zMin: -500, zMax: -100 };
+    for (const type of ["xtsGantry", "cartesian"]) {
+      expect(config!.components.find((c) => c.type === type)).toMatchObject({ limitArea: expected });
+    }
+  });
+
   it("publishes whether a conveyor is drawn with a body", async () => {
     const bare: MachineComponent = { ...infeed, id: 11, path: "MAIN.fbBare.stVisu", value: conveyor({ body: false }) };
     const t = setup([infeed, bare]);
@@ -269,6 +285,7 @@ describe("gateway discovery", () => {
         toolOffsetZ: -400,
         moverLength: 155,
         moverWidth: 80,
+        limitArea: null,
         zones: [{ conveyorId: 10, start: 0, end: 800, allocationOffset: 0, ccsOffset: 0, startY: 0, endY: 0 }],
         fingers: [],
         originShift: { x: 0, y: 0, z: 0 },
@@ -308,6 +325,7 @@ describe("gateway discovery", () => {
       sourceId: "plc1",
       name: "Cartesian",
       pose: { x: 6000, y: 100, z: 700, rx: 0, ry: 0, rz: 90 },
+      axes: "xyz",
       xMin: 0,
       xMax: 1200,
       yMin: 0,
@@ -315,10 +333,26 @@ describe("gateway discovery", () => {
       zMin: -600,
       zMax: 0,
       railHeight: 1200,
+      limitArea: null,
       zones: [{ conveyorId: 10, start: 100, end: 900, allocationOffset: 0, ccsOffset: 0, startY: 0, endY: 0 }],
       fingers: [],
       originShift: { x: 0, y: 0, z: 0 },
     });
+  });
+
+  it("publishes which axes a Cartesian robot has", async () => {
+    const withAxes = (id: number, axes: number): MachineComponent => ({
+      ...portal,
+      id,
+      path: `MAIN.fbCartesian${id}.stVisu`,
+      value: cartesian({ axes }),
+    });
+    const t = setup([withAxes(51, E_VisuCartesianAxes.XZ), withAxes(52, E_VisuCartesianAxes.XY)]);
+    await t.gateway.cycle();
+
+    const [config] = t.configs();
+    expect(config!.errors).toEqual([]);
+    expect(config!.components.map((c) => (c.type === "cartesian" ? c.axes : null))).toEqual(["xz", "xy"]);
   });
 
   it("publishes a vision system and a product sensor with their zones and the bodies they are drawn from", async () => {

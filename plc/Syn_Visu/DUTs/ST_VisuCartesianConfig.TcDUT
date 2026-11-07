@@ -5,8 +5,10 @@
 STRUCT
 	(* Cartesian robot: two fixed rails along local +Y, a bridge travelling in Y, a carriage on it travelling in X
 	   and a vertical column (Z) ending at the gripper flange. Local frame: origin at axis X = Y = 0, Z up; the
-	   flange is at (X, Y, Z). *)
+	   flange is at (X, Y, Z). Without a Y axis (eAxes XZ) a fixed beam along X at fRailHeight replaces rails and
+	   bridge and Y is 0; without a Z axis (XY) the column has a fixed length and the flange stays at fZMin. *)
 	stPose : ST_VisuPose; // MCS
+	eAxes : E_VisuCartesianAxes := E_VisuCartesianAxes.XYZ; // which axes the robot has (set by m_SetKinematics)
 	fXMin : LREAL; // mm, X stroke
 	fXMax : LREAL; // mm
 	fYMin : LREAL; // mm, Y stroke
@@ -14,6 +16,7 @@ STRUCT
 	fZMin : LREAL; // mm, Z stroke
 	fZMax : LREAL; // mm
 	fRailHeight : LREAL; // mm, top of the rails above the local origin; the bridge sits on them
+	stLimitArea : ST_VisuLimitArea; // optional box in the robot frame that further restricts the working area
 	nZoneCount : UINT;
 	aZones : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone; // pick and place zones
 	nFingerCount : UINT; // 0 = no gripper definition

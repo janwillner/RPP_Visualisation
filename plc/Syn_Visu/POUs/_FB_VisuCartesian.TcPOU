@@ -1,13 +1,14 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuCartesian" Id="{e317ba94-59ec-438e-b736-1a13375dbf20}" SpecialFunc="None">
+  <POU Name="_FB_VisuCartesian" Id="{9130695c-9c08-45bf-a068-d9980c11bb84}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-One visualised Cartesian robot: linear X, Y, Z axes ending at a gripper flange. Typical cycle:<br>
+One visualised Cartesian robot: linear X, Y, Z axes ending at a gripper flange; m_SetKinematics leaves out the<br>
+Y axis (XZ, a fixed beam) or the Z axis (XY). Typical cycle:<br>
   fb_Cartesian.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 40, vi_str_Name := 'Cartesian');<br>
   fb_Cartesian.m_Configure(vi_Pose := RobotPose, vi_lr_XMin := 0, vi_lr_XMax := 1200, vi_lr_YMin := 0,<br>
       vi_lr_YMax := 1000, vi_lr_ZMin := -600, vi_lr_ZMax := 0, vi_lr_RailHeight := 1200);<br>
@@ -25,6 +26,7 @@ vo_Visu is the contract structure the gateway reads at the path given to m_Regis
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Zones and fingers from _FB_VisuRobot; m_SetZone by index, no kind<br>
+Syn_Visu 9.2.0  ¦ 2026-11-07 ¦ J.Willner ¦ m_SetKinematics: without Y axis (XZ) or Z axis (XY)<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_VisuCartesian EXTENDS _FB_VisuRobot
 VAR_OUTPUT
@@ -125,6 +127,26 @@ vo_p_Fingers := ADR(vo_Visu.stConfig.aFingers);
 m_Fingers := TRUE;]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_LimitArea" Id="{54d93c21-e5cb-44d9-8f91-ad37310e7114}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The robot's limit area for _FB_VisuRobot.m_SetLimitArea and m_ClearLimitArea.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_LimitArea : BOOL
+VAR_OUTPUT
+	vo_p_LimitArea						: POINTER TO ST_VisuLimitArea;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_p_LimitArea := ADR(vo_Visu.stConfig.stLimitArea);
+m_LimitArea := TRUE;
+]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_SetAxes" Id="{38bc9b44-0eb3-4b11-ad7d-22f4053b9b0e}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -197,6 +219,33 @@ IF m_SetFingerState THEN
 	vo_Visu.stState.aFingerStates[vi_un_Finger - 1].stPose := vi_Pose;
 	vo_Visu.stState.aFingerStates[vi_un_Finger - 1].bActive := vi_b_Active;
 END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetKinematics" Id="{fa63ce61-9921-45ce-89ef-cbe5bd7900c7}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets which axes the robot has. XYZ (default): rails, bridge, carriage and column. XZ: no Y axis, a fixed beam<br>
+along the local X at the rail height; the Y stroke and m_SetAxes vi_lr_Y are ignored. XY: no Z axis, the column<br>
+has a fixed length and the flange stays at vi_lr_ZMin; vi_lr_ZMax and m_SetAxes vi_lr_Z are ignored.<br>
+TRUE if anything changed.<br>
+****************************************************************************************************)
+METHOD m_SetKinematics : BOOL
+VAR_INPUT
+	vi_e_Axes							: E_VisuCartesianAxes;	// axes of the robot
+END_VAR
+VAR
+	TempNew								: ST_VisuCartesianConfig;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TempNew := vo_Visu.stConfig;
+TempNew.eAxes := vi_e_Axes;
+m_SetKinematics := m_ApplyConfig(TempNew);
+]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_SetOriginShift" Id="{2501dad8-487e-45df-9e39-a5b44ee2c6b7}">

@@ -363,7 +363,7 @@ FB: `SynVisu._FB_VisuDelta`. The PLC reports only the TCP; the web app computes 
 | --- | --- |
 | `m_Configure(vi_Pose, vi_lr_BaseRadius, vi_lr_EffectorRadius, vi_lr_UpperArmLength, vi_lr_LowerArmLength)` | `vi_Pose` is the base centre in the MCS. Arm 1 lies along the base's local +X, arms 2 and 3 follow counter-clockwise (from above) at 120°. |
 | `m_SetWorkingArea(vi_lr_Radius, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ConeHeight, vi_lr_ConeBottomRadius)` | Vertical cylinder in the robot frame (Z negative below the base), optionally with a cone at the bottom |
-| `m_SetLimitArea(...)`, `m_ClearLimitArea()` | Optional box in the robot frame that further restricts the working area, e.g. against a neighbouring robot |
+| `m_SetLimitArea(...)`, `m_ClearLimitArea()` | Optional box in the robot frame that further restricts the working area, e.g. against a neighbouring robot; the XTS gantry and the Cartesian robot have it too (see there) |
 | `m_SetFinger(...)` | See [section 7](#7-grippers-and-fingers) |
 | `m_SetZone(...)` | See [section 6](#6-zones) |
 | each cycle: `m_SetTcp(vi_ActualTcp, vi_SetpointTcp)` | TCP (effector centre, the gripper flange) as `ST_VisuPosition` in the MCS |
@@ -372,16 +372,36 @@ FB: `SynVisu._FB_VisuDelta`. The PLC reports only the TCP; the web app computes 
 ## 9. Cartesian robot
 
 FB: `SynVisu._FB_VisuCartesian`. Two fixed rails along the local +Y, a bridge travelling in Y, a carriage on it
-travelling in X and a vertical column (Z) ending at the gripper flange.
+travelling in X and a vertical column (Z) ending at the gripper flange; without a Y or a Z axis see the end of this
+section.
 
 | Call | Meaning |
 | --- | --- |
 | `m_Configure(vi_Pose, vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_RailHeight)` | `vi_Pose` is the axis origin (X = Y = 0); the strokes are the flange's; the rails' top lies at `vi_lr_RailHeight` above the origin |
+| once: `m_SetKinematics(vi_e_Axes)` | Which axes the robot has; leave it out for X, Y, Z (see below) |
+| `m_SetLimitArea(...)`, `m_ClearLimitArea()` | Optional box in the robot frame (the frame of the strokes, so in flange coordinates) that further restricts the working area |
 | each cycle: `m_SetAxes(vi_lr_X, vi_lr_Y, vi_lr_Z, vi_b_GripperActive)` | Actual axis values, i.e. the flange in the robot frame |
 | each cycle: `m_SetFingerState(...)` | Per finger, absolute in the MCS |
 
 If the machine's TCP is not the flange (a tool length), report the flange and let the finger reach down to the TCP:
 the finger height is the tool length.
+
+A Cartesian robot with only two axes is the same FB with `m_SetKinematics` (`SynVisu.E_VisuCartesianAxes`):
+
+| `vi_e_Axes` | Robot | Drawn as | Ignored |
+| --- | --- | --- | --- |
+| `XYZ` (default) | X, Y and Z axis | rails, bridge, carriage, column | nothing |
+| `XZ` | no Y axis | a fixed beam along local X at `vi_lr_RailHeight` (no supports), carriage, column; Y is 0 | `vi_lr_YMin`, `vi_lr_YMax`, `m_SetAxes` `vi_lr_Y` |
+| `XY` | no Z axis | rails, bridge, carriage and a column of fixed length; the flange stays at `vi_lr_ZMin` | `vi_lr_ZMax`, `m_SetAxes` `vi_lr_Z` |
+
+Turn the robot with the yaw of `vi_Pose` so its X axis runs where the machine's does (along or across the belt).
+
+```st
+fb_Pusher.m_Configure(vi_Pose := PusherPose, vi_lr_XMin := 0, vi_lr_XMax := 800, vi_lr_YMin := 0, vi_lr_YMax := 0,
+	vi_lr_ZMin := -400, vi_lr_ZMax := 0, vi_lr_RailHeight := 600);
+fb_Pusher.m_SetKinematics(vi_e_Axes := SynVisu.E_VisuCartesianAxes.XZ);
+fb_Pusher.m_SetAxes(vi_lr_X := ax_X.NcToPlc.ActPos, vi_lr_Y := 0, vi_lr_Z := ax_Z.NcToPlc.ActPos, vi_b_GripperActive := b_Vacuum);
+```
 
 ## 10. XTS tracks and their motor modules
 

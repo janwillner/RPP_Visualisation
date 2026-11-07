@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuXtsLoop" Id="{5e24bb7c-bb7a-4a52-b47d-6dca168c3931}" SpecialFunc="None">
+  <POU Name="_FB_VisuXtsLoop" Id="{59695cd1-e16e-4b51-b785-53bd28b18e7c}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -121,6 +121,27 @@ END_VAR
         <ST><![CDATA[vo_p_Count := ADR(vo_Visu.stConfig.nFingerCount);
 vo_p_Fingers := ADR(vo_Visu.stConfig.aFingers);
 m_Fingers := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_LimitArea" Id="{24503efe-74eb-41e4-b65e-11853761b378}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+An XTS loop has no working area of its own and so no limit area: _FB_VisuRobot.m_SetLimitArea and<br>
+m_ClearLimitArea return FALSE and change nothing.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_LimitArea : BOOL
+VAR_OUTPUT
+	vo_p_LimitArea						: POINTER TO ST_VisuLimitArea;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_p_LimitArea := 0;
+m_LimitArea := FALSE;
+]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_Modules" Id="{3a17d240-73c7-47f5-a0c9-92e93189ce4d}">

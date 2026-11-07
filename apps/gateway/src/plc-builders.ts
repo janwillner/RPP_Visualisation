@@ -1,5 +1,6 @@
 import { PROTOCOL_VERSION } from "@rpp/protocol";
 import {
+  E_VisuCartesianAxes,
   E_VisuProductShape,
   E_VisuBodyRole,
   E_VisuBodyShape,
@@ -8,6 +9,7 @@ import {
   MANIFEST_PATH,
   PLC_TYPES,
   type ST_VisuCartesian,
+  type ST_VisuCartesianConfig,
   type ST_VisuCartesianState,
   type ST_VisuBody,
   type ST_VisuBodyState,
@@ -122,6 +124,19 @@ function zoneList(spec: { zones?: ZoneSpec[] }): ST_VisuZone[] {
   return (spec.zones ?? []).map((z) => ({ fAllocationOffset: 0, fCcsOffset: 0, fStartY: 0, fEndY: 0, ...z }));
 }
 
+/** Limit area of a Delta, an XTS gantry or a Cartesian robot (_FB_VisuLimitedRobot); active only when given. */
+export interface LimitAreaSpec {
+  limitArea?: Omit<ST_VisuLimitArea, "bActive">;
+}
+
+function limitArea(spec: LimitAreaSpec): { stLimitArea: ST_VisuLimitArea } {
+  return {
+    stLimitArea: spec.limitArea
+      ? { ...spec.limitArea, bActive: true }
+      : { fXMin: 0, fXMax: 0, fYMin: 0, fYMax: 0, fZMin: 0, fZMax: 0, bActive: false },
+  };
+}
+
 /** Every config's origin shift; zero unless given. */
 function originShift(spec: { originShift?: Partial<ST_VisuPosition> }): { stOriginShift: ST_VisuPosition } {
   return { stOriginShift: { fX: 0, fY: 0, fZ: 0, ...spec.originShift } };
@@ -173,7 +188,7 @@ export function conveyor(spec: ConveyorSpec = {}): ST_VisuConveyor {
   };
 }
 
-export interface DeltaSpec {
+export interface DeltaSpec extends LimitAreaSpec {
   pose?: Partial<ST_VisuPose>;
   originShift?: Partial<ST_VisuPosition>;
   baseRadius?: number;
@@ -181,8 +196,6 @@ export interface DeltaSpec {
   upperArmLength?: number;
   lowerArmLength?: number;
   fingers?: ST_VisuFinger[];
-  /** Activates the limit area. */
-  limitArea?: Omit<ST_VisuLimitArea, "bActive">;
   zones?: ZoneSpec[];
   timestamp?: bigint;
   fault?: ST_VisuFault;
@@ -198,9 +211,7 @@ export function delta(spec: DeltaSpec = {}): ST_VisuDelta {
       fUpperArmLength: spec.upperArmLength ?? 350,
       fLowerArmLength: spec.lowerArmLength ?? 800,
       stWorkingArea: { fRadius: 600, fZMin: -1100, fZMax: -600, fConeHeight: 0, fConeBottomRadius: 0 },
-      stLimitArea: spec.limitArea
-        ? { ...spec.limitArea, bActive: true }
-        : { fXMin: 0, fXMax: 0, fYMin: 0, fYMax: 0, fZMin: 0, fZMax: 0, bActive: false },
+      ...limitArea(spec),
       nZoneCount: zones.length,
       aZones: padded(zones, MAX_ZONES, emptyZone),
       ...fingerConfig(spec),
@@ -216,7 +227,7 @@ export function delta(spec: DeltaSpec = {}): ST_VisuDelta {
   };
 }
 
-export interface XtsGantrySpec {
+export interface XtsGantrySpec extends LimitAreaSpec {
   pose?: Partial<ST_VisuPose>;
   originShift?: Partial<ST_VisuPosition>;
   /** Three straight modules unless given. */
@@ -257,6 +268,7 @@ export function xtsGantry(spec: XtsGantrySpec = {}): ST_VisuXtsGantry {
       fMoverWidth: 80,
       nZoneCount: zones.length,
       aZones: padded(zones, MAX_ZONES, emptyZone),
+      ...limitArea(spec),
       ...fingerConfig(spec),
       ...originShift(spec),
     },
@@ -327,7 +339,12 @@ export function loopModules(straight: number): ST_VisuTrackModule[] {
   return [...half, ...half.map((m) => ({ ...m }))];
 }
 
-export interface CartesianSpec {
+export interface CartesianSpec extends LimitAreaSpec {
+  /** E_VisuCartesianAxes; XYZ when not given, like the library's default. */
+  axes?: number;
+  /** Axis limits; X 0..1200, Y 0..1000, Z −600..0 when not given. */
+  strokes?: Partial<Pick<ST_VisuCartesianConfig, "fXMin" | "fXMax" | "fYMin" | "fYMax" | "fZMin" | "fZMax">>;
+  railHeight?: number;
   pose?: Partial<ST_VisuPose>;
   originShift?: Partial<ST_VisuPosition>;
   zones?: ZoneSpec[];
@@ -341,15 +358,18 @@ export function cartesian(spec: CartesianSpec = {}): ST_VisuCartesian {
   return {
     stConfig: {
       stPose: pose(spec.pose),
+      eAxes: spec.axes ?? E_VisuCartesianAxes.XYZ,
       fXMin: 0,
       fXMax: 1200,
       fYMin: 0,
       fYMax: 1000,
       fZMin: -600,
       fZMax: 0,
-      fRailHeight: 1200,
+      ...spec.strokes,
+      fRailHeight: spec.railHeight ?? 1200,
       nZoneCount: zones.length,
       aZones: padded(zones, MAX_ZONES, emptyZone),
+      ...limitArea(spec),
       ...fingerConfig(spec),
       ...originShift(spec),
     },
