@@ -3,8 +3,9 @@
   <DUT Name="ST_VisuLimitArea" Id="{2f71bba7-fc76-4d12-b7cf-6688fc968a22}">
     <Declaration><![CDATA[TYPE ST_VisuLimitArea :
 STRUCT
-	(* Axis-aligned box in the robot frame (relative to the base centre, turned with the robot's pose) that further
-	   restricts the working area, e.g. so that neighbouring robots cannot collide. *)
+	(* Axis-aligned box in the robot frame (relative to its stPose, turned with it: the frame its working area is
+	   given in) that further restricts the working area, e.g. so that neighbouring robots cannot collide. Delta,
+	   XTS gantry and Cartesian robot (_FB_VisuRobot.m_SetLimitArea); an XTS loop has none. *)
 	fXMin : LREAL; // mm
 	fXMax : LREAL; // mm
 	fYMin : LREAL; // mm

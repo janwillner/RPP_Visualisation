@@ -16,6 +16,7 @@ import {
   type Fault,
   type Finger,
   type FingerState,
+  type LimitArea,
   type ComponentConfig,
   type Pose,
   type Position,
@@ -78,6 +79,13 @@ export interface SceneConveyor {
   transform: Transform;
   length: number;
   width: number;
+  /**
+   * The conveyor's X axis on the belt surface, metres in the belt's frame (X along the belt, Y across it): drawn from
+   * a ball at its shifted origin to the conveying direction arrow at the belt end.
+   */
+  axis: { originX: number; originY: number };
+  /** False for a conveyor without a body: its belt is not drawn, only its axis, products and zones. */
+  body: boolean;
   /** Fault message to show, null = no fault. */
   fault: string | null;
 }
@@ -270,12 +278,12 @@ export interface SceneBox {
   size: Vec3;
 }
 
-export type CartesianPartKey = "rail left" | "rail right" | "bridge" | "carriage" | "column";
+export type CartesianPartKey = "rail left" | "rail right" | "bridge" | "beam" | "carriage" | "column";
 
 export interface SceneCartesian {
   id: number;
   name: string;
-  /** Rails (static), bridge, carriage and column (moving with the axes). */
+  /** Rails (static), bridge, carriage and column (moving with the axes); without a Y axis a static beam instead of rails and bridge. */
   parts: (SceneBox & { key: CartesianPartKey })[];
   /** Gripper flange at the column's lower end, turned with the robot. Null before the first state. */
   flange: Transform | null;
@@ -380,7 +388,7 @@ export interface SceneModel {
   zones: SceneZone[];
   gantries: SceneGantry[];
   boxAreas: SceneBoxArea[];
-  /** Delta limit areas: boxes in the robot frame that further restrict the working area. */
+  /** Limit areas (Delta, XTS gantry, Cartesian): boxes in the robot frame that further restrict the working area. */
   limitAreas: SceneBoxArea[];
   loops: SceneLoop[];
   cartesians: SceneCartesian[];
@@ -460,6 +468,8 @@ interface BuildContext {
   ): void;
   /** A component's zones on the conveyors, with their allocation areas, CCS lines, snap points and warnings. */
   addZones(c: { id: number; name: string; zones: Zone[] }): void;
+  /** A robot's limit area (Delta, XTS gantry, Cartesian), a box in its frame with its corners as snap points. */
+  addLimitArea(c: { id: number; name: string; pose: Pose; originShift: Position; limitArea: LimitArea | null }): void;
   warn(message: string): void;
   /** Whether products get snap points: only measure mode needs them, and they are many. */
   productSnapPoints: boolean;
@@ -502,15 +512,20 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
         transform: toRendererTransform(frame),
         length: c.length * MM,
         width: c.width * MM,
+        axis: { originX: c.originShift.x * MM, originY: c.originShift.y * MM },
+        body: c.body,
         fault,
       });
       ctx.addFault(c.id, null, fault, lifted(toMcs(frame, [c.length / 2, 0, 0]), LABEL_LIFT.conveyor));
       const owner = snapOwner(c, frame);
       const snapPoints = ctx.scene.snapPoints;
       snapPoints.push(owner.at(`${c.name} · origin`, shiftOf(c)));
-      for (const end of ["start", "end"] as const) {
-        for (const [side, y] of sides(c.width)) {
-          snapPoints.push(owner.at(`${c.name} · ${end}, ${side}`, [end === "start" ? 0 : c.length, y, 0]));
+      // Without a body there are no belt edges to measure from.
+      if (c.body) {
+        for (const end of ["start", "end"] as const) {
+          for (const [side, y] of sides(c.width)) {
+            snapPoints.push(owner.at(`${c.name} · ${end}, ${side}`, [end === "start" ? 0 : c.length, y, 0]));
+          }
         }
       }
       snapPoints.push(owner.at(`${c.name} · end centre`, [c.length, 0, 0]));
@@ -546,16 +561,7 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
         coneHeight: w.coneHeight * MM,
         coneBottomRadius: w.coneBottomRadius * MM,
       });
-      if (c.limitArea) {
-        const a = c.limitArea;
-        ctx.scene.limitAreas.push({
-          robotId: c.id,
-          transform: toRendererTransform(
-            child(frame, [(a.xMin + a.xMax) / 2, (a.yMin + a.yMax) / 2, (a.zMin + a.zMax) / 2]),
-          ),
-          size: [(a.xMax - a.xMin) * MM, (a.yMax - a.yMin) * MM, (a.zMax - a.zMin) * MM],
-        });
-      }
+      ctx.addLimitArea(c);
       ctx.addZones(c);
     },
     interpolate: (a, b, f) => ({
@@ -574,6 +580,7 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
       for (const [moverId, frame] of built.carriers) ctx.carriers.set(`${c.id}:${moverId}`, frame);
       for (const f of built.faults) ctx.addFault(c.id, f.part, f.message, f.anchor);
       ctx.addGripper(c, built.grippers);
+      ctx.addLimitArea(c);
       ctx.addZones(c);
     },
     interpolate(a, b, f) {
@@ -623,6 +630,7 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
       if (built.carrier) ctx.carriers.set(`${c.id}:0`, built.carrier);
       ctx.addFault(c.id, null, built.cartesian.fault, built.faultAnchor);
       ctx.addGripper(c, built.grippers);
+      ctx.addLimitArea(c);
       ctx.addZones(c);
     },
     interpolate: (a, b, f) => ({
@@ -772,6 +780,23 @@ export function buildScene(
         });
       }
     },
+    addLimitArea(c) {
+      const a = c.limitArea;
+      if (!a) return;
+      const frame = frameFromPose(c.pose);
+      scene.limitAreas.push({
+        robotId: c.id,
+        transform: toRendererTransform(child(frame, [(a.xMin + a.xMax) / 2, (a.yMin + a.yMax) / 2, (a.zMin + a.zMax) / 2])),
+        size: flatBoxSize([a.xMax - a.xMin, a.yMax - a.yMin, a.zMax - a.zMin]),
+      });
+      snapPoints.push(
+        ...boxCorners(snapOwner(c, frame), `${c.name} limit area`, "limitAreas", [
+          extent(a.xMin, a.xMax, "X min", "X max"),
+          extent(a.yMin, a.yMax, "Y min", "Y max"),
+          extent(a.zMin, a.zMax, "bottom", "top"),
+        ]),
+      );
+    },
     addZones(c) {
       if (hidden.has(c.id)) return;
       for (const win of c.zones) {
@@ -788,16 +813,14 @@ export function buildScene(
         const zoneCentre = (win.start + win.end) / 2;
         const name = `${c.name} zone on ${belt.name}`;
         const lane = zoneLane(win, belt);
-        if (lane.clipped) {
-          warnings.push(
-            `${c.name}: zone on ${belt.name} (Y ${win.startY} to ${win.endY} mm) reaches past the belt; drawn up to its edges`,
-          );
+        const beltRange = `${-belt.originShift.x} to ${belt.length - belt.originShift.x} mm`;
+        if (!onBelt(belt, win.start) || !onBelt(belt, win.end)) {
+          warnings.push(`${c.name}: zone on ${belt.name} (${win.start} to ${win.end} mm) reaches past the belt (${beltRange})`);
         }
         const laneCentre = (lane.left + lane.right) / 2;
-        if (win.ccsOffset < Math.min(win.start, win.end) || win.ccsOffset > Math.max(win.start, win.end)) {
-          warnings.push(
-            `${c.name}: CCS of the zone on ${belt.name} (${win.ccsOffset} mm) lies outside the zone (${win.start} to ${win.end} mm)`,
-          );
+        // The CCS may lie outside its zone, but not past the belt.
+        if (!onBelt(belt, win.ccsOffset)) {
+          warnings.push(`${c.name}: CCS of the zone on ${belt.name} (${win.ccsOffset} mm) lies outside the belt (${beltRange})`);
         }
         zones.push({
           componentId: c.id,
@@ -936,19 +959,23 @@ function allocationLimit(zone: Zone): number | undefined {
   return zone.end - direction * Math.min(zone.allocationOffset, length);
 }
 
+/** Whether a belt coordinate (mm from the conveyor's shifted origin) lies between the belt start and end. */
+function onBelt(belt: ConveyorConfig, beltCoordinate: number): boolean {
+  const fromStart = belt.originShift.x + beltCoordinate;
+  return fromStart >= 0 && fromStart <= belt.length;
+}
+
 /**
  * A zone's sides across its belt, mm along the belt's local Y (from its pose; the belt's centre line is 0): the
- * whole belt width when `startY = endY`, else the bounds given in the conveyor's coordinate system, clipped to the belt.
+ * whole belt width when `startY = endY`, else the bounds given in the conveyor's coordinate system, also where they
+ * reach past the belt's sides.
  */
-function zoneLane(zone: Zone, belt: ConveyorConfig): { left: number; right: number; clipped: boolean } {
+function zoneLane(zone: Zone, belt: ConveyorConfig): { left: number; right: number } {
   const edge = belt.width / 2;
-  if (zone.startY === zone.endY) return { left: edge, right: -edge, clipped: false };
-  const left = belt.originShift.y + Math.max(zone.startY, zone.endY);
-  const right = belt.originShift.y + Math.min(zone.startY, zone.endY);
+  if (zone.startY === zone.endY) return { left: edge, right: -edge };
   return {
-    left: Math.min(Math.max(left, -edge), edge),
-    right: Math.min(Math.max(right, -edge), edge),
-    clipped: left > edge || right < -edge,
+    left: belt.originShift.y + Math.max(zone.startY, zone.endY),
+    right: belt.originShift.y + Math.min(zone.startY, zone.endY),
   };
 }
 
@@ -996,6 +1023,43 @@ function snapOwner(component: { id: number; name: string; originShift: Position 
   };
 }
 
+/** One axis of a box: its two bounds with their names, or a single unnamed bound when the box is flat along it. */
+type Extent = [string | null, number][];
+
+function extent(min: number, max: number, minName: string, maxName: string): Extent {
+  return min === max ? [[null, min]] : [[minName, min], [maxName, max]];
+}
+
+/**
+ * Corner snap points of a box in a component's frame, named `<prefix> · <z>, <y>, <x>`; along an axis the box is flat
+ * in, its corners exist once and leave that axis's name out.
+ */
+function boxCorners(
+  owner: ReturnType<typeof snapOwner>,
+  prefix: string,
+  layer: SnapLayer,
+  [xs, ys, zs]: [Extent, Extent, Extent],
+): SnapPoint[] {
+  const points: SnapPoint[] = [];
+  for (const [zName, zc] of zs) {
+    for (const [yName, yc] of ys) {
+      for (const [xName, xc] of xs) {
+        const name = [zName, yName, xName].filter((n) => n !== null).join(", ");
+        points.push(owner.at(`${prefix} · ${name}`, [xc, yc, zc], layer));
+      }
+    }
+  }
+  return points;
+}
+
+/** Thickness of a drawn box area along an axis it is flat in, mm, so it is drawn as a flat box. */
+const FLAT_AREA = 1;
+
+/** Size of a box area in metres from its extents in mm, at least FLAT_AREA thick along every axis. */
+function flatBoxSize(sizeMm: Vec3): Vec3 {
+  return sizeMm.map((v) => Math.max(v, FLAT_AREA) * MM) as Vec3;
+}
+
 /** Base, shoulders, working area and actual TCP of a Delta, in its base frame. */
 function deltaSnapPoints(c: DeltaConfig, state: DeltaState | undefined): SnapPoint[] {
   const owner = snapOwner(c, frameFromPose(c.pose));
@@ -1010,16 +1074,6 @@ function deltaSnapPoints(c: DeltaConfig, state: DeltaState | undefined): SnapPoi
   ];
   if (w.coneHeight > 0) {
     points.push(owner.at(`${c.name} working area · cone bottom`, [0, 0, w.zMin - w.coneHeight], "workingAreas"));
-  }
-  const a = c.limitArea;
-  if (a) {
-    for (const [zName, zc] of [["bottom", a.zMin], ["top", a.zMax]] as const) {
-      for (const [yName, yc] of [["Y min", a.yMin], ["Y max", a.yMax]] as const) {
-        for (const [xName, xc] of [["X min", a.xMin], ["X max", a.xMax]] as const) {
-          points.push(owner.at(`${c.name} limit area · ${zName}, ${yName}, ${xName}`, [xc, yc, zc], "limitAreas"));
-        }
-      }
-    }
   }
   if (state) points.push(owner.atMcs(`${c.name} · TCP`, positionToMcs(state.actualTcp), "structure", true));
   return points;
@@ -1488,20 +1542,28 @@ const CARTESIAN = {
 
 /**
  * Cartesian robot: rails along local +Y with their top at railHeight, the bridge on top of them at Y, the carriage
- * on the bridge at X and the column ending at the gripper flange (X, Y, Z).
+ * on the bridge at X and the column ending at the gripper flange (X, Y, Z). Without a Y axis (`xz`) a fixed beam at
+ * Y = 0 takes the place of rails and bridge; without a Z axis (`xy`) the flange stays at zMin.
  */
 function buildCartesian(c: CartesianConfig, state: CartesianState | undefined) {
   const frame = frameFromPose(c.pose);
   const owner = snapOwner(c, frame);
   const d = CARTESIAN;
-  const axes = state ? { x: state.x, y: state.y, z: state.z } : null;
-  const { x, y, z } = axes ?? { x: c.xMin, y: c.yMin, z: c.zMax };
-  const railX: [string, number][] = [
-    ["left", c.xMin - d.margin],
-    ["right", c.xMax + d.margin],
-  ];
-  const railStart = c.yMin - d.margin - d.bridgeWidth / 2;
-  const railEnd = c.yMax + d.margin + d.bridgeWidth / 2;
+  const hasY = c.axes !== "xz";
+  const hasZ = c.axes !== "xy";
+  const yMin = hasY ? c.yMin : 0;
+  const yMax = hasY ? c.yMax : 0;
+  const zMax = hasZ ? c.zMax : c.zMin;
+  const axes = state ? { x: state.x, y: hasY ? state.y : 0, z: hasZ ? state.z : c.zMin } : null;
+  const { x, y, z } = axes ?? { x: c.xMin, y: yMin, z: zMax };
+  const railX: [string, number][] = hasY
+    ? [
+        ["left", c.xMin - d.margin],
+        ["right", c.xMax + d.margin],
+      ]
+    : [];
+  const railStart = yMin - d.margin - d.bridgeWidth / 2;
+  const railEnd = yMax + d.margin + d.bridgeWidth / 2;
   const bridgeZ = c.railHeight + d.bridgeHeight / 2;
   const columnLength = c.railHeight + d.bridgeHeight - c.zMin;
   const flange = child(frame, [x, y, z]);
@@ -1518,8 +1580,9 @@ function buildCartesian(c: CartesianConfig, state: CartesianState | undefined) {
         d.rail,
       ]),
     ),
-    box("bridge", child(frame, [(c.xMin + c.xMax) / 2, y, bridgeZ]), [
-      c.xMax - c.xMin + 2 * d.margin + d.rail,
+    // Without a Y axis the beam does not travel and spans only the X stroke (no rails to reach).
+    box(hasY ? "bridge" : "beam", child(frame, [(c.xMin + c.xMax) / 2, y, bridgeZ]), [
+      c.xMax - c.xMin + 2 * d.margin + (hasY ? d.rail : 0),
       d.bridgeWidth,
       d.bridgeHeight,
     ]),
@@ -1532,16 +1595,20 @@ function buildCartesian(c: CartesianConfig, state: CartesianState | undefined) {
     snapPoints.push(owner.at(`${c.name} · rail ${side}, start`, [rx, railStart, c.railHeight]));
     snapPoints.push(owner.at(`${c.name} · rail ${side}, end`, [rx, railEnd, c.railHeight]));
   }
-  // Reachable flange volume.
-  const zLow = c.zMin;
-  const zHigh = c.zMax;
-  for (const [zName, zc] of [["bottom", zLow], ["top", zHigh]] as const) {
-    for (const [yName, yc] of [["start", c.yMin], ["end", c.yMax]] as const) {
-      for (const [xName, xc] of [["X min", c.xMin], ["X max", c.xMax]] as const) {
-        snapPoints.push(owner.at(`${c.name} stroke space · ${zName}, ${yName}, ${xName}`, [xc, yc, zc], "workingAreas"));
-      }
-    }
+  if (!hasY) {
+    snapPoints.push(owner.at(`${c.name} · beam, X min end`, [c.xMin - d.margin, 0, c.railHeight]));
+    snapPoints.push(owner.at(`${c.name} · beam, X max end`, [c.xMax + d.margin, 0, c.railHeight]));
   }
+  // Reachable flange volume: a rectangle when an axis is missing.
+  const zLow = c.zMin;
+  const zHigh = zMax;
+  snapPoints.push(
+    ...boxCorners(owner, `${c.name} stroke space`, "workingAreas", [
+      extent(c.xMin, c.xMax, "X min", "X max"),
+      extent(yMin, yMax, "start", "end"),
+      extent(zLow, zHigh, "bottom", "top"),
+    ]),
+  );
   if (state) snapPoints.push(owner.atMcs(`${c.name} · flange`, flange.origin, "structure", true));
   return {
     cartesian: {
@@ -1555,8 +1622,8 @@ function buildCartesian(c: CartesianConfig, state: CartesianState | undefined) {
     } satisfies SceneCartesian,
     area: {
       robotId: c.id,
-      transform: toRendererTransform(child(frame, [(c.xMin + c.xMax) / 2, (c.yMin + c.yMax) / 2, (zLow + zHigh) / 2])),
-      size: [(c.xMax - c.xMin) * MM, (c.yMax - c.yMin) * MM, (zHigh - zLow) * MM],
+      transform: toRendererTransform(child(frame, [(c.xMin + c.xMax) / 2, (yMin + yMax) / 2, (zLow + zHigh) / 2])),
+      size: flatBoxSize([c.xMax - c.xMin, yMax - yMin, zHigh - zLow]),
     } satisfies SceneBoxArea,
     snapPoints,
     /** A carried product without finger hangs at the flange. */
@@ -1564,7 +1631,7 @@ function buildCartesian(c: CartesianConfig, state: CartesianState | undefined) {
     grippers: state ? [{ moverId: 0, flange, states: state.fingers, faulted: state.fault !== null }] : [],
     /** Above the middle of the bridge's travel. */
     faultAnchor: lifted(
-      toMcs(frame, [(c.xMin + c.xMax) / 2, (c.yMin + c.yMax) / 2, c.railHeight + d.bridgeHeight]),
+      toMcs(frame, [(c.xMin + c.xMax) / 2, (yMin + yMax) / 2, c.railHeight + d.bridgeHeight]),
       LABEL_LIFT.cartesian,
     ),
   };

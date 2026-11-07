@@ -47,6 +47,8 @@ export const OVERLAY = {
   fieldOfView: "#4fc3f7",
   /** The conveyor coordinate system line on a belt. */
   ccs: "#f1f4f8",
+  /** A conveyor's X axis: ball at its origin, line and direction arrow; apart from the rejected violet. */
+  conveyorAxis: "#b388ff",
   setpoint: "#ffee58",
   snapPoint: "#ffffff",
   xtsTool: "#ffb74d",
@@ -60,7 +62,6 @@ export const SOLID = {
   belt: "#3b4656",
   /** Large selected parts (belts, beams, rails) in a muted selection colour, so overlays on them stay readable. */
   selectedStructure: "#8a7a3a",
-  beltArrow: "#c3ccd8",
   aluLight: "#d9dee5",
   aluMid: "#a9b3c0",
   aluDark: "#8e99a8",

@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuXtsGantry" Id="{8644dbdf-f53a-4065-8772-4ce0b22cc708}" SpecialFunc="None">
+  <POU Name="_FB_VisuXtsGantry" Id="{8dd57708-3ac5-416f-84f9-ef644a76d8b1}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -133,6 +133,26 @@ END_VAR
         <ST><![CDATA[vo_p_Count := ADR(vo_Visu.stConfig.nFingerCount);
 vo_p_Fingers := ADR(vo_Visu.stConfig.aFingers);
 m_Fingers := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_LimitArea" Id="{341f591a-f2b6-4e00-95ba-563d4996190a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The gantry's limit area for _FB_VisuRobot.m_SetLimitArea and m_ClearLimitArea.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_LimitArea : BOOL
+VAR_OUTPUT
+	vo_p_LimitArea						: POINTER TO ST_VisuLimitArea;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_p_LimitArea := ADR(vo_Visu.stConfig.stLimitArea);
+m_LimitArea := TRUE;
+]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_Modules" Id="{dd17074c-cb31-4c60-a29a-76adc2de14db}">

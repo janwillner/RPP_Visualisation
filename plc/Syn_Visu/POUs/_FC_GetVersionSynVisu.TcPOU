@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FC_GetVersionSynVisu" Id="{25b125a2-65d0-4462-bf3b-8eccde539b0a}" SpecialFunc="None">
+  <POU Name="_FC_GetVersionSynVisu" Id="{4d6b2f07-b33f-4006-af5c-24d1c8cfb62c}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -26,6 +26,9 @@ Syn_Visu 7.2.0  ¦ 2026-11-05 ¦ J.Willner ¦ Conveyor: product index by id, reg
 Syn_Visu 8.0.0  ¦ 2026-11-05 ¦ J.Willner ¦ m_Register without vi_str_Path: the symbol path comes from the instance path<br>
 Syn_Visu 8.0.0  ¦ 2026-11-05 ¦ J.Willner ¦ Methods without default values: every call lists all inputs (TwinCAT 4024)<br>
 Syn_Visu 9.0.0  ¦ 2026-11-05 ¦ J.Willner ¦ Zones bounded across the belt: m_SetZone vi_lr_StartY, vi_lr_EndY (protocol 15)<br>
+Syn_Visu 9.1.0  ¦ 2026-11-07 ¦ J.Willner ¦ Conveyor without a body: _FB_VisuConveyor.m_SetBodyVisible (protocol 16)<br>
+Syn_Visu 9.2.0  ¦ 2026-11-07 ¦ J.Willner ¦ Cartesian robot without Y or Z axis: _FB_VisuCartesian.m_SetKinematics (protocol 17)<br>
+Syn_Visu 9.3.0  ¦ 2026-11-07 ¦ J.Willner ¦ Limit area for XTS gantry and Cartesian: _FB_VisuRobot.m_SetLimitArea (protocol 18)<br>
 ****************************************************************************************************)
 FUNCTION _FC_GetVersionSynVisu : UINT
 VAR_INPUT
@@ -34,7 +37,7 @@ END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[CASE vi_n_VersionElement OF
 	1: _FC_GetVersionSynVisu := 9;
-	2: _FC_GetVersionSynVisu := 0;
+	2: _FC_GetVersionSynVisu := 3;
 	3: _FC_GetVersionSynVisu := 0;
 ELSE
 	_FC_GetVersionSynVisu := 16#FFFF;

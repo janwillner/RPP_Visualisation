@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuConveyor" Id="{9259762a-7fc9-4d83-989d-ff85d9c6ef7c}" SpecialFunc="None">
+  <POU Name="_FB_VisuConveyor" Id="{33885ff0-2e31-46e6-bbbe-aca5cea8a987}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -545,6 +545,29 @@ END_VAR]]></Declaration>
         <ST><![CDATA[vo_Visu.stState.fBeltPosition := vi_lr_Position;
 vo_Visu.stState.nTimestamp := m_DcTime();
 m_SetBeltPosition := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetBodyVisible" Id="{7f943322-e68d-43e8-a478-a6b571d43ae7}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets whether the belt is drawn as a body. A conveyor without one (FALSE) shows only its products, zones and<br>
+its axis from the origin to the conveying direction arrow. Default TRUE. TRUE if anything changed.<br>
+****************************************************************************************************)
+METHOD m_SetBodyVisible : BOOL
+VAR_INPUT
+	vi_b_Visible						: BOOL;	// TRUE = drawn as a body, FALSE = a conveyor without one
+END_VAR
+VAR
+	TempNew								: ST_VisuConveyorConfig;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TempNew := vo_Visu.stConfig;
+TempNew.bBody := vi_b_Visible;
+m_SetBodyVisible := m_ApplyConfig(TempNew);]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_SetFault" Id="{378826b6-c6cf-42e7-bcdd-b7aadad4d08e}">

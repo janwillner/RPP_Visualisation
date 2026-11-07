@@ -1,0 +1,77 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="P_VisuDemoCartesianAxes" Id="{95e2fed1-31f4-4a25-b2c9-07f29064cc62}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+DEMO ONLY: Cartesian robots with two axes beside the Cartesian application (X = 4000), moving without<br>
+products (m_SetKinematics):<br>
+- Cartesian X-Z (Y = 6500): no Y axis, a fixed beam along X; it goes back and forth and dips.<br>
+- Cartesian X-Y (Y = 7000..7800): no Z axis, the flange stays at Z min; it runs an ellipse.<br>
+Called by P_VisuDemo.<br>
+****************************************************************************************************)
+PROGRAM P_VisuDemoCartesianAxes
+VAR
+	fb_CartXz							: _FB_VisuCartesian;
+	fb_CartXy							: _FB_VisuCartesian;
+	lr_Time								: LREAL;	// [s] since start, wraps with the common period
+	lr_AngleXz							: LREAL;	// [rad]
+	lr_AngleXy							: LREAL;	// [rad]
+	RobotPose							: ST_VisuPose;
+END_VAR
+VAR CONSTANT
+	lr_TWO_PI							: LREAL := 6.283185307179586;	// [-]
+	lr_CART_AXES_X						: LREAL := 4000;	// [mm] MCS x of both robots' axis origin
+	lr_CART_AXES_Z						: LREAL := 1500;	// [mm] MCS z of both robots' axis origin
+	lr_CART_XZ_Y						: LREAL := 6500;	// [mm] MCS y of the X-Z robot
+	lr_CART_XY_Y						: LREAL := 7000;	// [mm] MCS y of the X-Y robot's Y = 0
+	lr_CART_AXES_RAIL_HEIGHT			: LREAL := 800;	// [mm]
+	lr_CART_XZ_PERIOD					: LREAL := 6;	// [s]
+	lr_CART_XY_PERIOD					: LREAL := 8;	// [s]
+	lr_CART_AXES_WRAP					: LREAL := 24;	// [s] common multiple of both periods
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(****************************************************************************************************)
+(* REGISTRATION AND CONFIGURATION (idempotent, every cycle)                                         *)
+(****************************************************************************************************)
+fb_CartXz.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 41, vi_str_Name := 'Cartesian X-Z');
+fb_CartXy.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 42, vi_str_Name := 'Cartesian X-Y');
+
+RobotPose.fX := lr_CART_AXES_X;
+RobotPose.fY := lr_CART_XZ_Y;
+RobotPose.fZ := lr_CART_AXES_Z;
+(* No Y axis: the Y stroke is ignored, a fixed beam along X carries the carriage. *)
+fb_CartXz.m_Configure(vi_Pose := RobotPose, vi_lr_XMin := 0, vi_lr_XMax := 1200, vi_lr_YMin := 0, vi_lr_YMax := 0,
+	vi_lr_ZMin := -600, vi_lr_ZMax := 0, vi_lr_RailHeight := lr_CART_AXES_RAIL_HEIGHT);
+fb_CartXz.m_SetKinematics(vi_e_Axes := E_VisuCartesianAxes.XZ);
+
+RobotPose.fY := lr_CART_XY_Y;
+(* No Z axis: Z max is ignored, the flange stays at Z min. *)
+fb_CartXy.m_Configure(vi_Pose := RobotPose, vi_lr_XMin := 0, vi_lr_XMax := 1200, vi_lr_YMin := 0, vi_lr_YMax := 800,
+	vi_lr_ZMin := -500, vi_lr_ZMax := -500, vi_lr_RailHeight := lr_CART_AXES_RAIL_HEIGHT);
+fb_CartXy.m_SetKinematics(vi_e_Axes := E_VisuCartesianAxes.XY);
+
+
+(****************************************************************************************************)
+(* MOTION                                                                                           *)
+(****************************************************************************************************)
+lr_Time := lr_Time + DEMO_GlobalVar.DEMO_lr_Dt;
+IF lr_Time >= lr_CART_AXES_WRAP THEN
+	lr_Time := lr_Time - lr_CART_AXES_WRAP;
+END_IF
+lr_AngleXz := lr_TWO_PI * lr_Time / lr_CART_XZ_PERIOD;
+lr_AngleXy := lr_TWO_PI * lr_Time / lr_CART_XY_PERIOD;
+
+(* Y and Z of the missing axes are ignored by the visualisation; report 0. *)
+fb_CartXz.m_SetAxes(vi_lr_X := 600 - 500 * COS(lr_AngleXz), vi_lr_Y := 0,
+	vi_lr_Z := -300 - 250 * COS(2 * lr_AngleXz), vi_b_GripperActive := FALSE);
+fb_CartXy.m_SetAxes(vi_lr_X := 600 + 450 * COS(lr_AngleXy), vi_lr_Y := 400 + 300 * SIN(lr_AngleXy),
+	vi_lr_Z := 0, vi_b_GripperActive := FALSE);
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

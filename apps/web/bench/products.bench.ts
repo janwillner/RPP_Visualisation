@@ -32,6 +32,7 @@ const conveyor: ConveyorConfig = {
   length: 20000,
   width: 1100,
   productTypes: [{ id: 1, length: 120, width: 80, height: 40, shape: "box", cornerRadius: 0 }],
+  body: true,
 };
 
 const config: ConfigMessage = {

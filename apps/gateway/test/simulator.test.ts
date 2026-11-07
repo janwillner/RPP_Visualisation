@@ -20,6 +20,8 @@ describe("simulator", () => {
     expect(config.errors).toEqual([]);
     expect(config.components.map((c) => c.type).sort()).toEqual([
       "cartesian",
+      "cartesian",
+      "cartesian",
       "conveyor",
       "conveyor",
       "conveyor",
@@ -76,6 +78,9 @@ describe("simulator", () => {
       return c?.type === "conveyor" ? c.products.length : 0;
     };
     expect(productsOn("Fxx outfeed")).toBeGreaterThan(0);
+    // The Fxx outfeed is a conveyor without a body: only its products and axis are drawn.
+    const bodiless = config.components.filter((c) => c.type === "conveyor" && !c.body).map((c) => c.name);
+    expect(bodiless).toEqual(["Fxx outfeed"]);
     expect(productsOn("Tray belt")).toBeGreaterThan(0);
     expect(productsOn("Cartesian outfeed")).toBeGreaterThan(0);
 
@@ -84,10 +89,23 @@ describe("simulator", () => {
     expect(
       products.some((p) => p.state === "picked" && p.lastClientId === cartesianId && p.moverId === 0 && p.fingerId === 1),
     ).toBe(true);
-    const cartesianStates = states.flatMap((s) => s.components.filter((c) => c.type === "cartesian"));
+    const cartesianStates = states.flatMap((s) => s.components.filter((c) => c.id === cartesianId));
     const cupTilt = cartesianStates.map((c) => (c.type === "cartesian" ? c.fingers[0]!.pose.rx : 0));
     expect(Math.max(...cupTilt)).toBeCloseTo(20);
     expect(cartesianStates.some((c) => c.type === "cartesian" && c.fingers.every((f) => f.active))).toBe(true);
+    // Beside it a Cartesian robot without a Y axis and one without a Z axis move without products.
+    const axesOf = (name: string) => {
+      const c = config.components.find((x) => x.name === name);
+      return c?.type === "cartesian" ? c.axes : null;
+    };
+    expect([axesOf("Cartesian"), axesOf("Cartesian X-Z"), axesOf("Cartesian X-Y")]).toEqual(["xyz", "xz", "xy"]);
+    // Delta 1, the IDH and the Cartesian robot show a limit area; an XTS loop has none.
+    const limited = config.components.filter((c) => "limitArea" in c && c.limitArea !== null).map((c) => c.name);
+    expect(limited.sort()).toEqual(["Cartesian", "Delta 1", "IDH"]);
+    expect(config.components.some((c) => c.type === "xtsLoop" && "limitArea" in c)).toBe(false);
+    const xOf = (name: string) =>
+      states.map((s) => s.components.find((c) => c.id === idOf(name))).map((c) => (c?.type === "cartesian" ? c.x : 0));
+    for (const name of ["Cartesian X-Z", "Cartesian X-Y"]) expect(Math.max(...xOf(name)) - Math.min(...xOf(name))).toBeGreaterThan(500);
     // It stacks every second product on the one it put down before: lifted by a product height, lying on it.
     const stacked = states.some((s) => {
       const belt = s.components.find((c) => c.id === idOf("Cartesian outfeed"));

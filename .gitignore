@@ -10,6 +10,7 @@ plc/**/_CompileInfo/
 plc/**/_CompileInfo_Upload/
 plc/**/_Libraries/
 plc/**/*.bak
+plc/**/LineIDs.dbg
 plc/**/*.~u
 plc/**/*.tclrs
 plc/**/*.tmc

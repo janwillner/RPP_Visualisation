@@ -26,11 +26,14 @@ VAR_GLOBAL CONSTANT
 	   12: XTS tracks as chains of track modules (straight, quarter curves) with a fault per module.
 	   13: product nLastClientId and ePreviousState instead of nRobotId and nDetectorId; station (ST_VisuStation).
 	   14: product stLatchPose in the conveyor's coordinate system instead of the MCS.
-	   15: zone fStartY and fEndY, the zone's sides across the belt. *)
-	VISU_un_PROTOCOL_VERSION			: UINT := 15;
+	   15: zone fStartY and fEndY, the zone's sides across the belt.
+	   16: conveyor bBody, a conveyor may have no body.
+	   17: Cartesian robot eAxes (E_VisuCartesianAxes): X, Y, Z or without the Y or the Z axis.
+	   18: stLimitArea for the XTS gantry and the Cartesian robot too, not only the Delta. *)
+	VISU_un_PROTOCOL_VERSION			: UINT := 18;
 	(* Version of this library as the visualisation shows it (manifest sLibraryVersion). Bump together with
 	   _FC_GetVersionSynVisu and the project version. *)
-	VISU_str_LIBRARY_VERSION			: STRING(15) := '9.0.0';
+	VISU_str_LIBRARY_VERSION			: STRING(15) := '9.3.0';
 	VISU_lr_DEG_TO_RAD					: LREAL := 0.017453292519943295;	// [rad/deg] pi / 180
 	VISU_lr_XTS_MODULE_LENGTH			: LREAL := 250;	// [mm] length of an XTS motor module along the track, straight or curve
 END_VAR]]></Declaration>

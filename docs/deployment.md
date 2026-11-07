@@ -1,8 +1,26 @@
 # Deploying to a Beckhoff IPC
 
-The decision and its reasons are in [ADR 0004](adr/0004-deploy-as-self-contained-windows-service.md). The package is built with `pnpm package` (output: `dist/rpp-visualisation-<version>-win-x64.zip`). On every `v*` tag, the Release workflow builds it and attaches it to the GitHub release.
+The decision and its reasons are in [ADR 0004](adr/0004-deploy-as-self-contained-windows-service.md). Every deployment uses a package from a GitHub release: on every `v*` tag the Release workflow typechecks, tests, builds `rpp-visualisation-<version>-win-x64.zip` and attaches it to the release (see [Releasing](#releasing)). Packages built locally with `pnpm package` are only for trying the package out, never for an IPC.
 
 This guide is for commissioning and service technicians. It covers installing the visualisation on an IPC, configuring it, updating it and troubleshooting it.
+
+## Releasing
+
+Every deployment goes through GitHub, so each installed version can be traced to a tag, a passed CI run and a release page. Do not copy a locally built zip (`dist/`) to an IPC: its version carries a commit suffix (`0.1.0+aa29151`, `.dirty` with uncommitted changes) and no CI run vouches for it.
+
+1. Merge the changes into `main`. With a new `Syn_Visu` version, its `.library` and `.compiled-library` are in `plc/library/` (the package takes the newest compiled one).
+2. Set the release version in the root `package.json` (`"version": "X.Y.Z"`) and commit it to `main`.
+3. Tag and push:
+
+   ```powershell
+   git tag -a vX.Y.Z -m "vX.Y.Z: <what changed>"
+   git push origin main vX.Y.Z
+   ```
+
+4. Wait for the Release workflow (`gh run watch` or the Actions tab). Only when it passes does the release carry the zip.
+5. Download the zip from the release page (`https://github.com/janwillner/RPP_Visualisation/releases/tag/vX.Y.Z`) or with `gh release download vX.Y.Z -R janwillner/RPP_Visualisation`, and install it as described below.
+
+A new protocol version needs the gateway release and the `Syn_Visu` version in the PLC to change together: download the PLC project first, then install the release.
 
 ## Requirements
 
@@ -12,7 +30,7 @@ This guide is for commissioning and service technicians. It covers installing th
 
 ## Install
 
-1. Copy `rpp-visualisation-X.Y.Z-win-x64.zip` to the IPC and unzip it to any folder.
+1. Download `rpp-visualisation-X.Y.Z-win-x64.zip` from the GitHub release ([Releasing](#releasing)), copy it to the IPC and unzip it to any folder.
 2. Run this in an elevated PowerShell in that folder:
 
    ```powershell
@@ -123,7 +141,7 @@ Over http the browser offers no clipboard, so the measure list's copy buttons ar
 
 ## Update and roll back
 
-To update, run `install.ps1` from the newer zip. To roll back, run it from the older zip. `config.json` and the logs are kept either way.
+To update, run `install.ps1` from the newer release zip. To roll back, run it from the zip of the older release (every release stays downloadable on GitHub). `config.json` and the logs are kept either way.
 
 Which version is installed: the installer names the new and the replaced version (`Installing RPP visualisation 1.2.0, replacing 1.1.0`), the page shows it at the right end of its status bar, `/health` reports it as `version`, and `C:\Program Files\RPP_Visualisation\VERSION` holds it. A release built from a tag has a plain version such as `1.2.0`; a build from the repo adds its commit, e.g. `0.1.0+aa29151` (`.dirty` when it had uncommitted changes), so two such builds are never mistaken for the same release. The status bar also shows the `Syn_Visu` version of the PLC (from library 5.1.0 on; with several PLCs in their list under "PLC: n/m online").
 

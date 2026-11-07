@@ -21,6 +21,7 @@ import {
 } from "./plc-builders";
 import {
   E_VisuBodyRole,
+  E_VisuCartesianAxes,
   E_VisuBodyShape,
   E_VisuModuleKind,
   E_VisuProductShape,
@@ -47,7 +48,8 @@ import {
  *   places onto the tray belt.
  * - Cartesian (Y = 6500..7300): a Cartesian robot picks from the Cartesian infeed, turns each product by C = −90°,
  *   tilts it by A while lowering and places it onto the Cartesian outfeed. A light barrier detects the products on the
- *   Cartesian infeed; its beam lights up while one interrupts it.
+ *   Cartesian infeed; its beam lights up while one interrupts it. Beside it two Cartesian robots with fewer axes move
+ *   without products: one without a Y axis (X, Z; a fixed beam) and one without a Z axis (X, Y).
  * It is an in-memory PLC whose values change on every `step`, so it runs through real discovery.
  */
 export interface Simulator {
@@ -99,6 +101,13 @@ const CART_TOOL = {
   jawOpen: 120,
   jawSpeed: 300,
 };
+/**
+ * Cartesian robots with fewer axes beside the Cartesian application (X = 4000), moving without products: one without a
+ * Y axis over Y = 6500 and one without a Z axis from Y = 7000 on, its flange fixed at zMin.
+ */
+const CART_XZ = { id: 41, path: "MAIN.fbCartesianXz.stVisu", x: 4000, y: 6500, z: 1500, periodS: 6 };
+const CART_XY = { id: 42, path: "MAIN.fbCartesianXy.stVisu", x: 4000, y: 7000, z: 1500, periodS: 8 };
+
 /** Products are removed from the register this far beyond the belt end, so "missed" stays visible briefly. */
 const REMOVE_BEYOND_END = 300;
 
@@ -338,8 +347,8 @@ export interface SimulatorOptions {
 export function createSimulator(options: SimulatorOptions = {}): Simulator {
   const random = mulberry32(options.seed ?? Date.now());
   const plc = new InMemoryPlc();
-  const belt = (b: { x: number; y: number; length: number }) =>
-    conveyor({ pose: { fX: b.x, fY: b.y, fZ: BELT_Z }, length: b.length, width: 400, productTypes });
+  const belt = (b: { x: number; y: number; length: number }, body = true) =>
+    conveyor({ pose: { fX: b.x, fY: b.y, fZ: BELT_Z }, length: b.length, width: 400, productTypes, body });
   // Rows on the buffer belt: the products beyond its end until they are removed must fit into the register too.
   const bufferRows = Math.ceil(
     Math.min(options.products ?? 0, MAX_PRODUCTS - BUFFER.lanes * Math.ceil(REMOVE_BEYOND_END / BUFFER.pitch + 1)) /
@@ -378,7 +387,8 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
       }),
     },
     { id: FXX_INFEED.id, name: "Fxx infeed", path: FXX_INFEED.path, kind: "conveyor", value: belt(FXX_INFEED) },
-    { id: FXX_OUTFEED.id, name: "Fxx outfeed", path: FXX_OUTFEED.path, kind: "conveyor", value: belt(FXX_OUTFEED) },
+    // A conveyor without a body: only its products and axis are drawn.
+    { id: FXX_OUTFEED.id, name: "Fxx outfeed", path: FXX_OUTFEED.path, kind: "conveyor", value: belt(FXX_OUTFEED, false) },
     { id: IDH_INFEED.id, name: "IDH infeed", path: IDH_INFEED.path, kind: "conveyor", value: belt(IDH_INFEED) },
     { id: TRAY.id, name: "Tray belt", path: TRAY.path, kind: "conveyor", value: belt(TRAY) },
     {
@@ -435,6 +445,8 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
         pose: { fX: GANTRY.x, fY: GANTRY.y, fZ: GANTRY.z, fRz: -90 },
         modules: Array.from({ length: GANTRY.modules }, () => trackModule(E_VisuModuleKind.STRAIGHT, GANTRY.moduleLength)),
         fingers: [SUCTION],
+        // Keeps the flanges off the track ends and above the lowest 150 mm of the Z stroke.
+        limitArea: { fXMin: 100, fXMax: 450, fYMin: 150, fYMax: 1350, fZMin: -600, fZMax: -450 },
         zones: centred([
           {
             nConveyorId: IDH_INFEED.id,
@@ -489,6 +501,8 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
       value: cartesian({
         pose: { fX: CART.x, fY: CART.y, fZ: CART.z, fRz: -90 },
         fingers: [CART_TOOL.cup, CART_TOOL.jaw, CART_TOOL.jaw],
+        // X only up to the infeed, Z not into the top 100 mm.
+        limitArea: { fXMin: 0, fXMax: 1000, fYMin: 0, fYMax: 1000, fZMin: -600, fZMax: -100 },
         zones: centred([
           { nConveyorId: CART_INFEED.id, fStart: CART.x, fEnd: CART.x + 1000 },
           {
@@ -497,6 +511,29 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
             fEnd: CART.x + CART.yStackMax + 100,
           },
         ]),
+      }),
+    },
+    {
+      id: CART_XZ.id,
+      name: "Cartesian X-Z",
+      path: CART_XZ.path,
+      kind: "cartesian",
+      value: cartesian({
+        axes: E_VisuCartesianAxes.XZ,
+        pose: { fX: CART_XZ.x, fY: CART_XZ.y, fZ: CART_XZ.z },
+        railHeight: 800,
+      }),
+    },
+    {
+      id: CART_XY.id,
+      name: "Cartesian X-Y",
+      path: CART_XY.path,
+      kind: "cartesian",
+      value: cartesian({
+        axes: E_VisuCartesianAxes.XY,
+        pose: { fX: CART_XY.x, fY: CART_XY.y, fZ: CART_XY.z },
+        railHeight: 800,
+        strokes: { fYMax: 800, fZMin: -500 },
       }),
     },
   ]);
@@ -509,6 +546,8 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
   const cartInfeed = plc.get<ST_VisuConveyor>(CART_INFEED.path);
   const cartOutfeed = plc.get<ST_VisuConveyor>(CART_OUTFEED.path);
   const cart = plc.get<ST_VisuCartesian>(CART.path);
+  const cartXz = plc.get<ST_VisuCartesian>(CART_XZ.path);
+  const cartXy = plc.get<ST_VisuCartesian>(CART_XY.path);
   const lightBarrier = plc.get<ST_VisuDetector>(SENSOR.path);
   const vision = plc.get<ST_VisuDetector>(VISION.path);
   const rejectUnit = plc.get<ST_VisuStation>(REJECT.path);
@@ -1155,6 +1194,15 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
     });
   }
 
+  /** The robots with fewer axes: the X-Z one goes back and forth and dips, the X-Y one runs an ellipse. */
+  function writeCartesiansFewerAxes(): void {
+    const t = simMs / 1000;
+    const a = (2 * Math.PI * t) / CART_XZ.periodS;
+    Object.assign(cartXz.stState, { nTimestamp: now, fX: 600 - 500 * Math.cos(a), fZ: -300 - 250 * Math.cos(2 * a) });
+    const b = (2 * Math.PI * t) / CART_XY.periodS;
+    Object.assign(cartXy.stState, { nTimestamp: now, fX: 600 + 450 * Math.cos(b), fY: 400 + 300 * Math.sin(b) });
+  }
+
   return {
     plc,
     step(dtMs) {
@@ -1220,6 +1268,7 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
         writeRegister(bufferBelt, bufferProducts, BUFFER.x, bufferLength);
       }
       writeRobot();
+      writeCartesiansFewerAxes();
       writeXts();
       writeDetectors();
     },

@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuRobot" Id="{8d97f599-341b-465e-87cb-f47d6d1a33ff}" SpecialFunc="None">
+  <POU Name="_FB_VisuRobot" Id="{5ceb582b-104f-47cb-91fd-61b1cc207460}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -8,11 +8,13 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 Base of every robot (Delta, XTS gantry, XTS loop, Cartesian): zones plus the gripper fingers,<br>
-m_SetFinger and m_ClearFingers. A derived FB tells where its fingers lie through m_Fingers.<br>
+m_SetFinger and m_ClearFingers, and the limit area, m_SetLimitArea and m_ClearLimitArea. A derived FB tells<br>
+where its fingers and its limit area lie through m_Fingers and m_LimitArea; an XTS loop has no limit area.<br>
 Not used directly.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New: fingers shared by all robots<br>
+Syn_Visu 9.3.0  ¦ 2026-11-07 ¦ J.Willner ¦ Limit area shared by Delta, XTS gantry and Cartesian (was Delta only)<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK ABSTRACT _FB_VisuRobot EXTENDS _FB_VisuZoneComponent
 ]]></Declaration>
@@ -52,6 +54,35 @@ IF m_ClearFingers THEN
 END_IF]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_ClearLimitArea" Id="{860a5579-9f26-458c-b290-d105a32d5cba}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Removes the limit area. TRUE if there was one.<br>
+****************************************************************************************************)
+METHOD m_ClearLimitArea : BOOL
+VAR
+	p_TempLimitArea						: POINTER TO ST_VisuLimitArea;
+	TempEmpty							: ST_VisuLimitArea;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ClearLimitArea := FALSE;
+m_LimitArea(vo_p_LimitArea => p_TempLimitArea);
+IF p_TempLimitArea = 0 THEN
+	RETURN;
+END_IF
+m_ClearLimitArea := p_TempLimitArea^.bActive;
+IF Tc2_System.MEMCMP(ADR(TempEmpty), p_TempLimitArea, SIZEOF(TempEmpty)) <> 0 THEN
+	p_TempLimitArea^ := TempEmpty;
+	m_NotifyConfigChanged();
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_Fingers" Id="{a244e015-94d6-456e-b723-254a871e0b47}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -66,6 +97,25 @@ METHOD PROTECTED ABSTRACT m_Fingers : BOOL
 VAR_OUTPUT
 	vo_p_Count							: POINTER TO UINT;
 	vo_p_Fingers						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFinger;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_LimitArea" Id="{422ae902-a026-4b53-81df-e5504829a257}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Where the limit area lies in the derived FB's contract structure: vo_p_LimitArea points to its stLimitArea,<br>
+or is 0 for a robot without one (XTS loop: it has no working area of its own).<br>
+****************************************************************************************************)
+METHOD PROTECTED ABSTRACT m_LimitArea : BOOL
+VAR_OUTPUT
+	vo_p_LimitArea						: POINTER TO ST_VisuLimitArea;
 END_VAR
 ]]></Declaration>
       <Implementation>
@@ -116,6 +166,55 @@ THEN
 	m_NotifyConfigChanged();
 END_IF
 m_SetFinger := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetLimitArea" Id="{c83e3c90-d747-4568-a7bd-6b20d6038e33}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets and activates the limit area: an axis-aligned box in the robot frame (relative to its pose, the frame its<br>
+working area is given in) that further restricts the working area. Delta, XTS gantry and Cartesian robot;<br>
+an XTS loop has none. Equal bounds make a flat box. The config version only changes when a value does.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+TRUE if anything changed; FALSE for a robot without a limit area (XTS loop).<br>
+****************************************************************************************************)
+METHOD m_SetLimitArea : BOOL
+VAR_INPUT
+	vi_lr_XMin							: LREAL;	// [mm] in the robot frame
+	vi_lr_XMax							: LREAL;	// [mm]
+	vi_lr_YMin							: LREAL;	// [mm]
+	vi_lr_YMax							: LREAL;	// [mm]
+	vi_lr_ZMin							: LREAL;	// [mm] relative to the pose (below it: negative)
+	vi_lr_ZMax							: LREAL;	// [mm]
+END_VAR
+VAR
+	p_TempLimitArea						: POINTER TO ST_VisuLimitArea;
+	TempLimitArea						: ST_VisuLimitArea;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetLimitArea := FALSE;
+m_LimitArea(vo_p_LimitArea => p_TempLimitArea);
+IF p_TempLimitArea = 0 THEN
+	RETURN;
+END_IF
+TempLimitArea.fXMin := vi_lr_XMin;
+TempLimitArea.fXMax := vi_lr_XMax;
+TempLimitArea.fYMin := vi_lr_YMin;
+TempLimitArea.fYMax := vi_lr_YMax;
+TempLimitArea.fZMin := vi_lr_ZMin;
+TempLimitArea.fZMax := vi_lr_ZMax;
+TempLimitArea.bActive := TRUE;
+IF Tc2_System.MEMCMP(ADR(TempLimitArea), p_TempLimitArea, SIZEOF(TempLimitArea)) <> 0 THEN
+	p_TempLimitArea^ := TempLimitArea;
+	m_NotifyConfigChanged();
+	m_SetLimitArea := TRUE;
+END_IF
+]]></ST>
       </Implementation>
     </Method>
   </POU>

@@ -1,18 +1,19 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
-  <POU Name="P_VisuDemo" Id="{25b406f8-0c34-46ac-8002-38a1b69b79bf}" SpecialFunc="None">
+  <POU Name="P_VisuDemo" Id="{49b73753-a79a-401f-84bc-fc7827b66eb0}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-DEMO ONLY: five independent sample applications side by side, for testing the gateway over ADS. All lines<br>
+DEMO ONLY: independent sample applications side by side, for testing the gateway over ADS. All lines<br>
 start at X = 0 and convey along +X. Each application is its own program:<br>
 - P_VisuDemoDelta (Y = 0..1000): two infeeds, one outfeed, three Delta robots with different grippers.<br>
 - P_VisuDemoFxx (Y = 2500): an XTS loop above two belts evens out irregular gaps.<br>
 - P_VisuDemoIdh (Y = 4100..4850): an XTS gantry picks in batches onto a tray belt.<br>
 - P_VisuDemoCartesian (Y = 6500..7300): a Cartesian robot turns and tilts the products it places.<br>
+- P_VisuDemoCartesianAxes (X = 4000, Y = 6500..7800): Cartesian robots without Y or without Z axis.<br>
 - P_VisuDemoSpacing (Y = 9000): an XTS loop under one belt hands products back with a constant pitch.<br>
 - P_VisuDemoStress (Y = 11000): load test with thousands of products, off unless DEMO_un_StressProducts is set.<br>
 This program, called by PlcTask, sets the shared cycle time and fault phase (DEMO_GlobalVar) and calls them.<br>
@@ -45,6 +46,7 @@ P_VisuDemoDelta();
 P_VisuDemoFxx();
 P_VisuDemoIdh();
 P_VisuDemoCartesian();
+P_VisuDemoCartesianAxes();
 P_VisuDemoSpacing();
 P_VisuDemoStress();]]></ST>
     </Implementation>

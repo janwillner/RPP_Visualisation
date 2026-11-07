@@ -47,6 +47,9 @@ export const E_VisuBodyRole = { STRUCTURE: 0, SENSOR: 1, BEAM: 2, FIELD_OF_VIEW:
 /** E_VisuModuleKind: a curve module turns by a quarter circle. */
 export const E_VisuModuleKind = { STRAIGHT: 0, CURVE_LEFT: 1, CURVE_RIGHT: 2 } as const;
 
+/** E_VisuCartesianAxes: XZ has no Y axis, XY no Z axis. */
+export const E_VisuCartesianAxes = { XYZ: 0, XZ: 1, XY: 2 } as const;
+
 /** E_VisuProductShape */
 export const E_VisuProductShape = { BOX: 0, CYLINDER: 1, ROUNDED_BOX: 2 } as const;
 
@@ -125,6 +128,8 @@ export interface ST_VisuConveyorConfig {
   fWidth: number;
   nProductTypeCount: number;
   aProductTypes: ST_VisuProductType[];
+  /** TRUE (the default) = the belt is drawn as a body; FALSE = a conveyor without one. */
+  bBody: boolean;
   /** mm in the local frame from stPose; belt coordinates count from here. */
   stOriginShift: ST_VisuPosition;
 }
@@ -242,6 +247,8 @@ export interface ST_VisuXtsGantryConfig {
   fToolOffsetZ: number;
   fMoverLength: number;
   fMoverWidth: number;
+  /** Optional box in the gantry frame that further restricts the working area (_FB_VisuLimitedRobot). */
+  stLimitArea: ST_VisuLimitArea;
   nZoneCount: number;
   aZones: ST_VisuZone[];
   nFingerCount: number;
@@ -314,6 +321,8 @@ export interface ST_VisuXtsLoop {
 
 export interface ST_VisuCartesianConfig {
   stPose: ST_VisuPose;
+  /** XYZ (the default), XZ: no Y axis (a fixed beam), XY: no Z axis (the flange stays at fZMin). */
+  eAxes: PlcEnum;
   fXMin: number;
   fXMax: number;
   fYMin: number;
@@ -321,6 +330,8 @@ export interface ST_VisuCartesianConfig {
   fZMin: number;
   fZMax: number;
   fRailHeight: number;
+  /** Optional box in the robot frame that further restricts the working area (_FB_VisuLimitedRobot). */
+  stLimitArea: ST_VisuLimitArea;
   nZoneCount: number;
   aZones: ST_VisuZone[];
   nFingerCount: number;

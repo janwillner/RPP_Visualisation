@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
-  <POU Name="_FB_VisuDelta" Id="{c09463aa-da6c-4e92-aac5-ece2069e259f}" SpecialFunc="None">
+  <POU Name="_FB_VisuDelta" Id="{72573113-1673-4b55-8198-a4cdbad91d6e}" SpecialFunc="None">
     <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -73,26 +73,6 @@ METHOD m_BasePose : ST_VisuPose]]></Declaration>
         <ST><![CDATA[m_BasePose := vo_Visu.stConfig.stPose;]]></ST>
       </Implementation>
     </Method>
-    <Method Name="m_ClearLimitArea" Id="{6111c65a-69b8-4554-b0e6-27f21bc9a128}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-Removes the limit area. TRUE if changed.<br>
-****************************************************************************************************)
-METHOD m_ClearLimitArea : BOOL
-VAR
-	TempNew								: ST_VisuDeltaConfig;
-	TempEmpty							: ST_VisuLimitArea;
-END_VAR]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[TempNew := vo_Visu.stConfig;
-TempNew.stLimitArea := TempEmpty;
-m_ClearLimitArea := m_ApplyConfig(TempNew);]]></ST>
-      </Implementation>
-    </Method>
     <Method Name="m_ComponentType" Id="{f964395e-f23a-461d-9fef-fcb546485570}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -159,6 +139,26 @@ vo_p_Fingers := ADR(vo_Visu.stConfig.aFingers);
 m_Fingers := TRUE;]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_LimitArea" Id="{c107be2b-7150-46c3-b2cd-e2e844997c0a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The robot's limit area for _FB_VisuRobot.m_SetLimitArea and m_ClearLimitArea.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_LimitArea : BOOL
+VAR_OUTPUT
+	vo_p_LimitArea						: POINTER TO ST_VisuLimitArea;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_p_LimitArea := ADR(vo_Visu.stConfig.stLimitArea);
+m_LimitArea := TRUE;
+]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_SetFault" Id="{ffbdfca2-f936-4a97-9e98-c78fb12b7c8e}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -205,39 +205,6 @@ IF m_SetFingerState THEN
 	vo_Visu.stState.aFingerStates[vi_un_Finger - 1].stPose := vi_Pose;
 	vo_Visu.stState.aFingerStates[vi_un_Finger - 1].bActive := vi_b_Active;
 END_IF]]></ST>
-      </Implementation>
-    </Method>
-    <Method Name="m_SetLimitArea" Id="{641a0f2e-a1bd-4fc6-b7d3-a4a5013464ca}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-Sets and activates the limit area: an axis-aligned box in the robot frame. TRUE if changed.<br>
-****************************************************************************************************)
-METHOD m_SetLimitArea : BOOL
-VAR_INPUT
-	vi_lr_XMin							: LREAL;	// [mm]
-	vi_lr_XMax							: LREAL;	// [mm]
-	vi_lr_YMin							: LREAL;	// [mm]
-	vi_lr_YMax							: LREAL;	// [mm]
-	vi_lr_ZMin							: LREAL;	// [mm] relative to the base (below the base: negative)
-	vi_lr_ZMax							: LREAL;	// [mm] relative to the base
-END_VAR
-VAR
-	TempNew								: ST_VisuDeltaConfig;
-END_VAR]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[TempNew := vo_Visu.stConfig;
-TempNew.stLimitArea.fXMin := vi_lr_XMin;
-TempNew.stLimitArea.fXMax := vi_lr_XMax;
-TempNew.stLimitArea.fYMin := vi_lr_YMin;
-TempNew.stLimitArea.fYMax := vi_lr_YMax;
-TempNew.stLimitArea.fZMin := vi_lr_ZMin;
-TempNew.stLimitArea.fZMax := vi_lr_ZMax;
-TempNew.stLimitArea.bActive := TRUE;
-m_SetLimitArea := m_ApplyConfig(TempNew);]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_SetOriginShift" Id="{9d4a076d-8ba1-4e02-8501-f701f5c41011}">

@@ -12,7 +12,7 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 15;
+export const PROTOCOL_VERSION = 18;
 
 const mm = (description: string) => z.number().describe(description);
 const deg = (description: string) => z.number().describe(description);
@@ -163,6 +163,11 @@ export const ConveyorConfigSchema = componentConfig(
     length: mm("Belt length along local +X, mm."),
     width: mm("Belt width, mm."),
     productTypes: z.array(ProductTypeSchema).describe("The product types this conveyor carries."),
+    body: z
+      .boolean()
+      .describe(
+        "Whether the belt is drawn as a body; false = a conveyor without one: only its products, zones and axis are drawn.",
+      ),
   },
   "Conveyor: `pose` is the belt start; local +X is the conveying direction, local Z the belt surface normal.",
 );
@@ -180,8 +185,8 @@ export const WorkingAreaSchema = z
 export type WorkingArea = z.infer<typeof WorkingAreaSchema>;
 
 /**
- * Axis-aligned box in the robot's frame (relative to the base centre, turned with the robot's pose) that further
- * restricts the working area, e.g. so that neighbouring robots cannot collide.
+ * Axis-aligned box in the robot's frame (relative to its pose, turned with it; the frame its working area is given in)
+ * that further restricts the working area, e.g. so that neighbouring robots cannot collide.
  */
 export const LimitAreaSchema = z
   .object({
@@ -193,8 +198,9 @@ export const LimitAreaSchema = z
     zMax: mm("Upper Z bound, mm."),
   })
   .describe(
-    "Axis-aligned box in the robot's frame (relative to the base centre, turned with the robot's pose) that further " +
-      "restricts the working area, e.g. so that neighbouring robots cannot collide.",
+    "Axis-aligned box in the robot's frame (relative to its `pose`, turned with it: the frame its working area is " +
+      "given in) that further restricts the working area, e.g. so that neighbouring robots cannot collide. A bound " +
+      "pair with min = max is a flat box.",
   );
 export type LimitArea = z.infer<typeof LimitAreaSchema>;
 
@@ -237,8 +243,23 @@ function robotConfig<K extends string, S extends z.ZodRawShape>(type: K, shape: 
   );
 }
 
+/**
+ * A robot whose working area a limit area may restrict further (Delta, XTS gantry, Cartesian; not the XTS loop, which
+ * has no working area of its own): a robot plus the optional `limitArea`.
+ */
+function limitedRobotConfig<K extends string, S extends z.ZodRawShape>(type: K, shape: S, description: string) {
+  return robotConfig(
+    type,
+    {
+      ...shape,
+      limitArea: LimitAreaSchema.nullable().describe("Further restriction of the working area; null = none."),
+    },
+    description,
+  );
+}
+
 /** Delta robot: `pose` is the base centre in the MCS. */
-export const DeltaConfigSchema = robotConfig(
+export const DeltaConfigSchema = limitedRobotConfig(
   "delta",
   {
     baseRadius: mm("Distance from the base centre to the upper arms' axes, mm."),
@@ -246,7 +267,6 @@ export const DeltaConfigSchema = robotConfig(
     upperArmLength: mm("Length of an upper arm, mm."),
     lowerArmLength: mm("Length of a lower arm, mm."),
     workingArea: WorkingAreaSchema,
-    limitArea: LimitAreaSchema.nullable().describe("Further restriction of the working area; null = none."),
   },
   "Delta robot: `pose` is the base centre. It reports only its TCP; clients derive the arms by inverse kinematics.",
 );
@@ -289,7 +309,7 @@ const moverWidth = () => mm("Width of a mover across the track, mm.");
  * Straight XTS track carried by a common Z axis; every mover carries an X axis with a gripper flange at its end.
  * Local frame: origin at the track start on top of the movers with Z = 0; track along +Y, X axes along +X, Z up.
  */
-export const XtsGantryConfigSchema = robotConfig(
+export const XtsGantryConfigSchema = limitedRobotConfig(
   "xtsGantry",
   {
     modules: trackModules(
@@ -330,23 +350,39 @@ export const XtsLoopConfigSchema = robotConfig(
 export type XtsLoopConfig = z.infer<typeof XtsLoopConfigSchema>;
 
 /**
+ * Which axes a Cartesian robot has: `xyz` (rails, bridge, carriage, column), `xz` (no Y axis: a fixed beam along X,
+ * carriage, column) or `xy` (no Z axis: rails, bridge, carriage, a column of fixed length).
+ */
+export const CartesianAxesSchema = z
+  .enum(["xyz", "xz", "xy"])
+  .describe(
+    "Which axes the robot has: `xyz`; `xz`, no Y axis (a fixed beam along local X at `railHeight`, Y is always 0: " +
+      "`yMin`, `yMax` and the state's `y` are ignored); `xy`, no Z axis (the column has a fixed length and the " +
+      "flange stays at `zMin`: `zMax` and the state's `z` are ignored).",
+  );
+export type CartesianAxes = z.infer<typeof CartesianAxesSchema>;
+
+/**
  * Cartesian robot: two fixed rails along local +Y at railHeight, a bridge travelling in Y, a carriage on it travelling
- * in X and a vertical column (Z) ending at the gripper flange.
+ * in X and a vertical column (Z) ending at the gripper flange. Without a Y axis (`xz`) a fixed beam along X at
+ * railHeight replaces rails and bridge; without a Z axis (`xy`) the column has a fixed length down to zMin.
  * Local frame: origin at axis X = Y = 0, Z up; the flange is at (X, Y, Z).
  */
-export const CartesianConfigSchema = robotConfig(
+export const CartesianConfigSchema = limitedRobotConfig(
   "cartesian",
   {
+    axes: CartesianAxesSchema,
     xMin: mm("Lower limit of the X axis, mm."),
     xMax: mm("Upper limit of the X axis, mm."),
-    yMin: mm("Lower limit of the Y axis, mm."),
-    yMax: mm("Upper limit of the Y axis, mm."),
-    zMin: mm("Lower limit of the Z axis, mm."),
-    zMax: mm("Upper limit of the Z axis, mm."),
-    railHeight: mm("Height of the rails and the bridge above the local origin, mm."),
+    yMin: mm("Lower limit of the Y axis, mm; ignored without a Y axis (`xz`)."),
+    yMax: mm("Upper limit of the Y axis, mm; ignored without a Y axis (`xz`)."),
+    zMin: mm("Lower limit of the Z axis, mm; without a Z axis (`xy`) the fixed height of the flange."),
+    zMax: mm("Upper limit of the Z axis, mm; ignored without a Z axis (`xy`)."),
+    railHeight: mm("Height of the rails and the bridge (of the beam without a Y axis) above the local origin, mm."),
   },
   "Cartesian robot: two fixed rails along local +Y at `railHeight`, a bridge travelling in Y, a carriage on it " +
-    "travelling in X and a vertical column (Z) ending at the gripper flange. Local frame: origin at axis X = Y = 0, " +
+    "travelling in X and a vertical column (Z) ending at the gripper flange; `axes` may leave out Y (a fixed beam " +
+    "along X instead of rails and bridge) or Z (a column of fixed length). Local frame: origin at axis X = Y = 0, " +
     "Z up; the flange is at (X, Y, Z).",
 );
 export type CartesianConfig = z.infer<typeof CartesianConfigSchema>;
@@ -570,8 +606,8 @@ export const CartesianStateSchema = componentState(
   "cartesian",
   {
     x: mm("Actual X axis value in the local frame, mm."),
-    y: mm("Actual Y axis value in the local frame, mm."),
-    z: mm("Actual Z axis value in the local frame, mm; (x, y, z) is the gripper flange."),
+    y: mm("Actual Y axis value in the local frame, mm; ignored without a Y axis (`xz`)."),
+    z: mm("Actual Z axis value in the local frame, mm; (x, y, z) is the gripper flange; ignored without a Z axis (`xy`)."),
     gripperActive: z.boolean().describe("The gripper grips; used only when no fingers are configured."),
     fingers: fingerStates(),
   },

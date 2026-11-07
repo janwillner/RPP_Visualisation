@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="E_VisuCartesianAxes" Id="{0eaa9017-b9fd-4527-b199-c75a0e309528}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_VisuCartesianAxes :
+(
+	(* Values are part of the gateway contract: append, never renumber. Which axes a Cartesian robot has. *)
+	XYZ := 0,	// rails along local Y, bridge (Y), carriage (X) and column (Z)
+	XZ := 1,	// no Y axis: a fixed beam along local X at fRailHeight, carriage (X) and column (Z); Y is always 0
+	XY := 2		// no Z axis: rails, bridge (Y) and carriage (X); the column has a fixed length, the flange stays at fZMin
+) UINT;
+END_TYPE
+]]></Declaration>
+  </DUT>
+</TcPlcObject>

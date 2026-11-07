@@ -8,6 +8,7 @@ STRUCT
 	fWidth : LREAL; // mm
 	nProductTypeCount : UINT;
 	aProductTypes : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES - 1] OF ST_VisuProductType;
+	bBody : BOOL := TRUE; // TRUE = the belt is drawn as a body; FALSE = a conveyor without one (products, zones and axis only)
 	(* mm in the local frame from stPose: origin of the conveyor's coordinate system. Belt coordinates (zones'
 	   fStart, fEnd, fCcsOffset) count from this origin. 0 = the belt start. *)
 	stOriginShift : ST_VisuPosition;
