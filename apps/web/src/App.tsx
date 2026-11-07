@@ -4,12 +4,11 @@ import {
   GatewayStore,
   STALE_AFTER_MS,
   defaultGatewayUrl,
-  isOnline,
   useGateway,
   type GatewaySnapshot,
   type SceneFeed,
-  type SourceInfo,
 } from "./connection";
+import { isOnline, type SourceInfo } from "./sources";
 import {
   PlayerBar,
   PlayerBarToggle,
@@ -18,7 +17,7 @@ import {
   usePlaybackKeys,
   useRecordingControls,
 } from "./RecordingControls";
-import { Recorder } from "./recording";
+import { Viewer } from "./viewer";
 import {
   componentKey,
   formatPointCopy,
@@ -99,7 +98,7 @@ function usePanelWidth(storageKey: string): [number | undefined, (px: number) =>
   return [width, set];
 }
 
-function machineMetrics(feed: SceneFeed, sources: SourceInfo[]): MachineMetrics {
+function machineMetrics(feed: SceneFeed, sources: readonly SourceInfo[]): MachineMetrics {
   const { events, now, since } = feed.productEvents(METRICS_WINDOW_MS);
   return metrics(events, now, since, sources);
 }
@@ -109,7 +108,7 @@ const windowText = (m: MachineMetrics) => `last ${Math.round(m.windowMs / 1000)}
 const rate = (perMin: number) => perMin.toFixed(1);
 
 /** The machine's figures over the last minute, while nothing is selected. */
-function MetricsOverview({ figures, sources }: { figures: MachineMetrics; sources: SourceInfo[] }) {
+function MetricsOverview({ figures, sources }: { figures: MachineMetrics; sources: readonly SourceInfo[] }) {
   const named = (x: { sourceId: string; name: string }) => {
     const source = sources.length > 1 ? sources.find((s) => s.sourceId === x.sourceId) : undefined;
     return source ? `${source.name} · ${x.name}` : x.name;
@@ -189,21 +188,19 @@ function useTick(intervalMs: number): number {
 
 export function App() {
   const store = useMemo(() => new GatewayStore(defaultGatewayUrl()), []);
-  // Always keeps the last minute of the store's messages, for the replay button (ADR 0011).
-  const [replayBuffer, replayOrigin] = useMemo(
-    () => [Recorder.replayBuffer(), performance.now()] as const,
-    [],
+  // Live or a recording; it keeps the replay buffer from now on (ADR 0011).
+  const viewer = useMemo(
+    () => new Viewer(store, () => window.confirm("Discard the current recording? It has not been saved.")),
+    [store],
   );
   useEffect(() => {
-    const unsubscribe = store.onMessage((message, raw, arrival) =>
-      replayBuffer.add(arrival - replayOrigin, message, raw),
-    );
+    viewer.start();
     store.start();
     return () => {
       store.stop();
-      unsubscribe();
+      viewer.stop();
     };
-  }, [store, replayBuffer, replayOrigin]);
+  }, [store, viewer]);
   const gateway = useGateway(store);
   // Layers, hidden components and camera come back as they were left on this device.
   const initialView = useMemo(loadViewSettings, []);
@@ -261,12 +258,10 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const recording = useRecordingControls(store, replayBuffer);
+  const recording = useRecordingControls(viewer);
   usePlaybackKeys(recording);
   // While playing back, the tree, the 3D view and the inspector show the recording instead of the live data.
-  const playback = recording.mode === "playback" ? recording.playback : undefined;
-  const shown: GatewaySnapshot = playback ? { socket: "open", sources: playback.sources, protocolError: undefined } : gateway;
-  const feed: SceneFeed = playback && recording.player ? recording.player : store;
+  const playback = recording.mode === "playback";
 
   const camera = (action: CameraPreset) => setCameraRequest((r) => ({ action, seq: r.seq + 1 }));
   const toggle = (key: keyof Layers) => setLayers((l) => ({ ...l, [key]: !l[key] }));
@@ -301,7 +296,7 @@ export function App() {
       </header>
       <aside className="panel left" hidden={!leftOpen}>
         <ComponentTree
-          gateway={shown}
+          sources={recording.sources}
           selection={selection}
           onSelect={setSelection}
           hidden={hidden}
@@ -317,8 +312,8 @@ export function App() {
         onContextMenu={(e) => e.preventDefault()}
       >
         <SceneView
-          feed={feed}
-          sources={shown.sources}
+          feed={viewer}
+          sources={recording.sources}
           layers={layers}
           selection={selection}
           onSelect={setSelection}
@@ -346,7 +341,7 @@ export function App() {
         {recording.notice && (
           <div className="recording-notice" role="status">
             {recording.notice}
-            <button className="link" aria-label="Close" onClick={recording.dismissNotice}>
+            <button className="link" aria-label="Close" onClick={() => viewer.dismissNotice()}>
               ×
             </button>
           </div>
@@ -366,8 +361,8 @@ export function App() {
       </main>
       <aside className="panel right" hidden={!rightOpen}>
         <Inspector
-          feed={feed}
-          sources={shown.sources}
+          feed={viewer}
+          sources={recording.sources}
           selection={selection}
           modelRef={modelRef}
           faults={faults}
@@ -379,8 +374,8 @@ export function App() {
 }
 
 /** Sources the gateway cannot read right now (all of them while the gateway connection is down). */
-function offlineSources(gateway: GatewaySnapshot): SourceInfo[] {
-  return gateway.sources.filter((s) => !isOnline(gateway, s));
+function offlineSources(gateway: GatewaySnapshot): readonly SourceInfo[] {
+  return gateway.sources.filter((s) => !isOnline(s));
 }
 
 /** Embedded there is no status bar: a red note in the 3D view tells that (part of) the machine is not live. */
@@ -646,17 +641,17 @@ function ProductLegend(props: {
  * online state and an eye for the whole source.
  */
 function ComponentTree(props: {
-  gateway: GatewaySnapshot;
+  sources: readonly SourceInfo[];
   selection: Selection;
   onSelect: (s: Selection) => void;
   hidden: ReadonlySet<string>;
   onToggleHidden: (key: string) => void;
   faults: SourcedFaults[];
 }) {
-  const { gateway, selection, onSelect, hidden, onToggleHidden, faults } = props;
-  const grouped = gateway.sources.length > 1;
+  const { selection, onSelect, hidden, onToggleHidden, faults } = props;
+  const grouped = props.sources.length > 1;
   // A source that never answered has no config and appears only in the status bar.
-  const sources = gateway.sources.filter((s) => s.config !== undefined);
+  const sources = props.sources.filter((s) => s.config !== undefined);
   const components = (source: SourceInfo) => (
     <ul className="tree">
       {(source.config?.components ?? []).map((c) => {
@@ -702,7 +697,7 @@ function ComponentTree(props: {
       {grouped ? (
         <ul className="sources">
           {sources.map((source) => {
-            const online = isOnline(gateway, source);
+            const online = isOnline(source);
             return (
               <li key={source.sourceId} className={hidden.has(source.sourceId) ? "hidden" : ""}>
                 <div className="source-head">
@@ -759,7 +754,7 @@ function EyeIcon({ open }: { open: boolean }) {
 function Inspector(props: {
   /** The live gateway or the recording being played back. */
   feed: SceneFeed;
-  sources: SourceInfo[];
+  sources: readonly SourceInfo[];
   selection: Selection;
   modelRef: React.RefObject<MachineScene | undefined>;
   faults: SourcedFaults[];
@@ -900,8 +895,8 @@ function Json({ value }: { value: unknown }) {
 /** Milliseconds since the newest data of the stalest connected source; undefined before any data. */
 function dataAge(store: GatewayStore, gateway: GatewaySnapshot): number | undefined {
   const ages = gateway.sources
-    .filter((s) => s.status?.plcConnected)
-    .map((s) => store.buffer(s.sourceId).dataAge())
+    .filter(isOnline)
+    .map((s) => store.dataAge(s.sourceId))
     .filter((a): a is number => a !== undefined);
   return ages.length ? Math.max(...ages) : undefined;
 }
@@ -965,7 +960,7 @@ function StatusBar(props: {
       {showSources && several && (
         <ul className="errors sources-list">
           {gateway.sources.map((source) => {
-            const connected = isOnline(gateway, source);
+            const connected = isOnline(source);
             // A connected PLC can still be unusable, e.g. with another protocol version: show its first error.
             const problem = connected ? source.config?.errors[0]?.message : source.status?.lastError;
             return (

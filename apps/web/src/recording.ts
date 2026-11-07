@@ -10,7 +10,7 @@ import {
   type RecordingFileHeader,
   type StateMessage,
 } from "@rpp/protocol";
-import { RENDER_DELAY_MS, type SourceInfo } from "./connection";
+import { Sources, type SourceInfo } from "./sources";
 import type { SceneSource } from "./scene/scene-model";
 import { EventTracker, type TimelineEvent } from "./timeline-events";
 import { ProductHistory } from "./product-history";
@@ -29,7 +29,7 @@ export const MAX_RECORDING_MS = 10 * 60_000;
 export const REPLAY_BUFFER_MS = 60_000;
 /** Messages are compressed in blocks of this length. */
 const CHUNK_MS = 1000;
-/** Snapshots before the playback moment that are kept for interpolation, like the live buffer. */
+/** Blocks back from the playback moment that are read for the states kept for interpolation (`Sources`). */
 const WINDOW_MS = 1000;
 /** Decompressed blocks kept for playback. */
 const CACHED_CHUNKS = 6;
@@ -87,7 +87,7 @@ export class Recorder {
   /** True once MAX_RECORDING_MS is reached; the recorder then takes nothing more. */
   full = false;
   private readonly initial: SourceInfo[];
-  private readonly sources = new Map<string, SourceInfo>();
+  private readonly sources: Sources;
   private readonly chunks: Promise<Chunk>[] = [];
   /** Start of every block in `chunks`, known before its compression finishes. */
   private readonly chunkStarts: number[] = [];
@@ -115,7 +115,7 @@ export class Recorder {
   ) {
     this.recordedAt = recordedAt;
     this.initial = initial.map((s) => ({ ...s }));
-    for (const s of this.initial) this.sources.set(s.sourceId, { ...s });
+    this.sources = new Sources(this.initial);
     this.tracker = new EventTracker(this.initial);
   }
 
@@ -152,7 +152,7 @@ export class Recorder {
     if (this.pending.length > 0 && at >= this.pendingStart + CHUNK_MS) this.seal();
     if (this.pending.length === 0) {
       this.pendingStart = at;
-      this.pendingContext = [...this.sources.values()].map((s) => ({ ...s }));
+      this.pendingContext = [...this.sources.all];
       this.encoder = new RegisterEncoder();
       this.pendingStateSources = new Set();
     }
@@ -162,15 +162,7 @@ export class Recorder {
     this.pendingBytes += line.length;
     this.pendingEnd = at;
     this.lastAt = at;
-    const source = this.sources.get(message.sourceId) ?? {
-      sourceId: message.sourceId,
-      name: message.sourceId,
-      status: undefined,
-      config: undefined,
-    };
-    if (message.kind === "status") Object.assign(source, { name: message.sourceName, status: message.status });
-    if (message.kind === "config") source.config = message;
-    this.sources.set(message.sourceId, source);
+    const source = this.sources.apply(at, message);
     if (this.windowMs !== undefined) {
       // Events, products and snapshot times are found again from the kept blocks by `snapshot()`.
       this.dropBefore(at - this.windowMs);
@@ -242,7 +234,7 @@ export class Recorder {
 /** What playback shows at one moment. */
 export interface PlaybackView {
   /** Every source with the status and config it had then. */
-  sources: SourceInfo[];
+  sources: readonly SourceInfo[];
   /** Every source as the machine scene takes it. */
   scene: SceneSource[];
   /** A source's newest state at that moment, e.g. for the inspector. */
@@ -271,7 +263,7 @@ export class Recording {
   async load(t: number): Promise<void> {
     const { first, last, earlier } = this.range(t);
     const loads: Promise<Entry[]>[] = [];
-    for (let i = first; i <= last; i++) loads.push(this.decode(i));
+    for (let i = Math.max(first, 0); i <= last; i++) loads.push(this.decode(i));
     for (const i of earlier.values()) loads.push(this.decode(i));
     await Promise.all(loads);
   }
@@ -280,7 +272,7 @@ export class Recording {
   view(t: number): PlaybackView | undefined {
     const { first, last, earlier } = this.range(t);
     const blocks: Entry[][] = [];
-    for (let i = first; i <= last; i++) {
+    for (let i = Math.max(first, 0); i <= last; i++) {
       const entries = this.ready.get(i);
       if (!entries) return undefined;
       blocks.push(entries);
@@ -408,63 +400,19 @@ function buildView(
   blocks: Entry[][],
   t: number,
 ): PlaybackView {
-  const sources = new Map<string, SourceInfo>(context.map((s) => [s.sourceId, { ...s }]));
-  /** Per source the states of its current config version and timeline, with their arrival. */
-  const states = new Map<string, Entry[]>();
-  for (const [sourceId, entry] of lastStates) {
-    const m = entry.message as StateMessage;
-    if (m.configVersion === sources.get(sourceId)?.config?.configVersion) states.set(sourceId, [entry]);
-  }
+  const sources = new Sources(context);
+  for (const entry of lastStates.values()) sources.apply(entry.at, entry.message);
   for (const block of blocks) {
     for (const entry of block) {
       if (entry.at > t) break;
-      const m = entry.message;
-      const source = sources.get(m.sourceId) ?? { sourceId: m.sourceId, name: m.sourceId, status: undefined, config: undefined };
-      sources.set(m.sourceId, source);
-      if (m.kind === "status") Object.assign(source, { name: m.sourceName, status: m.status });
-      if (m.kind === "config") {
-        // A new config version starts a new timeline, as live.
-        if (m.configVersion !== source.config?.configVersion) states.delete(m.sourceId);
-        source.config = m;
-      }
-      if (m.kind === "state" && m.configVersion === source.config?.configVersion) {
-        let list = states.get(m.sourceId);
-        // tRel restarts when the gateway rediscovers: drop the old timeline.
-        const previous = list?.at(-1)?.message as StateMessage | undefined;
-        if (!list || (previous && m.tRel < previous.tRel)) states.set(m.sourceId, (list = []));
-        list.push(entry);
-      }
+      sources.apply(entry.at, entry.message);
     }
   }
-  for (const [sourceId, list] of states) {
-    const kept = list.filter((e) => e.at >= t - WINDOW_MS);
-    states.set(sourceId, kept.length > 0 ? kept : list.slice(-1));
-  }
-  const infos = [...sources.values()];
   return {
-    sources: infos,
-    scene: infos.map((s) => {
-      const list = states.get(s.sourceId) ?? [];
-      const snapshots = list.map((e) => e.message as StateMessage);
-      return {
-        sourceId: s.sourceId,
-        config: s.config,
-        snapshots,
-        renderTime: renderTime(list, t),
-        online: s.status?.plcConnected === true,
-      };
-    }),
-    latestState: (sourceId) => states.get(sourceId)?.at(-1)?.message as StateMessage | undefined,
+    sources: sources.all,
+    scene: sources.sceneSources(t),
+    latestState: (sourceId) => sources.latestState(sourceId),
   };
-}
-
-/** Like the live buffer: RENDER_DELAY_MS behind, mapped onto the source's tRel by the smallest arrival offset. */
-function renderTime(list: readonly Entry[], t: number): number {
-  const latest = list.at(-1)?.message as StateMessage | undefined;
-  if (!latest) return 0;
-  let offset = Infinity;
-  for (const e of list) offset = Math.min(offset, e.at - (e.message as StateMessage).tRel);
-  return Math.min(latest.tRel, t - offset - RENDER_DELAY_MS);
 }
 
 function checkedHeader(line: string): [SourceInfo[], string] {

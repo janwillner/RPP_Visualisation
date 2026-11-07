@@ -13,6 +13,7 @@ import {
   tick,
   type PlaybackClock,
 } from "../src/recording";
+import { GATEWAY_LOST, Sources } from "../src/sources";
 
 const A = "ads:5.1.2.3.1.1:851";
 const B = "ads:5.1.2.4.1.1:851";
@@ -97,6 +98,17 @@ describe("recording: playback at any point in time", () => {
     expect(b!.renderTime).toBeCloseTo(6460);
     expect(a!.snapshots.at(-1)!.tRel).toBe(1500);
     expect(belt(view, B)).toBe(650);
+  });
+
+  it("shows the sources as they were when recording started, before the first message", async () => {
+    const recorder = new Recorder([{ sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: config(A) }]);
+    for (let at = 50; at <= 1000; at += 20) recorder.add(at, state(A, at));
+    const recording = await recorder.stop();
+
+    const view = await recording.viewAt(0);
+    expect(view.sources.map((s) => s.name)).toEqual(["Infeed PLC"]);
+    expect(view.scene[0]!.snapshots).toEqual([]);
+    expect(belt(await recording.viewAt(500), A)).toBe(49);
   });
 
   it("jumps backwards and forwards", async () => {
@@ -237,6 +249,29 @@ describe("recording: timeline events", () => {
     expect(recording.events).toEqual([
       { at: 1000, kind: "offline", sourceId: B, text: "Outfeed PLC offline" },
       { at: 2000, kind: "online", sourceId: B, text: "Outfeed PLC online" },
+    ]);
+  });
+
+  it("shows every source offline while the browser had lost the gateway, and marks it", async () => {
+    const lost = new Sources([
+      { sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: undefined },
+      { sourceId: B, name: "Outfeed PLC", status: { plcConnected: true }, config: undefined },
+    ]).gatewayLost();
+    const recording = await threeSeconds([
+      ...lost.map((m): [number, GatewayMessage] => [1000, m]),
+      [2000, status(A, true)],
+      [2000, status(B, true)],
+    ]);
+
+    const during = await recording.viewAt(1500);
+    expect(during.scene.map((s) => s.online)).toEqual([false, false]);
+    expect(during.sources.map((s) => s.status?.lastError)).toEqual([GATEWAY_LOST, GATEWAY_LOST]);
+    expect((await recording.viewAt(2500)).scene.map((s) => s.online)).toEqual([true, true]);
+    expect(recording.events.map((e) => [e.at, e.kind, e.sourceId])).toEqual([
+      [1000, "offline", A],
+      [1000, "offline", B],
+      [2000, "online", A],
+      [2000, "online", B],
     ]);
   });
 

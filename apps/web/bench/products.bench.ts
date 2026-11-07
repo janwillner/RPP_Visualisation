@@ -9,7 +9,7 @@ import {
   type ConveyorState,
   type StateMessage,
 } from "@rpp/protocol";
-import type { SourceInfo } from "../src/connection";
+import type { SourceInfo } from "../src/sources";
 import { ProductHistory } from "../src/product-history";
 import { Recorder } from "../src/recording";
 import { buildMachineScene } from "../src/scene/scene-model";

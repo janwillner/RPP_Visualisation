@@ -1,6 +1,6 @@
 import type { Fault, GatewayMessage } from "@rpp/protocol";
 import { componentName } from "./component-name";
-import type { SourceInfo } from "./connection";
+import type { SourceInfo } from "./sources";
 import { faultText, isMissed } from "./scene/scene-model";
 
 /**

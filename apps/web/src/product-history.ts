@@ -1,6 +1,6 @@
 import type { GatewayMessage, Product } from "@rpp/protocol";
 import { componentName } from "./component-name";
-import type { SourceInfo } from "./connection";
+import type { SourceInfo } from "./sources";
 import { isMissed } from "./scene/scene-model";
 
 /** What happened to a product: its register state, or that it was missed or left the register. */
