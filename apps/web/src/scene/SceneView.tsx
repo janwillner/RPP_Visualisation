@@ -1,6 +1,6 @@
 import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
 import { Canvas, useFrame, useThree, type ThreeElements, type ThreeEvent } from "@react-three/fiber";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import * as THREE from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { AXES, OVERLAY, PRODUCT, SOLID, STAGE, STATUS } from "../palette";
@@ -31,7 +31,7 @@ import type {
   SceneFaultLabel,
   SourcedFaults,
 } from "./scene-model";
-import { availableSnapPoints, buildMachineScene, emptyScene } from "./scene-model";
+import { availableSnapPoints, buildMachineScene, emptyScene, sceneStructure, trackSignature } from "./scene-model";
 import { isTap, nearestOnScreen, snapRadiusPx, type ScreenPoint } from "./picking";
 import { ProductGroups, isGrouped, partitionProducts, type ProductGroup } from "./product-groups";
 import type { ConfigMessage, ProductState } from "@rpp/protocol";
@@ -269,29 +269,12 @@ function placeBetween(mesh: THREE.Object3D | null, a: Vec3 | undefined, b: Vec3 
   mesh.scale.set(1, length, 1);
 }
 
-/** Structural signature: re-render React only when the set of drawn objects changes. */
+/**
+ * Structural signature: re-render React only when the set of drawn objects changes (`SCENE_PARTS`). Products on the
+ * belt are drawn in groups (`ProductInstances`): only a new group or a larger one counts.
+ */
 function signature(m: SceneModel, groups: ProductGroups): string {
-  return [
-    m.conveyors.map((c) => `${c.id}:${c.length}:${c.width}:${c.body}:${c.axis.originX}:${c.axis.originY}`).join(","),
-    // Products on the belt are drawn in groups (`ProductInstances`): only a new group or a larger one counts. The few
-    // drawn one by one (placeholders, carried products) count each.
-    groups.of(m.products).map((g) => `${g.key}:${g.capacity}`).join(","),
-    m.products.filter((p) => !isGrouped(p)).map((p) => `${p.key}:${p.state}`).join(","),
-    m.deltas.map((d) => d.id + ":" + d.baseRadius + ":" + d.effectorRadius).join(","),
-    m.zones.map((w) => `${w.componentId}:${w.conveyorId}:${w.length}:${w.width}`).join(","),
-    m.snapPoints.filter((p) => !p.moving).map((p) => p.key).join(","),
-    m.gantries.map((g) => `${g.id}:${trackSignature(g.modules)}:${g.movers.map((x) => x.id).join("/")}`).join(","),
-    m.boxAreas.map((a) => `${a.robotId}:${a.size.join("/")}`).join(","),
-    m.limitAreas.map((a) => `${a.robotId}:${a.size.join("/")}`).join(","),
-    m.zones.map((w) => (w.allocation ? w.allocation.length : 0)).join(","),
-    m.loops.map((l) => `${l.id}:${trackSignature(l.modules)}:${l.movers.map((x) => x.id).join("/")}`).join(","),
-    m.cartesians.map((c) => `${c.id}:${c.parts.map((p) => p.size.join("/")).join("/")}:${c.flange ? 1 : 0}`).join(","),
-    m.fingers.map((f) => `${f.key}:${f.diameter}:${f.height}`).join(","),
-    m.bodies.map((b) => `${b.key}:${b.shape}:${b.role}:${b.size.length}/${b.size.width}/${b.size.height}`).join(","),
-    // Faults change colours and labels. Every fault of a shown component or mover has exactly one label, so the
-    // labels also stand for the red tint of the parts.
-    m.faultLabels.map((l) => `${l.key}:${l.message}`).join(","),
-  ].join("|");
+  return `${sceneStructure(m)}|${groups.of(m.products).map((g) => `${g.key}:${g.capacity}`).join(",")}`;
 }
 
 const EMPTY_MACHINE: MachineScene = { sources: [], snapPoints: [], origins: [], faults: [] };
@@ -369,6 +352,152 @@ function SceneContent(props: SceneViewProps) {
   );
 }
 
+/** What the view of one kind of scene part draws from. */
+interface PartViewContext {
+  /** The scene as of the last structural change: which objects exist. */
+  structure: SceneModel;
+  /** The scene of this frame: where they are now. */
+  latest: MutableRefObject<SceneModel>;
+  layers: Layers;
+  selection: LocalSelection;
+  isSelected(componentId: number): boolean;
+  onSelect(selection: LocalSelection): void;
+  productGroups: ProductGroups;
+  /** Per product group the products it draws this frame. */
+  groupMembers: MutableRefObject<Map<string, SceneProduct[]>>;
+  productByKey(key: string): SceneProduct | undefined;
+}
+
+/**
+ * How every kind of scene part is drawn, in drawing order. Null for the kinds drawn across sources (snap points,
+ * origins) or not drawn at all; a new kind in `SceneModel` has to be listed here.
+ */
+const PART_VIEWS: { [K in keyof SceneModel]: ((v: PartViewContext) => ReactNode) | null } = {
+  conveyors: ({ structure, isSelected, onSelect }) =>
+    structure.conveyors.map((c) => (
+      <group key={c.id} ref={(o) => applyTransform(o, c.transform)}>
+        <FaultScope faulted={c.fault !== null}>
+          {c.body && (
+            <SolidBox
+              size={[c.length, 0.05, c.width]}
+              position={[c.length / 2, -0.025, 0]}
+              userData={{ label: c.name }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect({ kind: "component", id: c.id });
+              }}
+            >
+              <meshStandardMaterial color={isSelected(c.id) ? SOLID.selectedStructure : SOLID.belt} roughness={0.85} />
+            </SolidBox>
+          )}
+          <ConveyorAxis conveyor={c} selected={isSelected(c.id)} onSelect={() => onSelect({ kind: "component", id: c.id })} />
+        </FaultScope>
+        <Html position={[0, 0.06, -c.width / 2]} className="label" zIndexRange={[10, 0]}>
+          {c.name}
+        </Html>
+      </group>
+    )),
+  products: ({ structure, selection, onSelect, productGroups, groupMembers, productByKey }) => (
+    <>
+      {productGroups.of(structure.products).map((g) => (
+        <ProductInstances
+          key={`${g.key}:${g.capacity}`}
+          group={g}
+          members={groupMembers}
+          selected={selection?.kind === "product" ? selection : undefined}
+          onSelect={onSelect}
+        />
+      ))}
+      {structure.products
+        .filter((p) => !isGrouped(p))
+        .map((p) => (
+          <ProductMesh
+            key={p.key}
+            product={p}
+            selected={selection?.kind === "product" && selection.conveyorId === p.conveyorId && selection.productId === p.productId}
+            lookup={productByKey}
+            onSelect={onSelect}
+          />
+        ))}
+    </>
+  ),
+  deltas: ({ structure, latest, layers, isSelected, onSelect }) =>
+    structure.deltas.map((d) => (
+      <DeltaMesh key={d.id} delta={d} latest={latest} showTcp={layers.tcpMarkers} selected={isSelected(d.id)} onSelect={onSelect} />
+    )),
+  gantries: ({ structure, latest, isSelected, onSelect }) =>
+    structure.gantries.map((g) => (
+      <GantryMesh key={g.id} gantry={g} latest={latest} selected={isSelected(g.id)} onSelect={onSelect} />
+    )),
+  loops: ({ structure, latest, isSelected, onSelect }) =>
+    structure.loops.map((l) => <LoopMesh key={l.id} loop={l} latest={latest} selected={isSelected(l.id)} onSelect={onSelect} />),
+  cartesians: ({ structure, latest, isSelected, onSelect }) =>
+    structure.cartesians.map((c) => (
+      <CartesianMesh key={c.id} robot={c} latest={latest} selected={isSelected(c.id)} onSelect={onSelect} />
+    )),
+  bodies: ({ structure, latest, layers, isSelected, onSelect }) =>
+    structure.bodies.map((b) =>
+      (b.role === "beam" || b.role === "fieldOfView") && !layers.zones ? null : (
+        <BodyMesh key={b.key} body={b} latest={latest} selected={isSelected(b.componentId)} onSelect={onSelect} />
+      ),
+    ),
+  fingers: ({ structure, latest, isSelected, onSelect }) =>
+    structure.fingers.map((f) => (
+      <FingerMesh key={f.key} finger={f} latest={latest} selected={isSelected(f.robotId)} onSelect={onSelect} />
+    )),
+  boxAreas: ({ structure, layers, isSelected }) =>
+    layers.workingAreas &&
+    structure.boxAreas.map((a) => (
+      <BoxAreaMesh
+        key={`box:${a.robotId}`}
+        area={a}
+        color={isSelected(a.robotId) ? SELECT_COLOR : OVERLAY.workingArea}
+        fillOpacity={0.1}
+      />
+    )),
+  limitAreas: ({ structure, layers, isSelected }) =>
+    layers.limitAreas &&
+    structure.limitAreas.map((a) => (
+      <BoxAreaMesh
+        key={`limit:${a.robotId}`}
+        area={a}
+        color={isSelected(a.robotId) ? SELECT_COLOR : OVERLAY.limitArea}
+        fillOpacity={0.06}
+      />
+    )),
+  workingAreas: ({ structure, layers, isSelected }) =>
+    layers.workingAreas &&
+    structure.workingAreas.map((w) => (
+      <WorkingAreaMesh key={w.robotId} area={w} color={isSelected(w.robotId) ? SELECT_COLOR : OVERLAY.workingArea} />
+    )),
+  zones: ({ structure, layers, isSelected }) =>
+    layers.zones && (
+      <>
+        {structure.zones.map((w, i) => (
+          <group key={`${w.componentId}:${i}`} ref={(o) => applyTransform(o, w.transform)}>
+            <mesh position={[0, 0.003, 0]} renderOrder={OVERLAY_ORDER} userData={{ label: `Zone (#${w.componentId})` }}>
+              <boxGeometry args={[w.length, 0.004, w.width]} />
+              <OverlayMaterial color={OVERLAY.zone} opacity={isSelected(w.componentId) ? 0.55 : 0.3} />
+            </mesh>
+            <Outline points={rectangle(w.length, w.width, 0.007)} color={isSelected(w.componentId) ? SELECT_COLOR : OVERLAY.zone} />
+            {w.allocation && (
+              <AllocationMesh allocation={w.allocation} zone={w} color={OVERLAY.allocation} selected={isSelected(w.componentId)} />
+            )}
+          </group>
+        ))}
+        {structure.zones.map((w, i) => (
+          <CcsLine key={`ccs:${w.componentId}:${i}`} transform={w.ccs} width={w.width} />
+        ))}
+      </>
+    ),
+  faultLabels: ({ structure, latest, layers }) =>
+    layers.faultLabels && structure.faultLabels.map((l) => <FaultLabel key={l.key} label={l} latest={latest} />),
+  snapPoints: null,
+  origins: null,
+  faults: null,
+  warnings: null,
+};
+
 /** Everything one PLC source draws, with its manifest ids; faded while the source is offline. */
 function SourceContent(props: {
   sourceId: string;
@@ -408,138 +537,21 @@ function SourceContent(props: {
     }
   }, -0.5);
 
-  const productByKey = (key: string) => productIndex.current.get(key);
-  const isSelected = (id: number) => selection?.kind === "component" && selection.id === id;
+  const context: PartViewContext = {
+    structure,
+    latest,
+    layers,
+    selection,
+    isSelected: (id) => selection?.kind === "component" && selection.id === id,
+    onSelect,
+    productGroups,
+    groupMembers,
+    productByKey: (key) => productIndex.current.get(key),
+  };
 
   return (
     <OfflineScope offline={!online}>
-      {structure.conveyors.map((c) => (
-        <group key={c.id} ref={(o) => applyTransform(o, c.transform)}>
-          <FaultScope faulted={c.fault !== null}>
-            {c.body && (
-              <SolidBox
-                size={[c.length, 0.05, c.width]}
-                position={[c.length / 2, -0.025, 0]}
-                userData={{ label: c.name }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelect({ kind: "component", id: c.id });
-                }}
-              >
-                <meshStandardMaterial color={isSelected(c.id) ? SOLID.selectedStructure : SOLID.belt} roughness={0.85} />
-              </SolidBox>
-            )}
-            <ConveyorAxis
-              conveyor={c}
-              selected={isSelected(c.id)}
-              onSelect={() => onSelect({ kind: "component", id: c.id })}
-            />
-          </FaultScope>
-          <Html position={[0, 0.06, -c.width / 2]} className="label" zIndexRange={[10, 0]}>
-            {c.name}
-          </Html>
-        </group>
-      ))}
-      {productGroups.of(structure.products).map((g) => (
-        <ProductInstances
-          key={`${g.key}:${g.capacity}`}
-          group={g}
-          members={groupMembers}
-          selected={selection?.kind === "product" ? selection : undefined}
-          onSelect={onSelect}
-        />
-      ))}
-      {structure.products
-        .filter((p) => !isGrouped(p))
-        .map((p) => (
-          <ProductMesh
-            key={p.key}
-            product={p}
-            selected={selection?.kind === "product" && selection.conveyorId === p.conveyorId && selection.productId === p.productId}
-            lookup={productByKey}
-            onSelect={onSelect}
-          />
-        ))}
-      {structure.deltas.map((d) => (
-        <DeltaMesh
-          key={d.id}
-          delta={d}
-          latest={latest}
-          showTcp={layers.tcpMarkers}
-          selected={isSelected(d.id)}
-          onSelect={onSelect}
-        />
-      ))}
-      {structure.gantries.map((g) => (
-        <GantryMesh key={g.id} gantry={g} latest={latest} selected={isSelected(g.id)} onSelect={onSelect} />
-      ))}
-      {structure.loops.map((l) => (
-        <LoopMesh key={l.id} loop={l} latest={latest} selected={isSelected(l.id)} onSelect={onSelect} />
-      ))}
-      {structure.cartesians.map((c) => (
-        <CartesianMesh key={c.id} robot={c} latest={latest} selected={isSelected(c.id)} onSelect={onSelect} />
-      ))}
-      {structure.bodies.map((b) =>
-        (b.role === "beam" || b.role === "fieldOfView") && !layers.zones ? null : (
-          <BodyMesh key={b.key} body={b} latest={latest} selected={isSelected(b.componentId)} onSelect={onSelect} />
-        ),
-      )}
-      {structure.fingers.map((f) => (
-        <FingerMesh key={f.key} finger={f} latest={latest} selected={isSelected(f.robotId)} onSelect={onSelect} />
-      ))}
-      {layers.workingAreas &&
-        structure.boxAreas.map((a) => (
-          <BoxAreaMesh
-            key={`box:${a.robotId}`}
-            area={a}
-            color={isSelected(a.robotId) ? SELECT_COLOR : OVERLAY.workingArea}
-            fillOpacity={0.1}
-          />
-        ))}
-      {layers.limitAreas &&
-        structure.limitAreas.map((a) => (
-          <BoxAreaMesh
-            key={`limit:${a.robotId}`}
-            area={a}
-            color={isSelected(a.robotId) ? SELECT_COLOR : OVERLAY.limitArea}
-            fillOpacity={0.06}
-          />
-        ))}
-      {layers.workingAreas &&
-        structure.workingAreas.map((w) => (
-          <WorkingAreaMesh key={w.robotId} area={w} color={isSelected(w.robotId) ? SELECT_COLOR : OVERLAY.workingArea} />
-        ))}
-      {layers.zones &&
-        structure.zones.map((w, i) => (
-          <group key={`${w.componentId}:${i}`} ref={(o) => applyTransform(o, w.transform)}>
-            <mesh
-              position={[0, 0.003, 0]}
-              renderOrder={OVERLAY_ORDER}
-              userData={{ label: `Zone (#${w.componentId})` }}
-            >
-              <boxGeometry args={[w.length, 0.004, w.width]} />
-              <OverlayMaterial
-                color={OVERLAY.zone}
-                opacity={isSelected(w.componentId) ? 0.55 : 0.3}
-              />
-            </mesh>
-            <Outline
-              points={rectangle(w.length, w.width, 0.007)}
-              color={isSelected(w.componentId) ? SELECT_COLOR : OVERLAY.zone}
-            />
-            {w.allocation && (
-              <AllocationMesh
-                allocation={w.allocation}
-                zone={w}
-                color={OVERLAY.allocation}
-                selected={isSelected(w.componentId)}
-              />
-            )}
-          </group>
-        ))}
-      {layers.zones &&
-        structure.zones.map((w, i) => <CcsLine key={`ccs:${w.componentId}:${i}`} transform={w.ccs} width={w.width} />)}
-      {layers.faultLabels && structure.faultLabels.map((l) => <FaultLabel key={l.key} label={l} latest={latest} />)}
+      {Object.entries(PART_VIEWS).map(([kind, view]) => view && <Fragment key={kind}>{view(context)}</Fragment>)}
     </OfflineScope>
   );
 }
@@ -1611,11 +1623,6 @@ function GantryMesh(props: {
       </FaultScope>
     </group>
   );
-}
-
-/** What of a track's modules changes their meshes. */
-function trackSignature(modules: readonly SceneTrackModule[]): string {
-  return modules.map((m) => `${m.length}/${m.turn}/${m.across.join("/")}/${m.depth.join("/")}`).join(";");
 }
 
 /** Gap at each end of a track module, metres, so that the joints between modules show. */

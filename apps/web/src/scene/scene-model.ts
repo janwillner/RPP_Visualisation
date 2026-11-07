@@ -57,6 +57,7 @@ import {
   type Transform,
   type Vec3,
 } from "./frames";
+import { isGrouped } from "./product-groups";
 
 /**
  * The scene model: everything the renderer draws, in the renderer frame (metres, Y up).
@@ -404,6 +405,91 @@ export interface SceneModel {
   warnings: string[];
 }
 
+/** What the scene needs to know about one kind of part, whatever component adds it. */
+interface PartKind<T> {
+  /** The component whose hiding hides the part; none: the part is never dropped for a hidden component. */
+  owner?: (part: T) => number;
+  /** What of the part changes the drawn objects (not just their transforms); none, or undefined: nothing does. */
+  structure?: (part: T) => string | undefined;
+}
+
+/**
+ * Every kind of part a scene holds, the place a new kind is added: the empty scene, dropping hidden components and the
+ * structural signature the 3D view re-renders on all follow from it.
+ */
+export const SCENE_PARTS: { [K in keyof SceneModel]: PartKind<SceneModel[K][number]> } = {
+  conveyors: {
+    owner: (c) => c.id,
+    structure: (c) => `${c.id}:${c.length}:${c.width}:${c.body}:${c.axis.originX}:${c.axis.originY}`,
+  },
+  // Products on the belt are drawn in groups: only a new or larger group counts (see `ProductGroups`). The few drawn
+  // one by one (placeholders, carried products) count each.
+  products: { owner: (p) => p.conveyorId, structure: (p) => (isGrouped(p) ? undefined : `${p.key}:${p.state}`) },
+  deltas: { owner: (d) => d.id, structure: (d) => `${d.id}:${d.baseRadius}:${d.effectorRadius}` },
+  gantries: {
+    owner: (g) => g.id,
+    structure: (g) => `${g.id}:${trackSignature(g.modules)}:${g.movers.map((x) => x.id).join("/")}`,
+  },
+  loops: {
+    owner: (l) => l.id,
+    structure: (l) => `${l.id}:${trackSignature(l.modules)}:${l.movers.map((x) => x.id).join("/")}`,
+  },
+  cartesians: {
+    owner: (c) => c.id,
+    structure: (c) => `${c.id}:${c.parts.map((p) => p.size.join("/")).join("/")}:${c.flange ? 1 : 0}`,
+  },
+  bodies: {
+    owner: (b) => b.componentId,
+    structure: (b) => `${b.key}:${b.shape}:${b.role}:${b.size.length}/${b.size.width}/${b.size.height}`,
+  },
+  fingers: { owner: (f) => f.robotId, structure: (f) => `${f.key}:${f.diameter}:${f.height}` },
+  boxAreas: { owner: (a) => a.robotId, structure: (a) => `${a.robotId}:${a.size.join("/")}` },
+  limitAreas: { owner: (a) => a.robotId, structure: (a) => `${a.robotId}:${a.size.join("/")}` },
+  workingAreas: {
+    owner: (a) => a.robotId,
+    structure: (a) => `${a.robotId}:${a.radius}:${a.zMin}:${a.zMax}:${a.coneHeight}:${a.coneBottomRadius}`,
+  },
+  // Already left out for hidden components and conveyors when they are built.
+  zones: {
+    structure: (w) => `${w.componentId}:${w.conveyorId}:${w.length}:${w.width}:${w.allocation?.length ?? 0}`,
+  },
+  // Faults change colours and labels. Every fault of a shown component or mover has exactly one label, so the labels
+  // also stand for the red tint of the parts.
+  faultLabels: { owner: (l) => l.componentId, structure: (l) => `${l.key}:${l.message}` },
+  snapPoints: { owner: (p) => p.local.componentId, structure: (p) => (p.moving ? undefined : p.key) },
+  origins: { owner: (o) => o.componentId },
+  // Every component with an active fault, hidden ones included.
+  faults: {},
+  warnings: {},
+};
+
+const PART_KINDS = Object.entries(SCENE_PARTS) as [keyof SceneModel, PartKind<unknown>][];
+
+/** The structural signature of a scene: it changes when the set or shape of what is drawn changes. */
+export function sceneStructure(scene: SceneModel): string {
+  return PART_KINDS.map(([kind, { structure }]) => {
+    if (!structure) return "";
+    const keys: string[] = [];
+    for (const part of scene[kind] as unknown[]) {
+      const key = structure(part);
+      if (key !== undefined) keys.push(key);
+    }
+    return keys.join(",");
+  }).join("|");
+}
+
+/** What of a track's modules changes their meshes. */
+export function trackSignature(modules: readonly SceneTrackModule[]): string {
+  return modules.map((m) => `${m.length}/${m.turn}/${m.across.join("/")}/${m.depth.join("/")}`).join(";");
+}
+
+/**
+ * Where a picked product hangs, as a key of the build context's carriers: a robot's gripper flange (mover 0 for a
+ * robot without movers) or, with `finger`, one finger's grip point.
+ */
+export const carrierKey = (robotId: number, moverId: number, finger?: number): string =>
+  finger === undefined ? `${robotId}:${moverId}` : `${robotId}:${moverId}:${finger}`;
+
 const MM = 1 / 1000;
 
 /** One gripper of a robot (one per mover for XTS kinematics): where its fingers hang and whether it is faulted. */
@@ -451,9 +537,8 @@ interface BuildContext {
   /** The scene so far, hidden components included; they are dropped at the end. */
   scene: SceneModel;
   /**
-   * Where a picked product hangs, keyed "robotId:moverId" for the gripper flange (mover 0 for a robot without movers)
-   * and "robotId:moverId:finger" for a finger's grip point: an MCS frame whose origin touches the product's top, whose
-   * rotation orients the product and whose local −Z points to the product.
+   * Where a picked product hangs, by `carrierKey`: an MCS frame whose origin touches the product's top, whose rotation
+   * orients the product and whose local −Z points to the product.
    */
   carriers: Map<string, Frame>;
   /**
@@ -547,7 +632,7 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
       if (state) {
         // The flange frame lies at the TCP with the MCS axes, whatever way the robot is mounted.
         const flange: Frame = { rotation: rotZ(0), origin: positionToMcs(state.actualTcp) };
-        ctx.carriers.set(`${c.id}:0`, flange);
+        ctx.carriers.set(carrierKey(c.id, 0), flange);
         ctx.addGripper(c, [{ moverId: 0, flange, states: state.fingers, faulted: delta.fault !== null }]);
       }
       ctx.scene.snapPoints.push(...deltaSnapPoints(c, state));
@@ -577,7 +662,7 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
       ctx.scene.gantries.push(built.gantry);
       ctx.scene.boxAreas.push(built.area);
       ctx.scene.snapPoints.push(...built.snapPoints);
-      for (const [moverId, frame] of built.carriers) ctx.carriers.set(`${c.id}:${moverId}`, frame);
+      for (const [moverId, frame] of built.carriers) ctx.carriers.set(carrierKey(c.id, moverId), frame);
       for (const f of built.faults) ctx.addFault(c.id, f.part, f.message, f.anchor);
       ctx.addGripper(c, built.grippers);
       ctx.addLimitArea(c);
@@ -602,7 +687,7 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
       const built = buildLoop(withModules(c), state, ctx.warn);
       ctx.scene.loops.push(built.loop);
       ctx.scene.snapPoints.push(...built.snapPoints);
-      for (const [moverId, frame] of built.carriers) ctx.carriers.set(`${c.id}:${moverId}`, frame);
+      for (const [moverId, frame] of built.carriers) ctx.carriers.set(carrierKey(c.id, moverId), frame);
       for (const f of built.faults) ctx.addFault(c.id, f.part, f.message, f.anchor);
       ctx.addGripper(c, built.grippers);
       ctx.addZones(c);
@@ -627,7 +712,7 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
       ctx.scene.cartesians.push(built.cartesian);
       ctx.scene.boxAreas.push(built.area);
       ctx.scene.snapPoints.push(...built.snapPoints);
-      if (built.carrier) ctx.carriers.set(`${c.id}:0`, built.carrier);
+      if (built.carrier) ctx.carriers.set(carrierKey(c.id, 0), built.carrier);
       ctx.addFault(c.id, null, built.cartesian.fault, built.faultAnchor);
       ctx.addGripper(c, built.grippers);
       ctx.addLimitArea(c);
@@ -701,25 +786,7 @@ const kitOf = (type: ComponentType) => KITS[type] as unknown as ComponentKit<Com
 
 /** A scene with nothing in it. */
 export function emptyScene(): SceneModel {
-  return {
-    conveyors: [],
-    products: [],
-    deltas: [],
-    workingAreas: [],
-    zones: [],
-    gantries: [],
-    boxAreas: [],
-    limitAreas: [],
-    loops: [],
-    cartesians: [],
-    bodies: [],
-    fingers: [],
-    snapPoints: [],
-    origins: [],
-    faultLabels: [],
-    faults: [],
-    warnings: [],
-  };
+  return Object.fromEntries(PART_KINDS.map(([kind]) => [kind, []])) as unknown as SceneModel;
 }
 
 /**
@@ -762,7 +829,7 @@ export function buildScene(
           const index = i + 1;
           const frame = frameFromPose(state.pose);
           const grip = child(frame, [0, 0, -f.height]);
-          ctx.carriers.set(`${robot.id}:${g.moverId}:${index}`, grip);
+          ctx.carriers.set(carrierKey(robot.id, g.moverId, index), grip);
           scene.fingers.push({
             key: `${robot.id}:${g.moverId}:${index}`,
             robotId: robot.id,
@@ -862,30 +929,21 @@ export function buildScene(
   }
   // Each component's coordinate system: at its pose, moved by its origin shift.
   const rank = (c: ComponentConfig) => kitOf(c.type).originRank ?? 2;
-  const origins = [...components]
+  scene.origins = [...components]
     .sort((a, b) => rank(a) - rank(b))
     .map((c) => ({ componentId: c.id, name: c.name, transform: toRendererTransform(originFrame(c)) }));
   // Hidden components are built too (a hidden robot still carries products of a visible conveyor), then dropped.
-  const shown = (id: number) => !hidden.has(id);
-  return {
-    conveyors: scene.conveyors.filter((c) => shown(c.id)),
-    products: scene.products.filter((p) => shown(p.conveyorId)),
-    deltas: scene.deltas.filter((d) => shown(d.id)),
-    workingAreas: scene.workingAreas.filter((a) => shown(a.robotId)),
-    zones,
-    gantries: scene.gantries.filter((g) => shown(g.id)),
-    boxAreas: scene.boxAreas.filter((a) => shown(a.robotId)),
-    limitAreas: scene.limitAreas.filter((a) => shown(a.robotId)),
-    loops: scene.loops.filter((l) => shown(l.id)),
-    cartesians: scene.cartesians.filter((c) => shown(c.id)),
-    bodies: scene.bodies.filter((b) => shown(b.componentId)),
-    fingers: scene.fingers.filter((f) => shown(f.robotId)),
-    snapPoints: snapPoints.filter((p) => shown(p.local.componentId)),
-    origins: origins.filter((o) => shown(o.componentId)),
-    faultLabels: faultLabels.filter((l) => shown(l.componentId)),
-    faults,
-    warnings,
-  };
+  return withoutHidden(scene, hidden);
+}
+
+/** The scene without the parts of hidden components. */
+function withoutHidden(scene: SceneModel, hidden: ReadonlySet<number>): SceneModel {
+  const shown: Record<string, unknown[]> = {};
+  for (const [kind, { owner }] of PART_KINDS) {
+    const parts = scene[kind] as unknown[];
+    shown[kind] = owner && hidden.size > 0 ? parts.filter((p) => !hidden.has(owner(p))) : parts;
+  }
+  return shown as unknown as SceneModel;
 }
 
 /** A component across all sources: manifest ids are unique only within one source. */
@@ -1308,8 +1366,8 @@ function conveyorProducts(
 
     if (p.state === "picked") {
       if (!beyondEnd) result.push(onBelt("placeholder"));
-      const flange = carriers.get(`${p.lastClientId}:${p.moverId}`);
-      let carrier = p.fingerId > 0 ? carriers.get(`${p.lastClientId}:${p.moverId}:${p.fingerId}`) : flange;
+      const flange = carriers.get(carrierKey(p.lastClientId, p.moverId));
+      let carrier = p.fingerId > 0 ? carriers.get(carrierKey(p.lastClientId, p.moverId, p.fingerId)) : flange;
       if (!carrier && flange) {
         // An unknown finger: hang it at the flange so it stays visible.
         warn(`${c.name}: product #${p.id} hangs from finger ${p.fingerId}, which robot #${p.lastClientId} does not have`);
@@ -1431,24 +1489,16 @@ function buildGantry(c: XtsGantryConfig, state: XtsGantryState | undefined) {
     depth: [0, 120],
   });
   const owner = snapOwner(c, frame);
-  const carriers = new Map<number, Frame>();
-  const grippers: GripperSource[] = [];
   const gantryFault = faultText(state?.fault);
-  const faults: { part: string | null; message: string | null; anchor: Vec3 }[] = [
-    { part: null, message: gantryFault, anchor: lifted(track.top, LABEL_LIFT.track) },
-  ];
-  const snapPoints: SnapPoint[] = track.boundaries.map((b) => owner.atMcs(b.label, b.mcs, "structure", true));
+  const parts = new MoverParts(c.name, owner, gantryFault, track.top);
+  parts.snapPoints.push(...track.boundaries.map((b) => owner.atMcs(b.label, b.mcs, "structure", true)));
   const movers = (state?.movers ?? []).map((m): SceneGantryMover => {
     // Mover frame: +X its X axis (to the right of the track), +Y along the track, +Z up.
     const at = track.at(m.position);
     const mover = child(group, at.origin, mul(at.rotation, rotZ(-90)));
     const toolX = m.x + c.toolOffsetX;
     const tip = child(mover, [toolX, 0, c.toolOffsetZ]);
-    carriers.set(m.id, tip);
-    const fault = faultText(m.fault);
-    faults.push({ part: `Mover ${m.id}`, message: fault, anchor: lifted(mover.origin, LABEL_LIFT.gantryMover) });
-    grippers.push({ moverId: m.id, flange: tip, states: m.fingers, faulted: gantryFault !== null || fault !== null });
-    snapPoints.push(owner.atMcs(`${c.name} · mover ${m.id} flange`, tip.origin, "structure", true));
+    const fault = parts.add(m, mover, tip, LABEL_LIFT.gantryMover, "flange");
     return {
       id: m.id,
       carriage: toRenderer(mover.origin),
@@ -1475,11 +1525,48 @@ function buildGantry(c: XtsGantryConfig, state: XtsGantryState | undefined) {
       transform: toRendererTransform(child(frame, centre)),
       size: [(c.xMax - c.xMin) * MM, length * MM, (c.zMax - c.zMin) * MM],
     } satisfies SceneBoxArea,
-    snapPoints,
-    carriers,
-    grippers,
-    faults: [...faults, ...track.faults],
+    snapPoints: parts.snapPoints,
+    carriers: parts.carriers,
+    grippers: parts.grippers,
+    faults: [...parts.faults, ...track.faults],
   };
+}
+
+/**
+ * What every XTS mover adds besides its own drawing: the frame products hang from, its gripper, its fault label and
+ * its flange as a snap point. A mover counts as faulted when it or its track is.
+ */
+class MoverParts {
+  readonly carriers = new Map<number, Frame>();
+  readonly grippers: GripperSource[] = [];
+  readonly faults: { part: string | null; message: string | null; anchor: Vec3 }[];
+  readonly snapPoints: SnapPoint[] = [];
+
+  constructor(
+    private readonly name: string,
+    private readonly owner: SnapOwner,
+    private readonly trackFault: string | null,
+    trackTop: Vec3,
+  ) {
+    this.faults = [{ part: null, message: trackFault, anchor: lifted(trackTop, LABEL_LIFT.track) }];
+  }
+
+  /** Adds mover `m` at `mover` with its gripper at `flange`; returns its fault text. */
+  add(
+    m: { id: number; fault: Fault | null; fingers: FingerState[] },
+    mover: Frame,
+    flange: Frame,
+    labelLift: number,
+    flangeName: string,
+  ): string | null {
+    this.carriers.set(m.id, flange);
+    const fault = faultText(m.fault);
+    this.faults.push({ part: `Mover ${m.id}`, message: fault, anchor: lifted(mover.origin, labelLift) });
+    const faulted = this.trackFault !== null || fault !== null;
+    this.grippers.push({ moverId: m.id, flange, states: m.fingers, faulted });
+    this.snapPoints.push(this.owner.atMcs(`${this.name} · mover ${m.id} ${flangeName}`, flange.origin, "structure", true));
+    return fault;
+  }
 }
 
 /** Mover frames of an XTS loop, its track, snap points and the frames products hang from. */
@@ -1492,23 +1579,15 @@ function buildLoop(c: XtsLoopConfig, state: XtsLoopState | undefined, warn: (mes
     depth: [-c.moverWidth / 2, c.moverWidth / 2],
   });
   if (track.gap > 1) warn(`${c.name}: the track modules do not close the loop (${Math.round(track.gap)} mm apart)`);
-  const carriers = new Map<number, Frame>();
-  const grippers: GripperSource[] = [];
   const loopFault = faultText(state?.fault);
-  const faults: { part: string | null; message: string | null; anchor: Vec3 }[] = [
-    { part: null, message: loopFault, anchor: lifted(track.top, LABEL_LIFT.track) },
-  ];
-  const snapPoints: SnapPoint[] = track.boundaries.map((b) => owner.atMcs(b.label, b.mcs));
+  const parts = new MoverParts(c.name, owner, loopFault, track.top);
+  parts.snapPoints.push(...track.boundaries.map((b) => owner.atMcs(b.label, b.mcs)));
   const movers = (state?.movers ?? []).map((m): SceneLoopMover => {
     // Mover frame: +X along the tangent, +Z to the left (inside the loop), so its −Z points outwards.
     const at = track.at(m.position);
     const mover = child(frame, at.origin, mul(at.rotation, rotX(-90)));
     const tool = child(mover, [0, 0, -c.toolOffset]);
-    carriers.set(m.id, tool);
-    const fault = faultText(m.fault);
-    faults.push({ part: `Mover ${m.id}`, message: fault, anchor: lifted(mover.origin, LABEL_LIFT.loopMover) });
-    grippers.push({ moverId: m.id, flange: tool, states: m.fingers, faulted: loopFault !== null || fault !== null });
-    snapPoints.push(owner.atMcs(`${c.name} · mover ${m.id} tool`, tool.origin, "structure", true));
+    const fault = parts.add(m, mover, tool, LABEL_LIFT.loopMover, "tool");
     return { id: m.id, transform: toRendererTransform(mover), tool: toRenderer(tool.origin), fault };
   });
   return {
@@ -1523,10 +1602,10 @@ function buildLoop(c: XtsLoopConfig, state: XtsLoopState | undefined, warn: (mes
       movers,
       fault: loopFault,
     } satisfies SceneLoop,
-    snapPoints,
-    carriers,
-    grippers,
-    faults: [...faults, ...track.faults],
+    snapPoints: parts.snapPoints,
+    carriers: parts.carriers,
+    grippers: parts.grippers,
+    faults: [...parts.faults, ...track.faults],
   };
 }
 

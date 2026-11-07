@@ -54,10 +54,11 @@ Example: the Cartesian robot.
    (`registerEnumTable`, `ALIASES`) rather than writing a mapper.
 4. **Web**:
    - a kit in `KITS` (`scene-model.ts`): `build` adds its parts through the build context (`addZones`, `addGripper`,
-     `addFault`, carriers for products it carries, snap points) and `interpolate` blends two states;
-   - its scene part type and a list for it in `SceneModel` and `emptyScene`, filtered for hidden components at the
-     end of `buildScene`;
-   - a mesh in `SceneView.tsx` and its line in the structural `signature`.
+     `addFault`, carriers for products it carries (`carrierKey`), snap points) and
+     `interpolate` blends two states;
+   - for a new kind of part: its type, a list for it in `SceneModel` and its entry in `SCENE_PARTS` (which component
+     owns a part, for hiding, and what of it changes the drawn objects), and in `SceneView.tsx` its mesh and its entry
+     in `PART_VIEWS`. The compiler asks for both entries; the empty scene, hiding and the structural signature follow.
    The inspector (`stateRows`), the timeline (faults of the entries of any list in the state, e.g. movers or track
    modules) and the recording need nothing. A part with its own fault is passed to `addFault` with its name
    ("Mover 2", "Module 9").
