@@ -317,7 +317,7 @@ fb_Delta1.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_Outfeed.m_Id(),
 | `vi_udn_ConveyorId` | The conveyor's id (`fb_Belt.m_Id()`) |
 | `vi_lr_Start`, `vi_lr_End` | Belt coordinates in mm (from the belt start or its origin shift). `Start = End` draws a line across the belt, e.g. for a light barrier. |
 | `vi_lr_AllocationOffset` | mm before `End` up to which the robot may still allocate products; drawn as its own area. 0 = no limit. |
-| `vi_lr_CcsOffset` | Belt coordinate of the component's conveyor coordinate system (CCS), drawn as a solid violet line across the zone. It may lie outside the zone, but must lie on the belt (between its start and end), else a warning. |
+| `vi_lr_CcsOffset` | Belt coordinate of the component's conveyor coordinate system (CCS), drawn as a white dashed line across the zone. It may lie outside the zone, but must lie on the belt (between its start and end), else a warning. |
 | `vi_lr_StartY`, `vi_lr_EndY` | The zone's sides across the belt in mm, along the conveyor's local Y from its origin shift (like a product's latch pose; 0 = the belt's centre line without a shift), in any order. Equal (e.g. both 0) = the whole belt width. A zone may reach past the belt's sides; it is drawn as reported. |
 
 `vi_lr_Start` and `vi_lr_End` should lie on the belt; a zone reaching past the belt start or end is drawn as

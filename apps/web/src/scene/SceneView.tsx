@@ -546,17 +546,27 @@ function SourceContent(props: {
 /** Height of the conveyor axis above the belt surface, so the line does not flicker against the belt. */
 const AXIS_LIFT = 0.004;
 
+/** Conveyor axis: radius of the origin ball, and radius and length of the direction arrow (m). */
+const AXIS_BALL = 0.01;
+const AXIS_ARROW = { radius: 0.015, length: 0.045 };
+/** The ball is small; this invisible sphere around it is what a click or tap has to hit. */
+const AXIS_HIT_RADIUS = 0.03;
+
 /**
- * A conveyor's X axis on the belt, in its frame: a small ball at its shifted origin, a line along the axis and the
- * conveying direction arrow at the belt end. The ball selects the conveyor, also one without a body.
- * Renderer local axes: belt X -> x, belt Y -> −z.
+ * A conveyor's X axis on the belt, in its frame, as a violet overlay: a small ball at its shifted origin, a line
+ * along the axis and a small conveying direction arrow at the belt end. The ball selects the conveyor, also one
+ * without a body. Renderer local axes: belt X -> x, belt Y -> −z.
  */
 function ConveyorAxis(props: { conveyor: SceneConveyor; selected: boolean; onSelect: () => void }) {
   const { conveyor: c, selected, onSelect } = props;
   const z = -c.axis.originY;
-  const color = selected ? SOLID.selectedStructure : SOLID.beltArrow;
+  const color = selected ? SELECT_COLOR : OVERLAY.conveyorAxis;
   return (
     <>
+      <mesh position={[c.axis.originX, AXIS_LIFT, z]} raycast={noRaycast}>
+        <sphereGeometry args={[AXIS_BALL, 16, 12]} />
+        <meshBasicMaterial color={color} toneMapped={false} />
+      </mesh>
       <mesh
         position={[c.axis.originX, AXIS_LIFT, z]}
         userData={{ label: c.name }}
@@ -565,8 +575,8 @@ function ConveyorAxis(props: { conveyor: SceneConveyor; selected: boolean; onSel
           onSelect();
         }}
       >
-        <sphereGeometry args={[0.025, 16, 12]} />
-        <meshStandardMaterial color={color} roughness={0.6} />
+        <sphereGeometry args={[AXIS_HIT_RADIUS, 12, 8]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       <Line
         points={[
@@ -575,18 +585,23 @@ function ConveyorAxis(props: { conveyor: SceneConveyor; selected: boolean; onSel
         ]}
         color={color}
         lineWidth={2}
+        toneMapped={false}
         raycast={noRaycast}
       />
-      <mesh position={[c.length + 0.06, AXIS_LIFT, z]} rotation={[0, 0, -Math.PI / 2]} raycast={noRaycast}>
-        <coneGeometry args={[0.04, 0.12, 16]} />
-        <meshStandardMaterial color={color} roughness={0.6} />
+      <mesh
+        position={[c.length + AXIS_ARROW.length / 2, AXIS_LIFT, z]}
+        rotation={[0, 0, -Math.PI / 2]}
+        raycast={noRaycast}
+      >
+        <coneGeometry args={[AXIS_ARROW.radius, AXIS_ARROW.length, 16]} />
+        <meshBasicMaterial color={color} toneMapped={false} />
       </mesh>
     </>
   );
 }
 
 /**
- * A zone's conveyor coordinate system: a solid violet line lying on the belt, across the whole zone width. It lies
+ * A zone's conveyor coordinate system: a white dashed line lying on the belt, across the whole zone width. It lies
  * above every zone overlay (the allocation limit bar's top is 11 mm) and is drawn after them, so the limit bar cannot
  * hide it when both lie at the same belt coordinate. Renderer local axes: belt X -> x, belt Y -> −z.
  */
@@ -599,7 +614,10 @@ function CcsLine({ transform, width }: { transform: Transform; width: number }) 
           [0, 0.016, width / 2],
         ]}
         color={OVERLAY.ccs}
-        lineWidth={2.5}
+        lineWidth={2}
+        dashed
+        dashSize={0.03}
+        gapSize={0.02}
         toneMapped={false}
         renderOrder={OVERLAY_ORDER + 1}
         raycast={noRaycast}

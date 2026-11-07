@@ -60,7 +60,7 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
 - `fBeltPosition` is a continuous position in mm (no modulo). For modulo axes use `_FB_VisuConveyor.m_SetModuloBeltPosition`.
 - Conveyor body: `bBody` (default TRUE, `m_SetBodyVisible`) draws the belt as a body. FALSE is a conveyor without
   one (e.g. products pushed by movers, a virtual queue): only its products, zones and axis are drawn, and its belt
-  corners are no snap points. Every conveyor shows its X axis on the belt surface: a small ball at its shifted
+  corners are no snap points. Every conveyor shows its X axis on the belt surface in violet: a small ball at its shifted
   origin, a line along the belt and the conveying direction arrow at the belt end; the ball selects the conveyor.
 - Product latch pose = bottom centre of the product when it was latched, **in the conveyor's
   coordinate system**: from the conveyor's `stPose` moved by its `stOriginShift`, `fX` along the conveying direction,
@@ -86,7 +86,7 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   which a robot may still allocate products in the zone, so it does not move out of the zone while approaching. The
   allocation area runs from `fStart` to `fEnd − fAllocationOffset` (never beyond `fStart`); 0 = no allocation limit.
 - Zone CCS: `fCcsOffset` is the belt coordinate (like `fStart` / `fEnd`) of the component's conveyor coordinate system
-  (CCS) on that conveyor. It is drawn as a solid violet line across the zone, above every other zone overlay (also
+  (CCS) on that conveyor. It is drawn as a white dashed line across the zone, above every other zone overlay (also
   where it meets the allocation limit), in the zones layer, and is a measure-mode snap point. The CCS may lie outside
   its zone, but must lie on the belt (between its start and end); else the visualisation warns and draws it there.
 - Zone along the belt: a zone reaching past the belt start or end is drawn as reported and raises a warning.
