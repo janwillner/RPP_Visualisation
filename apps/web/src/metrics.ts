@@ -1,4 +1,4 @@
-import { componentName } from "./component-name";
+import { componentName } from "./machine-facts";
 import type { SourceInfo } from "./sources";
 import { clientAction, type ClientAction, type ProductEvent } from "./product-history";
 

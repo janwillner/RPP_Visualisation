@@ -1,7 +1,6 @@
 import type { GatewayMessage, Product } from "@rpp/protocol";
-import { componentName } from "./component-name";
 import type { SourceInfo } from "./sources";
-import { isMissed } from "./scene/scene-model";
+import { componentName, isMissed } from "./machine-facts";
 
 /** What happened to a product: its register state, or that it was missed or left the register. */
 export type ProductStepKind = Product["state"] | "missed" | "gone";
