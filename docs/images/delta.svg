@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 960 340" width="960" height="340" role="img">
+<title>A Delta robot: its arms (top view), working and limit area (side view)</title>
+<style>
+.dg{--text:#1d232b;--muted:#5d6875;--panel:#f4f6f9;--border:#b8c0cb;--accent:#0b6fa4;--belt:#d5dbe3;--ccs:#1d232b;--axis:#7e57c2;--x:#e53935;--y:#43a047;--z:#1e88e5}
+@media (prefers-color-scheme:dark){.dg{--text:#dfe5ec;--muted:#8893a2;--panel:#1f242c;--border:#3a424e;--accent:#4fc3f7;--belt:#3b4656;--ccs:#f1f4f8;--axis:#b388ff;--x:#ef5350;--y:#66bb6a;--z:#42a5f5}}
+.dg text{font:13px system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--text)}
+.dg .s{font-size:11.5px}
+.dg .c{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:11.5px}
+.dg .h{font-weight:600}
+.dg .m{fill:var(--muted)}
+.dg .ink{fill:#14181d}
+.dg .mid{text-anchor:middle}
+.dg .end{text-anchor:end}
+.dg .tx{fill:var(--x)}
+.dg .ty{fill:var(--y)}
+.dg .tz{fill:var(--z)}
+.dg .ln{fill:none;stroke:var(--text);stroke-width:1.4}
+.dg .lm{fill:none;stroke:var(--muted);stroke-width:1}
+.dg .dash{stroke-dasharray:5 4}
+.dg .box{fill:var(--panel);stroke:var(--border);stroke-width:1.2}
+.dg .frame{fill:none;stroke:var(--border);stroke-width:1.2;stroke-dasharray:6 4}
+.dg .acc{fill:none;stroke:var(--accent);stroke-width:1.6}
+.dg .accf{fill:var(--accent)}
+.dg .dot{fill:var(--text)}
+.dg .belt{fill:var(--belt);stroke:var(--border)}
+.dg .zone{fill:#5fd39a;fill-opacity:.3;stroke:#22a86b;stroke-width:1.2}
+.dg .alloc{fill:#22a86b;fill-opacity:.45}
+.dg .ccs{stroke:var(--ccs);stroke-width:2;stroke-dasharray:6 4}
+.dg .axis{fill:none;stroke:var(--axis);stroke-width:2}
+.dg .axisf{fill:var(--axis)}
+.dg .x{stroke:var(--x);stroke-width:2}
+.dg .y{stroke:var(--y);stroke-width:2}
+.dg .z{stroke:var(--z);stroke-width:2}
+.dg .state{stroke:var(--text);stroke-width:1}
+.dg .detected{fill:#a9bbd3}
+.dg .assigned{fill:#f5a524}
+.dg .picked{fill:#5fd39a}
+.dg .rejected{fill:#a78bfa}
+.dg .placed{fill:#2fc6d6}
+.dg .missed{fill:#ff5fa2}
+.dg .mline{fill:none;stroke:#ff5fa2;stroke-width:1.6;stroke-dasharray:5 4}
+.dg .limit{fill:#ff9800;fill-opacity:.12;stroke:#ff9800;stroke-width:1.4;stroke-dasharray:6 4}
+.dg .work{fill:var(--accent);fill-opacity:.1;stroke:var(--accent);stroke-width:1.4}
+.dg .grip{fill:#3d8fe0;stroke:var(--text);stroke-width:1}
+.dg .solid{fill:var(--belt);stroke:var(--text);stroke-width:1}
+.dg .track{fill:none;stroke:var(--muted);stroke-width:14}
+.dg .joint{stroke:var(--panel);stroke-width:2.5}
+.dg .sensorpart{fill:#26c6da;stroke:var(--text);stroke-width:1}
+.dg .active{fill:#5fd39a;stroke:var(--text);stroke-width:1}
+.dg .fov{fill:#4fc3f7;fill-opacity:.18;stroke:#4fc3f7;stroke-width:1.4}
+.dg .beam{stroke:#ffd54f;stroke-width:5;stroke-opacity:.35}
+.dg .beamon{stroke-opacity:1}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--text)"/></marker><marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker><marker id="aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker><marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--axis)"/></marker><marker id="ax" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--x)"/></marker><marker id="ay" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--y)"/></marker><marker id="az" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--z)"/></marker><marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:#ff5fa2"/></marker></defs>
+<text x="20" y="24" class="s h">Top view</text>
+<circle cx="170" cy="150" r="70" class="solid"/>
+<line x1="240.0" y1="150.0" x2="295.0" y2="150.0" class="ln" style="stroke-width:6"/>
+<circle cx="240.0" cy="150.0" r="4" class="dot"/>
+<text x="315.0" y="154.0" class="s mid">arm 1</text>
+<line x1="135.0" y1="89.4" x2="107.5" y2="41.7" class="ln" style="stroke-width:6"/>
+<circle cx="135.0" cy="89.4" r="4" class="dot"/>
+<text x="97.5" y="28.4" class="s mid">arm 2</text>
+<line x1="135.0" y1="210.6" x2="107.5" y2="258.3" class="ln" style="stroke-width:6"/>
+<circle cx="135.0" cy="210.6" r="4" class="dot"/>
+<text x="97.5" y="279.6" class="s mid">arm 3</text>
+<line x1="170" y1="150" x2="215" y2="150" class="x" marker-end="url(#ax)"/>
+<line x1="170" y1="150" x2="170" y2="105" class="y" marker-end="url(#ay)"/>
+<text x="210" y="142" class="s tx">X</text>
+<text x="176" y="110" class="s ty">Y</text>
+<circle cx="170" cy="150" r="4" class="dot"/>
+<text x="170" y="310" class="s mid">arm 1 along the base's local +X, arms 2 and 3</text>
+<text x="170" y="326" class="s mid">counter-clockwise at 120° (seen from above)</text>
+<text x="440" y="24" class="s h">Side view</text>
+<rect x="500" y="150" width="200" height="140" class="work"/>
+<rect x="530" y="195" width="140" height="65" class="limit"/>
+<rect x="490" y="30" width="220" height="14" class="solid"/>
+<circle cx="600" cy="37" r="4" class="dot"/>
+<polyline points="520,44 480,90 575,180" class="ln" style="stroke-width:3"/>
+<polyline points="680,44 720,90 625,180" class="ln" style="stroke-width:3"/>
+<rect x="570" y="178" width="60" height="8" class="solid"/>
+<circle cx="600" cy="188" r="4" class="accf"/>
+<line x1="600" y1="278" x2="700" y2="278" class="ln" marker-end="url(#a)"/>
+<text x="650" y="272" class="c mid">vi_lr_Radius</text>
+<line x1="470" y1="150" x2="500" y2="150" class="lm"/>
+<line x1="470" y1="290" x2="500" y2="290" class="lm"/>
+<text x="466" y="154" class="c end">vi_lr_ZMax</text>
+<text x="466" y="294" class="c end">vi_lr_ZMin</text>
+<text x="466" y="310" class="s m end">(negative below the base)</text>
+<line x1="606" y1="188" x2="720" y2="188" class="lm dash"/>
+<line x1="700" y1="225" x2="720" y2="225" class="lm dash"/>
+<line x1="670" y1="250" x2="720" y2="250" class="lm dash"/>
+<line x1="710" y1="37" x2="720" y2="37" class="lm dash"/>
+<text x="725" y="41" class="s">vi_Pose: centre of the base</text>
+<text x="725" y="192" class="s">TCP (m_SetTcp), in the MCS</text>
+<text x="725" y="229" class="s">working area (m_SetWorkingArea)</text>
+<text x="725" y="254" class="s">limit area (m_SetLimitArea)</text>
+</svg>

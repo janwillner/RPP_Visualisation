@@ -7,7 +7,7 @@ import { z } from "zod";
  * (machine coordinate system): right-handed, Z up, X in product flow direction.
  * Conversion to the renderer's frame happens only in the web scene model.
  *
- * Every schema and field carries a `.describe()` text: the API documentation the gateway serves at `/docs` is
+ * Every schema and field carries a `.describe()` text: the JSON Schema the gateway serves at `/docs/schema.json` is
  * generated from them (ADR 0012), and a test fails for a field without one.
  */
 

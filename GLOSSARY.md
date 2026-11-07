@@ -59,9 +59,9 @@ _Avoid_: settings, parameters
 **State** (of a component):
 The values of a component that change every PLC cycle, such as the belt position, product register and TCP.
 
-**API documentation**:
-What the gateway serves at `/docs` for programs that read its data: the WebSocket messages, `/health` and the recording files of the version it runs, with the PLC contract and library guide.
-_Avoid_: API spec, Swagger
+**PLC library guide**:
+What the gateway serves at `/docs` for PLC programmers: how to use the library `Syn_Visu` of the version it runs, with diagrams and the reference of every method. Programs that read the gateway get the JSON Schema of its messages at `/docs/schema.json`.
+_Avoid_: API documentation, API spec, Swagger
 
 ## Conveyors and products
 

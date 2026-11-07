@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 900 360" width="900" height="360" role="img">
+<title>The states of a product</title>
+<style>
+.dg{--text:#1d232b;--muted:#5d6875;--panel:#f4f6f9;--border:#b8c0cb;--accent:#0b6fa4;--belt:#d5dbe3;--ccs:#1d232b;--axis:#7e57c2;--x:#e53935;--y:#43a047;--z:#1e88e5}
+@media (prefers-color-scheme:dark){.dg{--text:#dfe5ec;--muted:#8893a2;--panel:#1f242c;--border:#3a424e;--accent:#4fc3f7;--belt:#3b4656;--ccs:#f1f4f8;--axis:#b388ff;--x:#ef5350;--y:#66bb6a;--z:#42a5f5}}
+.dg text{font:13px system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--text)}
+.dg .s{font-size:11.5px}
+.dg .c{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:11.5px}
+.dg .h{font-weight:600}
+.dg .m{fill:var(--muted)}
+.dg .ink{fill:#14181d}
+.dg .mid{text-anchor:middle}
+.dg .end{text-anchor:end}
+.dg .tx{fill:var(--x)}
+.dg .ty{fill:var(--y)}
+.dg .tz{fill:var(--z)}
+.dg .ln{fill:none;stroke:var(--text);stroke-width:1.4}
+.dg .lm{fill:none;stroke:var(--muted);stroke-width:1}
+.dg .dash{stroke-dasharray:5 4}
+.dg .box{fill:var(--panel);stroke:var(--border);stroke-width:1.2}
+.dg .frame{fill:none;stroke:var(--border);stroke-width:1.2;stroke-dasharray:6 4}
+.dg .acc{fill:none;stroke:var(--accent);stroke-width:1.6}
+.dg .accf{fill:var(--accent)}
+.dg .dot{fill:var(--text)}
+.dg .belt{fill:var(--belt);stroke:var(--border)}
+.dg .zone{fill:#5fd39a;fill-opacity:.3;stroke:#22a86b;stroke-width:1.2}
+.dg .alloc{fill:#22a86b;fill-opacity:.45}
+.dg .ccs{stroke:var(--ccs);stroke-width:2;stroke-dasharray:6 4}
+.dg .axis{fill:none;stroke:var(--axis);stroke-width:2}
+.dg .axisf{fill:var(--axis)}
+.dg .x{stroke:var(--x);stroke-width:2}
+.dg .y{stroke:var(--y);stroke-width:2}
+.dg .z{stroke:var(--z);stroke-width:2}
+.dg .state{stroke:var(--text);stroke-width:1}
+.dg .detected{fill:#a9bbd3}
+.dg .assigned{fill:#f5a524}
+.dg .picked{fill:#5fd39a}
+.dg .rejected{fill:#a78bfa}
+.dg .placed{fill:#2fc6d6}
+.dg .missed{fill:#ff5fa2}
+.dg .mline{fill:none;stroke:#ff5fa2;stroke-width:1.6;stroke-dasharray:5 4}
+.dg .limit{fill:#ff9800;fill-opacity:.12;stroke:#ff9800;stroke-width:1.4;stroke-dasharray:6 4}
+.dg .work{fill:var(--accent);fill-opacity:.1;stroke:var(--accent);stroke-width:1.4}
+.dg .grip{fill:#3d8fe0;stroke:var(--text);stroke-width:1}
+.dg .solid{fill:var(--belt);stroke:var(--text);stroke-width:1}
+.dg .track{fill:none;stroke:var(--muted);stroke-width:14}
+.dg .joint{stroke:var(--panel);stroke-width:2.5}
+.dg .sensorpart{fill:#26c6da;stroke:var(--text);stroke-width:1}
+.dg .active{fill:#5fd39a;stroke:var(--text);stroke-width:1}
+.dg .fov{fill:#4fc3f7;fill-opacity:.18;stroke:#4fc3f7;stroke-width:1.4}
+.dg .beam{stroke:#ffd54f;stroke-width:5;stroke-opacity:.35}
+.dg .beamon{stroke-opacity:1}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--text)"/></marker><marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker><marker id="aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker><marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--axis)"/></marker><marker id="ax" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--x)"/></marker><marker id="ay" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--y)"/></marker><marker id="az" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--z)"/></marker><marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:#ff5fa2"/></marker></defs>
+<circle cx="30" cy="80" r="7" class="dot"/>
+<line x1="37" y1="80" x2="88" y2="80" class="ln" marker-end="url(#a)"/>
+<text x="22" y="50" class="c">m_LatchProduct</text>
+<rect x="90" y="60" width="130" height="40" rx="18" class="state detected"/>
+<text x="155" y="85" class="h mid ink">DETECTED</text>
+<rect x="330" y="60" width="130" height="40" rx="18" class="state assigned"/>
+<text x="395" y="85" class="h mid ink">ASSIGNED</text>
+<rect x="570" y="60" width="130" height="40" rx="18" class="state picked"/>
+<text x="635" y="85" class="h mid ink">PICKED</text>
+<line x1="220" y1="72" x2="328" y2="72" class="ln" marker-end="url(#a)"/>
+<text x="274" y="64" class="s mid">robot allocates</text>
+<line x1="330" y1="90" x2="222" y2="90" class="ln" marker-end="url(#a)"/>
+<text x="276" y="106" class="s mid">robot releases</text>
+<line x1="460" y1="80" x2="568" y2="80" class="ln" marker-end="url(#a)"/>
+<text x="514" y="72" class="s mid">robot picks</text>
+<text x="514" y="96" class="c mid">vi_udn_FingerId</text>
+<rect x="740" y="30" width="150" height="90" rx="8" class="frame"/>
+<text x="815" y="48" class="s m mid">target conveyor</text>
+<rect x="755" y="60" width="120" height="40" rx="18" class="state placed"/>
+<text x="815" y="85" class="h mid ink">PLACED</text>
+<line x1="700" y1="80" x2="753" y2="80" class="ln" marker-end="url(#a)"/>
+<text x="815" y="140" class="s mid">m_RemoveProduct here,</text>
+<text x="815" y="156" class="s mid">m_LatchProduct(PLACED) there</text>
+<rect x="90" y="220" width="130" height="40" rx="18" class="state rejected"/>
+<text x="155" y="245" class="h mid ink">REJECTED</text>
+<rect x="570" y="220" width="130" height="40" rx="18" class="state placed"/>
+<text x="635" y="245" class="h mid ink">PLACED</text>
+<rect x="330" y="220" width="130" height="40" rx="18" class="mline"/>
+<text x="395" y="245" class="h mid">missed</text>
+<line x1="155" y1="100" x2="155" y2="218" class="ln" marker-end="url(#a)"/>
+<text x="163" y="150" class="s">a station</text>
+<text x="163" y="166" class="s">rejects it</text>
+<line x1="205" y1="100" x2="340" y2="218" class="mline" marker-end="url(#ap)"/>
+<line x1="395" y1="100" x2="395" y2="218" class="mline" marker-end="url(#ap)"/>
+<text x="403" y="150" class="s">passes the belt end while</text>
+<text x="403" y="166" class="s">DETECTED or ASSIGNED</text>
+<line x1="635" y1="100" x2="635" y2="218" class="ln" marker-end="url(#a)"/>
+<text x="643" y="150" class="s">put back onto</text>
+<text x="643" y="166" class="s">the same belt</text>
+<text x="155" y="280" class="s m mid">passes the belt end</text>
+<text x="155" y="296" class="s m mid">on purpose</text>
+<text x="395" y="280" class="s m mid">not a state: drawn pink,</text>
+<text x="395" y="296" class="s m mid">counted in the metrics</text>
+<text x="635" y="280" class="s m mid">passes the belt end</text>
+<text x="635" y="296" class="s m mid">on purpose</text>
+<text x="20" y="326" class="s">Every change: m_SetProductState(..., vi_udn_ClientId := the robot, detector or station that makes it, ...).</text>
+<text x="20" y="344" class="s">Every cycle: m_RemoveProductsBeyond(belt length + 300) drops products beyond the belt end, but never ASSIGNED or PICKED ones.</text>
+</svg>

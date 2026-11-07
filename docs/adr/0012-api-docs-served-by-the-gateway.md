@@ -1,5 +1,8 @@
 # The gateway serves its API documentation, generated from the protocol schemas
 
+> Partly superseded by ADR 0014: `/docs` now shows only the PLC library guide. `/docs/schema.json`, the field
+> descriptions and their test remain as described here.
+
 Programs other than the web app want the machine data too: an MES, a dashboard, a logger. They need to know the
 WebSocket messages, `/health` and the recording file layout, and they need the documentation of the version that runs on
 the IPC in front of them, not of the repository's newest commit. So the gateway serves the documentation itself at
