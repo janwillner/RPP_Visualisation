@@ -31,24 +31,14 @@ export function groupKey(p: SceneProduct): string {
   return `${p.display}|${p.shape}|${length}|${width}|${height}|${p.cornerRadius}`;
 }
 
-/** A frame's products split for drawing: per group key the grouped ones in order, by key the ones drawn singly. */
-export function partitionProducts(products: readonly SceneProduct[]): {
+/** A frame's products as they are drawn. */
+export interface GroupedProducts {
+  /** The groups, each with room for its products. */
+  groups: ProductGroup[];
+  /** Per group key its products, in order. */
   members: Map<string, SceneProduct[]>;
+  /** The products drawn one by one, by key. */
   single: Map<string, SceneProduct>;
-} {
-  const members = new Map<string, SceneProduct[]>();
-  const single = new Map<string, SceneProduct>();
-  for (const p of products) {
-    if (!isGrouped(p)) {
-      single.set(p.key, p);
-      continue;
-    }
-    const key = groupKey(p);
-    const list = members.get(key);
-    if (list) list.push(p);
-    else members.set(key, [p]);
-  }
-  return { members, single };
 }
 
 /**
@@ -58,20 +48,25 @@ export function partitionProducts(products: readonly SceneProduct[]): {
 export class ProductGroups {
   private readonly capacities = new Map<string, number>();
 
-  /** The groups `products` fall into, each with room for its products. */
-  of(products: readonly SceneProduct[]): ProductGroup[] {
-    const groups = new Map<string, { sample: SceneProduct; count: number }>();
+  /** Sorts one frame's products into their groups, in one pass. */
+  update(products: readonly SceneProduct[]): GroupedProducts {
+    const members = new Map<string, SceneProduct[]>();
+    const single = new Map<string, SceneProduct>();
     for (const p of products) {
-      if (!isGrouped(p)) continue;
+      if (!isGrouped(p)) {
+        single.set(p.key, p);
+        continue;
+      }
       const key = groupKey(p);
-      const g = groups.get(key);
-      if (g) g.count += 1;
-      else groups.set(key, { sample: p, count: 1 });
+      const list = members.get(key);
+      if (list) list.push(p);
+      else members.set(key, [p]);
     }
-    return [...groups].map(([key, g]) => {
-      const capacity = Math.max(this.capacities.get(key) ?? MIN_CAPACITY, 2 ** Math.ceil(Math.log2(g.count)));
+    const groups = [...members].map(([key, list]) => {
+      const capacity = Math.max(this.capacities.get(key) ?? MIN_CAPACITY, 2 ** Math.ceil(Math.log2(list.length)));
       this.capacities.set(key, capacity);
-      return { key, sample: g.sample, capacity };
+      return { key, sample: list[0]!, capacity };
     });
+    return { groups, members, single };
   }
 }

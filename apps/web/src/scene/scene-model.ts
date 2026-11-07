@@ -411,6 +411,8 @@ interface PartKind<T> {
   owner?: (part: T) => number;
   /** What of the part changes the drawn objects (not just their transforms); none, or undefined: nothing does. */
   structure?: (part: T) => string | undefined;
+  /** Its key among the parts of its kind, for the kinds the 3D view looks up every frame (`SourceFrame.part`). */
+  key?: (part: T) => string | number;
 }
 
 /**
@@ -425,24 +427,28 @@ export const SCENE_PARTS: { [K in keyof SceneModel]: PartKind<SceneModel[K][numb
   // Products on the belt are drawn in groups: only a new or larger group counts (see `ProductGroups`). The few drawn
   // one by one (placeholders, carried products) count each.
   products: { owner: (p) => p.conveyorId, structure: (p) => (isGrouped(p) ? undefined : `${p.key}:${p.state}`) },
-  deltas: { owner: (d) => d.id, structure: (d) => `${d.id}:${d.baseRadius}:${d.effectorRadius}` },
+  deltas: { owner: (d) => d.id, key: (d) => d.id, structure: (d) => `${d.id}:${d.baseRadius}:${d.effectorRadius}` },
   gantries: {
     owner: (g) => g.id,
+    key: (g) => g.id,
     structure: (g) => `${g.id}:${trackSignature(g.modules)}:${g.movers.map((x) => x.id).join("/")}`,
   },
   loops: {
     owner: (l) => l.id,
+    key: (l) => l.id,
     structure: (l) => `${l.id}:${trackSignature(l.modules)}:${l.movers.map((x) => x.id).join("/")}`,
   },
   cartesians: {
     owner: (c) => c.id,
+    key: (c) => c.id,
     structure: (c) => `${c.id}:${c.parts.map((p) => p.size.join("/")).join("/")}:${c.flange ? 1 : 0}`,
   },
   bodies: {
     owner: (b) => b.componentId,
+    key: (b) => b.key,
     structure: (b) => `${b.key}:${b.shape}:${b.role}:${b.size.length}/${b.size.width}/${b.size.height}`,
   },
-  fingers: { owner: (f) => f.robotId, structure: (f) => `${f.key}:${f.diameter}:${f.height}` },
+  fingers: { owner: (f) => f.robotId, key: (f) => f.key, structure: (f) => `${f.key}:${f.diameter}:${f.height}` },
   boxAreas: { owner: (a) => a.robotId, structure: (a) => `${a.robotId}:${a.size.join("/")}` },
   limitAreas: { owner: (a) => a.robotId, structure: (a) => `${a.robotId}:${a.size.join("/")}` },
   workingAreas: {
@@ -455,7 +461,7 @@ export const SCENE_PARTS: { [K in keyof SceneModel]: PartKind<SceneModel[K][numb
   },
   // Faults change colours and labels. Every fault of a shown component or mover has exactly one label, so the labels
   // also stand for the red tint of the parts.
-  faultLabels: { owner: (l) => l.componentId, structure: (l) => `${l.key}:${l.message}` },
+  faultLabels: { owner: (l) => l.componentId, key: (l) => l.key, structure: (l) => `${l.key}:${l.message}` },
   snapPoints: { owner: (p) => p.local.componentId, structure: (p) => (p.moving ? undefined : p.key) },
   origins: { owner: (o) => o.componentId },
   // Every component with an active fault, hidden ones included.

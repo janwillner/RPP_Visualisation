@@ -12,6 +12,7 @@ import {
 import type { SourceInfo } from "../src/sources";
 import { ProductHistory } from "../src/product-history";
 import { Recorder } from "../src/recording";
+import { MachineFrame, SourceFrame } from "../src/scene/scene-frame";
 import { buildMachineScene } from "../src/scene/scene-model";
 
 /**
@@ -149,6 +150,14 @@ for (const products of PRODUCT_COUNTS) {
 
     bench("build the machine scene, not measuring: no product snap points", () => {
       buildMachineScene(sources, new Set(), { productSnapPoints: false });
+    });
+
+    const scene = buildMachineScene(sources, new Set(), { productSnapPoints: false });
+    const machineFrame = new MachineFrame();
+    const sourceFrame = new SourceFrame();
+    bench("take the machine scene in the 3D view: what changed, product groups (once per frame)", () => {
+      machineFrame.next(scene);
+      sourceFrame.next(machineFrame.source("bench")!);
     });
   });
 }
