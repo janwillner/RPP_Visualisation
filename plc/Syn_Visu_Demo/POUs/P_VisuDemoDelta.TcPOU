@@ -87,6 +87,9 @@ VAR
 	lr_Y								: LREAL;	// [mm] target
 	lr_TopZ								: LREAL;	// [mm] top of the target product
 	lr_TargetRz							: LREAL;	// [deg]
+	un_Placed							: ARRAY[0..2] OF UINT;	// [-] times each robot has put its products down
+	lr_PlaceWait						: ARRAY[0..2] OF LREAL;	// [s] waited above the place position
+	b_FarPlace							: BOOL;	// the current robot places far downstream this time
 END_VAR
 VAR CONSTANT
 	lr_BELT_LENGTH						: LREAL := 5000;	// [mm]
@@ -132,6 +135,11 @@ VAR CONSTANT
 	lr_PLACE_HALF_ZONE					: LREAL := 300;	// [mm]
 	lr_ALLOCATION_OFFSET				: LREAL := 300;	// [mm] products are allocated only up to this distance before the pick zone end
 	lr_LEAD								: LREAL := 7.5;	// [mm] the robot leads the moving product
+	(* Demo limit violation: Delta 2 puts every sixth time down far downstream and waits there for a gap on the
+	   outfeed. Its TCP limit area then reaches into Delta 3's limit area and out of its own. *)
+	un_FAR_PLACE_EVERY					: UINT := 6;	// [-]
+	lr_FAR_PLACE_OFFSET					: LREAL := 480;	// [mm] downstream of its base
+	lr_FAR_PLACE_WAIT					: LREAL := 0.8;	// [s]
 	lr_FAULT_START						: LREAL := 4;	// [s] start of the Delta 1 fault in the fault period
 	(* Grippers *)
 	lr_PAIR_OFFSET						: LREAL := 70;	// [mm] Delta 1: cups on either side of the flange along the tool's X
@@ -750,12 +758,20 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 		IF n_Robot = 1 THEN
 			lr_TiltRx := _FC_DemoApproach(lr_TiltRx, lr_TILT_ANGLE, lr_TILT_SPEED * lr_Dt);
 		END_IF
-		IF m_MoveToward(vio_Tcp := Tcp[n_Robot], vi_lr_TargetX := lr_BaseX, vi_lr_TargetY := lr_OUTFEED_Y,
+		(* Now and then Delta 2 places far downstream and waits there for a gap on the outfeed: a real limit
+		   violation for the visualisation, its TCP limit area in Delta 3's limit area meanwhile. *)
+		b_FarPlace := n_Robot = 1 AND un_Placed[n_Robot] MOD un_FAR_PLACE_EVERY = un_FAR_PLACE_EVERY - 1;
+		IF m_MoveToward(vio_Tcp := Tcp[n_Robot], vi_lr_TargetX := lr_BaseX + SEL(b_FarPlace, 0, lr_FAR_PLACE_OFFSET),
+			vi_lr_TargetY := lr_OUTFEED_Y,
 			vi_lr_TargetZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_HeldHeight + lr_GripHeight
 							+ lr_HOVER,
 			vi_lr_MaxStep := lr_Step)
 		THEN
-			n_Phase[n_Robot] := n_PHASE_LOWER;
+			lr_PlaceWait[n_Robot] := lr_PlaceWait[n_Robot] + lr_Dt;
+			IF NOT b_FarPlace OR lr_PlaceWait[n_Robot] >= lr_FAR_PLACE_WAIT THEN
+				lr_PlaceWait[n_Robot] := 0;
+				n_Phase[n_Robot] := n_PHASE_LOWER;
+			END_IF
 		END_IF
 
 	n_PHASE_LOWER:
@@ -800,6 +816,7 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 			udn_Held[n_Robot, n_Slot] := 0;
 		END_FOR
 		n_HeldCount[n_Robot] := 0;
+		un_Placed[n_Robot] := un_Placed[n_Robot] + 1;
 		n_Phase[n_Robot] := n_PHASE_IDLE;
 END_CASE
 m_Sequence := TRUE;]]></ST>
