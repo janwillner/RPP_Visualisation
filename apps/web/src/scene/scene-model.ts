@@ -57,7 +57,7 @@ import {
   type Transform,
   type Vec3,
 } from "./frames";
-import { faultText, isMissed, productBeltX } from "../machine-facts";
+import { faultText, isMissed, limitBoxKey, limitViolations, productBeltX } from "../machine-facts";
 import { isGrouped } from "./product-groups";
 
 /**
@@ -246,6 +246,22 @@ export interface SceneBoxArea {
   size: Vec3;
 }
 
+/** A robot's limit area; violated while a TCP limit area overlaps it or leaves it. */
+export interface SceneLimitArea extends SceneBoxArea {
+  violated: boolean;
+}
+
+/**
+ * A box around a robot's TCP (an XTS gantry: around each mover's gripper flange), along the axes of the robot's frame;
+ * violated while it overlaps another robot's limit area or another TCP limit area, or leaves its robot's limit area.
+ */
+export interface SceneTcpLimitArea extends SceneLimitArea {
+  /** `robotId:moverId`, stable across frames. */
+  key: string;
+  /** 0 for a robot without movers. */
+  moverId: number;
+}
+
 export interface SceneLoopMover {
   id: number;
   /** Mover on the track; local +X along the track tangent, local MCS −Z (renderer −Y) outwards. */
@@ -374,12 +390,20 @@ export interface SceneFaultLabel {
   message: string;
   /** Renderer frame, metres: where the label hangs. */
   position: Vec3;
+  /** A limit violation the web found, not a fault the PLC reports. */
+  limit: boolean;
 }
 
-/** Active faults of one component (its own first, then its movers' and track modules'), for the component list. */
+/**
+ * Active faults of one component (its own first, then its movers' and track modules'), for the component list, and
+ * the limit violations it takes part in.
+ */
 export interface ComponentFaults {
   componentId: number;
+  /** Faults the PLC reports. */
   messages: string[];
+  /** Limit violations found from the TCP limit areas, e.g. "Delta 1 TCP limit area leaves the limit area of Delta 1". */
+  limitViolations: string[];
 }
 
 export interface SceneModel {
@@ -391,7 +415,9 @@ export interface SceneModel {
   gantries: SceneGantry[];
   boxAreas: SceneBoxArea[];
   /** Limit areas (Delta, XTS gantry, Cartesian): boxes in the robot frame that further restrict the working area. */
-  limitAreas: SceneBoxArea[];
+  limitAreas: SceneLimitArea[];
+  /** TCP limit areas: boxes around the robots' TCPs. */
+  tcpLimitAreas: SceneTcpLimitArea[];
   loops: SceneLoop[];
   cartesians: SceneCartesian[];
   /** Bodies of the components drawn from their PLC description, e.g. detectors. */
@@ -451,7 +477,13 @@ export const SCENE_PARTS: { [K in keyof SceneModel]: PartKind<SceneModel[K][numb
   },
   fingers: { owner: (f) => f.robotId, key: (f) => f.key, structure: (f) => `${f.key}:${f.diameter}:${f.height}` },
   boxAreas: { owner: (a) => a.robotId, structure: (a) => `${a.robotId}:${a.size.join("/")}` },
-  limitAreas: { owner: (a) => a.robotId, structure: (a) => `${a.robotId}:${a.size.join("/")}` },
+  // A violation changes the colour.
+  limitAreas: { owner: (a) => a.robotId, structure: (a) => `${a.robotId}:${a.size.join("/")}:${a.violated}` },
+  tcpLimitAreas: {
+    owner: (a) => a.robotId,
+    key: (a) => a.key,
+    structure: (a) => `${a.key}:${a.size.join("/")}:${a.violated}`,
+  },
   workingAreas: {
     owner: (a) => a.robotId,
     structure: (a) => `${a.robotId}:${a.radius}:${a.zMin}:${a.zMax}:${a.coneHeight}:${a.coneBottomRadius}`,
@@ -512,6 +544,7 @@ const LABEL_LIFT = {
   module: 150,
   cartesian: 200,
   body: 150,
+  tcpLimitArea: 100,
 };
 
 /** An MCS point lifted by the given height along MCS Z. */
@@ -569,6 +602,11 @@ export interface SceneOptions {
    * products give tens of thousands of points, so the 3D view asks for them only while measuring.
    */
   productSnapPoints?: boolean;
+  /**
+   * Look for limit violations; default true. Off for a source that is offline: its last state says nothing about where
+   * its robots are now. Its TCP limit areas are still drawn.
+   */
+  checkLimits?: boolean;
 }
 
 /** How one component type becomes part of the scene. */
@@ -809,6 +847,12 @@ export function buildScene(
   const { snapPoints, zones, warnings, faultLabels, faults } = scene;
   const conveyorConfigs = new Map<number, ConveyorConfig>();
   for (const c of components) if (c.type === "conveyor") conveyorConfigs.set(c.id, c);
+  /** A component's entry in the fault list, made on its first fault or limit violation. */
+  const faultsOf = (componentId: number): ComponentFaults => {
+    let entry = faults.find((f) => f.componentId === componentId);
+    if (!entry) faults.push((entry = { componentId, messages: [], limitViolations: [] }));
+    return entry;
+  };
 
   const ctx: BuildContext = {
     scene,
@@ -817,10 +861,9 @@ export function buildScene(
     warn: (message) => warnings.push(message),
     addFault(componentId, part, message, anchor) {
       if (message === null) return;
-      faultLabels.push({ key: `${componentId}:${part ?? ""}`, componentId, part, message, position: toRenderer(anchor) });
-      let entry = faults.find((f) => f.componentId === componentId);
-      if (!entry) faults.push((entry = { componentId, messages: [] }));
-      entry.messages.push(part ? `${part}: ${message}` : message);
+      const position = toRenderer(anchor);
+      faultLabels.push({ key: `${componentId}:${part ?? ""}`, componentId, part, message, position, limit: false });
+      faultsOf(componentId).messages.push(part ? `${part}: ${message}` : message);
     },
     addGripper(robot, grippers) {
       const owner = snapOwner(robot, frameFromPose(robot.pose));
@@ -857,6 +900,7 @@ export function buildScene(
         robotId: c.id,
         transform: toRendererTransform(child(frame, [(a.xMin + a.xMax) / 2, (a.yMin + a.yMax) / 2, (a.zMin + a.zMax) / 2])),
         size: flatBoxSize([a.xMax - a.xMin, a.yMax - a.yMin, a.zMax - a.zMin]),
+        violated: false,
       });
       snapPoints.push(
         ...boxCorners(snapOwner(c, frame), `${c.name} limit area`, "limitAreas", [
@@ -929,6 +973,7 @@ export function buildScene(
     const state = states.get(c.id);
     kitOf(c.type).build(c, state?.type === c.type ? state : undefined, ctx);
   }
+  addTcpLimitAreas(scene, components, states, options.checkLimits ?? true, faultsOf);
   // Each component's coordinate system: at its pose, moved by its origin shift.
   const rank = (c: ComponentConfig) => kitOf(c.type).originRank ?? 2;
   scene.origins = [...components]
@@ -936,6 +981,55 @@ export function buildScene(
     .map((c) => ({ componentId: c.id, name: c.name, transform: toRendererTransform(originFrame(c)) }));
   // Hidden components are built too (a hidden robot still carries products of a visible conveyor), then dropped.
   return withoutHidden(scene, hidden);
+}
+
+/**
+ * The robots' TCP limit areas where their TCPs are now, with their corners as snap points, and with `check` the limit
+ * violations: the boxes involved light up, each violation is listed under every robot involved and labelled above its
+ * TCP limit area.
+ */
+function addTcpLimitAreas(
+  scene: SceneModel,
+  components: readonly ComponentConfig[],
+  states: ReadonlyMap<number, ComponentState>,
+  check: boolean,
+  faultsOf: (componentId: number) => ComponentFaults,
+): void {
+  const { boxes, violations } = limitViolations(components, states);
+  const found = check ? violations : [];
+  const violated = new Set(found.flatMap((v) => [limitBoxKey(v.tcp), limitBoxKey(v.other)]));
+  const robots = new Map(components.map((c) => [c.id, c]));
+  const tops = new Map<string, Vec3>();
+  for (const box of boxes) {
+    const { min, max, frame } = box;
+    const key = limitBoxKey(box);
+    const centre: Vec3 = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
+    tops.set(key, lifted(toMcs(frame, [centre[0], centre[1], max[2]]), LABEL_LIFT.tcpLimitArea));
+    scene.tcpLimitAreas.push({
+      key,
+      robotId: box.robotId,
+      moverId: box.moverId,
+      transform: toRendererTransform(child(frame, centre)),
+      size: flatBoxSize([max[0] - min[0], max[1] - min[1], max[2] - min[2]]),
+      violated: violated.has(key),
+    });
+    scene.snapPoints.push(
+      ...boxCorners(
+        snapOwner(robots.get(box.robotId)!, frame),
+        `${box.name} TCP limit area`,
+        "limitAreas",
+        [extent(min[0], max[0], "X min", "X max"), extent(min[1], max[1], "Y min", "Y max"), extent(min[2], max[2], "bottom", "top")],
+        true,
+      ),
+    );
+  }
+  for (const area of scene.limitAreas) area.violated = violated.has(limitBoxKey({ robotId: area.robotId, moverId: null }));
+  for (const v of found) {
+    const { robotId } = v.tcp;
+    const position = toRenderer(tops.get(limitBoxKey(v.tcp))!);
+    scene.faultLabels.push({ key: `${robotId}:limit:${v.key}`, componentId: robotId, part: null, message: v.text, position, limit: true });
+    for (const id of new Set([robotId, v.other.robotId])) faultsOf(id).limitViolations.push(v.text);
+  }
 }
 
 /** The scene without the parts of hidden components. */
@@ -996,7 +1090,8 @@ export function buildMachineScene(
   const built = sources.map(({ sourceId, config, snapshots, renderTime, online }) => {
     const ids = (config?.components ?? []).map((c) => c.id);
     const hiddenIds = new Set(hidden.has(sourceId) ? ids : ids.filter((id) => hidden.has(componentKey(sourceId, id))));
-    return { sourceId, online, scene: buildScene(config, snapshots, renderTime, hiddenIds, options) };
+    const checkLimits = online && (options.checkLimits ?? true);
+    return { sourceId, online, scene: buildScene(config, snapshots, renderTime, hiddenIds, { ...options, checkLimits }) };
   });
   return {
     sources: built,
@@ -1099,13 +1194,14 @@ function boxCorners(
   prefix: string,
   layer: SnapLayer,
   [xs, ys, zs]: [Extent, Extent, Extent],
+  moving = false,
 ): SnapPoint[] {
   const points: SnapPoint[] = [];
   for (const [zName, zc] of zs) {
     for (const [yName, yc] of ys) {
       for (const [xName, xc] of xs) {
         const name = [zName, yName, xName].filter((n) => n !== null).join(", ");
-        points.push(owner.at(`${prefix} · ${name}`, [xc, yc, zc], layer));
+        points.push(owner.at(`${prefix} · ${name}`, [xc, yc, zc], layer, moving));
       }
     }
   }

@@ -349,7 +349,7 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 Selects Delta n_Robot into fb_RefRobot and configures it (idempotent): base, gripper, working area,<br>
-limit area and zones. Initialises its TCP once.<br>
+limit area, TCP limit area and zones. Initialises its TCP once.<br>
 ****************************************************************************************************)
 METHOD PRIVATE m_Configure : BOOL]]></Declaration>
       <Implementation>
@@ -391,6 +391,10 @@ fb_RefRobot.m_SetWorkingArea(vi_lr_Radius := 750, vi_lr_ZMin := -1300, vi_lr_ZMa
 (* Neighbouring robots share the space between them: each one is limited to half the robot pitch. *)
 fb_RefRobot.m_SetLimitArea(vi_lr_XMin := -lr_ROBOT_PITCH / 2, vi_lr_XMax := lr_ROBOT_PITCH / 2, vi_lr_YMin := -750,
 	vi_lr_YMax := 750, vi_lr_ZMin := -1500, vi_lr_ZMax := -700);
+(* Around the TCP: gripper and product below the flange. It lights up when it reaches into a neighbour's limit
+   area or out of the robot's own. *)
+fb_RefRobot.m_SetTcpLimitArea(vi_lr_XMin := -80, vi_lr_XMax := 80, vi_lr_YMin := -80, vi_lr_YMax := 80,
+	vi_lr_ZMin := -100, vi_lr_ZMax := 20);
 (* The robot's conveyor coordinate system lies under its base on every belt. *)
 fb_RefRobot.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed1.m_Id(),
 	vi_lr_Start := lr_BaseX - lr_PICK_HALF_ZONE, vi_lr_End := lr_BaseX + lr_PICK_HALF_ZONE,

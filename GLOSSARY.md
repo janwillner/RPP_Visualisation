@@ -191,6 +191,14 @@ _Avoid_: work area, workspace, reach (reach is what the kinematics allow)
 A box around a Delta robot, an XTS gantry or a Cartesian robot that further restricts its working area, so that neighbouring robots cannot collide. An XTS loop has none.
 _Avoid_: collision zone, safety box, limit zone
 
+**TCP limit area**:
+A box around a robot's TCP (on an XTS gantry around every mover's gripper flange), its bounds relative to the TCP along the robot frame's axes: what the gripper and the product it carries take up. It moves with the TCP and never turns.
+_Avoid_: TCP box, tool box, collision box
+
+**Limit violation**:
+A TCP limit area that overlaps another robot's limit area or another TCP limit area, or leaves its own robot's limit area. The visualisation finds it from the reported positions and shows it; the PLC does not report it, and it is not a fault.
+_Avoid_: collision, limit fault, limit error
+
 **Zone**:
 A stretch of a conveyor, measured along the conveying direction, that belongs to a component: where a robot may pick or place products, where a detector detects them. A zone of length 0 is a line across the belt.
 _Avoid_: window, tracking window

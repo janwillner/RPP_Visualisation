@@ -13,6 +13,7 @@ STRUCT
 	fLowerArmLength : LREAL; // mm
 	stWorkingArea : ST_VisuWorkingArea;
 	stLimitArea : ST_VisuLimitArea; // optional box that further restricts the working area
+	stTcpLimitArea : ST_VisuLimitArea; // optional box around the TCP, relative to it along the robot frame's axes
 	nZoneCount : UINT;
 	aZones : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone; // pick and place zones
 	nFingerCount : UINT; // 0 = no gripper definition

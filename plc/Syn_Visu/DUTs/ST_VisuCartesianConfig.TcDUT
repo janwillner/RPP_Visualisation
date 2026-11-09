@@ -17,6 +17,7 @@ STRUCT
 	fZMax : LREAL; // mm
 	fRailHeight : LREAL; // mm, top of the rails above the local origin; the bridge sits on them
 	stLimitArea : ST_VisuLimitArea; // optional box in the robot frame that further restricts the working area
+	stTcpLimitArea : ST_VisuLimitArea; // optional box around the gripper flange, along the robot frame's axes
 	nZoneCount : UINT;
 	aZones : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone; // pick and place zones
 	nFingerCount : UINT; // 0 = no gripper definition

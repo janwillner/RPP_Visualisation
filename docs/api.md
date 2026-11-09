@@ -279,6 +279,7 @@ The current version is `protocolVersion` in `/health` and in every `config`. The
 
 | Version | Change                                                                                                                      |
 | ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 19      | Deltas, XTS gantries and Cartesian robots may have a `tcpLimitArea`, a box around the TCP. ADR 0015.                      |
 | 18      | XTS gantries and Cartesian robots may have a `limitArea`, like the Delta.                                                  |
 | 17      | Cartesian robots say which axes they have: `axes` (`xyz`, `xz`, `xy`).                                                     |
 | 16      | A conveyor may have no body: `body`.                                                                                       |

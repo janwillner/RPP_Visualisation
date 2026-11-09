@@ -8,13 +8,15 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 Base of every robot (Delta, XTS gantry, XTS loop, Cartesian): zones plus the gripper fingers,<br>
-m_SetFinger and m_ClearFingers, and the limit area, m_SetLimitArea and m_ClearLimitArea. A derived FB tells<br>
-where its fingers and its limit area lie through m_Fingers and m_LimitArea; an XTS loop has no limit area.<br>
+m_SetFinger and m_ClearFingers, the limit area, m_SetLimitArea and m_ClearLimitArea, and the TCP limit area,<br>
+m_SetTcpLimitArea and m_ClearTcpLimitArea. A derived FB tells where its fingers and its boxes lie through<br>
+m_Fingers and m_LimitArea; an XTS loop has neither box.<br>
 Not used directly.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New: fingers shared by all robots<br>
 Syn_Visu 9.3.0  ¦ 2026-11-07 ¦ J.Willner ¦ Limit area shared by Delta, XTS gantry and Cartesian (was Delta only)<br>
+Syn_Visu 9.4.0  ¦ 2026-11-09 ¦ J.Willner ¦ TCP limit area: m_SetTcpLimitArea, m_ClearTcpLimitArea<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK ABSTRACT _FB_VisuRobot EXTENDS _FB_VisuZoneComponent
 ]]></Declaration>
@@ -83,6 +85,35 @@ END_IF
 ]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_ClearTcpLimitArea" Id="{8f8cd439-d9ce-4c1d-b91b-58af4e37550c}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Removes the TCP limit area. TRUE if there was one.<br>
+****************************************************************************************************)
+METHOD m_ClearTcpLimitArea : BOOL
+VAR
+	p_TempTcpLimitArea					: POINTER TO ST_VisuLimitArea;
+	TempEmpty							: ST_VisuLimitArea;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ClearTcpLimitArea := FALSE;
+m_LimitArea(vo_p_TcpLimitArea => p_TempTcpLimitArea);
+IF p_TempTcpLimitArea = 0 THEN
+	RETURN;
+END_IF
+m_ClearTcpLimitArea := p_TempTcpLimitArea^.bActive;
+IF Tc2_System.MEMCMP(ADR(TempEmpty), p_TempTcpLimitArea, SIZEOF(TempEmpty)) <> 0 THEN
+	p_TempTcpLimitArea^ := TempEmpty;
+	m_NotifyConfigChanged();
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_Fingers" Id="{a244e015-94d6-456e-b723-254a871e0b47}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -110,12 +141,14 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Where the limit area lies in the derived FB's contract structure: vo_p_LimitArea points to its stLimitArea,<br>
-or is 0 for a robot without one (XTS loop: it has no working area of its own).<br>
+Where the limit area and the TCP limit area lie in the derived FB's contract structure: vo_p_LimitArea points<br>
+to its stLimitArea, vo_p_TcpLimitArea to its stTcpLimitArea; both are 0 for a robot without them (XTS loop: it<br>
+has no working area of its own).<br>
 ****************************************************************************************************)
 METHOD PROTECTED ABSTRACT m_LimitArea : BOOL
 VAR_OUTPUT
 	vo_p_LimitArea						: POINTER TO ST_VisuLimitArea;
+	vo_p_TcpLimitArea					: POINTER TO ST_VisuLimitArea;
 END_VAR
 ]]></Declaration>
       <Implementation>
@@ -213,6 +246,58 @@ IF Tc2_System.MEMCMP(ADR(TempLimitArea), p_TempLimitArea, SIZEOF(TempLimitArea))
 	p_TempLimitArea^ := TempLimitArea;
 	m_NotifyConfigChanged();
 	m_SetLimitArea := TRUE;
+END_IF
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetTcpLimitArea" Id="{3a6e8120-3b40-4865-afd0-0494858b88ec}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets and activates the TCP limit area: an axis-aligned box around the TCP (XTS gantry: around every mover's<br>
+gripper flange), its bounds relative to the TCP along the axes of the robot frame. It moves with the TCP and<br>
+never turns. The visualisation lights it up red with a message when it overlaps another robot's limit area or<br>
+TCP limit area (also another mover's of the same gantry), or leaves the robot's own limit area. Delta, XTS<br>
+gantry and Cartesian robot; an XTS loop has none. Equal bounds make a flat box. The config version only<br>
+changes when a value does.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+TRUE if anything changed; FALSE for a robot without a TCP limit area (XTS loop).<br>
+****************************************************************************************************)
+METHOD m_SetTcpLimitArea : BOOL
+VAR_INPUT
+	vi_lr_XMin							: LREAL;	// [mm] relative to the TCP, along the robot frame's X
+	vi_lr_XMax							: LREAL;	// [mm]
+	vi_lr_YMin							: LREAL;	// [mm]
+	vi_lr_YMax							: LREAL;	// [mm]
+	vi_lr_ZMin							: LREAL;	// [mm] relative to the TCP (below it: negative)
+	vi_lr_ZMax							: LREAL;	// [mm]
+END_VAR
+VAR
+	p_TempTcpLimitArea					: POINTER TO ST_VisuLimitArea;
+	TempTcpLimitArea					: ST_VisuLimitArea;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetTcpLimitArea := FALSE;
+m_LimitArea(vo_p_TcpLimitArea => p_TempTcpLimitArea);
+IF p_TempTcpLimitArea = 0 THEN
+	RETURN;
+END_IF
+TempTcpLimitArea.fXMin := vi_lr_XMin;
+TempTcpLimitArea.fXMax := vi_lr_XMax;
+TempTcpLimitArea.fYMin := vi_lr_YMin;
+TempTcpLimitArea.fYMax := vi_lr_YMax;
+TempTcpLimitArea.fZMin := vi_lr_ZMin;
+TempTcpLimitArea.fZMax := vi_lr_ZMax;
+TempTcpLimitArea.bActive := TRUE;
+IF Tc2_System.MEMCMP(ADR(TempTcpLimitArea), p_TempTcpLimitArea, SIZEOF(TempTcpLimitArea)) <> 0 THEN
+	p_TempTcpLimitArea^ := TempTcpLimitArea;
+	m_NotifyConfigChanged();
+	m_SetTcpLimitArea := TRUE;
 END_IF
 ]]></ST>
       </Implementation>

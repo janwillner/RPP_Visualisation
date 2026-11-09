@@ -657,9 +657,11 @@ function ComponentTree(props: {
       {(source.config?.components ?? []).map((c) => {
         const key = componentKey(source.sourceId, c.id);
         const isHidden = hidden.has(key) || hidden.has(source.sourceId);
-        const messages = faults.find((f) => f.sourceId === source.sourceId && f.componentId === c.id)?.messages;
+        const entry = faults.find((f) => f.sourceId === source.sourceId && f.componentId === c.id);
+        // A limit violation alone is a warning, not a fault: the component's name keeps its colour.
+        const faulted = (entry?.messages.length ?? 0) > 0;
         return (
-          <li key={key} className={[isHidden ? "hidden" : "", messages ? "faulted" : ""].join(" ").trim()}>
+          <li key={key} className={[isHidden ? "hidden" : "", faulted ? "faulted" : ""].join(" ").trim()}>
             <VisibilityButton name={c.name} hidden={hidden.has(key)} onClick={() => onToggleHidden(key)} />
             <button
               className={
@@ -669,18 +671,23 @@ function ComponentTree(props: {
               }
               onClick={() => onSelect({ kind: "component", sourceId: source.sourceId, id: c.id })}
             >
-              {messages && (
-                <span className="fault-icon" aria-label="Fault">
+              {entry && (
+                <span className="fault-icon" aria-label={faulted ? "Fault" : "Limit violation"}>
                   ⚠
                 </span>
               )}
               <span className={`badge ${c.type}`}>{c.type}</span> {c.name} <span className="muted">#{c.id}</span>
             </button>
             {/* Visible, not a tooltip: a touch panel shows no tooltips. */}
-            {messages && (
+            {entry && (
               <ul className="fault-lines">
-                {messages.map((m, i) => (
+                {entry.messages.map((m, i) => (
                   <li key={i}>{m}</li>
+                ))}
+                {entry.limitViolations.map((m, i) => (
+                  <li key={`limit:${i}`} className="limit">
+                    Limit: {m}
+                  </li>
                 ))}
               </ul>
             )}
@@ -831,6 +838,9 @@ function Inspector(props: {
             ⚠ {m}
           </p>
         ))}
+      <LimitViolations
+        limits={faults.find((f) => f.sourceId === selection.sourceId && f.componentId === selection.id)?.limitViolations ?? []}
+      />
       {delta && !delta.reachable && <p className="warn">Kinematics: the arms cannot reach the reported TCP.</p>}
       {figures && <ComponentMetrics figures={figures} sourceId={selection.sourceId} id={selection.id} />}
       {delta && delta.angles.length > 0 && (
@@ -843,6 +853,23 @@ function Inspector(props: {
       <Json value={component} />
       <h3>State</h3>
       <Json value={state} />
+    </>
+  );
+}
+
+/** The active limit violations a robot takes part in: found from the TCP limit areas, not reported by the PLC. */
+function LimitViolations({ limits }: { limits: readonly string[] }) {
+  if (limits.length === 0) return null;
+  return (
+    <>
+      <h3>Limit violations</h3>
+      <ul className="limit-violations">
+        {limits.map((m, i) => (
+          <li key={i} className="limit-violation">
+            ⚠ {m}
+          </li>
+        ))}
+      </ul>
     </>
   );
 }

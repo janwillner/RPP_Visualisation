@@ -147,10 +147,13 @@ fb_Idh.m_Configure(vi_Pose := XtsPose, vi_lr_XMin := 0, vi_lr_XMax := 700, vi_lr
 	vi_lr_MoverLength := lr_GANTRY_MOVER_LENGTH, vi_lr_MoverWidth := 80);
 fb_Idh.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER,
 	vi_lr_Height := DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT);
-(* Limit area in the gantry frame (flange coordinates): keeps the flanges off the track ends and short of the
-   X stroke's ends. *)
-fb_Idh.m_SetLimitArea(vi_lr_XMin := 300, vi_lr_XMax := 800, vi_lr_YMin := 100, vi_lr_YMax := 1400,
-	vi_lr_ZMin := -450, vi_lr_ZMax := -350);
+(* Limit area in the gantry frame (flange coordinates): around the flanges' travel, from over the infeed to over
+   the tray belt, along the whole track. *)
+fb_Idh.m_SetLimitArea(vi_lr_XMin := 250, vi_lr_XMax := 850, vi_lr_YMin := -50, vi_lr_YMax := 1550,
+	vi_lr_ZMin := -600, vi_lr_ZMax := -300);
+(* Around every mover's flange, cup and product; narrower along the track than the movers' least distance. *)
+fb_Idh.m_SetTcpLimitArea(vi_lr_XMin := -60, vi_lr_XMax := 60, vi_lr_YMin := -85, vi_lr_YMax := 85,
+	vi_lr_ZMin := -100, vi_lr_ZMax := 20);
 fb_Idh.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_IdhInfeed.m_Id(), vi_lr_Start := lr_GANTRY_X,
 	vi_lr_End := lr_GANTRY_X + UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH, vi_lr_AllocationOffset := 0,
 	vi_lr_CcsOffset := lr_GANTRY_X, vi_lr_StartY := 0, vi_lr_EndY := 0);

@@ -3,16 +3,20 @@
   <DUT Name="ST_VisuLimitArea" Id="{2f71bba7-fc76-4d12-b7cf-6688fc968a22}">
     <Declaration><![CDATA[TYPE ST_VisuLimitArea :
 STRUCT
-	(* Axis-aligned box in the robot frame (relative to its stPose, turned with it: the frame its working area is
-	   given in) that further restricts the working area, e.g. so that neighbouring robots cannot collide. Delta,
-	   XTS gantry and Cartesian robot (_FB_VisuRobot.m_SetLimitArea); an XTS loop has none. *)
+	(* Axis-aligned box along the robot frame's axes (turned with its stPose). As stLimitArea it lies in the robot
+	   frame (relative to stPose, the frame its working area is given in) and further restricts the working area, e.g.
+	   so that neighbouring robots cannot collide (_FB_VisuRobot.m_SetLimitArea). As stTcpLimitArea it lies around the
+	   TCP (XTS gantry: every mover's gripper flange), relative to it, and moves with it without turning
+	   (_FB_VisuRobot.m_SetTcpLimitArea): the visualisation flags it when it overlaps another robot's limit area or
+	   TCP limit area or leaves its own robot's limit area. Delta, XTS gantry and Cartesian robot; an XTS loop has
+	   neither. *)
 	fXMin : LREAL; // mm
 	fXMax : LREAL; // mm
 	fYMin : LREAL; // mm
 	fYMax : LREAL; // mm
-	fZMin : LREAL; // mm relative to the base (below the base: negative)
-	fZMax : LREAL; // mm relative to the base
-	bActive : BOOL; // FALSE: no limit area, the box is not drawn
+	fZMin : LREAL; // mm relative to the base or the TCP (below it: negative)
+	fZMax : LREAL; // mm relative to the base or the TCP
+	bActive : BOOL; // FALSE: no box, nothing is drawn or checked
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

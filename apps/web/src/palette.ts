@@ -15,6 +15,11 @@ export const STATUS = {
   faultText: "#ff7b7b",
   /** Background of a fault message in the 3D view. */
   faultLabel: "#c62828",
+  /**
+   * Background of a limit violation message in the 3D view: dark with a fault red border, apart from a fault the PLC
+   * reports; the boxes involved light up in `fault`.
+   */
+  limitLabel: "#3a1214",
   select: "#ffd54f",
   missed: "#ff5fa2",
   offline: "#ffa726",
@@ -95,6 +100,7 @@ export function paletteCssVariables(): Record<string, string> {
     "--bad": STATUS.fault,
     "--bad-text": STATUS.faultText,
     "--fault-label": STATUS.faultLabel,
+    "--limit-label": STATUS.limitLabel,
     "--select": STATUS.select,
     "--missed": STATUS.missed,
     "--offline": STATUS.offline,

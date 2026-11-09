@@ -12,7 +12,7 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 18;
+export const PROTOCOL_VERSION = 19;
 
 const mm = (description: string) => z.number().describe(description);
 const deg = (description: string) => z.number().describe(description);
@@ -245,7 +245,8 @@ function robotConfig<K extends string, S extends z.ZodRawShape>(type: K, shape: 
 
 /**
  * A robot whose working area a limit area may restrict further (Delta, XTS gantry, Cartesian; not the XTS loop, which
- * has no working area of its own): a robot plus the optional `limitArea`.
+ * has no working area of its own): a robot plus the optional `limitArea` and the optional `tcpLimitArea` around its
+ * TCP (on an XTS gantry around every mover's gripper flange).
  */
 function limitedRobotConfig<K extends string, S extends z.ZodRawShape>(type: K, shape: S, description: string) {
   return robotConfig(
@@ -253,6 +254,12 @@ function limitedRobotConfig<K extends string, S extends z.ZodRawShape>(type: K, 
     {
       ...shape,
       limitArea: LimitAreaSchema.nullable().describe("Further restriction of the working area; null = none."),
+      tcpLimitArea: LimitAreaSchema.nullable().describe(
+        "Box around the TCP (on an XTS gantry around every mover's gripper flange): bounds relative to the TCP along " +
+          "the axes of the robot's frame; it moves with the TCP and never turns. Clients flag it when it overlaps " +
+          "another robot's limit area or another TCP limit area (also another mover's of the same gantry), or when " +
+          "it leaves the robot's own `limitArea`. null = none.",
+      ),
     },
     description,
   );

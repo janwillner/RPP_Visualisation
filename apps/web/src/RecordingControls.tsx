@@ -258,6 +258,7 @@ const EVENT_LABELS: Record<TimelineEvent["kind"], string> = {
   offline: "Offline",
   online: "Back online",
   missed: "Missed product",
+  limit: "Limit violation",
 };
 
 /** A mark on the timeline per event (faults, sources offline and back, missed products); a click jumps there. */

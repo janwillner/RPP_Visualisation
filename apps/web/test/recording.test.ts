@@ -351,6 +351,51 @@ describe("recording: timeline events", () => {
     ]);
   });
 
+  it("marks where a limit violation starts, once while it lasts", async () => {
+    const box = (zMin: number, zMax: number) => ({ xMin: -100, xMax: 100, yMin: -100, yMax: 100, zMin, zMax });
+    const withDelta: ConfigMessage = {
+      ...config(A),
+      components: [
+        ...config(A).components,
+        {
+          type: "delta",
+          id: 20,
+          sourceId: A,
+          name: "Delta 1",
+          pose: { x: 1500, y: 0, z: 2000, rx: 0, ry: 0, rz: 0 },
+          baseRadius: 200,
+          effectorRadius: 50,
+          upperArmLength: 350,
+          lowerArmLength: 800,
+          workingArea: { radius: 600, zMin: -1100, zMax: -600, coneHeight: 0, coneBottomRadius: 0 },
+          limitArea: box(-1400, -600),
+          tcpLimitArea: box(-200, 10),
+          zones: [],
+          fingers: [],
+          originShift: { x: 0, y: 0, z: 0 },
+        },
+      ],
+    };
+    const recorder = new Recorder([{ sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: withDelta }]);
+    for (let at = 0; at <= 2500; at += 100) {
+      // Inside its limit area at a TCP height of −800; at −580 its TCP limit area reaches 30 mm above it.
+      const high = (at >= 1000 && at < 1500) || at >= 2000;
+      const tcp = { x: 1500, y: 0, z: 2000 + (high ? -580 : -800) };
+      recorder.add(at, {
+        ...state(A, at),
+        components: [
+          ...state(A, at).components,
+          { type: "delta", id: 20, timestamp: "0", actualTcp: tcp, setpointTcp: tcp, fingers: [], fault: null },
+        ],
+      });
+    }
+    const text = "Delta 1 TCP limit area leaves the limit area of Delta 1";
+    expect((await recorder.stop()).events).toEqual([
+      { at: 1000, kind: "limit", sourceId: A, text },
+      { at: 2000, kind: "limit", sourceId: A, text },
+    ]);
+  });
+
   it("keeps its events in the file", async () => {
     const recording = await threeSeconds([
       [1000, status(B, false)],

@@ -225,8 +225,12 @@ test("marks faults on the recording's timeline and jumps to them", async ({ page
 
   const bar = page.getByRole("toolbar", { name: "Playback" });
   await expect(bar.locator(".timeline-marker.fault").first()).toHaveAttribute("title", /Fault · /);
-  // PageUp from the end goes to the last event of any kind (missed products are marked too): its marker is the last.
-  const marker = bar.locator(".timeline-marker").last();
+  // PageUp from the end goes to the last event of any kind before it (missed products and limit violations are marked
+  // too): the last marker short of the end, since an event that came with the last message lies at the end itself.
+  const places = await bar
+    .locator(".timeline-marker")
+    .evaluateAll((markers) => markers.map((m) => Number((m as HTMLElement).style.getPropertyValue("--at"))));
+  const marker = bar.locator(".timeline-marker").nth(places.filter((at) => at < 1).length - 1);
   const slider = bar.getByLabel("Playback position");
   const end = Number(await slider.getAttribute("max"));
 
@@ -240,6 +244,23 @@ test("marks faults on the recording's timeline and jumps to them", async ({ page
   await page.keyboard.press("End");
   await marker.click();
   await expect.poll(async () => Number(await slider.inputValue())).toBe(atEvent);
+});
+
+test("lists a limit violation under its robot and marks it on the timeline", async ({ page }) => {
+  await openApp(page);
+  await page.getByRole("button", { name: "Show components" }).click();
+  // Delta 1's TCP limit area leaves its limit area for a moment whenever it picks a product near the far belt edge,
+  // several times a minute: watched every frame, since it lasts only a few of them.
+  const text = "Delta 1 TCP limit area leaves the limit area of Delta 1";
+  await page.waitForFunction(
+    (t) => [...document.querySelectorAll("aside.panel.left .fault-lines li.limit")].some((li) => li.textContent?.includes(t)),
+    text,
+    { polling: "raf", timeout: 40_000 },
+  );
+
+  await page.getByRole("button", { name: "Replay the last minute" }).click();
+  const bar = page.getByRole("toolbar", { name: "Playback" });
+  await expect(bar.locator(".timeline-marker.limit").first()).toHaveAttribute("title", new RegExp(`Limit violation · ${text}`));
 });
 
 test("shows what happened to a selected product in the inspector", async ({ page }) => {

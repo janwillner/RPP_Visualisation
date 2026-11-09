@@ -1,5 +1,16 @@
-import type { ConveyorConfig, ConveyorState, Fault, Product } from "@rpp/protocol";
+import {
+  trackPoint,
+  type ComponentConfig,
+  type ComponentState,
+  type ConveyorConfig,
+  type ConveyorState,
+  type Fault,
+  type LimitArea,
+  type Product,
+  type XtsGantryConfig,
+} from "@rpp/protocol";
 import type { SourceInfo } from "./sources";
+import { apply, boxesOverlap, boxInside, frameFromPose, rotZ, toLocal, type Frame, type FrameBox, type Vec3 } from "./scene/frames";
 
 /**
  * Rules about the machine that the 3D scene, the timeline, the product history, the metrics and the inspector all
@@ -33,4 +44,142 @@ export function componentName(source: SourceInfo | undefined, id: number, fallba
 /** One entry of a list in a state, by the list's name: "movers" → "mover", "modules" → "module". */
 export function singular(list: string): string {
   return list.endsWith("s") ? list.slice(0, -1) : list;
+}
+
+/** A robot's TCP limit area where its TCP (an XTS gantry: one mover's gripper flange) is now. */
+export interface TcpLimitBox extends FrameBox {
+  robotId: number;
+  /** The XTS gantry mover it belongs to; 0 for a robot without movers. */
+  moverId: number;
+  /** "Delta 1", "IDH mover 2". */
+  name: string;
+}
+
+/** A robot that may have a limit area and a TCP limit area. */
+type LimitedRobot = Extract<ComponentConfig, { limitArea: unknown }>;
+
+const isLimitedRobot = (c: ComponentConfig): c is LimitedRobot => "limitArea" in c;
+
+/** The box of a limit area in a robot's frame, moved by `at` (mm); bounds in any order. */
+function boxOf(frame: Frame, a: LimitArea, at: Vec3 = [0, 0, 0]): FrameBox {
+  const pairs: [number, number][] = [
+    [a.xMin, a.xMax],
+    [a.yMin, a.yMax],
+    [a.zMin, a.zMax],
+  ];
+  return {
+    frame,
+    min: pairs.map(([lo, hi], i) => Math.min(lo, hi) + at[i]!) as Vec3,
+    max: pairs.map(([lo, hi], i) => Math.max(lo, hi) + at[i]!) as Vec3,
+  };
+}
+
+/**
+ * A gantry mover's gripper flange in the gantry's frame: on the track (lifted by the common Z axis) at its position,
+ * the X axis turned with the track there.
+ */
+function gantryFlange(c: XtsGantryConfig, z: number, m: { position: number; x: number }): Vec3 {
+  // Recordings made before protocol 12 have no track modules: the track runs straight along +Y.
+  const p = trackPoint(c.modules ?? [], m.position, false);
+  // The track's u runs along +Y and its v along −X; a mover's X axis is the track's right, turned with its heading.
+  const arm = apply(rotZ(p.heading), [m.x + c.toolOffsetX, 0, c.toolOffsetZ]);
+  return [-p.v + arm[0], p.u + arm[1], z + arm[2]];
+}
+
+/** Every TCP of a robot in its frame: one per gantry mover (by id), else one with mover 0. */
+function robotTcps(c: LimitedRobot, state: ComponentState): { moverId: number; tcp: Vec3 }[] {
+  if (c.type === "delta" && state.type === "delta") {
+    const t = state.actualTcp;
+    return [{ moverId: 0, tcp: toLocal(frameFromPose(c.pose), [t.x, t.y, t.z]) }];
+  }
+  if (c.type === "cartesian" && state.type === "cartesian") {
+    return [{ moverId: 0, tcp: [state.x, c.axes === "xz" ? 0 : state.y, c.axes === "xy" ? c.zMin : state.z] }];
+  }
+  if (c.type === "xtsGantry" && state.type === "xtsGantry") {
+    return state.movers.map((m) => ({ moverId: m.id, tcp: gantryFlange(c, state.z, m) }));
+  }
+  return [];
+}
+
+/**
+ * The TCP limit areas of a source's robots where their TCPs are now (`states` by component id). A robot without a
+ * state has no TCP yet; a config made before protocol 19 has no TCP limit areas.
+ */
+export function tcpLimitBoxes(
+  components: readonly ComponentConfig[],
+  states: ReadonlyMap<number, ComponentState>,
+): TcpLimitBox[] {
+  const boxes: TcpLimitBox[] = [];
+  for (const c of components) {
+    if (!isLimitedRobot(c) || !c.tcpLimitArea) continue;
+    const state = states.get(c.id);
+    if (!state) continue;
+    const frame = frameFromPose(c.pose);
+    for (const { moverId, tcp } of robotTcps(c, state)) {
+      const name = moverId ? `${c.name} mover ${moverId}` : c.name;
+      boxes.push({ robotId: c.id, moverId, name, ...boxOf(frame, c.tcpLimitArea, tcp) });
+    }
+  }
+  return boxes;
+}
+
+/** One of the boxes a limit violation is about: a robot's limit area (`moverId` null) or a TCP limit area. */
+export interface LimitBoxRef {
+  robotId: number;
+  moverId: number | null;
+}
+
+/**
+ * A TCP limit area that overlaps another robot's limit area or another TCP limit area (also another mover's of the same
+ * gantry), or that leaves its own robot's limit area. Boxes that only touch do not overlap.
+ */
+export interface LimitViolation {
+  /** Stable while the violation lasts, e.g. "20:0|limit:50". */
+  key: string;
+  /** The TCP limit area. */
+  tcp: { robotId: number; moverId: number };
+  /** The box it overlaps or, when it leaves it, its own robot's limit area. */
+  other: LimitBoxRef;
+  /** "Delta 1 TCP limit area overlaps the limit area of Cartesian", "IDH mover 2 TCP limit area leaves the limit area of IDH". */
+  text: string;
+}
+
+/** A box ref as a key: "50:limit" for a limit area, "30:2" for a TCP limit area. */
+export const limitBoxKey = (ref: LimitBoxRef): string => `${ref.robotId}:${ref.moverId ?? "limit"}`;
+
+/**
+ * The limit violations of one source's robots with their TCPs where `states` (by component id) put them, and the TCP
+ * limit areas they were found from. Robots of different sources never meet: each source has its own space.
+ */
+export function limitViolations(
+  components: readonly ComponentConfig[],
+  states: ReadonlyMap<number, ComponentState>,
+): { boxes: TcpLimitBox[]; violations: LimitViolation[] } {
+  const boxes = tcpLimitBoxes(components, states);
+  const limits = components.filter(isLimitedRobot).flatMap((c) => {
+    if (!c.limitArea) return [];
+    return [{ robotId: c.id, name: c.name, ...boxOf(frameFromPose(c.pose), c.limitArea) }];
+  });
+  const violations: LimitViolation[] = [];
+  const add = (t: TcpLimitBox, other: LimitBoxRef, text: string) =>
+    violations.push({
+      key: `${limitBoxKey(t)}|${limitBoxKey(other)}`,
+      tcp: { robotId: t.robotId, moverId: t.moverId },
+      other,
+      text: `${t.name} TCP limit area ${text}`,
+    });
+  boxes.forEach((t, i) => {
+    for (const l of limits) {
+      if (l.robotId !== t.robotId) {
+        if (boxesOverlap(t, l)) add(t, { robotId: l.robotId, moverId: null }, `overlaps the limit area of ${l.name}`);
+      } else if (!boxInside(t, l)) {
+        add(t, { robotId: l.robotId, moverId: null }, `leaves the limit area of ${l.name}`);
+      }
+    }
+    // Each pair of TCP limit areas once.
+    for (const u of boxes.slice(i + 1)) {
+      if (boxesOverlap(t, u)) add(t, { robotId: u.robotId, moverId: u.moverId }, `overlaps the TCP limit area of ${u.name}`);
+    }
+  });
+  return { boxes, violations };
 }

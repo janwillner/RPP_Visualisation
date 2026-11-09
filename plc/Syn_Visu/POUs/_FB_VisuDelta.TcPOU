@@ -146,15 +146,18 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-The robot's limit area for _FB_VisuRobot.m_SetLimitArea and m_ClearLimitArea.<br>
+The robot's limit area and TCP limit area for _FB_VisuRobot.m_SetLimitArea, m_ClearLimitArea,<br>
+m_SetTcpLimitArea and m_ClearTcpLimitArea.<br>
 ****************************************************************************************************)
 METHOD PROTECTED m_LimitArea : BOOL
 VAR_OUTPUT
 	vo_p_LimitArea						: POINTER TO ST_VisuLimitArea;
+	vo_p_TcpLimitArea					: POINTER TO ST_VisuLimitArea;
 END_VAR
 ]]></Declaration>
       <Implementation>
         <ST><![CDATA[vo_p_LimitArea := ADR(vo_Visu.stConfig.stLimitArea);
+vo_p_TcpLimitArea := ADR(vo_Visu.stConfig.stTcpLimitArea);
 m_LimitArea := TRUE;
 ]]></ST>
       </Implementation>

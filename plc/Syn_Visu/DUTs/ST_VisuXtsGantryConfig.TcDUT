@@ -18,6 +18,7 @@ STRUCT
 	fMoverLength : LREAL; // mm, along the track
 	fMoverWidth : LREAL; // mm
 	stLimitArea : ST_VisuLimitArea; // optional box in the gantry frame that further restricts the working area
+	stTcpLimitArea : ST_VisuLimitArea; // optional box around every mover's gripper flange, along the gantry frame's axes
 	nZoneCount : UINT;
 	aZones : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF ST_VisuZone; // pick and place zones
 	nFingerCount : UINT; // fingers of every mover's gripper, 0 = no gripper definition

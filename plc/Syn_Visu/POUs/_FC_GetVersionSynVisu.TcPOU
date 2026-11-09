@@ -29,6 +29,7 @@ Syn_Visu 9.0.0  ¦ 2026-11-05 ¦ J.Willner ¦ Zones bounded across the belt: m_S
 Syn_Visu 9.1.0  ¦ 2026-11-07 ¦ J.Willner ¦ Conveyor without a body: _FB_VisuConveyor.m_SetBodyVisible (protocol 16)<br>
 Syn_Visu 9.2.0  ¦ 2026-11-07 ¦ J.Willner ¦ Cartesian robot without Y or Z axis: _FB_VisuCartesian.m_SetKinematics (protocol 17)<br>
 Syn_Visu 9.3.0  ¦ 2026-11-07 ¦ J.Willner ¦ Limit area for XTS gantry and Cartesian: _FB_VisuRobot.m_SetLimitArea (protocol 18)<br>
+Syn_Visu 9.4.0  ¦ 2026-11-09 ¦ J.Willner ¦ TCP limit area: _FB_VisuRobot.m_SetTcpLimitArea (protocol 19)<br>
 ****************************************************************************************************)
 FUNCTION _FC_GetVersionSynVisu : UINT
 VAR_INPUT
@@ -37,7 +38,7 @@ END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[CASE vi_n_VersionElement OF
 	1: _FC_GetVersionSynVisu := 9;
-	2: _FC_GetVersionSynVisu := 3;
+	2: _FC_GetVersionSynVisu := 4;
 	3: _FC_GetVersionSynVisu := 0;
 ELSE
 	_FC_GetVersionSynVisu := 16#FFFF;

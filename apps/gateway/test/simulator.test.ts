@@ -103,6 +103,27 @@ describe("simulator", () => {
     const limited = config.components.filter((c) => "limitArea" in c && c.limitArea !== null).map((c) => c.name);
     expect(limited.sort()).toEqual(["Cartesian", "Delta 1", "IDH"]);
     expect(config.components.some((c) => c.type === "xtsLoop" && "limitArea" in c)).toBe(false);
+    // They have a TCP limit area too. Delta 1's leaves its limit area now and then, when it picks a product near the
+    // far edge of the infeed: a real limit violation, short and repeated.
+    const withTcpLimitArea = config.components.filter((c) => "tcpLimitArea" in c && c.tcpLimitArea !== null).map((c) => c.name);
+    expect(withTcpLimitArea.sort()).toEqual(["Cartesian", "Delta 1", "IDH"]);
+    const robot = config.components.find((c) => c.name === "Delta 1");
+    if (robot?.type !== "delta" || !robot.limitArea || !robot.tcpLimitArea) throw new Error("Delta 1 without boxes");
+    // The robot is not turned: its frame is the MCS moved to its pose.
+    const leaves = states.map((s) => {
+      const c = s.components.find((x) => x.id === robot.id);
+      if (c?.type !== "delta") return false;
+      const [box, limit] = [robot.tcpLimitArea!, robot.limitArea!];
+      const local = { x: c.actualTcp.x - robot.pose.x, y: c.actualTcp.y - robot.pose.y, z: c.actualTcp.z - robot.pose.z };
+      return (
+        local.x + box.xMin < limit.xMin || local.x + box.xMax > limit.xMax ||
+        local.y + box.yMin < limit.yMin || local.y + box.yMax > limit.yMax ||
+        local.z + box.zMin < limit.zMin || local.z + box.zMax > limit.zMax
+      );
+    });
+    const starts = leaves.filter((on, i) => on && !leaves[i - 1]).length;
+    expect(starts).toBeGreaterThan(3);
+    expect(leaves.filter(Boolean).length).toBeLessThan(leaves.length / 10);
     const xOf = (name: string) =>
       states.map((s) => s.components.find((c) => c.id === idOf(name))).map((c) => (c?.type === "cartesian" ? c.x : 0));
     for (const name of ["Cartesian X-Z", "Cartesian X-Y"]) expect(Math.max(...xOf(name)) - Math.min(...xOf(name))).toBeGreaterThan(500);

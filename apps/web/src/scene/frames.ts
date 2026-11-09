@@ -125,3 +125,50 @@ export interface Transform {
 export function toRendererTransform(frame: Frame): Transform {
   return { position: toRenderer(frame.origin), quaternion: quatFromMat3(mul(C, mul(frame.rotation, CT))) };
 }
+
+/** A box along the axes of a frame: from `min` to `max` in its local coordinates, mm. */
+export interface FrameBox {
+  frame: Frame;
+  min: Vec3;
+  max: Vec3;
+}
+
+/** How far boxes may reach into each other and still count as only touching, mm. */
+const TOUCH = 1e-6;
+
+const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+
+/** A box as centre, unit axes and half sizes, all in the MCS. */
+function oriented(b: FrameBox) {
+  const r = b.frame.rotation;
+  return {
+    centre: toMcs(b.frame, [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2]),
+    axes: [0, 1, 2].map((i) => [r[i]!, r[3 + i]!, r[6 + i]!] as Vec3),
+    half: [0, 1, 2].map((i) => (b.max[i]! - b.min[i]!) / 2),
+  };
+}
+
+/**
+ * Whether two boxes overlap, however their frames are turned (separating axis test); boxes that only touch do not. A
+ * flat box (min = max along an axis) overlaps a box it cuts through.
+ */
+export function boxesOverlap(a: FrameBox, b: FrameBox): boolean {
+  const p = oriented(a);
+  const q = oriented(b);
+  const between: Vec3 = [q.centre[0] - p.centre[0], q.centre[1] - p.centre[1], q.centre[2] - p.centre[2]];
+  const candidates = [...p.axes, ...q.axes, ...p.axes.flatMap((u) => q.axes.map((v) => cross(u, v)))];
+  for (const axis of candidates) {
+    const length = Math.hypot(...axis);
+    // Parallel edges give no axis of their own: the face axes cover them.
+    if (length < 1e-9) continue;
+    const reach = (box: typeof p) => box.axes.reduce((sum, u, i) => sum + box.half[i]! * Math.abs(dot(u, axis)), 0);
+    if (Math.abs(dot(between, axis)) >= reach(p) + reach(q) - TOUCH * length) return false;
+  }
+  return true;
+}
+
+/** Whether box `inner` lies wholly in box `outer`, both given in the same frame; touching faces still count as in. */
+export function boxInside(inner: FrameBox, outer: FrameBox): boolean {
+  return [0, 1, 2].every((i) => inner.min[i]! >= outer.min[i]! - TOUCH && inner.max[i]! <= outer.max[i]! + TOUCH);
+}
