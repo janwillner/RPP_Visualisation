@@ -143,7 +143,7 @@ describe("scene model: product tracking", () => {
     const productPoints = (scene: ReturnType<typeof buildScene>) => scene.snapPoints.filter((s) => s.label.startsWith("Product #"));
 
     expect(productPoints(buildScene(config(belt), snapshots, 0)).length).toBeGreaterThan(0);
-    const without = buildScene(config(belt), snapshots, 0, new Set(), { productSnapPoints: false });
+    const without = buildScene(config(belt), snapshots, 0, new Set(), { measureSnapPoints: false });
     expect(productPoints(without)).toEqual([]);
     expect(without.products).toHaveLength(1);
     // The conveyor's own points stay.
@@ -1752,6 +1752,17 @@ describe("scene model: TCP limit areas", () => {
     // Without a Y axis Y is 0; without a Z axis the flange stays at zMin = −600.
     closeTo(centre("xz"), [6600, 0, 1600], 4);
     closeTo(centre("xy"), [6600, 250, 1400], 4);
+  });
+
+  it("gives a TCP limit area's corners as snap points only for measure mode, since they move every frame", () => {
+    const robot = deltaConfig({ tcpLimitArea: tcpArea });
+    const snapshots = [snapshot(0, [deltaState({ x: 1500, y: 0, z: 1000 })])];
+    const corners = (measureSnapPoints: boolean) =>
+      buildScene(config(robot), snapshots, 0, new Set(), { measureSnapPoints }).snapPoints.filter((p) =>
+        p.label.startsWith("Delta 1 TCP limit area"),
+      );
+    expect(corners(true)).toHaveLength(8);
+    expect(corners(false)).toEqual([]);
   });
 
   it("has no TCP limit area without one in the config or before the first state", () => {

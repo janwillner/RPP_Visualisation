@@ -33,7 +33,7 @@ import {
   moduleTurn,
   curveRadius,
   trackLength,
-  trackPoint,
+  trackPoints,
   type XtsGantryConfig,
   type XtsGantryState,
   type XtsLoopConfig,
@@ -57,7 +57,7 @@ import {
   type Transform,
   type Vec3,
 } from "./frames";
-import { faultText, isMissed, limitBoxKey, limitViolations, productBeltX } from "../machine-facts";
+import { faultText, isMissed, limitBoxKey, limitViolations, productBeltX, tcpLimitBoxes } from "../machine-facts";
 import { isGrouped } from "./product-groups";
 
 /**
@@ -591,17 +591,18 @@ interface BuildContext {
   /** A robot's limit area (Delta, XTS gantry, Cartesian), a box in its frame with its corners as snap points. */
   addLimitArea(c: { id: number; name: string; pose: Pose; originShift: Position; limitArea: LimitArea | null }): void;
   warn(message: string): void;
-  /** Whether products get snap points: only measure mode needs them, and they are many. */
-  productSnapPoints: boolean;
+  /** Whether the snap points only measure mode needs are built: on products, which are many, and on TCP limit areas. */
+  measureSnapPoints: boolean;
 }
 
 /** How a scene is built beyond its data. */
 export interface SceneOptions {
   /**
-   * Snap points on every product (bottom centre, corners or outline), for measure mode; default true. Thousands of
-   * products give tens of thousands of points, so the 3D view asks for them only while measuring.
+   * Snap points that only measure mode needs, default true: on every product (bottom centre, corners or outline) and
+   * on the corners of the TCP limit areas. Thousands of products give tens of thousands of points, and the TCP limit
+   * areas move every frame, so the 3D view asks for them only while measuring.
    */
-  productSnapPoints?: boolean;
+  measureSnapPoints?: boolean;
   /**
    * Look for limit violations; default true. Off for a source that is offline: its last state says nothing about where
    * its robots are now. Its TCP limit areas are still drawn.
@@ -657,7 +658,7 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
       if (state) {
         const shown = conveyorProducts(c, frame, state, ctx.carriers, ctx.warn);
         ctx.scene.products.push(...shown);
-        if (ctx.productSnapPoints) for (const p of shown) snapPoints.push(...productSnapPoints(p, owner));
+        if (ctx.measureSnapPoints) for (const p of shown) snapPoints.push(...productSnapPoints(p, owner));
       }
     },
     interpolate: (a, b, f) => ({ ...a, beltPosition: lerp(a.beltPosition, b.beltPosition, f) }),
@@ -856,7 +857,7 @@ export function buildScene(
 
   const ctx: BuildContext = {
     scene,
-    productSnapPoints: options.productSnapPoints ?? true,
+    measureSnapPoints: options.measureSnapPoints ?? true,
     carriers: new Map(),
     warn: (message) => warnings.push(message),
     addFault(componentId, part, message, anchor) {
@@ -973,7 +974,11 @@ export function buildScene(
     const state = states.get(c.id);
     kitOf(c.type).build(c, state?.type === c.type ? state : undefined, ctx);
   }
-  addTcpLimitAreas(scene, components, states, options.checkLimits ?? true, faultsOf);
+  addTcpLimitAreas(scene, components, states, {
+    check: options.checkLimits ?? true,
+    snapPoints: options.measureSnapPoints ?? true,
+    faultsOf,
+  });
   // Each component's coordinate system: at its pose, moved by its origin shift.
   const rank = (c: ComponentConfig) => kitOf(c.type).originRank ?? 2;
   scene.origins = [...components]
@@ -984,27 +989,28 @@ export function buildScene(
 }
 
 /**
- * The robots' TCP limit areas where their TCPs are now, with their corners as snap points, and with `check` the limit
- * violations: the boxes involved light up, each violation is listed under every robot involved and labelled above its
- * TCP limit area.
+ * The robots' TCP limit areas where their TCPs are now, with `snapPoints` their corners as snap points, and with
+ * `check` the limit violations: the boxes involved light up, each violation is listed under every robot involved and
+ * labelled above its TCP limit area.
  */
 function addTcpLimitAreas(
   scene: SceneModel,
   components: readonly ComponentConfig[],
   states: ReadonlyMap<number, ComponentState>,
-  check: boolean,
-  faultsOf: (componentId: number) => ComponentFaults,
+  options: { check: boolean; snapPoints: boolean; faultsOf: (componentId: number) => ComponentFaults },
 ): void {
-  const { boxes, violations } = limitViolations(components, states);
-  const found = check ? violations : [];
-  const violated = new Set(found.flatMap((v) => [limitBoxKey(v.tcp), limitBoxKey(v.other)]));
-  const robots = new Map(components.map((c) => [c.id, c]));
+  const { boxes, violations } = options.check
+    ? limitViolations(components, states)
+    : { boxes: tcpLimitBoxes(components, states), violations: [] };
+  if (boxes.length === 0) return;
+  const violated = new Set(violations.flatMap((v) => [limitBoxKey(v.tcp), limitBoxKey(v.other)]));
+  const robots = options.snapPoints ? new Map(components.map((c) => [c.id, c])) : undefined;
   const tops = new Map<string, Vec3>();
   for (const box of boxes) {
     const { min, max, frame } = box;
     const key = limitBoxKey(box);
     const centre: Vec3 = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
-    tops.set(key, lifted(toMcs(frame, [centre[0], centre[1], max[2]]), LABEL_LIFT.tcpLimitArea));
+    if (violated.has(key)) tops.set(key, lifted(toMcs(frame, [centre[0], centre[1], max[2]]), LABEL_LIFT.tcpLimitArea));
     scene.tcpLimitAreas.push({
       key,
       robotId: box.robotId,
@@ -1013,22 +1019,23 @@ function addTcpLimitAreas(
       size: flatBoxSize([max[0] - min[0], max[1] - min[1], max[2] - min[2]]),
       violated: violated.has(key),
     });
-    scene.snapPoints.push(
-      ...boxCorners(
-        snapOwner(robots.get(box.robotId)!, frame),
-        `${box.name} TCP limit area`,
-        "limitAreas",
-        [extent(min[0], max[0], "X min", "X max"), extent(min[1], max[1], "Y min", "Y max"), extent(min[2], max[2], "bottom", "top")],
-        true,
-      ),
-    );
+    if (robots) {
+      const extents: [Extent, Extent, Extent] = [
+        extent(min[0], max[0], "X min", "X max"),
+        extent(min[1], max[1], "Y min", "Y max"),
+        extent(min[2], max[2], "bottom", "top"),
+      ];
+      const owner = snapOwner(robots.get(box.robotId)!, frame);
+      scene.snapPoints.push(...boxCorners(owner, `${box.name} TCP limit area`, "limitAreas", extents, true));
+    }
   }
+  if (violated.size === 0) return;
   for (const area of scene.limitAreas) area.violated = violated.has(limitBoxKey({ robotId: area.robotId, moverId: null }));
-  for (const v of found) {
+  for (const v of violations) {
     const { robotId } = v.tcp;
     const position = toRenderer(tops.get(limitBoxKey(v.tcp))!);
     scene.faultLabels.push({ key: `${robotId}:limit:${v.key}`, componentId: robotId, part: null, message: v.text, position, limit: true });
-    for (const id of new Set([robotId, v.other.robotId])) faultsOf(id).limitViolations.push(v.text);
+    for (const id of new Set([robotId, v.other.robotId])) options.faultsOf(id).limitViolations.push(v.text);
   }
 }
 
@@ -1536,6 +1543,7 @@ function layTrack(
     if (centre) boundaries.push({ label: `${c.name} · module ${i + 1} curve centre`, mcs: absolute(centre.u, centre.v) });
   });
   const end = starts[n]!;
+  const pointAt = trackPoints(c.modules, closed);
   // Middle and top of the module boundaries, relative to the group.
   const local = starts.map((p) => apply(plane, [p.u, p.v, 0]));
   const span = (k: number) => [Math.min(...local.map((p) => p[k]!)), Math.max(...local.map((p) => p[k]!))] as const;
@@ -1553,7 +1561,7 @@ function layTrack(
     top: toMcs(group, [middle[0], middle[1], z[1]]),
     /** The frame at a track position, relative to the group. */
     at(position: number): Frame {
-      const p = trackPoint(c.modules, position, closed);
+      const p = pointAt(position);
       return inPlane(p.u, p.v, p.heading);
     },
   };

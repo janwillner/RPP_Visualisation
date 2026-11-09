@@ -68,14 +68,21 @@ export function curveCentre(start: TrackPoint, m: TrackModule): { u: number; v: 
  * they run on straight beyond either end.
  */
 export function trackPoint(modules: readonly TrackModule[], s: number, closed: boolean): TrackPoint {
+  return trackPoints(modules, closed)(s);
+}
+
+/** `trackPoint` for many positions on the same track: the module starts are laid out once. */
+export function trackPoints(modules: readonly TrackModule[], closed: boolean): (s: number) => TrackPoint {
   const starts = moduleStarts(modules);
   const total = trackLength(modules);
-  let rest = closed && total > 0 ? ((s % total) + total) % total : s;
-  if (rest < 0 || modules.length === 0) return alongModule(starts[0]!, { kind: "straight", length: 0 }, rest);
-  for (let i = 0; i < modules.length; i++) {
-    const m = modules[i]!;
-    if (rest <= m.length) return alongModule(starts[i]!, m, rest);
-    rest -= m.length;
-  }
-  return alongModule(starts[modules.length]!, { kind: "straight", length: 0 }, rest);
+  return (s) => {
+    let rest = closed && total > 0 ? ((s % total) + total) % total : s;
+    if (rest < 0 || modules.length === 0) return alongModule(starts[0]!, { kind: "straight", length: 0 }, rest);
+    for (let i = 0; i < modules.length; i++) {
+      const m = modules[i]!;
+      if (rest <= m.length) return alongModule(starts[i]!, m, rest);
+      rest -= m.length;
+    }
+    return alongModule(starts[modules.length]!, { kind: "straight", length: 0 }, rest);
+  };
 }

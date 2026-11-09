@@ -290,7 +290,7 @@ function SceneContent(props: SceneViewProps) {
   // Priority −1: runs before the sources' frame callbacks, which read the scene built here.
   useFrame(() => {
     // Products get snap points only while measuring: with thousands of products they cost most of the frame.
-    const model = buildMachineScene(feed.frame(), hidden, { productSnapPoints: measureMode });
+    const model = buildMachineScene(feed.frame(), hidden, { measureSnapPoints: measureMode });
     modelRef.current = model;
     const changes = machine.next(model);
     if (changes.structure) setStructure(model);

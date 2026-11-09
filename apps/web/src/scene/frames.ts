@@ -133,37 +133,69 @@ export interface FrameBox {
   max: Vec3;
 }
 
+/**
+ * A box ready for overlap tests, all in the MCS: its centre, unit axes (the frame's), half sizes along them and the
+ * radius of the sphere around it. Made once per box, then tested against any number of others.
+ */
+export interface OrientedBox {
+  centre: Vec3;
+  axes: [Vec3, Vec3, Vec3];
+  half: Vec3;
+  radius: number;
+}
+
 /** How far boxes may reach into each other and still count as only touching, mm. */
 const TOUCH = 1e-6;
 
-const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-
-/** A box as centre, unit axes and half sizes, all in the MCS. */
-function oriented(b: FrameBox) {
+export function orient(b: FrameBox): OrientedBox {
   const r = b.frame.rotation;
+  const half: Vec3 = [(b.max[0] - b.min[0]) / 2, (b.max[1] - b.min[1]) / 2, (b.max[2] - b.min[2]) / 2];
   return {
     centre: toMcs(b.frame, [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2]),
-    axes: [0, 1, 2].map((i) => [r[i]!, r[3 + i]!, r[6 + i]!] as Vec3),
-    half: [0, 1, 2].map((i) => (b.max[i]! - b.min[i]!) / 2),
+    axes: [
+      [r[0], r[3], r[6]],
+      [r[1], r[4], r[7]],
+      [r[2], r[5], r[8]],
+    ],
+    half,
+    radius: Math.hypot(half[0], half[1], half[2]),
   };
 }
 
+/** How far a box reaches from its centre along a direction (not necessarily of unit length). */
+function reach(b: OrientedBox, x: number, y: number, z: number): number {
+  const [u, v, w] = b.axes;
+  return (
+    b.half[0] * Math.abs(u[0] * x + u[1] * y + u[2] * z) +
+    b.half[1] * Math.abs(v[0] * x + v[1] * y + v[2] * z) +
+    b.half[2] * Math.abs(w[0] * x + w[1] * y + w[2] * z)
+  );
+}
+
 /**
- * Whether two boxes overlap, however their frames are turned (separating axis test); boxes that only touch do not. A
- * flat box (min = max along an axis) overlaps a box it cuts through.
+ * Whether two boxes overlap, however their frames are turned; boxes that only touch do not. A flat box (min = max
+ * along an axis) overlaps a box it cuts through. Boxes whose surrounding spheres are apart are answered at once;
+ * the others by the separating axis test (the 3 + 3 face axes and the 9 edge-pair axes).
  */
-export function boxesOverlap(a: FrameBox, b: FrameBox): boolean {
-  const p = oriented(a);
-  const q = oriented(b);
-  const between: Vec3 = [q.centre[0] - p.centre[0], q.centre[1] - p.centre[1], q.centre[2] - p.centre[2]];
-  const candidates = [...p.axes, ...q.axes, ...p.axes.flatMap((u) => q.axes.map((v) => cross(u, v)))];
-  for (const axis of candidates) {
-    const length = Math.hypot(...axis);
+export function orientedOverlap(p: OrientedBox, q: OrientedBox): boolean {
+  const dx = q.centre[0] - p.centre[0];
+  const dy = q.centre[1] - p.centre[1];
+  const dz = q.centre[2] - p.centre[2];
+  const spheres = p.radius + q.radius;
+  if (dx * dx + dy * dy + dz * dz >= spheres * spheres) return false;
+  /** True when the boxes' shadows on this axis are apart or only touch. */
+  const apart = (x: number, y: number, z: number): boolean => {
+    const length = Math.hypot(x, y, z);
     // Parallel edges give no axis of their own: the face axes cover them.
-    if (length < 1e-9) continue;
-    const reach = (box: typeof p) => box.axes.reduce((sum, u, i) => sum + box.half[i]! * Math.abs(dot(u, axis)), 0);
-    if (Math.abs(dot(between, axis)) >= reach(p) + reach(q) - TOUCH * length) return false;
+    if (length < 1e-9) return false;
+    return Math.abs(dx * x + dy * y + dz * z) >= reach(p, x, y, z) + reach(q, x, y, z) - TOUCH * length;
+  };
+  for (const [x, y, z] of p.axes) if (apart(x, y, z)) return false;
+  for (const [x, y, z] of q.axes) if (apart(x, y, z)) return false;
+  for (const u of p.axes) {
+    for (const v of q.axes) {
+      if (apart(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0])) return false;
+    }
   }
   return true;
 }

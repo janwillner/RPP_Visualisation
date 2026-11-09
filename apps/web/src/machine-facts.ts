@@ -1,5 +1,5 @@
 import {
-  trackPoint,
+  trackPoints,
   type ComponentConfig,
   type ComponentState,
   type ConveyorConfig,
@@ -7,10 +7,22 @@ import {
   type Fault,
   type LimitArea,
   type Product,
+  type TrackPoint,
   type XtsGantryConfig,
 } from "@rpp/protocol";
 import type { SourceInfo } from "./sources";
-import { apply, boxesOverlap, boxInside, frameFromPose, rotZ, toLocal, type Frame, type FrameBox, type Vec3 } from "./scene/frames";
+import {
+  apply,
+  boxInside,
+  frameFromPose,
+  orient,
+  orientedOverlap,
+  rotZ,
+  toLocal,
+  type Frame,
+  type FrameBox,
+  type Vec3,
+} from "./scene/frames";
 
 /**
  * Rules about the machine that the 3D scene, the timeline, the product history, the metrics and the inspector all
@@ -78,9 +90,13 @@ function boxOf(frame: Frame, a: LimitArea, at: Vec3 = [0, 0, 0]): FrameBox {
  * A gantry mover's gripper flange in the gantry's frame: on the track (lifted by the common Z axis) at its position,
  * the X axis turned with the track there.
  */
-function gantryFlange(c: XtsGantryConfig, z: number, m: { position: number; x: number }): Vec3 {
-  // Recordings made before protocol 12 have no track modules: the track runs straight along +Y.
-  const p = trackPoint(c.modules ?? [], m.position, false);
+function gantryFlange(
+  c: XtsGantryConfig,
+  pointAt: (s: number) => TrackPoint,
+  z: number,
+  m: { position: number; x: number },
+): Vec3 {
+  const p = pointAt(m.position);
   // The track's u runs along +Y and its v along −X; a mover's X axis is the track's right, turned with its heading.
   const arm = apply(rotZ(p.heading), [m.x + c.toolOffsetX, 0, c.toolOffsetZ]);
   return [-p.v + arm[0], p.u + arm[1], z + arm[2]];
@@ -96,7 +112,9 @@ function robotTcps(c: LimitedRobot, state: ComponentState): { moverId: number; t
     return [{ moverId: 0, tcp: [state.x, c.axes === "xz" ? 0 : state.y, c.axes === "xy" ? c.zMin : state.z] }];
   }
   if (c.type === "xtsGantry" && state.type === "xtsGantry") {
-    return state.movers.map((m) => ({ moverId: m.id, tcp: gantryFlange(c, state.z, m) }));
+    // Recordings made before protocol 12 have no track modules: the track runs straight along +Y.
+    const pointAt = trackPoints(c.modules ?? [], false);
+    return state.movers.map((m) => ({ moverId: m.id, tcp: gantryFlange(c, pointAt, state.z, m) }));
   }
   return [];
 }
@@ -156,11 +174,15 @@ export function limitViolations(
   states: ReadonlyMap<number, ComponentState>,
 ): { boxes: TcpLimitBox[]; violations: LimitViolation[] } {
   const boxes = tcpLimitBoxes(components, states);
+  const violations: LimitViolation[] = [];
+  // Most machines have no TCP limit areas: nothing to check. Else each box is prepared for the tests once.
+  if (boxes.length === 0) return { boxes, violations };
   const limits = components.filter(isLimitedRobot).flatMap((c) => {
     if (!c.limitArea) return [];
-    return [{ robotId: c.id, name: c.name, ...boxOf(frameFromPose(c.pose), c.limitArea) }];
+    const box = boxOf(frameFromPose(c.pose), c.limitArea);
+    return [{ robotId: c.id, name: c.name, box, oriented: orient(box) }];
   });
-  const violations: LimitViolation[] = [];
+  const oriented = boxes.map(orient);
   const add = (t: TcpLimitBox, other: LimitBoxRef, text: string) =>
     violations.push({
       key: `${limitBoxKey(t)}|${limitBoxKey(other)}`,
@@ -169,16 +191,22 @@ export function limitViolations(
       text: `${t.name} TCP limit area ${text}`,
     });
   boxes.forEach((t, i) => {
+    const p = oriented[i]!;
     for (const l of limits) {
       if (l.robotId !== t.robotId) {
-        if (boxesOverlap(t, l)) add(t, { robotId: l.robotId, moverId: null }, `overlaps the limit area of ${l.name}`);
-      } else if (!boxInside(t, l)) {
+        if (orientedOverlap(p, l.oriented)) {
+          add(t, { robotId: l.robotId, moverId: null }, `overlaps the limit area of ${l.name}`);
+        }
+      } else if (!boxInside(t, l.box)) {
         add(t, { robotId: l.robotId, moverId: null }, `leaves the limit area of ${l.name}`);
       }
     }
     // Each pair of TCP limit areas once.
-    for (const u of boxes.slice(i + 1)) {
-      if (boxesOverlap(t, u)) add(t, { robotId: u.robotId, moverId: u.moverId }, `overlaps the TCP limit area of ${u.name}`);
+    for (let j = i + 1; j < boxes.length; j++) {
+      const u = boxes[j]!;
+      if (orientedOverlap(p, oriented[j]!)) {
+        add(t, { robotId: u.robotId, moverId: u.moverId }, `overlaps the TCP limit area of ${u.name}`);
+      }
     }
   });
   return { boxes, violations };
