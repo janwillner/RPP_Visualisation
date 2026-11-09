@@ -17,6 +17,7 @@ VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New: fingers shared by all robots<br>
 Syn_Visu 9.3.0  ¦ 2026-11-07 ¦ J.Willner ¦ Limit area shared by Delta, XTS gantry and Cartesian (was Delta only)<br>
 Syn_Visu 9.4.0  ¦ 2026-11-09 ¦ J.Willner ¦ TCP limit area: m_SetTcpLimitArea, m_ClearTcpLimitArea<br>
+Syn_Visu 9.4.1  ¦ 2026-11-09 ¦ J.Willner ¦ Limit area compares ignore padding: no config change from unchanged values<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK ABSTRACT _FB_VisuRobot EXTENDS _FB_VisuZoneComponent
 ]]></Declaration>
@@ -78,6 +79,8 @@ IF p_TempLimitArea = 0 THEN
 	RETURN;
 END_IF
 m_ClearLimitArea := p_TempLimitArea^.bActive;
+(* Zeroed first: the MEMCMP below also compares the padding after bActive, which a method local leaves undefined. *)
+Tc2_System.MEMSET(ADR(TempEmpty), 0, SIZEOF(TempEmpty));
 IF Tc2_System.MEMCMP(ADR(TempEmpty), p_TempLimitArea, SIZEOF(TempEmpty)) <> 0 THEN
 	p_TempLimitArea^ := TempEmpty;
 	m_NotifyConfigChanged();
@@ -107,6 +110,8 @@ IF p_TempTcpLimitArea = 0 THEN
 	RETURN;
 END_IF
 m_ClearTcpLimitArea := p_TempTcpLimitArea^.bActive;
+(* Zeroed first: the MEMCMP below also compares the padding after bActive, which a method local leaves undefined. *)
+Tc2_System.MEMSET(ADR(TempEmpty), 0, SIZEOF(TempEmpty));
 IF Tc2_System.MEMCMP(ADR(TempEmpty), p_TempTcpLimitArea, SIZEOF(TempEmpty)) <> 0 THEN
 	p_TempTcpLimitArea^ := TempEmpty;
 	m_NotifyConfigChanged();
@@ -235,6 +240,8 @@ m_LimitArea(vo_p_LimitArea => p_TempLimitArea);
 IF p_TempLimitArea = 0 THEN
 	RETURN;
 END_IF
+(* Zeroed first: the MEMCMP below also compares the padding after bActive, which a method local leaves undefined. *)
+Tc2_System.MEMSET(ADR(TempLimitArea), 0, SIZEOF(TempLimitArea));
 TempLimitArea.fXMin := vi_lr_XMin;
 TempLimitArea.fXMax := vi_lr_XMax;
 TempLimitArea.fYMin := vi_lr_YMin;
@@ -287,6 +294,8 @@ m_LimitArea(vo_p_TcpLimitArea => p_TempTcpLimitArea);
 IF p_TempTcpLimitArea = 0 THEN
 	RETURN;
 END_IF
+(* Zeroed first: the MEMCMP below also compares the padding after bActive, which a method local leaves undefined. *)
+Tc2_System.MEMSET(ADR(TempTcpLimitArea), 0, SIZEOF(TempTcpLimitArea));
 TempTcpLimitArea.fXMin := vi_lr_XMin;
 TempTcpLimitArea.fXMax := vi_lr_XMax;
 TempTcpLimitArea.fYMin := vi_lr_YMin;

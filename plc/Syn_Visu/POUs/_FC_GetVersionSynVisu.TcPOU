@@ -39,7 +39,7 @@ END_VAR]]></Declaration>
       <ST><![CDATA[CASE vi_n_VersionElement OF
 	1: _FC_GetVersionSynVisu := 9;
 	2: _FC_GetVersionSynVisu := 4;
-	3: _FC_GetVersionSynVisu := 0;
+	3: _FC_GetVersionSynVisu := 1;
 ELSE
 	_FC_GetVersionSynVisu := 16#FFFF;
 END_CASE]]></ST>
