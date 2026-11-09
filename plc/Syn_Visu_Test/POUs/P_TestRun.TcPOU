@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="P_TestRun" Id="{c2d649ca-bc8a-434d-92a6-238352d2fa0a}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Runs the TcUnit unit tests of the Syn_Visu library (the installed SynVisu, newest version) once after the<br>
+start: every suite in POUs/Tests. TcUnit writes the results to the error list (ADS log) and, through<br>
+TcUnit-Runner, to an xUnit file. Tests use only the library's public methods and its contract structures.<br>
+****************************************************************************************************)
+PROGRAM P_TestRun
+VAR
+	fb_TestComponent					: _FB_TestComponent;
+	fb_TestConveyor						: _FB_TestConveyor;
+	fb_TestProductRegister				: _FB_TestProductRegister;
+	fb_TestRobot						: _FB_TestRobot;
+	fb_TestXtsTrack						: _FB_TestXtsTrack;
+	fb_TestBodyComponent				: _FB_TestBodyComponent;
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[TcUnit.RUN();
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

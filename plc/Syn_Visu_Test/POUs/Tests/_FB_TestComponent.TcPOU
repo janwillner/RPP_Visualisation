@@ -1,0 +1,285 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_TestComponent" Id="{d69c0cf0-b12e-4256-bf00-d4d1b7979419}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+TcUnit test suite of _FB_VisuComponent: registration in the manifest (m_Register, m_Id), the symbol path<br>
+taken from the instance path, and the library version reported to the gateway.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 9.4.0  ¦ 2026-11-09 ¦ J.Willner ¦ Unit tests<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_TestComponent EXTENDS TcUnit.FB_TestSuite
+VAR
+	fb_PathConveyor						: _FB_VisuConveyor;	// declared here so that its instance path is known
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[m_RegisterAddsEntry();
+m_RegisterIsIdempotent();
+m_RegisterRejectsIdZero();
+m_RegisterRejectsUsedId();
+m_RegisterRejectsFullManifest();
+m_RegisterSymbolPath();
+m_VersionMatchesConstant();
+]]></ST>
+    </Implementation>
+    <Method Name="m_RegisterAddsEntry" Id="{60037cd9-50f3-46a7-a668-e87f03983848}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A new component gets a manifest entry with its id, type and name; the config version goes up by one and the<br>
+manifest reports the running library's protocol and library version.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterAddsEntry
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	TempManifest						: ST_VisuManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('RegisterAddsEntry');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+TempManifest.nProtocolVersion := 0;
+AssertTrue(Condition := fb_TempConveyor.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed'),
+	Message := 'm_Register accepts a new id');
+AssertEquals_UINT(Expected := 1, Actual := TempManifest.nCount, Message := 'one manifest entry');
+AssertEquals_UDINT(Expected := 1, Actual := TempManifest.aEntries[0].nId, Message := 'entry id');
+AssertTrue(Condition := TempManifest.aEntries[0].eType = E_VisuComponentType.CONVEYOR, Message := 'entry type CONVEYOR');
+AssertEquals_STRING(Expected := 'Infeed', Actual := TempManifest.aEntries[0].sName, Message := 'entry name');
+AssertEquals_UDINT(Expected := 2, Actual := TempManifest.nConfigVersion, Message := 'config version 1 -> 2');
+AssertEquals_UINT(Expected := VISU_GlobalConst.VISU_un_PROTOCOL_VERSION, Actual := TempManifest.nProtocolVersion,
+	Message := 'protocol version reported');
+AssertEquals_STRING(Expected := VISU_GlobalConst.VISU_str_LIBRARY_VERSION, Actual := TempManifest.sLibraryVersion,
+	Message := 'library version reported');
+AssertEquals_UDINT(Expected := 1, Actual := fb_TempConveyor.m_Id(), Message := 'm_Id gives the registered id');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RegisterIsIdempotent" Id="{88f888ca-3202-4ed2-bf1c-751a9e43abfc}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_Register is called every cycle: registering again with the same values keeps the single entry and the<br>
+config version.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterIsIdempotent
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	TempManifest						: ST_VisuManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('RegisterIsIdempotent');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempConveyor.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 3, vi_str_Name := 'Outfeed');
+AssertTrue(Condition := fb_TempConveyor.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 3, vi_str_Name := 'Outfeed'),
+	Message := 'the second m_Register with the same values succeeds');
+AssertEquals_UINT(Expected := 1, Actual := TempManifest.nCount, Message := 'still one manifest entry');
+AssertEquals_UDINT(Expected := 2, Actual := TempManifest.nConfigVersion, Message := 'config version unchanged by the second call');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RegisterRejectsFullManifest" Id="{8f09613e-2545-4782-9c1f-cd2fba0f019a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A manifest holding VISU_un_MAX_MANIFEST_ENTRIES entries takes no further component.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterRejectsFullManifest
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	TempManifest						: ST_VisuManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('RegisterRejectsFullManifest');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+(* Entries with id 0 never match a new id, so the manifest only counts as full. *)
+TempManifest.nCount := VISU_GlobalConst_Param.VISU_un_MAX_MANIFEST_ENTRIES;
+AssertFalse(Condition := fb_TempConveyor.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed'),
+	Message := 'full manifest refuses a new entry');
+AssertEquals_UINT(Expected := VISU_GlobalConst_Param.VISU_un_MAX_MANIFEST_ENTRIES, Actual := TempManifest.nCount,
+	Message := 'entry count unchanged');
+AssertEquals_UDINT(Expected := 1, Actual := TempManifest.nConfigVersion, Message := 'config version unchanged');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RegisterRejectsIdZero" Id="{e24daea6-bcb8-4e56-8e0f-bec0479be781}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Id 0 is refused without an entry, but the manifest still reports the running library's versions.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterRejectsIdZero
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	TempManifest						: ST_VisuManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('RegisterRejectsIdZero');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+TempManifest.nProtocolVersion := 0;
+AssertFalse(Condition := fb_TempConveyor.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 0, vi_str_Name := 'Infeed'),
+	Message := 'm_Register refuses id 0');
+AssertEquals_UINT(Expected := 0, Actual := TempManifest.nCount, Message := 'no manifest entry');
+AssertEquals_UDINT(Expected := 1, Actual := TempManifest.nConfigVersion, Message := 'config version unchanged');
+AssertEquals_UDINT(Expected := 0, Actual := fb_TempConveyor.m_Id(), Message := 'm_Id stays 0');
+AssertEquals_UINT(Expected := VISU_GlobalConst.VISU_un_PROTOCOL_VERSION, Actual := TempManifest.nProtocolVersion,
+	Message := 'protocol version reported anyway');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RegisterRejectsUsedId" Id="{b0394c43-5c64-4675-b99b-a67ad0f41184}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+An id already used by a different entry (other type or other name) is refused; the first entry stays.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterRejectsUsedId
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	fb_TempOtherConveyor				: _FB_VisuConveyor;
+	fb_TempDelta						: _FB_VisuDelta;
+	TempManifest						: ST_VisuManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('RegisterRejectsUsedId');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempConveyor.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 5, vi_str_Name := 'Infeed');
+AssertFalse(Condition := fb_TempDelta.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 5, vi_str_Name := 'Infeed'),
+	Message := 'same id, other type: refused');
+AssertFalse(Condition := fb_TempOtherConveyor.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 5, vi_str_Name := 'Other'),
+	Message := 'same id, other name: refused');
+AssertEquals_UINT(Expected := 1, Actual := TempManifest.nCount, Message := 'still one manifest entry');
+AssertEquals_UDINT(Expected := 0, Actual := fb_TempDelta.m_Id(), Message := 'refused component keeps m_Id 0');
+AssertEquals_UDINT(Expected := 5, Actual := fb_TempConveyor.m_Id(), Message := 'first component keeps its id');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RegisterSymbolPath" Id="{404cdbef-ec24-438a-ad70-1a512db55474}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The manifest entry's symbol path is the instance path without TwinCAT project and PLC project, plus<br>
+'.vo_Visu': the path the gateway reads over ADS.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterSymbolPath
+VAR_INST
+	TempManifest						: ST_VisuManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('RegisterSymbolPath');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_PathConveyor.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 1, vi_str_Name := 'Path');
+AssertEquals_STRING(Expected := 'P_TestRun.fb_TestComponent.fb_PathConveyor.vo_Visu', Actual := TempManifest.aEntries[0].sPath,
+	Message := 'symbol path of vo_Visu without TwinCAT and PLC project');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_VersionMatchesConstant" Id="{39052510-0bc5-4ecc-9eed-ae7aa377b115}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+_FC_GetVersionSynVisu and VISU_str_LIBRARY_VERSION name the same version: both are bumped together.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_VersionMatchesConstant
+VAR_INST
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	str_TempVersion						: STRING(31);	// major.minor.revision from _FC_GetVersionSynVisu
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('VersionMatchesConstant');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+str_TempVersion := CONCAT(UINT_TO_STRING(_FC_GetVersionSynVisu(vi_n_VersionElement := 1)), '.');
+str_TempVersion := CONCAT(str_TempVersion, UINT_TO_STRING(_FC_GetVersionSynVisu(vi_n_VersionElement := 2)));
+str_TempVersion := CONCAT(str_TempVersion, '.');
+str_TempVersion := CONCAT(str_TempVersion, UINT_TO_STRING(_FC_GetVersionSynVisu(vi_n_VersionElement := 3)));
+AssertEquals_STRING(Expected := VISU_GlobalConst.VISU_str_LIBRARY_VERSION, Actual := str_TempVersion,
+	Message := '_FC_GetVersionSynVisu matches VISU_str_LIBRARY_VERSION');
+AssertEquals_UINT(Expected := 16#FFFF, Actual := _FC_GetVersionSynVisu(vi_n_VersionElement := 4),
+	Message := 'unknown version element gives 16#FFFF');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

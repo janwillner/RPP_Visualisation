@@ -1,0 +1,213 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_TestBodyComponent" Id="{56652767-ffdc-4f59-837b-c6cf818f0f87}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+TcUnit test suite of _FB_VisuBodyComponent through a product sensor, a vision system and a station: the bodies<br>
+m_Configure describes, m_SetBody, active bodies, faults, origin shift and the state stamped by m_Register.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 9.4.0  ¦ 2026-11-09 ¦ J.Willner ¦ Unit tests<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_TestBodyComponent EXTENDS TcUnit.FB_TestSuite
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[m_SensorConfigure();
+m_VisionConfigure();
+m_StationBodies();
+m_RegisterStampsState();
+]]></ST>
+    </Implementation>
+    <Method Name="m_RegisterStampsState" Id="{5a865903-29b5-44c6-977f-3e41e6f75dec}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A body component may have no cyclic value of its own: its m_Register stamps the state with the DC time and<br>
+enters it in the manifest with its own type.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterStampsState
+VAR_INST
+	fb_TempStation						: _FB_VisuStation;
+	TempManifest						: ST_VisuManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('RegisterStampsState');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertTrue(Condition := fb_TempStation.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 70, vi_str_Name := 'Labeller'),
+	Message := 'registered');
+AssertTrue(Condition := TempManifest.aEntries[0].eType = E_VisuComponentType.STATION, Message := 'entry type STATION');
+AssertTrue(Condition := fb_TempStation.vo_Visu.stState.nTimestamp > 0, Message := 'state stamped with the DC time');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SensorConfigure" Id="{fa61b0ea-36c8-44e7-b389-a82093a99c76}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A product sensor's m_Configure describes its head (body 1) and beam (body 2, as long as the beam), gives TRUE<br>
+only on a change; m_SetSignal lights the beam up.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SensorConfigure
+VAR_INST
+	fb_TempSensor						: _FB_VisuSensor;
+	TempManifest						: ST_VisuManifest;
+	TempPose							: ST_VisuPose;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('SensorConfigure');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempSensor.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 61, vi_str_Name := 'Sensor');
+TempPose.fX := 500;
+AssertTrue(Condition := fb_TempSensor.m_Configure(vi_Pose := TempPose, vi_lr_BeamLength := 450), Message := 'configured');
+AssertEquals_UINT(Expected := 2, Actual := fb_TempSensor.vo_Visu.stConfig.nBodyCount, Message := 'head and beam');
+AssertTrue(Condition := fb_TempSensor.vo_Visu.stConfig.aBodies[1].eShape = E_VisuBodyShape.CYLINDER, Message := 'beam is a cylinder');
+AssertTrue(Condition := fb_TempSensor.vo_Visu.stConfig.aBodies[1].eRole = E_VisuBodyRole.BEAM, Message := 'beam role');
+AssertEquals_LREAL(Expected := 450, Actual := fb_TempSensor.vo_Visu.stConfig.aBodies[1].fHeight, Delta := 0.001,
+	Message := 'beam as long as configured');
+AssertEquals_LREAL(Expected := 500, Actual := fb_TempSensor.vo_Visu.stConfig.stPose.fX, Delta := 0.001, Message := 'pose taken over');
+
+AssertFalse(Condition := fb_TempSensor.m_Configure(vi_Pose := TempPose, vi_lr_BeamLength := 450), Message := 'same values: no change');
+
+AssertTrue(Condition := fb_TempSensor.m_SetSignal(vi_b_Signal := TRUE), Message := 'signal reported');
+AssertTrue(Condition := fb_TempSensor.vo_Visu.stState.aBodyStates[1].bActive, Message := 'beam lit up');
+AssertFalse(Condition := fb_TempSensor.vo_Visu.stState.aBodyStates[0].bActive, Message := 'head not lit up');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_StationBodies" Id="{2067e223-dfc8-4f38-b8d0-0e1c98c7f31f}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A station describes its bodies with m_SetBody (body 0 and one beyond VISU_un_MAX_BODIES refused, the config<br>
+version raised only on a change), lights one up, takes a fault and an origin shift, and m_ClearBodies<br>
+removes the bodies and their active states.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_StationBodies
+VAR_INST
+	fb_TempStation						: _FB_VisuStation;
+	TempManifest						: ST_VisuManifest;
+	TempPose							: ST_VisuPose;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('StationBodies');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempStation.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 70, vi_str_Name := 'Reject unit');
+AssertTrue(Condition := fb_TempStation.m_SetBody(vi_un_Body := 1, vi_e_Shape := E_VisuBodyShape.BOX,
+	vi_e_Role := E_VisuBodyRole.STRUCTURE, vi_Pose := TempPose, vi_lr_Length := 200, vi_lr_Width := 150, vi_lr_Height := 300,
+	vi_lr_TopLength := 0, vi_lr_TopWidth := 0), Message := 'housing set');
+AssertTrue(Condition := fb_TempStation.m_SetBody(vi_un_Body := 2, vi_e_Shape := E_VisuBodyShape.BOX,
+	vi_e_Role := E_VisuBodyRole.STRUCTURE, vi_Pose := TempPose, vi_lr_Length := 40, vi_lr_Width := 120, vi_lr_Height := 60,
+	vi_lr_TopLength := 0, vi_lr_TopWidth := 0), Message := 'pusher set');
+AssertEquals_UINT(Expected := 2, Actual := fb_TempStation.vo_Visu.stConfig.nBodyCount, Message := 'two bodies');
+AssertEquals_UDINT(Expected := 4, Actual := TempManifest.nConfigVersion, Message := 'one config version per body');
+fb_TempStation.m_SetBody(vi_un_Body := 2, vi_e_Shape := E_VisuBodyShape.BOX, vi_e_Role := E_VisuBodyRole.STRUCTURE,
+	vi_Pose := TempPose, vi_lr_Length := 40, vi_lr_Width := 120, vi_lr_Height := 60, vi_lr_TopLength := 0, vi_lr_TopWidth := 0);
+AssertEquals_UDINT(Expected := 4, Actual := TempManifest.nConfigVersion, Message := 'same body again: config version unchanged');
+AssertFalse(Condition := fb_TempStation.m_SetBody(vi_un_Body := 0, vi_e_Shape := E_VisuBodyShape.BOX,
+	vi_e_Role := E_VisuBodyRole.STRUCTURE, vi_Pose := TempPose, vi_lr_Length := 1, vi_lr_Width := 1, vi_lr_Height := 1,
+	vi_lr_TopLength := 0, vi_lr_TopWidth := 0), Message := 'body 0 refused');
+AssertFalse(Condition := fb_TempStation.m_SetBody(vi_un_Body := VISU_GlobalConst_Param.VISU_un_MAX_BODIES + 1,
+	vi_e_Shape := E_VisuBodyShape.BOX, vi_e_Role := E_VisuBodyRole.STRUCTURE, vi_Pose := TempPose, vi_lr_Length := 1,
+	vi_lr_Width := 1, vi_lr_Height := 1, vi_lr_TopLength := 0, vi_lr_TopWidth := 0), Message := 'body beyond the limit refused');
+
+AssertTrue(Condition := fb_TempStation.m_SetBodyActive(vi_un_Body := 2, vi_b_Active := TRUE), Message := 'pusher active');
+AssertTrue(Condition := fb_TempStation.vo_Visu.stState.aBodyStates[1].bActive, Message := 'pusher lit up');
+
+AssertTrue(Condition := fb_TempStation.m_SetFault(vi_b_Active := TRUE, vi_str_Message := 'Air pressure'), Message := 'fault set');
+AssertTrue(Condition := fb_TempStation.vo_Visu.stState.stFault.bActive, Message := 'station in a fault');
+AssertEquals_STRING(Expected := 'Air pressure', Actual := fb_TempStation.vo_Visu.stState.stFault.sMessage, Message := 'fault message');
+
+AssertTrue(Condition := fb_TempStation.m_SetOriginShift(vi_lr_X := 100, vi_lr_Y := 0, vi_lr_Z := 0), Message := 'origin shifted');
+AssertFalse(Condition := fb_TempStation.m_SetOriginShift(vi_lr_X := 100, vi_lr_Y := 0, vi_lr_Z := 0),
+	Message := 'same origin shift: no change');
+
+AssertTrue(Condition := fb_TempStation.m_ClearBodies(), Message := 'bodies cleared');
+AssertEquals_UINT(Expected := 0, Actual := fb_TempStation.vo_Visu.stConfig.nBodyCount, Message := 'no bodies');
+AssertFalse(Condition := fb_TempStation.vo_Visu.stState.aBodyStates[1].bActive, Message := 'active state cleared too');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_VisionConfigure" Id="{ea16810a-a38f-40f3-a6dd-95dca0f23620}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A vision system's m_Configure describes housing, lens and the field of view as a frustum down to the working<br>
+distance; a negative working distance gives a flat field of view at the lens.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_VisionConfigure
+VAR_INST
+	fb_TempVision						: _FB_VisuVision;
+	TempPose							: ST_VisuPose;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('VisionConfigure');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertTrue(Condition := fb_TempVision.m_Configure(vi_Pose := TempPose, vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300,
+	vi_lr_WorkingDistance := 800), Message := 'configured');
+AssertEquals_UINT(Expected := 3, Actual := fb_TempVision.vo_Visu.stConfig.nBodyCount, Message := 'housing, lens, field of view');
+AssertTrue(Condition := fb_TempVision.vo_Visu.stConfig.aBodies[2].eShape = E_VisuBodyShape.FRUSTUM,
+	Message := 'field of view is a frustum');
+AssertTrue(Condition := fb_TempVision.vo_Visu.stConfig.aBodies[2].eRole = E_VisuBodyRole.FIELD_OF_VIEW, Message := 'field of view role');
+AssertEquals_LREAL(Expected := 800, Actual := fb_TempVision.vo_Visu.stConfig.aBodies[2].fHeight, Delta := 0.001,
+	Message := 'field of view reaches the working distance');
+AssertEquals_LREAL(Expected := -800, Actual := fb_TempVision.vo_Visu.stConfig.aBodies[2].stPose.fZ, Delta := 0.001,
+	Message := 'field of view stands at the working distance below the lens');
+AssertEquals_LREAL(Expected := 400, Actual := fb_TempVision.vo_Visu.stConfig.aBodies[2].fLength, Delta := 0.001,
+	Message := 'field length at the bottom');
+
+fb_TempVision.m_Configure(vi_Pose := TempPose, vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300, vi_lr_WorkingDistance := -50);
+AssertEquals_LREAL(Expected := 0, Actual := fb_TempVision.vo_Visu.stConfig.aBodies[2].fHeight, Delta := 0.001,
+	Message := 'negative working distance: flat field of view');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

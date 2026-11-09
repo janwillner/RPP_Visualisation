@@ -1,0 +1,201 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_TestXtsTrack" Id="{2f427e2a-c2dd-4f2b-af95-03d2b7803b6a}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+TcUnit test suite of _FB_VisuXtsTrack, _FB_VisuXtsGantry and _FB_VisuXtsLoop: track modules, the track<br>
+length, module faults, the mover count and the mover entries.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 9.4.0  ¦ 2026-11-09 ¦ J.Willner ¦ Unit tests<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_TestXtsTrack EXTENDS TcUnit.FB_TestSuite
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[m_TrackLengthSumsModules();
+m_SetModuleFault();
+m_ClearModules();
+m_MoverCount();
+]]></ST>
+    </Implementation>
+    <Method Name="m_ClearModules" Id="{8823f7b9-8a8f-4ece-9013-96adb79ce81e}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_ClearModules removes the whole track once: no modules, track length 0.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_ClearModules
+VAR_INST
+	fb_TempXtsGantry					: _FB_VisuXtsGantry;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ClearModules');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempXtsGantry.m_SetModule(vi_un_Module := 1, vi_e_Kind := E_VisuModuleKind.STRAIGHT,
+	vi_lr_Length := VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH);
+fb_TempXtsGantry.m_SetModule(vi_un_Module := 2, vi_e_Kind := E_VisuModuleKind.STRAIGHT,
+	vi_lr_Length := VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH);
+AssertTrue(Condition := fb_TempXtsGantry.m_ClearModules(), Message := 'modules cleared');
+AssertEquals_UINT(Expected := 0, Actual := fb_TempXtsGantry.vo_Visu.stConfig.nModuleCount, Message := 'no modules');
+AssertEquals_LREAL(Expected := 0, Actual := fb_TempXtsGantry.m_TrackLength(), Delta := 0.001, Message := 'track length 0');
+AssertFalse(Condition := fb_TempXtsGantry.m_ClearModules(), Message := 'nothing left to clear');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_MoverCount" Id="{4818c4d9-ded8-43bd-9c8c-9ddfdb1105c5}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_SetMover reports a mover only inside the count set by m_SetMoverCount; lowering the count invalidates the<br>
+entries beyond, a count beyond VISU_un_MAX_MOVERS is limited and gives FALSE.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_MoverCount
+VAR_INST
+	fb_TempXtsGantry					: _FB_VisuXtsGantry;
+	TempFingerStates					: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('MoverCount');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertTrue(Condition := fb_TempXtsGantry.m_SetMoverCount(vi_un_Count := 3), Message := 'three movers');
+AssertTrue(Condition := fb_TempXtsGantry.m_SetMover(vi_un_Index := 1, vi_udn_Id := 2, vi_lr_Position := 400, vi_lr_X := 120,
+	vi_b_GripperActive := FALSE, vi_FingerStates := TempFingerStates, vi_b_Fault := TRUE, vi_str_FaultMessage := 'Collision'),
+	Message := 'mover at index 1 reported');
+AssertTrue(Condition := fb_TempXtsGantry.vo_Visu.stState.aMovers[1].bValid, Message := 'mover entry valid');
+AssertEquals_LREAL(Expected := 400, Actual := fb_TempXtsGantry.vo_Visu.stState.aMovers[1].fPosition, Delta := 0.001,
+	Message := 'track position taken over');
+AssertTrue(Condition := fb_TempXtsGantry.vo_Visu.stState.aMovers[1].stFault.bActive, Message := 'mover fault taken over');
+AssertFalse(Condition := fb_TempXtsGantry.m_SetMover(vi_un_Index := 3, vi_udn_Id := 4, vi_lr_Position := 0, vi_lr_X := 0,
+	vi_b_GripperActive := FALSE, vi_FingerStates := TempFingerStates, vi_b_Fault := FALSE, vi_str_FaultMessage := ''),
+	Message := 'index outside the count refused');
+
+fb_TempXtsGantry.m_SetMoverCount(vi_un_Count := 1);
+AssertFalse(Condition := fb_TempXtsGantry.vo_Visu.stState.aMovers[1].bValid, Message := 'entry beyond the new count invalid');
+
+AssertFalse(Condition := fb_TempXtsGantry.m_SetMoverCount(vi_un_Count := VISU_GlobalConst_Param.VISU_un_MAX_MOVERS + 1),
+	Message := 'count beyond the limit gives FALSE');
+AssertEquals_UINT(Expected := VISU_GlobalConst_Param.VISU_un_MAX_MOVERS, Actual := fb_TempXtsGantry.vo_Visu.stState.nMoverCount,
+	Message := 'count limited to VISU_un_MAX_MOVERS');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetModuleFault" Id="{8a381968-9704-4f55-a054-b1a3b971675a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_SetModuleFault sets and clears the fault of a 1-based track module in the state; module 0 is refused.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SetModuleFault
+VAR_INST
+	fb_TempXtsGantry					: _FB_VisuXtsGantry;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('SetModuleFault');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertTrue(Condition := fb_TempXtsGantry.m_SetModuleFault(vi_un_Module := 3, vi_b_Fault := TRUE,
+	vi_str_FaultMessage := 'Overtemperature'), Message := 'module 3 fault set');
+AssertTrue(Condition := fb_TempXtsGantry.vo_Visu.stState.aModuleStates[2].stFault.bActive, Message := 'module 3 in a fault');
+AssertEquals_STRING(Expected := 'Overtemperature', Actual := fb_TempXtsGantry.vo_Visu.stState.aModuleStates[2].stFault.sMessage,
+	Message := 'fault message');
+fb_TempXtsGantry.m_SetModuleFault(vi_un_Module := 3, vi_b_Fault := FALSE, vi_str_FaultMessage := '');
+AssertFalse(Condition := fb_TempXtsGantry.vo_Visu.stState.aModuleStates[2].stFault.bActive, Message := 'module 3 fault cleared');
+AssertFalse(Condition := fb_TempXtsGantry.m_SetModuleFault(vi_un_Module := 0, vi_b_Fault := TRUE, vi_str_FaultMessage := 'x'),
+	Message := 'module 0 refused');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_TrackLengthSumsModules" Id="{78eecebc-d934-40ef-8134-54d1500cf348}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_SetModule builds the track module by module (module 0 and one beyond VISU_un_MAX_MODULES refused), raises<br>
+the config version only on a change, and m_TrackLength sums the module lengths.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_TrackLengthSumsModules
+VAR_INST
+	fb_TempXtsLoop						: _FB_VisuXtsLoop;
+	TempManifest						: ST_VisuManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	un_TempModule						: UINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('TrackLengthSumsModules');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempXtsLoop.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 20, vi_str_Name := 'Fxx');
+FOR un_TempModule := 1 TO 4 DO
+	fb_TempXtsLoop.m_SetModule(vi_un_Module := un_TempModule, vi_e_Kind := E_VisuModuleKind.STRAIGHT,
+		vi_lr_Length := VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH);
+END_FOR
+AssertEquals_UINT(Expected := 4, Actual := fb_TempXtsLoop.vo_Visu.stConfig.nModuleCount, Message := 'four modules');
+AssertEquals_LREAL(Expected := 1000, Actual := fb_TempXtsLoop.m_TrackLength(), Delta := 0.001, Message := '4 x 250 mm');
+AssertEquals_UDINT(Expected := 6, Actual := TempManifest.nConfigVersion, Message := 'one config version per module');
+
+fb_TempXtsLoop.m_SetModule(vi_un_Module := 2, vi_e_Kind := E_VisuModuleKind.STRAIGHT,
+	vi_lr_Length := VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH);
+AssertEquals_UDINT(Expected := 6, Actual := TempManifest.nConfigVersion, Message := 'same module again: config version unchanged');
+
+AssertTrue(Condition := fb_TempXtsLoop.m_SetModule(vi_un_Module := 2, vi_e_Kind := E_VisuModuleKind.CURVE_LEFT,
+	vi_lr_Length := 125), Message := 'module 2 changed into a short curve');
+AssertTrue(Condition := fb_TempXtsLoop.vo_Visu.stConfig.aModules[1].eKind = E_VisuModuleKind.CURVE_LEFT,
+	Message := 'module 2 is a left curve');
+AssertEquals_LREAL(Expected := 875, Actual := fb_TempXtsLoop.m_TrackLength(), Delta := 0.001, Message := 'track length 875 mm');
+AssertEquals_UDINT(Expected := 7, Actual := TempManifest.nConfigVersion, Message := 'config version raised by the change');
+
+AssertFalse(Condition := fb_TempXtsLoop.m_SetModule(vi_un_Module := 0, vi_e_Kind := E_VisuModuleKind.STRAIGHT,
+	vi_lr_Length := 250), Message := 'module 0 refused');
+AssertFalse(Condition := fb_TempXtsLoop.m_SetModule(vi_un_Module := VISU_GlobalConst_Param.VISU_un_MAX_MODULES + 1,
+	vi_e_Kind := E_VisuModuleKind.STRAIGHT, vi_lr_Length := 250), Message := 'module beyond the limit refused');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>
