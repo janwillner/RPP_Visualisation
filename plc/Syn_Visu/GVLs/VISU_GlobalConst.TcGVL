@@ -34,7 +34,7 @@ VAR_GLOBAL CONSTANT
 	VISU_un_PROTOCOL_VERSION			: UINT := 19;
 	(* Version of this library as the visualisation shows it (manifest sLibraryVersion). Bump together with
 	   _FC_GetVersionSynVisu and the project version. *)
-	VISU_str_LIBRARY_VERSION			: STRING(15) := '9.4.0';
+	VISU_str_LIBRARY_VERSION			: STRING(15) := '9.4.1';
 	VISU_lr_DEG_TO_RAD					: LREAL := 0.017453292519943295;	// [rad/deg] pi / 180
 	VISU_lr_XTS_MODULE_LENGTH			: LREAL := 250;	// [mm] length of an XTS motor module along the track, straight or curve
 END_VAR]]></Declaration>

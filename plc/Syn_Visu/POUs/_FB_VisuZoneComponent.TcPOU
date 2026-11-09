@@ -13,6 +13,7 @@ A derived FB tells where its zones lie in its contract structure through m_Zones
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New: zones shared by robots and detectors, no zone kind<br>
 Syn_Visu 9.0.0  ¦ 2026-11-05 ¦ J.Willner ¦ m_SetZone: vi_lr_StartY, vi_lr_EndY bound the zone across the belt<br>
+Syn_Visu 9.4.1  ¦ 2026-11-09 ¦ J.Willner ¦ m_SetZone compare ignores padding: no config change from an unchanged zone<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK ABSTRACT _FB_VisuZoneComponent EXTENDS _FB_VisuComponent
 ]]></Declaration>
@@ -94,6 +95,8 @@ m_Zones(vo_p_Count => p_TempCount, vo_p_Zones => p_TempZones);
 IF p_TempCount = 0 OR p_TempZones = 0 THEN
 	RETURN;
 END_IF
+(* Zeroed first: the MEMCMP below also compares the padding after nConveyorId, which a method local leaves undefined. *)
+Tc2_System.MEMSET(ADR(TempZone), 0, SIZEOF(TempZone));
 TempZone.nConveyorId := vi_udn_ConveyorId;
 TempZone.fStart := vi_lr_Start;
 TempZone.fEnd := vi_lr_End;
