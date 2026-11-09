@@ -220,3 +220,24 @@ products):
 Checked through the gateway over 1500 snapshots with 4000 products: the register kept its order, no product was read
 twice or went missing, and the state changes that find their product by id (rejections on the stress belt, every
 robot state on the other belts) all happened.
+
+## Limit violations (protocol 19)
+
+The TCP limit areas are checked every frame (scene) and for every state message (timeline, also for the replay
+buffer). Their cost grows with the robots and movers, not with the products. Measured with `tsx` on a development PC
+(mean values; the simulator machine: three robots with a TCP limit area, the IDH with four movers):
+
+| | First version | Now |
+| --- | --- | --- |
+| Machine scene per frame, extra for the TCP limit areas | 65 µs | 23 µs |
+| `limitViolations`, simulator machine | 34 µs | 8 µs |
+| `limitViolations`, a machine without TCP limit areas | 3 µs | 0.8 µs |
+| `limitViolations`, one gantry with 32 movers (every pair checked) | 630 µs | 32 µs |
+| Timeline per state message, extra | 34 µs | 8 µs |
+
+What made the difference: each box is prepared once per frame (`orient`), a pair of boxes whose surrounding spheres
+are apart is answered without the separating axis test, the test itself allocates nothing, a machine without TCP
+limit areas checks nothing, an offline source computes only the boxes, the track of an XTS gantry or loop is laid out
+once per frame instead of once per mover (`trackPoints`, which also helps the scene without TCP limit areas), and the
+corners of the TCP limit areas become snap points only in measure mode. A violation that starts or ends re-renders
+the 3D view once, like a fault: its label appears or goes.

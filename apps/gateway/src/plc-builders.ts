@@ -124,17 +124,21 @@ function zoneList(spec: { zones?: ZoneSpec[] }): ST_VisuZone[] {
   return (spec.zones ?? []).map((z) => ({ fAllocationOffset: 0, fCcsOffset: 0, fStartY: 0, fEndY: 0, ...z }));
 }
 
-/** Limit area of a Delta, an XTS gantry or a Cartesian robot (_FB_VisuLimitedRobot); active only when given. */
+/**
+ * Limit area and TCP limit area of a Delta, an XTS gantry or a Cartesian robot (_FB_VisuRobot.m_SetLimitArea,
+ * m_SetTcpLimitArea); each active only when given.
+ */
 export interface LimitAreaSpec {
   limitArea?: Omit<ST_VisuLimitArea, "bActive">;
+  tcpLimitArea?: Omit<ST_VisuLimitArea, "bActive">;
 }
 
-function limitArea(spec: LimitAreaSpec): { stLimitArea: ST_VisuLimitArea } {
-  return {
-    stLimitArea: spec.limitArea
-      ? { ...spec.limitArea, bActive: true }
-      : { fXMin: 0, fXMax: 0, fYMin: 0, fYMax: 0, fZMin: 0, fZMax: 0, bActive: false },
-  };
+function limitBox(box: Omit<ST_VisuLimitArea, "bActive"> | undefined): ST_VisuLimitArea {
+  return box ? { ...box, bActive: true } : { fXMin: 0, fXMax: 0, fYMin: 0, fYMax: 0, fZMin: 0, fZMax: 0, bActive: false };
+}
+
+function limitArea(spec: LimitAreaSpec): { stLimitArea: ST_VisuLimitArea; stTcpLimitArea: ST_VisuLimitArea } {
+  return { stLimitArea: limitBox(spec.limitArea), stTcpLimitArea: limitBox(spec.tcpLimitArea) };
 }
 
 /** Every config's origin shift; zero unless given. */

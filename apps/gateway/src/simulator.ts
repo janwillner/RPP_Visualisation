@@ -401,6 +401,9 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
         ...GEOMETRY,
         fingers: [SUCTION],
         limitArea: { fXMin: -600, fXMax: 600, fYMin: -600, fYMax: 600, fZMin: -1500, fZMax: -700 },
+        // Cup and product below the flange. A product near the far edge of the infeed takes it out of the limit
+        // area for a moment: a real limit violation, now and then.
+        tcpLimitArea: { fXMin: -80, fXMax: 80, fYMin: -80, fYMax: 80, fZMin: -100, fZMax: 20 },
         zones: centred([
           {
             nConveyorId: INFEED.id,
@@ -445,8 +448,10 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
         pose: { fX: GANTRY.x, fY: GANTRY.y, fZ: GANTRY.z, fRz: -90 },
         modules: Array.from({ length: GANTRY.modules }, () => trackModule(E_VisuModuleKind.STRAIGHT, GANTRY.moduleLength)),
         fingers: [SUCTION],
-        // Keeps the flanges off the track ends and above the lowest 150 mm of the Z stroke.
-        limitArea: { fXMin: 100, fXMax: 450, fYMin: 150, fYMax: 1350, fZMin: -600, fZMax: -450 },
+        // Around the flanges' travel: from over the infeed to over the tray belt, along the whole track.
+        limitArea: { fXMin: 250, fXMax: 850, fYMin: -50, fYMax: 1550, fZMin: -600, fZMax: -300 },
+        // Around every mover's flange, cup and product; narrower along the track than the movers' least distance.
+        tcpLimitArea: { fXMin: -60, fXMax: 60, fYMin: -85, fYMax: 85, fZMin: -100, fZMax: 20 },
         zones: centred([
           {
             nConveyorId: IDH_INFEED.id,
@@ -503,6 +508,7 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
         fingers: [CART_TOOL.cup, CART_TOOL.jaw, CART_TOOL.jaw],
         // X only up to the infeed, Z not into the top 100 mm.
         limitArea: { fXMin: 0, fXMax: 1000, fYMin: 0, fYMax: 1000, fZMin: -600, fZMax: -100 },
+        tcpLimitArea: { fXMin: -80, fXMax: 80, fYMin: -80, fYMax: 80, fZMin: -50, fZMax: 20 },
         zones: centred([
           { nConveyorId: CART_INFEED.id, fStart: CART.x, fEnd: CART.x + 1000 },
           {

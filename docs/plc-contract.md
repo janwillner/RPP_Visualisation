@@ -1,4 +1,4 @@
-# PLC contract (library `Syn_Visu`, protocol version 18)
+# PLC contract (library `Syn_Visu`, protocol version 19)
 
 This is the PLC side of the contract the gateway reads. It is implemented by the TwinCAT library project in
 `plc/Syn_Visu` (solution `plc/RPP_Visu.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
@@ -82,6 +82,13 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   gantry's track start, the Cartesian robot's axis zero) that further restricts the working area, e.g. so that
   neighbouring robots cannot collide. It is drawn only while `stLimitArea.bActive` is TRUE; equal bounds make a flat
   box. `_FB_VisuRobot` sets it for all three through `m_LimitArea`, which tells it where `stLimitArea` lies.
+- TCP limit area (Delta, XTS gantry, Cartesian robot; not the XTS loop): an optional axis-aligned box around the TCP
+  (the Delta's TCP, the Cartesian robot's flange, every XTS gantry mover's gripper flange), its bounds relative to
+  the TCP along the axes of the robot frame. It moves with the TCP and never turns. Same structure
+  (`ST_VisuLimitArea`, `stTcpLimitArea`), drawn only while `bActive` is TRUE; `_FB_VisuRobot.m_SetTcpLimitArea` sets
+  it, `m_LimitArea` tells it where `stTcpLimitArea` lies. The PLC reports no violation: the visualisation finds one
+  where a TCP limit area overlaps another robot's limit area or another TCP limit area (also another mover's of the
+  same gantry), or leaves its own robot's limit area, and lights up both boxes with a message (ADR 0015).
 - Zone: a stretch of a conveyor that belongs to a component, set with `m_SetZone(vi_un_Zone, ...)` (1-based, in
   order): where a robot picks or places, where a detector detects. What the component does there is its own business;
   the visualisation draws every zone alike. `fStart = fEnd` is a line across the belt, e.g. for a light barrier.
@@ -180,6 +187,8 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
 - Protocol version 16 added the conveyor's `bBody`: a conveyor may have no body.
 - Protocol version 17 added the Cartesian robot's `eAxes` (`E_VisuCartesianAxes`): X, Y, Z, or without the Y or the Z axis.
 - Protocol version 18 added `stLimitArea` to the XTS gantry and the Cartesian robot (before only the Delta had one).
+- Protocol version 19 added `stTcpLimitArea`, a box around the TCP, to the Delta, the XTS gantry and the Cartesian
+  robot.
 
 ## What the library contains
 

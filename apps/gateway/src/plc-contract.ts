@@ -201,6 +201,8 @@ export interface ST_VisuDeltaConfig {
   fLowerArmLength: number;
   stWorkingArea: ST_VisuWorkingArea;
   stLimitArea: ST_VisuLimitArea;
+  /** Optional box around the TCP, relative to it along the robot frame's axes (_FB_VisuRobot.m_SetTcpLimitArea). */
+  stTcpLimitArea: ST_VisuLimitArea;
   nZoneCount: number;
   aZones: ST_VisuZone[];
   nFingerCount: number;
@@ -247,8 +249,10 @@ export interface ST_VisuXtsGantryConfig {
   fToolOffsetZ: number;
   fMoverLength: number;
   fMoverWidth: number;
-  /** Optional box in the gantry frame that further restricts the working area (_FB_VisuLimitedRobot). */
+  /** Optional box in the gantry frame that further restricts the working area (_FB_VisuRobot.m_SetLimitArea). */
   stLimitArea: ST_VisuLimitArea;
+  /** Optional box around the TCP, relative to it along the robot frame's axes (_FB_VisuRobot.m_SetTcpLimitArea). */
+  stTcpLimitArea: ST_VisuLimitArea;
   nZoneCount: number;
   aZones: ST_VisuZone[];
   nFingerCount: number;
@@ -330,8 +334,10 @@ export interface ST_VisuCartesianConfig {
   fZMin: number;
   fZMax: number;
   fRailHeight: number;
-  /** Optional box in the robot frame that further restricts the working area (_FB_VisuLimitedRobot). */
+  /** Optional box in the robot frame that further restricts the working area (_FB_VisuRobot.m_SetLimitArea). */
   stLimitArea: ST_VisuLimitArea;
+  /** Optional box around the TCP, relative to it along the robot frame's axes (_FB_VisuRobot.m_SetTcpLimitArea). */
+  stTcpLimitArea: ST_VisuLimitArea;
   nZoneCount: number;
   aZones: ST_VisuZone[];
   nFingerCount: number;

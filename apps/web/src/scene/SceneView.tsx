@@ -226,7 +226,10 @@ function OfflineScope({ offline, children }: { offline: boolean; children: React
   return <group ref={ref}>{children}</group>;
 }
 
-/** A fault message hanging above its component or mover; follows a moving mover. */
+/**
+ * A fault message hanging above its component or mover, or a limit violation above its TCP limit area (in its own
+ * look: not a fault the PLC reports); follows a moving mover or TCP.
+ */
 function FaultLabel({ label, frame }: { label: SceneFaultLabel; frame: SourceFrame }) {
   const group = useRef<THREE.Group>(null);
   useFrame(() => {
@@ -235,7 +238,12 @@ function FaultLabel({ label, frame }: { label: SceneFaultLabel; frame: SourceFra
   });
   return (
     <group ref={group} position={label.position}>
-      <Html center className="fault-label" zIndexRange={[25, 15]} style={{ pointerEvents: "none" }}>
+      <Html
+        center
+        className={label.limit ? "fault-label limit" : "fault-label"}
+        zIndexRange={[25, 15]}
+        style={{ pointerEvents: "none" }}
+      >
         {label.message}
       </Html>
     </group>
@@ -282,7 +290,7 @@ function SceneContent(props: SceneViewProps) {
   // Priority −1: runs before the sources' frame callbacks, which read the scene built here.
   useFrame(() => {
     // Products get snap points only while measuring: with thousands of products they cost most of the frame.
-    const model = buildMachineScene(feed.frame(), hidden, { productSnapPoints: measureMode });
+    const model = buildMachineScene(feed.frame(), hidden, { measureSnapPoints: measureMode });
     modelRef.current = model;
     const changes = machine.next(model);
     if (changes.structure) setStructure(model);
@@ -425,14 +433,26 @@ const PART_VIEWS: { [K in keyof SceneModel]: ((v: PartViewContext) => ReactNode)
         fillOpacity={0.1}
       />
     )),
+  // A violated box lights up red, even when selected: the warning matters more than the highlight.
   limitAreas: ({ structure, layers, isSelected }) =>
     layers.limitAreas &&
     structure.limitAreas.map((a) => (
       <BoxAreaMesh
         key={`limit:${a.robotId}`}
         area={a}
-        color={isSelected(a.robotId) ? SELECT_COLOR : OVERLAY.limitArea}
-        fillOpacity={0.06}
+        color={limitAreaColor(a.violated, isSelected(a.robotId))}
+        fillOpacity={a.violated ? VIOLATED_FILL : 0.06}
+      />
+    )),
+  tcpLimitAreas: ({ structure, frame, layers, isSelected }) =>
+    layers.limitAreas &&
+    structure.tcpLimitAreas.map((a) => (
+      <BoxAreaMesh
+        key={`tcp:${a.key}`}
+        area={a}
+        color={limitAreaColor(a.violated, isSelected(a.robotId))}
+        fillOpacity={a.violated ? VIOLATED_FILL : 0.03}
+        follow={() => frame.part("tcpLimitAreas", a.key)?.transform}
       />
     )),
   workingAreas: ({ structure, layers, isSelected }) =>
@@ -638,14 +658,40 @@ function circle(radius: number, height: number, segments = 64): Vec3[] {
   });
 }
 
-/** A box area (Cartesian working area, Delta limit area): see-through box with solid edges. */
-function BoxAreaMesh({ area, color, fillOpacity }: { area: SceneBoxArea; color: string; fillOpacity: number }) {
+/** Fill of a violated limit area or TCP limit area: it lights up. */
+const VIOLATED_FILL = 0.18;
+
+/** A limit area's or TCP limit area's colour: red while violated, whether selected or not. */
+function limitAreaColor(violated: boolean, selected: boolean): string {
+  return violated ? FAULT_COLOR : selected ? SELECT_COLOR : OVERLAY.limitArea;
+}
+
+/**
+ * A box area (Cartesian working area, limit area, TCP limit area): see-through box with solid edges. With `follow` it
+ * moves every frame to where that says, e.g. a TCP limit area with its TCP.
+ */
+function BoxAreaMesh(props: {
+  area: SceneBoxArea;
+  color: string;
+  fillOpacity: number;
+  follow?: () => Transform | undefined;
+}) {
+  const { area, color, fillOpacity, follow } = props;
   // Renderer local axes: MCS X -> x, MCS Z -> y, MCS Y -> −z.
   const geometry = useBox(area.size[0], area.size[2], area.size[1]);
   const edges = useMemo(() => new THREE.EdgesGeometry(geometry), [geometry]);
   useEffect(() => () => edges.dispose(), [edges]);
+  const group = useRef<THREE.Group | null>(null);
+  useFrame(() => {
+    if (follow) applyTransform(group.current, follow());
+  });
   return (
-    <group ref={(o) => applyTransform(o, area.transform)}>
+    <group
+      ref={(o) => {
+        group.current = o;
+        applyTransform(o, area.transform);
+      }}
+    >
       <mesh geometry={geometry} raycast={noRaycast} renderOrder={OVERLAY_ORDER}>
         <OverlayMaterial color={color} opacity={fillOpacity} doubleSided />
       </mesh>

@@ -181,6 +181,7 @@ describe("gateway discovery", () => {
         lowerArmLength: 800,
         workingArea: { radius: 600, zMin: -1100, zMax: -600, coneHeight: 0, coneBottomRadius: 0 },
         limitArea: null,
+        tcpLimitArea: null,
         zones: [{ conveyorId: 10, start: 1200, end: 1800, allocationOffset: 0, ccsOffset: 0, startY: 0, endY: 0 }],
         fingers: [],
         originShift: { x: 0, y: 0, z: 0 },
@@ -225,6 +226,28 @@ describe("gateway discovery", () => {
     for (const type of ["xtsGantry", "cartesian"]) {
       expect(config!.components.find((c) => c.type === type)).toMatchObject({ limitArea: expected });
     }
+  });
+
+  it("publishes the TCP limit area of a Delta, an XTS gantry and a Cartesian robot, null when inactive", async () => {
+    const box = { fXMin: -50, fXMax: 50, fYMin: -60, fYMax: 60, fZMin: -200, fZMax: 10 };
+    const t = setup([
+      infeed,
+      { ...robot, value: delta({ tcpLimitArea: box }) },
+      { ...gantry, value: xtsGantry({ tcpLimitArea: box }) },
+      { ...portal, value: cartesian() },
+    ]);
+    await t.gateway.cycle();
+
+    const [config] = t.configs();
+    expect(config!.errors).toEqual([]);
+    const expected = { xMin: -50, xMax: 50, yMin: -60, yMax: 60, zMin: -200, zMax: 10 };
+    const tcpLimitArea = (type: string) => {
+      const c = config!.components.find((c) => c.type === type);
+      return c && "tcpLimitArea" in c ? c.tcpLimitArea : undefined;
+    };
+    expect(tcpLimitArea("delta")).toEqual(expected);
+    expect(tcpLimitArea("xtsGantry")).toEqual(expected);
+    expect(tcpLimitArea("cartesian")).toBeNull();
   });
 
   it("publishes whether a conveyor is drawn with a body", async () => {
@@ -286,6 +309,7 @@ describe("gateway discovery", () => {
         moverLength: 155,
         moverWidth: 80,
         limitArea: null,
+        tcpLimitArea: null,
         zones: [{ conveyorId: 10, start: 0, end: 800, allocationOffset: 0, ccsOffset: 0, startY: 0, endY: 0 }],
         fingers: [],
         originShift: { x: 0, y: 0, z: 0 },
@@ -334,6 +358,7 @@ describe("gateway discovery", () => {
       zMax: 0,
       railHeight: 1200,
       limitArea: null,
+      tcpLimitArea: null,
       zones: [{ conveyorId: 10, start: 100, end: 900, allocationOffset: 0, ccsOffset: 0, startY: 0, endY: 0 }],
       fingers: [],
       originShift: { x: 0, y: 0, z: 0 },

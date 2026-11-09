@@ -130,16 +130,19 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-An XTS loop has no working area of its own and so no limit area: _FB_VisuRobot.m_SetLimitArea and<br>
-m_ClearLimitArea return FALSE and change nothing.<br>
+An XTS loop has no working area of its own and so neither a limit area nor a TCP limit area:<br>
+_FB_VisuRobot.m_SetLimitArea, m_ClearLimitArea, m_SetTcpLimitArea and m_ClearTcpLimitArea return FALSE and<br>
+change nothing.<br>
 ****************************************************************************************************)
 METHOD PROTECTED m_LimitArea : BOOL
 VAR_OUTPUT
 	vo_p_LimitArea						: POINTER TO ST_VisuLimitArea;
+	vo_p_TcpLimitArea					: POINTER TO ST_VisuLimitArea;
 END_VAR
 ]]></Declaration>
       <Implementation>
         <ST><![CDATA[vo_p_LimitArea := 0;
+vo_p_TcpLimitArea := 0;
 m_LimitArea := FALSE;
 ]]></ST>
       </Implementation>

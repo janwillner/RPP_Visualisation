@@ -70,6 +70,7 @@ says so in its status.
 
 | Library `SynVisu` | Protocol version | Gateway |
 | --- | --- | --- |
+| 9.4.x | 19 | releases from protocol 19 on; `m_SetTcpLimitArea` for a box around the TCP (section 8); no change to existing calls |
 | 9.3.x | 18 | releases from protocol 18 on; `m_SetLimitArea` also for the XTS gantry and the Cartesian robot (section 9); no change to existing calls |
 | 9.2.x | 17 | releases from protocol 17 on; `m_SetKinematics` for a Cartesian robot without a Y or a Z axis (section 9); no change to existing calls |
 | 9.1.x | 16 | releases from protocol 16 on; `m_SetBodyVisible` for a conveyor without a body (section 5.1); no change to existing calls |
@@ -377,10 +378,32 @@ FB: `SynVisu._FB_VisuDelta`. The PLC reports only the TCP; the web app computes 
 | `m_Configure(vi_Pose, vi_lr_BaseRadius, vi_lr_EffectorRadius, vi_lr_UpperArmLength, vi_lr_LowerArmLength)` | `vi_Pose` is the base centre in the MCS. Arm 1 lies along the base's local +X, arms 2 and 3 follow counter-clockwise (from above) at 120°. |
 | `m_SetWorkingArea(vi_lr_Radius, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ConeHeight, vi_lr_ConeBottomRadius)` | Vertical cylinder in the robot frame (Z negative below the base), optionally with a cone at the bottom |
 | `m_SetLimitArea(vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax)`, `m_ClearLimitArea()` | Optional box in the robot frame that further restricts the working area, e.g. against a neighbouring robot; equal bounds make a flat box. The XTS gantry and the Cartesian robot have it too. |
+| `m_SetTcpLimitArea(vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax)`, `m_ClearTcpLimitArea()` | Optional box around the TCP, bounds relative to the TCP along the robot frame's axes (see below). The XTS gantry (around every mover's gripper flange) and the Cartesian robot (around its flange) have it too. |
 | `m_SetFinger(...)` | See [section 7](#7-grippers-and-fingers) |
 | `m_SetZone(...)` | See [section 6](#6-zones) |
 | each cycle: `m_SetTcp(vi_ActualTcp, vi_SetpointTcp)` | TCP (effector centre, the gripper flange) as `ST_VisuPosition` in the MCS |
 | each cycle: `m_SetFingerState(...)` | Per finger |
+
+### 8.1 TCP limit area
+
+The TCP limit area is a box around the TCP: what the gripper and the product it carries take up. Its bounds are
+relative to the TCP along the axes of the robot frame; it moves with the TCP and never turns. The PLC reports only
+the box; the visualisation checks it every frame and lights it up red, with a message in the component list, the
+inspector and above the box, while it
+
+- overlaps another robot's limit area or another TCP limit area (also another mover's of the same XTS gantry), or
+- leaves its own robot's limit area (a robot without a limit area is not checked for this).
+
+The other box involved lights up too. Boxes that only touch are fine. It is a warning on the screen, not a safety
+function: the PLC learns nothing of it. Every start of a violation is marked on the timeline of a recording.
+
+![A TCP limit area](images/tcp-limit-area.svg "A box around the TCP, relative to it; it lights up red where it overlaps a neighbour's limit area or leaves its own.")
+
+```st
+(* Cup and product below the TCP: 160 mm wide, from 100 mm below the TCP to 20 mm above it *)
+fb_Delta1.m_SetTcpLimitArea(vi_lr_XMin := -80, vi_lr_XMax := 80, vi_lr_YMin := -80, vi_lr_YMax := 80,
+	vi_lr_ZMin := -100, vi_lr_ZMax := 20);
+```
 
 ## 9. Cartesian robot
 
@@ -395,6 +418,7 @@ section.
 | `m_Configure(vi_Pose, vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_RailHeight)` | `vi_Pose` is the axis origin (X = Y = 0); the strokes are the flange's; the rails' top lies at `vi_lr_RailHeight` above the origin |
 | once: `m_SetKinematics(vi_e_Axes)` | Which axes the robot has; leave it out for X, Y, Z (see below) |
 | `m_SetLimitArea(...)`, `m_ClearLimitArea()` | Optional box in the robot frame (the frame of the strokes, so in flange coordinates) that further restricts the working area |
+| `m_SetTcpLimitArea(...)`, `m_ClearTcpLimitArea()` | Optional box around the flange, relative to it ([section 8.1](#81-tcp-limit-area)) |
 | each cycle: `m_SetAxes(vi_lr_X, vi_lr_Y, vi_lr_Z, vi_b_GripperActive)` | Actual axis values, i.e. the flange in the robot frame |
 | each cycle: `m_SetFingerState(...)` | Per finger, absolute in the MCS |
 
@@ -488,6 +512,7 @@ in the machine.
 | `m_SetModule(...)` | The track, [section 10](#10-xts-tracks-and-their-motor-modules) |
 | `m_SetFinger(...)`, `m_SetZone(...)` | As for all robots |
 | `m_SetLimitArea(...)`, `m_ClearLimitArea()` | Optional box in the robot frame (local, from the track start) that further restricts the working area |
+| `m_SetTcpLimitArea(...)`, `m_ClearTcpLimitArea()` | Optional box around every mover's gripper flange, relative to it ([section 8.1](#81-tcp-limit-area)); movers of the same gantry are checked against each other too |
 | each cycle: `m_SetZPosition(vi_lr_Z)` | Common Z axis |
 | each cycle: `m_SetMoverCount(vi_un_Count)` | How many mover entries follow; entries beyond are invalidated |
 | each cycle, per mover: `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_lr_X, vi_b_GripperActive, vi_FingerStates, vi_b_Fault, vi_str_FaultMessage)` | `vi_un_Index` 0-based entry, `vi_udn_Id` the mover id (> 0, used by products' `nMoverId`), track position, X axis, finger states in the MCS, mover fault |
@@ -762,7 +787,7 @@ Use the component FBs. The structures underneath are what the gateway reads; the
 | `_FB_VisuStation` | One station, e.g. a reject unit, a labeller, a printer |
 | `_FB_VisuComponent` | Abstract base of all: `m_Register`, `m_Id`, `m_SetFault`, `m_SetOriginShift` |
 | `_FB_VisuZoneComponent` | Abstract base of every component with zones: `m_SetZone`, `m_ClearZones` |
-| `_FB_VisuRobot` | Abstract base of the robots: zones plus fingers and limit area |
+| `_FB_VisuRobot` | Abstract base of the robots: zones plus fingers, limit area and TCP limit area |
 | `_FB_VisuXtsTrack` | Abstract base of the XTS kinematics: a robot plus its track of modules |
 | `_FB_VisuBodyComponent` | Abstract base of the components drawn from bodies (detectors, stations) |
 | `ST_VisuManifest` | The manifest your application declares as `GVL_Visu.stManifest` |
@@ -805,6 +830,7 @@ Robots: Delta, XTS gantry, XTS loop, Cartesian (`_FB_VisuRobot`):
 | `m_SetFinger(vi_un_Finger, vi_lr_Diameter, vi_lr_Height)` | Defines finger `vi_un_Finger` (1-based) of the gripper; for XTS kinematics of every mover's gripper |
 | `m_ClearFingers()` | Removes the gripper definition |
 | `m_SetLimitArea(vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax)`, `m_ClearLimitArea()` | Sets and activates, or removes, the limit area (Delta, XTS gantry, Cartesian); an XTS loop has none, there both return FALSE |
+| `m_SetTcpLimitArea(vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax)`, `m_ClearTcpLimitArea()` | Sets and activates, or removes, the TCP limit area: a box around the TCP, relative to it (Delta, XTS gantry, Cartesian); an XTS loop has none, there both return FALSE |
 
 XTS gantry and XTS loop (`_FB_VisuXtsTrack`):
 

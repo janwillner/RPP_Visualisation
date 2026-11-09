@@ -1,12 +1,12 @@
 import type { Fault, GatewayMessage } from "@rpp/protocol";
 import type { SourceInfo } from "./sources";
-import { componentName, faultText, isMissed, singular } from "./machine-facts";
+import { componentName, faultText, isMissed, limitViolations, singular } from "./machine-facts";
 
 /**
  * Moments worth finding again in a recording, marked on its timeline: a fault appears, a source goes offline or
- * comes back, a product is missed.
+ * comes back, a product is missed, a limit violation starts.
  */
-export type TimelineEventKind = "fault" | "offline" | "online" | "missed";
+export type TimelineEventKind = "fault" | "offline" | "online" | "missed" | "limit";
 
 export interface TimelineEvent {
   /** ms after the recording started. */
@@ -19,7 +19,8 @@ export interface TimelineEvent {
 
 /**
  * Finds the events in the gateway messages as they are recorded. Each is marked where it starts: a fault while it
- * stays active, a missed product while it stays in the register and an offline source count once.
+ * stays active, a missed product while it stays in the register, a limit violation while it lasts and an offline
+ * source count once.
  */
 export class EventTracker {
   readonly events: TimelineEvent[] = [];
@@ -28,6 +29,8 @@ export class EventTracker {
   private readonly faults = new Map<string, Set<string>>();
   /** Per source the missed products of its previous state, by `conveyorId:productId`. */
   private readonly missed = new Map<string, Set<string>>();
+  /** Per source the limit violations of its previous state, by their key. */
+  private readonly limits = new Map<string, Set<string>>();
 
   constructor(initial: readonly SourceInfo[]) {
     for (const s of initial) if (s.status) this.connected.set(s.sourceId, s.status.plcConnected);
@@ -44,8 +47,12 @@ export class EventTracker {
       this.connected.set(message.sourceId, now);
       // A source first heard of while connected has not come back from anywhere.
       if (before === now || (before === undefined && now)) return;
-      // Nothing is known about its faults while it is away: one still active when it comes back is marked again.
-      if (!now) this.faults.delete(message.sourceId);
+      // Nothing is known about its faults and limits while it is away: one still active when it comes back is marked
+      // again.
+      if (!now) {
+        this.faults.delete(message.sourceId);
+        this.limits.delete(message.sourceId);
+      }
       push(now ? "online" : "offline", `${source.name} ${now ? "online" : "offline"}`);
       return;
     }
@@ -88,6 +95,16 @@ export class EventTracker {
     }
     this.faults.set(message.sourceId, faults);
     this.missed.set(message.sourceId, missed);
+
+    // The same rule as the 3D view, on the reported positions rather than the interpolated ones.
+    const wasLimited = this.limits.get(message.sourceId);
+    const limits = new Set<string>();
+    const states = new Map(message.components.map((c) => [c.id, c]));
+    for (const v of limitViolations(components, states).violations) {
+      limits.add(v.key);
+      if (!wasLimited?.has(v.key)) push("limit", v.text);
+    }
+    this.limits.set(message.sourceId, limits);
   }
 }
 

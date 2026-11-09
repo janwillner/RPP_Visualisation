@@ -149,10 +149,10 @@ for (const products of PRODUCT_COUNTS) {
     });
 
     bench("build the machine scene, not measuring: no product snap points", () => {
-      buildMachineScene(sources, new Set(), { productSnapPoints: false });
+      buildMachineScene(sources, new Set(), { measureSnapPoints: false });
     });
 
-    const scene = buildMachineScene(sources, new Set(), { productSnapPoints: false });
+    const scene = buildMachineScene(sources, new Set(), { measureSnapPoints: false });
     const machineFrame = new MachineFrame();
     const sourceFrame = new SourceFrame();
     bench("take the machine scene in the 3D view: what changed, product groups (once per frame)", () => {

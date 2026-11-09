@@ -7,7 +7,15 @@ import { SCENE_PARTS, emptyScene, sceneStructure, type MachineScene, type SceneM
  */
 
 /** Kinds of scene part the view looks up by key every frame; their `SCENE_PARTS` entry has a `key`. */
-export type KeyedKind = "deltas" | "gantries" | "loops" | "cartesians" | "bodies" | "fingers" | "faultLabels";
+export type KeyedKind =
+  | "deltas"
+  | "gantries"
+  | "loops"
+  | "cartesians"
+  | "bodies"
+  | "fingers"
+  | "tcpLimitAreas"
+  | "faultLabels";
 
 /** One source's scene, frame by frame. */
 export class SourceFrame {

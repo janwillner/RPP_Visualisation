@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 940 420" width="940" height="420" role="img">
+<title>A TCP limit area around a Delta robot's TCP (side view): relative to the TCP, overlapping a neighbour's limit area, leaving its own</title>
+<style>
+.dg{--text:#1d232b;--muted:#5d6875;--panel:#f4f6f9;--border:#b8c0cb;--accent:#0b6fa4;--belt:#d5dbe3;--ccs:#1d232b;--axis:#7e57c2;--x:#e53935;--y:#43a047;--z:#1e88e5}
+@media (prefers-color-scheme:dark){.dg{--text:#dfe5ec;--muted:#8893a2;--panel:#1f242c;--border:#3a424e;--accent:#4fc3f7;--belt:#3b4656;--ccs:#f1f4f8;--axis:#b388ff;--x:#ef5350;--y:#66bb6a;--z:#42a5f5}}
+.dg text{font:13px system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--text)}
+.dg .s{font-size:11.5px}
+.dg .c{font-family:ui-monospace,"Cascadia Code",Consolas,monospace;font-size:11.5px}
+.dg .h{font-weight:600}
+.dg .m{fill:var(--muted)}
+.dg .ink{fill:#14181d}
+.dg .mid{text-anchor:middle}
+.dg .end{text-anchor:end}
+.dg .tx{fill:var(--x)}
+.dg .ty{fill:var(--y)}
+.dg .tz{fill:var(--z)}
+.dg .ln{fill:none;stroke:var(--text);stroke-width:1.4}
+.dg .lm{fill:none;stroke:var(--muted);stroke-width:1}
+.dg .dash{stroke-dasharray:5 4}
+.dg .box{fill:var(--panel);stroke:var(--border);stroke-width:1.2}
+.dg .frame{fill:none;stroke:var(--border);stroke-width:1.2;stroke-dasharray:6 4}
+.dg .acc{fill:none;stroke:var(--accent);stroke-width:1.6}
+.dg .accf{fill:var(--accent)}
+.dg .dot{fill:var(--text)}
+.dg .belt{fill:var(--belt);stroke:var(--border)}
+.dg .zone{fill:#5fd39a;fill-opacity:.3;stroke:#22a86b;stroke-width:1.2}
+.dg .alloc{fill:#22a86b;fill-opacity:.45}
+.dg .ccs{stroke:var(--ccs);stroke-width:2;stroke-dasharray:6 4}
+.dg .axis{fill:none;stroke:var(--axis);stroke-width:2}
+.dg .axisf{fill:var(--axis)}
+.dg .x{stroke:var(--x);stroke-width:2}
+.dg .y{stroke:var(--y);stroke-width:2}
+.dg .z{stroke:var(--z);stroke-width:2}
+.dg .state{stroke:var(--text);stroke-width:1}
+.dg .detected{fill:#a9bbd3}
+.dg .assigned{fill:#f5a524}
+.dg .picked{fill:#5fd39a}
+.dg .rejected{fill:#a78bfa}
+.dg .placed{fill:#2fc6d6}
+.dg .missed{fill:#ff5fa2}
+.dg .mline{fill:none;stroke:#ff5fa2;stroke-width:1.6;stroke-dasharray:5 4}
+.dg .limit{fill:#ff9800;fill-opacity:.12;stroke:#ff9800;stroke-width:1.4;stroke-dasharray:6 4}
+.dg .work{fill:var(--accent);fill-opacity:.1;stroke:var(--accent);stroke-width:1.4}
+.dg .grip{fill:#3d8fe0;stroke:var(--text);stroke-width:1}
+.dg .solid{fill:var(--belt);stroke:var(--text);stroke-width:1}
+.dg .track{fill:none;stroke:var(--muted);stroke-width:14}
+.dg .joint{stroke:var(--panel);stroke-width:2.5}
+.dg .sensorpart{fill:#26c6da;stroke:var(--text);stroke-width:1}
+.dg .active{fill:#5fd39a;stroke:var(--text);stroke-width:1}
+.dg .fov{fill:#4fc3f7;fill-opacity:.18;stroke:#4fc3f7;stroke-width:1.4}
+.dg .beam{stroke:#ffd54f;stroke-width:5;stroke-opacity:.35}
+.dg .beamon{stroke-opacity:1}
+.dg .tcpbox{fill:#ff9800;fill-opacity:.06;stroke:#ff9800;stroke-width:1.4}
+.dg .bad{fill:#ef4444;fill-opacity:.18;stroke:#ef4444;stroke-width:1.8}
+.dg .badt{fill:#ef4444}
+</style>
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--text)"/></marker><marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--muted)"/></marker><marker id="aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/></marker><marker id="av" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--axis)"/></marker><marker id="ax" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--x)"/></marker><marker id="ay" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--y)"/></marker><marker id="az" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:var(--z)"/></marker><marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" style="fill:#ff5fa2"/></marker></defs>
+<!-- 1: the box relative to the TCP -->
+<text x="160" y="28" class="h mid">Around the TCP</text>
+<path d="M120,60 L200,60 L190,78 L130,78 z" class="solid"/>
+<path d="M135,78 L110,150 L150,215 M185,78 L210,150 L170,215" class="lm"/>
+<rect x="40" y="120" width="240" height="210" class="limit"/>
+<text x="46" y="138" class="s m">limit area (m_SetLimitArea)</text>
+<rect x="130" y="205" width="80" height="60" class="tcpbox"/>
+<circle cx="160" cy="215" r="4" class="dot"/>
+<text x="166" y="211" class="s">TCP</text>
+<path d="M160,215 L132,215" class="lm" marker-end="url(#am)"/>
+<path d="M160,240 L208,240" class="lm" marker-end="url(#am)"/>
+<path d="M160,222 L160,263" class="lm" marker-end="url(#am)"/>
+<text x="126" y="219" class="c end">XMin</text>
+<text x="214" y="243" class="c">XMax</text>
+<text x="166" y="282" class="c">ZMin</text>
+<text x="214" y="209" class="c">ZMax</text>
+<text x="160" y="352" class="s mid">TCP limit area (m_SetTcpLimitArea):</text>
+<text x="160" y="368" class="s mid m">bounds relative to the TCP, along the robot</text>
+<text x="160" y="384" class="s mid m">frame's axes; moves with it, never turns</text>
+
+<!-- 2: overlapping a neighbour's limit area -->
+<text x="470" y="28" class="h mid">Overlaps a neighbour's limit area</text>
+<path d="M370,60 L430,60 L422,76 L378,76 z" class="solid"/>
+<path d="M510,60 L570,60 L562,76 L518,76 z" class="solid"/>
+<text x="400" y="52" class="s mid">Delta 1</text>
+<text x="540" y="52" class="s mid">Delta 2</text>
+<path d="M385,76 L420,150 L452,210 M415,76 L470,150 L460,210" class="lm"/>
+<rect x="330" y="120" width="140" height="210" class="limit"/>
+<rect x="470" y="120" width="140" height="210" class="bad"/>
+<rect x="426" y="200" width="70" height="55" class="bad"/>
+<circle cx="456" cy="210" r="4" class="dot"/>
+<text x="400" y="306" class="s mid m">its own limit area</text>
+<text x="540" y="306" class="s mid badt">Delta 2's limit area</text>
+<text x="470" y="352" class="s mid">Both boxes light up red; the message</text>
+<text x="470" y="368" class="s mid m">is listed under both robots, a label</text>
+<text x="470" y="384" class="s mid m">hangs above the TCP limit area</text>
+
+<!-- 3: leaving its own limit area -->
+<text x="780" y="28" class="h mid">Leaves its own limit area</text>
+<path d="M740,60 L820,60 L810,78 L750,78 z" class="solid"/>
+<path d="M755,78 L735,120 L770,160 M805,78 L825,120 L790,160" class="lm"/>
+<rect x="660" y="150" width="240" height="180" class="bad"/>
+<rect x="745" y="140" width="70" height="55" class="bad"/>
+<circle cx="780" cy="160" r="4" class="dot"/>
+<text x="666" y="320" class="s badt">its own limit area</text>
+<text x="780" y="352" class="s mid">The TCP limit area must lie wholly</text>
+<text x="780" y="368" class="s mid m">inside; both light up red. Boxes</text>
+<text x="780" y="384" class="s mid m">that only touch are fine.</text>
+</svg>

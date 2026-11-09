@@ -4,8 +4,8 @@
   --border: #2f3640;
   --text: #dfe5ec;
   --muted: #8893a2;
-  /* Status colours (--accent, --ok, --bad, --bad-text, --fault-label, --select, --missed, --offline) and the stage
-     colours come from src/palette.ts, set on the root element at start. */
+  /* Status colours (--accent, --ok, --bad, --bad-text, --fault-label, --limit-label, --select, --missed, --offline)
+     and the stage colours come from src/palette.ts, set on the root element at start. */
   color-scheme: dark;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   font-size: 13px;
@@ -411,6 +411,11 @@ button:hover {
   background: var(--missed);
 }
 
+/* A limit violation: fault red, but dashed, apart from a fault the PLC reports. */
+.timeline-marker.limit {
+  background: repeating-linear-gradient(0deg, var(--bad) 0 3px, var(--limit-label) 3px 6px);
+}
+
 .player-bar .player-time {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -811,6 +816,16 @@ a.link {
   border-radius: 3px;
   white-space: nowrap;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+/* A limit violation the web found: apart from a fault the PLC reports. */
+.fault-label.limit {
+  background: var(--limit-label);
+  border: 1px solid var(--bad);
+}
+.tree .fault-lines li.limit,
+.limit-violation {
+  color: var(--bad-text);
+  font-style: italic;
 }
 .tree li.faulted > button:not(.visibility) {
   color: var(--bad-text);

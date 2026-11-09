@@ -143,7 +143,7 @@ describe("scene model: product tracking", () => {
     const productPoints = (scene: ReturnType<typeof buildScene>) => scene.snapPoints.filter((s) => s.label.startsWith("Product #"));
 
     expect(productPoints(buildScene(config(belt), snapshots, 0)).length).toBeGreaterThan(0);
-    const without = buildScene(config(belt), snapshots, 0, new Set(), { productSnapPoints: false });
+    const without = buildScene(config(belt), snapshots, 0, new Set(), { measureSnapPoints: false });
     expect(productPoints(without)).toEqual([]);
     expect(without.products).toHaveLength(1);
     // The conveyor's own points stay.
@@ -191,6 +191,7 @@ function deltaConfig(overrides: Partial<DeltaConfig> = {}): DeltaConfig {
     lowerArmLength: 800,
     workingArea: { radius: 600, zMin: -1100, zMax: -600, coneHeight: 0, coneBottomRadius: 0 },
     limitArea: null,
+    tcpLimitArea: null,
     zones: [],
     fingers: [],
     originShift: { x: 0, y: 0, z: 0 },
@@ -791,6 +792,7 @@ function gantryConfig(overrides: Partial<XtsGantryConfig> = {}): XtsGantryConfig
     moverLength: 155,
     moverWidth: 80,
     limitArea: null,
+    tcpLimitArea: null,
     zones: [],
     fingers: [],
     originShift: { x: 0, y: 0, z: 0 },
@@ -899,6 +901,7 @@ function cartesianConfig(overrides: Partial<CartesianConfig> = {}): CartesianCon
     zMax: 0,
     railHeight: 1200,
     limitArea: null,
+    tcpLimitArea: null,
     zones: [],
     fingers: [],
     originShift: { x: 0, y: 0, z: 0 },
@@ -1241,7 +1244,7 @@ describe("scene model: faults", () => {
     expect(scene.faultLabels[0]).toMatchObject({ componentId: 30, part: "Mover 2", message: "following error" });
     // Carriage at track position 600: MCS (2400, −500, 1400); the label 200 mm above it.
     closeTo(scene.faultLabels[0]!.position, [2.4, 1.6, 0.5]);
-    expect(scene.faults).toEqual([{ componentId: 30, messages: ["Mover 2: following error"] }]);
+    expect(scene.faults).toEqual([{ componentId: 30, messages: ["Mover 2: following error"], limitViolations: [] }]);
   });
 
   it("marks a whole faulted component with its fingers and shows 'Fault' for an empty message", () => {
@@ -1256,7 +1259,7 @@ describe("scene model: faults", () => {
     expect(scene.faultLabels[0]).toMatchObject({ componentId: 20, part: null, message: "Fault" });
     // 250 mm above the base at MCS (1500, 0, 1800).
     closeTo(scene.faultLabels[0]!.position, [1.5, 2.05, 0]);
-    expect(scene.faults).toEqual([{ componentId: 20, messages: ["Fault"] }]);
+    expect(scene.faults).toEqual([{ componentId: 20, messages: ["Fault"], limitViolations: [] }]);
   });
 
   it("lists the component's own fault before its movers' faults", () => {
@@ -1265,7 +1268,7 @@ describe("scene model: faults", () => {
     const scene = buildScene(config(gantryConfig()), [snapshot(0, [state])], 0);
 
     expect(scene.gantries[0]!.fault).toBe("Z axis error");
-    expect(scene.faults).toEqual([{ componentId: 30, messages: ["Z axis error", "Mover 1: following error"] }]);
+    expect(scene.faults).toEqual([{ componentId: 30, messages: ["Z axis error", "Mover 1: following error"], limitViolations: [] }]);
     expect(scene.faultLabels.map((l) => l.part)).toEqual([null, "Mover 1"]);
   });
 
@@ -1278,7 +1281,7 @@ describe("scene model: faults", () => {
     const loop = scene.loops[0]!;
     expect(loop.modules.map((m) => m.fault).filter((f) => f !== null)).toEqual(["Overtemperature"]);
     expect(loop.modules[8]!.fault).toBe("Overtemperature");
-    expect(scene.faults).toEqual([{ componentId: 40, messages: ["Module 9: Overtemperature"] }]);
+    expect(scene.faults).toEqual([{ componentId: 40, messages: ["Module 9: Overtemperature"], limitViolations: [] }]);
     expect(scene.faultLabels).toHaveLength(1);
     expect(scene.faultLabels[0]).toMatchObject({ componentId: 40, part: "Module 9", message: "Overtemperature" });
     // Module 9 is the first quarter curve after the lower straight: its middle lies 45° round it, the label 150 mm above.
@@ -1320,7 +1323,7 @@ describe("scene model: faults", () => {
     const scene = buildScene(config(conveyorConfig()), [snapshot(0, [state])], 0, new Set([1]));
 
     expect(scene.faultLabels).toEqual([]);
-    expect(scene.faults).toEqual([{ componentId: 1, messages: ["Belt stopped"] }]);
+    expect(scene.faults).toEqual([{ componentId: 1, messages: ["Belt stopped"], limitViolations: [] }]);
   });
 
   it("labels a faulted conveyor above the middle of its belt", () => {
@@ -1398,7 +1401,7 @@ describe("machine scene: several PLC sources", () => {
 
     expect(machine.sources[1]!.scene.conveyors).toEqual([]);
     expect(machine.snapPoints.every((p) => p.sourceId === A)).toBe(true);
-    expect(machine.faults).toEqual([{ sourceId: B, componentId: 1, messages: ["Belt jammed"] }]);
+    expect(machine.faults).toEqual([{ sourceId: B, componentId: 1, messages: ["Belt jammed"], limitViolations: [] }]);
   });
 });
 
@@ -1601,7 +1604,7 @@ describe("scene model: detectors drawn from their bodies", () => {
       [false, true],
       [true, true],
     ]);
-    expect(scene.faults).toEqual([{ componentId: 60, messages: ["No image"] }]);
+    expect(scene.faults).toEqual([{ componentId: 60, messages: ["No image"], limitViolations: [] }]);
     // Above the highest body: the housing's top at 1750 mm.
     expect(scene.faultLabels[0]!.position[1]).toBeGreaterThan(1.75);
   });
@@ -1682,9 +1685,185 @@ describe("scene model: stations drawn from their bodies", () => {
       [snapshot(0, [{ type: "station", id: 70, timestamp: "0", bodies: [], fault: { message: "Pusher not in home position" } }])],
       0,
     );
-    expect(scene.faults).toEqual([{ componentId: 70, messages: ["Pusher not in home position"] }]);
+    expect(scene.faults).toEqual([{ componentId: 70, messages: ["Pusher not in home position"], limitViolations: [] }]);
     expect(scene.bodies.every((b) => b.faulted)).toBe(true);
     // Above the housing's top at 920 mm.
     expect(scene.faultLabels[0]!.position[1]).toBeGreaterThan(0.92);
+  });
+});
+
+describe("scene model: TCP limit areas", () => {
+  const snap = (scene: ReturnType<typeof buildScene>, label: string) => {
+    const point = scene.snapPoints.find((p) => p.label === label);
+    if (!point) throw new Error(`no snap point "${label}" in: ${scene.snapPoints.map((p) => p.label).join(", ")}`);
+    return point;
+  };
+  const tcpArea = { xMin: -50, xMax: 150, yMin: -60, yMax: 60, zMin: -200, zMax: 10 };
+
+  it("draws a Delta's TCP limit area around its TCP, along the axes of its base frame, with moving corners", () => {
+    const robot = deltaConfig({ pose: { x: 1500, y: 0, z: 1800, rx: 0, ry: 0, rz: 90 }, tcpLimitArea: tcpArea });
+    // TCP at MCS (1600, 100, 1100): (100, −100, −700) in the base frame turned by 90°.
+    const tcp = { x: 1600, y: 100, z: 1100 };
+    const scene = buildScene(config(robot), [snapshot(0, [deltaState(tcp)])], 0);
+
+    expect(scene.tcpLimitAreas).toHaveLength(1);
+    const [area] = scene.tcpLimitAreas;
+    expect(area).toMatchObject({ key: "20:0", robotId: 20, moverId: 0, violated: false });
+    // Centre (150, −100, −795) in the base frame: MCS (1600, 150, 1005).
+    closeTo(rendererToMcs(area!.transform.position), [1600, 150, 1005], 4);
+    closeTo(area!.size, [0.2, 0.12, 0.21]);
+    const corner = snap(scene, "Delta 1 TCP limit area · bottom, Y min, X max");
+    closeTo(corner.mcs, [1660, 250, 900], 4);
+    expect(corner).toMatchObject({ layer: "limitAreas", moving: true });
+  });
+
+  it("draws one TCP limit area per XTS gantry mover, around its gripper flange", () => {
+    const mover2: GantryMover = { ...mover1, id: 2, position: 900 };
+    const scene = buildScene(config(gantryConfig({ tcpLimitArea: tcpArea })), [snapshot(0, [gantryState(-100, [mover1, mover2])])], 0);
+
+    expect(scene.tcpLimitAreas.map((a) => [a.key, a.moverId])).toEqual([
+      ["30:1", 1],
+      ["30:2", 2],
+    ]);
+    // Mover 1 flange at (230, 250, −500) in the gantry frame, box centre (280, 250, −595): turned by 90° about Z.
+    closeTo(rendererToMcs(scene.tcpLimitAreas[0]!.transform.position), [2750, -220, 905], 4);
+    expect(snap(scene, "IDH mover 2 TCP limit area · top, Y max, X min").moving).toBe(true);
+  });
+
+  it("centres a TCP limit area on the drawn gripper flange also where the mover runs through a curve module", () => {
+    const curved = gantryConfig({
+      modules: [straight(250), { kind: "curveLeft", length: 250 }, straight(1000)],
+      tcpLimitArea: { xMin: -10, xMax: 10, yMin: -10, yMax: 10, zMin: -10, zMax: 10 },
+    });
+    const inCurve: GantryMover = { ...mover1, position: 400 };
+    const scene = buildScene(config(curved), [snapshot(0, [gantryState(-100, [inCurve])])], 0);
+    closeTo(scene.tcpLimitAreas[0]!.transform.position, scene.gantries[0]!.movers[0]!.tip.position);
+  });
+
+  it("draws a Cartesian robot's TCP limit area around its flange, also without a Y or a Z axis", () => {
+    const around = { xMin: -10, xMax: 10, yMin: -10, yMax: 10, zMin: -10, zMax: 10 };
+    const centre = (axes: CartesianConfig["axes"]) => {
+      const robot = cartesianConfig({ axes, tcpLimitArea: around });
+      const scene = buildScene(config(robot), [snapshot(0, [cartesianState()])], 0);
+      return rendererToMcs(scene.tcpLimitAreas[0]!.transform.position);
+    };
+    // Flange at (600, 250, −400) in the robot frame at MCS (6000, 0, 2000).
+    closeTo(centre("xyz"), CARTESIAN_FLANGE, 4);
+    // Without a Y axis Y is 0; without a Z axis the flange stays at zMin = −600.
+    closeTo(centre("xz"), [6600, 0, 1600], 4);
+    closeTo(centre("xy"), [6600, 250, 1400], 4);
+  });
+
+  it("gives a TCP limit area's corners as snap points only for measure mode, since they move every frame", () => {
+    const robot = deltaConfig({ tcpLimitArea: tcpArea });
+    const snapshots = [snapshot(0, [deltaState({ x: 1500, y: 0, z: 1000 })])];
+    const corners = (measureSnapPoints: boolean) =>
+      buildScene(config(robot), snapshots, 0, new Set(), { measureSnapPoints }).snapPoints.filter((p) =>
+        p.label.startsWith("Delta 1 TCP limit area"),
+      );
+    expect(corners(true)).toHaveLength(8);
+    expect(corners(false)).toEqual([]);
+  });
+
+  it("has no TCP limit area without one in the config or before the first state", () => {
+    expect(buildScene(config(deltaConfig()), [snapshot(0, [deltaState({ x: 1500, y: 0, z: 1000 })])], 0).tcpLimitAreas).toEqual([]);
+    expect(buildScene(config(deltaConfig({ tcpLimitArea: tcpArea })), [], 0).tcpLimitAreas).toEqual([]);
+  });
+});
+
+describe("scene model: limit violations", () => {
+  const tcpArea = { xMin: -50, xMax: 150, yMin: -60, yMax: 60, zMin: -200, zMax: 10 };
+  /** Delta 1 with its TCP at MCS (1500, 0, 1100): its TCP limit area spans X 1450..1650, Y −60..60, Z 900..1110. */
+  const delta = (overrides: Partial<DeltaConfig> = {}) => deltaConfig({ tcpLimitArea: tcpArea, ...overrides });
+  const deltaAt = snapshot(0, [deltaState({ x: 1500, y: 0, z: 1100 })]);
+  /** A Cartesian robot at (1000, 0, 2000) whose limit area starts at MCS X `fromX`. */
+  const neighbour = (fromX: number) =>
+    cartesianConfig({
+      pose: { x: 1000, y: 0, z: 2000, rx: 0, ry: 0, rz: 0 },
+      limitArea: { xMin: fromX - 1000, xMax: 1000, yMin: -500, yMax: 500, zMin: -1500, zMax: -800 },
+    });
+  const OVERLAP = "Delta 1 TCP limit area overlaps the limit area of Cartesian";
+
+  it("lights a TCP limit area and another robot's limit area it overlaps, lists it under both and labels it", () => {
+    const scene = buildScene(config(delta(), neighbour(1600)), [deltaAt], 0);
+
+    expect(scene.tcpLimitAreas.map((a) => a.violated)).toEqual([true]);
+    expect(scene.limitAreas.map((a) => [a.robotId, a.violated])).toEqual([[50, true]]);
+    expect(scene.faults).toEqual([
+      { componentId: 20, messages: [], limitViolations: [OVERLAP] },
+      { componentId: 50, messages: [], limitViolations: [OVERLAP] },
+    ]);
+    expect(scene.faultLabels).toHaveLength(1);
+    expect(scene.faultLabels[0]).toMatchObject({ componentId: 20, part: null, message: OVERLAP, limit: true });
+    // 100 mm above the top centre of the TCP limit area, MCS (1550, 0, 1110).
+    closeTo(scene.faultLabels[0]!.position, [1.55, 1.21, 0]);
+  });
+
+  it("does not count boxes that only touch", () => {
+    const scene = buildScene(config(delta(), neighbour(1650)), [deltaAt], 0);
+    expect(scene.tcpLimitAreas.map((a) => a.violated)).toEqual([false]);
+    expect(scene.limitAreas.map((a) => a.violated)).toEqual([false]);
+    expect(scene.faults).toEqual([]);
+  });
+
+  it("checks boxes turned against each other by their real outline, not by an axis-aligned hull", () => {
+    // Turned by 45° about Z at MCS X = x: its near edge crosses Y = ±60 at X = x ∓ 60, its hull reaches back to x − 354.
+    const turned = (x: number) =>
+      cartesianConfig({
+        pose: { x, y: 0, z: 2000, rx: 0, ry: 0, rz: 45 },
+        limitArea: { xMin: 0, xMax: 500, yMin: -500, yMax: 500, zMin: -1500, zMax: -800 },
+      });
+    // The TCP limit area ends at X = 1650: the edge reaches it at 1700 − 60, not at 1720 − 60.
+    expect(buildScene(config(delta(), turned(1700)), [deltaAt], 0).tcpLimitAreas[0]!.violated).toBe(true);
+    expect(buildScene(config(delta(), turned(1720)), [deltaAt], 0).tcpLimitAreas[0]!.violated).toBe(false);
+  });
+
+  it("lights a TCP limit area and its robot's limit area when it leaves it", () => {
+    const leaving = delta({ limitArea: { xMin: -500, xMax: 500, yMin: -500, yMax: 500, zMin: -1400, zMax: -750 } });
+    const scene = buildScene(config(leaving), [deltaAt], 0);
+    expect(scene.tcpLimitAreas[0]!.violated).toBe(true);
+    expect(scene.limitAreas[0]!.violated).toBe(true);
+    expect(scene.faults).toEqual([
+      { componentId: 20, messages: [], limitViolations: ["Delta 1 TCP limit area leaves the limit area of Delta 1"] },
+    ]);
+
+    const inside = delta({ limitArea: { xMin: -500, xMax: 500, yMin: -500, yMax: 500, zMin: -1400, zMax: 10 - 700 } });
+    expect(buildScene(config(inside), [deltaAt], 0).faults).toEqual([]);
+  });
+
+  it("finds two movers of the same gantry whose TCP limit areas overlap", () => {
+    const close: GantryMover = { ...mover1, id: 2, position: 300 };
+    const far: GantryMover = { ...mover1, id: 3, position: 1500 };
+    const gantry = gantryConfig({ tcpLimitArea: tcpArea });
+    const scene = buildScene(config(gantry), [snapshot(0, [gantryState(-100, [mover1, close, far])])], 0);
+    expect(scene.tcpLimitAreas.map((a) => [a.moverId, a.violated])).toEqual([
+      [1, true],
+      [2, true],
+      [3, false],
+    ]);
+    expect(scene.faults).toEqual([
+      { componentId: 30, messages: [], limitViolations: ["IDH mover 1 TCP limit area overlaps the TCP limit area of IDH mover 2"] },
+    ]);
+  });
+
+  it("still lists a violation of a hidden robot, without drawing its boxes or label", () => {
+    const scene = buildScene(config(delta(), neighbour(1600)), [deltaAt], 0, new Set([20]));
+    expect(scene.tcpLimitAreas).toEqual([]);
+    expect(scene.faultLabels).toEqual([]);
+    expect(scene.faults.map((f) => f.limitViolations)).toEqual([[OVERLAP], [OVERLAP]]);
+  });
+
+  it("checks nothing while the source is offline, but still draws the TCP limit areas", () => {
+    const source = (online: boolean) => ({
+      sourceId: "plc1",
+      config: config(delta(), neighbour(1600)),
+      snapshots: [deltaAt],
+      renderTime: 0,
+      online,
+    });
+    const offline = buildMachineScene([source(false)], new Set());
+    expect(offline.faults).toEqual([]);
+    expect(offline.sources[0]!.scene.tcpLimitAreas.map((a) => a.violated)).toEqual([false]);
+    expect(buildMachineScene([source(true)], new Set()).faults.map((f) => f.componentId)).toEqual([20, 50]);
   });
 });

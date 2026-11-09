@@ -29,6 +29,7 @@ const delta: DeltaConfig = {
   lowerArmLength: 800,
   workingArea: { radius: 600, zMin: -1100, zMax: -600, coneHeight: 0, coneBottomRadius: 0 },
   limitArea: null,
+  tcpLimitArea: null,
   zones: [],
   fingers: [],
   originShift: { x: 0, y: 0, z: 0 },
