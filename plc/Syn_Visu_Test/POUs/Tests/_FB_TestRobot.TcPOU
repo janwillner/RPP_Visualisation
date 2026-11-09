@@ -1,0 +1,330 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_TestRobot" Id="{9e53274e-d3bb-4008-bc65-b4bfea9c2395}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+TcUnit test suite of _FB_VisuZoneComponent and _FB_VisuRobot, through a Delta, a Cartesian robot and an XTS<br>
+loop: zones, gripper fingers, limit area and TCP limit area, and the finger states.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 9.4.0  ¦ 2026-11-09 ¦ J.Willner ¦ Unit tests<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_TestRobot EXTENDS TcUnit.FB_TestSuite
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[m_SetZoneGrowsCount();
+m_ClearZones();
+m_SetFingerAndClear();
+m_LimitArea();
+m_TcpLimitArea();
+m_XtsLoopHasNoLimitArea();
+m_SetFingerState();
+]]></ST>
+    </Implementation>
+    <Method Name="m_ClearZones" Id="{00ccaa71-0778-4bf7-af32-a46e5a2c97c5}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_ClearZones removes every zone once (TRUE, config version raised); with no zones left it gives FALSE.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_ClearZones
+VAR_INST
+	fb_TempCartesian					: _FB_VisuCartesian;
+	TempManifest						: ST_VisuManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ClearZones');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempCartesian.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 40, vi_str_Name := 'Cartesian');
+fb_TempCartesian.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 7, vi_lr_Start := 1000, vi_lr_End := 2000,
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 1000, vi_lr_StartY := 0, vi_lr_EndY := 0);
+AssertTrue(Condition := fb_TempCartesian.m_ClearZones(), Message := 'zones cleared');
+AssertEquals_UINT(Expected := 0, Actual := fb_TempCartesian.vo_Visu.stConfig.nZoneCount, Message := 'no zones');
+AssertEquals_UDINT(Expected := 0, Actual := fb_TempCartesian.vo_Visu.stConfig.aZones[0].nConveyorId, Message := 'zone 1 emptied');
+AssertEquals_UDINT(Expected := 4, Actual := TempManifest.nConfigVersion, Message := 'config version raised by set and clear');
+AssertFalse(Condition := fb_TempCartesian.m_ClearZones(), Message := 'nothing left to clear');
+AssertEquals_UDINT(Expected := 4, Actual := TempManifest.nConfigVersion, Message := 'config version unchanged');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_LimitArea" Id="{3b70a57e-548d-4e2a-bdd6-47b6230512c4}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_SetLimitArea activates the limit area and gives TRUE only when a value changes; m_ClearLimitArea removes<br>
+it once and leaves the TCP limit area alone.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_LimitArea
+VAR_INST
+	fb_TempDelta						: _FB_VisuDelta;
+	TempManifest						: ST_VisuManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('LimitArea');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempDelta.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 10, vi_str_Name := 'Delta');
+AssertTrue(Condition := fb_TempDelta.m_SetLimitArea(vi_lr_XMin := -500, vi_lr_XMax := 500, vi_lr_YMin := -750,
+	vi_lr_YMax := 750, vi_lr_ZMin := -1500, vi_lr_ZMax := -700), Message := 'limit area set');
+AssertTrue(Condition := fb_TempDelta.vo_Visu.stConfig.stLimitArea.bActive, Message := 'limit area active');
+AssertEquals_LREAL(Expected := -1500, Actual := fb_TempDelta.vo_Visu.stConfig.stLimitArea.fZMin, Delta := 0.001,
+	Message := 'ZMin taken over');
+AssertFalse(Condition := fb_TempDelta.vo_Visu.stConfig.stTcpLimitArea.bActive, Message := 'TCP limit area untouched');
+AssertEquals_UDINT(Expected := 3, Actual := TempManifest.nConfigVersion, Message := 'config version raised');
+
+AssertFalse(Condition := fb_TempDelta.m_SetLimitArea(vi_lr_XMin := -500, vi_lr_XMax := 500, vi_lr_YMin := -750,
+	vi_lr_YMax := 750, vi_lr_ZMin := -1500, vi_lr_ZMax := -700), Message := 'same values: no change');
+AssertEquals_UDINT(Expected := 3, Actual := TempManifest.nConfigVersion, Message := 'config version unchanged');
+
+AssertTrue(Condition := fb_TempDelta.m_ClearLimitArea(), Message := 'limit area cleared');
+AssertFalse(Condition := fb_TempDelta.vo_Visu.stConfig.stLimitArea.bActive, Message := 'limit area inactive');
+AssertFalse(Condition := fb_TempDelta.m_ClearLimitArea(), Message := 'nothing left to clear');
+AssertEquals_UDINT(Expected := 4, Actual := TempManifest.nConfigVersion, Message := 'clearing raised the config version once');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetFingerAndClear" Id="{e756a456-4228-4e27-8ac7-d65485cea7d3}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_SetFinger defines a 1-based finger and grows the finger count to it; finger 0 and a finger beyond<br>
+VISU_un_MAX_FINGERS are refused. m_ClearFingers removes the gripper definition once.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SetFingerAndClear
+VAR_INST
+	fb_TempXtsLoop						: _FB_VisuXtsLoop;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('SetFingerAndClear');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertTrue(Condition := fb_TempXtsLoop.m_SetFinger(vi_un_Finger := 2, vi_lr_Diameter := 40, vi_lr_Height := 50),
+	Message := 'finger 2 set');
+AssertEquals_UINT(Expected := 2, Actual := fb_TempXtsLoop.vo_Visu.stConfig.nFingerCount, Message := 'finger count grows to 2');
+AssertEquals_LREAL(Expected := 40, Actual := fb_TempXtsLoop.vo_Visu.stConfig.aFingers[1].fDiameter, Delta := 0.001,
+	Message := 'diameter taken over');
+AssertFalse(Condition := fb_TempXtsLoop.m_SetFinger(vi_un_Finger := 0, vi_lr_Diameter := 40, vi_lr_Height := 50),
+	Message := 'finger 0 refused');
+AssertFalse(Condition := fb_TempXtsLoop.m_SetFinger(vi_un_Finger := VISU_GlobalConst_Param.VISU_un_MAX_FINGERS + 1,
+	vi_lr_Diameter := 40, vi_lr_Height := 50), Message := 'finger beyond the limit refused');
+
+AssertTrue(Condition := fb_TempXtsLoop.m_ClearFingers(), Message := 'fingers cleared');
+AssertEquals_UINT(Expected := 0, Actual := fb_TempXtsLoop.vo_Visu.stConfig.nFingerCount, Message := 'no fingers');
+AssertFalse(Condition := fb_TempXtsLoop.m_ClearFingers(), Message := 'nothing left to clear');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetFingerState" Id="{1671a571-a782-4820-b7b9-81b0e568b893}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A Delta's m_SetFingerState reports a 1-based finger's MCS pose and grip; finger 0 and a finger beyond<br>
+VISU_un_MAX_FINGERS are refused. m_SetTcp stamps the state.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SetFingerState
+VAR_INST
+	fb_TempDelta						: _FB_VisuDelta;
+	TempPose							: ST_VisuPose;
+	TempTcp								: ST_VisuPosition;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('SetFingerState');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+TempPose.fZ := -900;
+TempPose.fRz := 45;
+AssertTrue(Condition := fb_TempDelta.m_SetFingerState(vi_un_Finger := 1, vi_Pose := TempPose, vi_b_Active := TRUE),
+	Message := 'finger 1 reported');
+AssertTrue(Condition := fb_TempDelta.vo_Visu.stState.aFingerStates[0].bActive, Message := 'finger 1 grips');
+AssertEquals_LREAL(Expected := 45, Actual := fb_TempDelta.vo_Visu.stState.aFingerStates[0].stPose.fRz, Delta := 0.001,
+	Message := 'finger 1 pose taken over');
+AssertFalse(Condition := fb_TempDelta.m_SetFingerState(vi_un_Finger := 0, vi_Pose := TempPose, vi_b_Active := TRUE),
+	Message := 'finger 0 refused');
+AssertFalse(Condition := fb_TempDelta.m_SetFingerState(vi_un_Finger := VISU_GlobalConst_Param.VISU_un_MAX_FINGERS + 1,
+	vi_Pose := TempPose, vi_b_Active := TRUE), Message := 'finger beyond the limit refused');
+
+TempTcp.fZ := -1000;
+fb_TempDelta.m_SetTcp(vi_ActualTcp := TempTcp, vi_SetpointTcp := TempTcp);
+AssertEquals_LREAL(Expected := -1000, Actual := fb_TempDelta.vo_Visu.stState.stActualTcp.fZ, Delta := 0.001,
+	Message := 'TCP taken over');
+AssertTrue(Condition := fb_TempDelta.vo_Visu.stState.nTimestamp > 0, Message := 'state stamped with the DC time');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetZoneGrowsCount" Id="{605703c6-258c-4827-ac40-feb1badd3b53}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_SetZone sets a 1-based zone, grows the zone count to it and raises the config version only when a value<br>
+changes; zone 0, a zone beyond VISU_un_MAX_ZONES and conveyor 0 are refused.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SetZoneGrowsCount
+VAR_INST
+	fb_TempDelta						: _FB_VisuDelta;
+	TempManifest						: ST_VisuManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('SetZoneGrowsCount');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempDelta.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 10, vi_str_Name := 'Delta');
+AssertTrue(Condition := fb_TempDelta.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 1, vi_lr_Start := 1100, vi_lr_End := 1900,
+	vi_lr_AllocationOffset := 300, vi_lr_CcsOffset := 1100, vi_lr_StartY := 0, vi_lr_EndY := 0), Message := 'zone 1 set');
+AssertEquals_UINT(Expected := 1, Actual := fb_TempDelta.vo_Visu.stConfig.nZoneCount, Message := 'one zone');
+AssertEquals_UDINT(Expected := 3, Actual := TempManifest.nConfigVersion, Message := 'config version raised');
+AssertEquals_LREAL(Expected := 300, Actual := fb_TempDelta.vo_Visu.stConfig.aZones[0].fAllocationOffset, Delta := 0.001,
+	Message := 'allocation offset taken over');
+
+fb_TempDelta.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 1, vi_lr_Start := 1100, vi_lr_End := 1900,
+	vi_lr_AllocationOffset := 300, vi_lr_CcsOffset := 1100, vi_lr_StartY := 0, vi_lr_EndY := 0);
+AssertEquals_UDINT(Expected := 3, Actual := TempManifest.nConfigVersion, Message := 'same zone again: config version unchanged');
+
+AssertTrue(Condition := fb_TempDelta.m_SetZone(vi_un_Zone := 3, vi_udn_ConveyorId := 2, vi_lr_Start := 500, vi_lr_End := 900,
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 500, vi_lr_StartY := -100, vi_lr_EndY := 100), Message := 'zone 3 set');
+AssertEquals_UINT(Expected := 3, Actual := fb_TempDelta.vo_Visu.stConfig.nZoneCount, Message := 'zone count grows to 3');
+AssertEquals_LREAL(Expected := -100, Actual := fb_TempDelta.vo_Visu.stConfig.aZones[2].fStartY, Delta := 0.001,
+	Message := 'lane taken over');
+
+AssertFalse(Condition := fb_TempDelta.m_SetZone(vi_un_Zone := 0, vi_udn_ConveyorId := 1, vi_lr_Start := 0, vi_lr_End := 0,
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 0, vi_lr_StartY := 0, vi_lr_EndY := 0), Message := 'zone 0 refused');
+AssertFalse(Condition := fb_TempDelta.m_SetZone(vi_un_Zone := VISU_GlobalConst_Param.VISU_un_MAX_ZONES + 1, vi_udn_ConveyorId := 1,
+	vi_lr_Start := 0, vi_lr_End := 0, vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 0, vi_lr_StartY := 0, vi_lr_EndY := 0),
+	Message := 'zone beyond the limit refused');
+AssertFalse(Condition := fb_TempDelta.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := 0, vi_lr_Start := 0, vi_lr_End := 0,
+	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 0, vi_lr_StartY := 0, vi_lr_EndY := 0), Message := 'conveyor 0 refused');
+AssertEquals_UINT(Expected := 3, Actual := fb_TempDelta.vo_Visu.stConfig.nZoneCount, Message := 'still three zones');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_TcpLimitArea" Id="{7cc331e8-a93a-40ca-a9a2-f7778a1e83dc}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_SetTcpLimitArea activates the TCP limit area of a Cartesian robot without touching its limit area;<br>
+m_ClearTcpLimitArea removes it once.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_TcpLimitArea
+VAR_INST
+	fb_TempCartesian					: _FB_VisuCartesian;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('TcpLimitArea');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertTrue(Condition := fb_TempCartesian.m_SetTcpLimitArea(vi_lr_XMin := -60, vi_lr_XMax := 60, vi_lr_YMin := -60,
+	vi_lr_YMax := 60, vi_lr_ZMin := -150, vi_lr_ZMax := 0), Message := 'TCP limit area set');
+AssertTrue(Condition := fb_TempCartesian.vo_Visu.stConfig.stTcpLimitArea.bActive, Message := 'TCP limit area active');
+AssertEquals_LREAL(Expected := -150, Actual := fb_TempCartesian.vo_Visu.stConfig.stTcpLimitArea.fZMin, Delta := 0.001,
+	Message := 'ZMin taken over');
+AssertFalse(Condition := fb_TempCartesian.vo_Visu.stConfig.stLimitArea.bActive, Message := 'limit area untouched');
+AssertFalse(Condition := fb_TempCartesian.m_SetTcpLimitArea(vi_lr_XMin := -60, vi_lr_XMax := 60, vi_lr_YMin := -60,
+	vi_lr_YMax := 60, vi_lr_ZMin := -150, vi_lr_ZMax := 0), Message := 'same values: no change');
+AssertTrue(Condition := fb_TempCartesian.m_ClearTcpLimitArea(), Message := 'TCP limit area cleared');
+AssertFalse(Condition := fb_TempCartesian.vo_Visu.stConfig.stTcpLimitArea.bActive, Message := 'TCP limit area inactive');
+AssertFalse(Condition := fb_TempCartesian.m_ClearTcpLimitArea(), Message := 'nothing left to clear');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_XtsLoopHasNoLimitArea" Id="{d2fed6cc-faf9-49eb-8a96-6aa2dd0de83a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+An XTS loop has neither a limit area nor a TCP limit area: the calls give FALSE and change no config.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_XtsLoopHasNoLimitArea
+VAR_INST
+	fb_TempXtsLoop						: _FB_VisuXtsLoop;
+	TempManifest						: ST_VisuManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('XtsLoopHasNoLimitArea');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempXtsLoop.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 20, vi_str_Name := 'Fxx');
+AssertFalse(Condition := fb_TempXtsLoop.m_SetLimitArea(vi_lr_XMin := -500, vi_lr_XMax := 500, vi_lr_YMin := -500,
+	vi_lr_YMax := 500, vi_lr_ZMin := -500, vi_lr_ZMax := 500), Message := 'no limit area');
+AssertFalse(Condition := fb_TempXtsLoop.m_SetTcpLimitArea(vi_lr_XMin := -50, vi_lr_XMax := 50, vi_lr_YMin := -50,
+	vi_lr_YMax := 50, vi_lr_ZMin := -50, vi_lr_ZMax := 50), Message := 'no TCP limit area');
+AssertFalse(Condition := fb_TempXtsLoop.m_ClearLimitArea(), Message := 'no limit area to clear');
+AssertFalse(Condition := fb_TempXtsLoop.m_ClearTcpLimitArea(), Message := 'no TCP limit area to clear');
+AssertEquals_UDINT(Expected := 2, Actual := TempManifest.nConfigVersion, Message := 'config version unchanged');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

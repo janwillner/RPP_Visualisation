@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<TcSmItem xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.beckhoff.com/schemas/2012/07/TcSmProject" TcSmVersion="1.0" TcVersion="3.1.4026.22" ClassName="CNestedPlcProjDef">
+	<Project GUID="{7CA674F1-D52C-41AD-AF84-D862C2431CBA}" Name="Syn_Visu_Test" PrjFilePath="..\..\Syn_Visu_Test\Syn_Visu_Test.plcproj" TmcFilePath="..\..\Syn_Visu_Test\Syn_Visu_Test.tmc" ReloadTmc="true" AmsPort="853" FileArchiveSettings="#x000e" SymbolicMapping="true">
+		<Instance File="Syn_Visu_Test Instance.xti"/>
+	</Project>
+</TcSmItem>

@@ -9,11 +9,15 @@
 				<Task Id="3" Priority="20" CycleTime="100000" AmsPort="350" AdtTasks="true">
 					<Name>PlcTask</Name>
 				</Task>
+				<Task Id="4" Priority="21" CycleTime="100000" AmsPort="351" AdtTasks="true">
+					<Name>TestTask</Name>
+				</Task>
 			</Tasks>
 		</System>
 		<Plc>
 			<Project File="Syn_Visu.xti"/>
 			<Project File="Syn_Visu_Demo.xti"/>
+			<Project File="Syn_Visu_Test.xti"/>
 		</Plc>
 	</Project>
 </TcSmProject>

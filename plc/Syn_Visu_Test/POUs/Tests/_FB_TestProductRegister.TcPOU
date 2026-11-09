@@ -1,0 +1,470 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_TestProductRegister" Id="{cb7a1c99-b6a1-4cc3-a981-8506e9e92089}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+TcUnit test suite of _FB_VisuConveyor's product register: latching, the product index by id (also with a<br>
+full register and after removals), product states, poses moved by the belt travel and the housekeeping of<br>
+m_RemoveProductsBeyond.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 9.4.0  ¦ 2026-11-09 ¦ J.Willner ¦ Unit tests<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_TestProductRegister EXTENDS TcUnit.FB_TestSuite
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[m_LatchAddsProduct();
+m_LatchUsesGivenBeltPosition();
+m_LatchRejectsZeroAndDuplicateId();
+m_LatchFillsRegister();
+m_GetProductMovesWithBelt();
+m_RemoveProductKeepsOrder();
+m_SetProductStateKeepsPrevious();
+m_MoveProduct();
+m_RemoveProductsBeyond();
+]]></ST>
+    </Implementation>
+    <Method Name="m_GetProductMovesWithBelt" Id="{f4481035-07a1-4f22-b51f-93d47930e5d5}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_GetProduct gives the latch pose moved along the belt's X by the belt travel since the latch; an index out<br>
+of range gives FALSE.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_GetProductMovesWithBelt
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	TempProduct							: ST_VisuProduct;
+	TempPose							: ST_VisuPlanarPose;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('GetProductMovesWithBelt');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempConveyor.m_SetBeltPosition(vi_lr_Position := 100);
+m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 1, vi_lr_X := 50);
+fb_TempConveyor.m_SetBeltPosition(vi_lr_Position := 350);
+AssertTrue(Condition := fb_TempConveyor.m_GetProduct(vi_un_Index := 0, vo_Product => TempProduct, vo_Pose => TempPose),
+	Message := 'index 0 exists');
+AssertEquals_UDINT(Expected := 1, Actual := TempProduct.nId, Message := 'product 1');
+AssertEquals_LREAL(Expected := 300, Actual := TempPose.fX, Delta := 0.001, Message := 'latch X 50 + belt travel 250');
+AssertFalse(Condition := fb_TempConveyor.m_GetProduct(vi_un_Index := 1, vo_Product => TempProduct, vo_Pose => TempPose),
+	Message := 'index 1 out of range');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Latch" Id="{11d2a011-f3a0-4fa8-99fe-8b45d11b182a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Test helper: latches product vi_udn_Id as DETECTED at vi_lr_X (conveyor coordinates) and the current belt<br>
+position, product type 1, no client. Result of m_LatchProduct.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Latch : BOOL
+VAR_IN_OUT
+	vio_Conveyor						: _FB_VisuConveyor;
+END_VAR
+VAR_INPUT
+	vi_udn_Id							: UDINT;	// [-] product id
+	vi_lr_X								: LREAL;	// [mm] latch pose X in the conveyor's coordinate system
+END_VAR
+VAR
+	TempPose							: ST_VisuPlanarPose;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TempPose.fX := vi_lr_X;
+m_Latch := vio_Conveyor.m_LatchProduct(vi_udn_Id := vi_udn_Id, vi_LatchPose := TempPose, vi_udn_ProductType := 1,
+	vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE, vi_e_State := E_VisuProductState.DETECTED,
+	vi_udn_ClientId := 0);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_LatchAddsProduct" Id="{c668a73d-357b-476a-97b2-ddfe11ca1283}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_LatchProduct adds a valid entry with the given pose, type, state and client at the current belt position,<br>
+its previous state equal to its state, no mover and no finger, and stamps the state.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_LatchAddsProduct
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	TempPose							: ST_VisuPlanarPose;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('LatchAddsProduct');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempConveyor.m_SetBeltPosition(vi_lr_Position := 100);
+TempPose.fX := 50;
+TempPose.fY := 20;
+TempPose.fRz := 90;
+AssertTrue(Condition := fb_TempConveyor.m_LatchProduct(vi_udn_Id := 7, vi_LatchPose := TempPose, vi_udn_ProductType := 2,
+	vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE, vi_e_State := E_VisuProductState.DETECTED,
+	vi_udn_ClientId := 60), Message := 'm_LatchProduct accepts a new id');
+AssertEquals_UINT(Expected := 1, Actual := fb_TempConveyor.m_ProductCount(), Message := 'one product');
+AssertEquals_UDINT(Expected := 7, Actual := fb_TempConveyor.vo_Visu.stState.aProducts[0].nId, Message := 'product id');
+AssertTrue(Condition := fb_TempConveyor.vo_Visu.stState.aProducts[0].bValid, Message := 'entry valid');
+AssertEquals_LREAL(Expected := 100, Actual := fb_TempConveyor.vo_Visu.stState.aProducts[0].fLatchBeltPosition, Delta := 0.001,
+	Message := 'latched at the current belt position');
+AssertEquals_LREAL(Expected := 20, Actual := fb_TempConveyor.vo_Visu.stState.aProducts[0].stLatchPose.fY, Delta := 0.001,
+	Message := 'latch pose taken over');
+AssertTrue(Condition := fb_TempConveyor.vo_Visu.stState.aProducts[0].eState = E_VisuProductState.DETECTED,
+	Message := 'state DETECTED');
+AssertTrue(Condition := fb_TempConveyor.vo_Visu.stState.aProducts[0].ePreviousState = E_VisuProductState.DETECTED,
+	Message := 'previous state equals the state it enters in');
+AssertEquals_UDINT(Expected := 60, Actual := fb_TempConveyor.vo_Visu.stState.aProducts[0].nLastClientId,
+	Message := 'client that latched it');
+AssertEquals_UDINT(Expected := 2, Actual := fb_TempConveyor.vo_Visu.stState.aProducts[0].nProductType, Message := 'product type');
+AssertEquals_UDINT(Expected := 0, Actual := fb_TempConveyor.vo_Visu.stState.aProducts[0].nMoverId, Message := 'no mover');
+AssertEquals_UDINT(Expected := 0, Actual := fb_TempConveyor.vo_Visu.stState.aProducts[0].nFingerId, Message := 'no finger');
+AssertTrue(Condition := fb_TempConveyor.vo_Visu.stState.nTimestamp > 0, Message := 'state stamped with the DC time');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_LatchFillsRegister" Id="{d63f2280-4c76-493f-91d0-4bcc91337eab}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The register takes VISU_un_MAX_PRODUCTS products and refuses one more; the product index finds the first, a<br>
+middle and the last one, also after a removal in the middle moved the register up.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_LatchFillsRegister
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	un_TempIndex						: UINT;
+	b_TempAllLatched					: BOOL;
+	udn_TempMax							: UDINT;	// [-] VISU_un_MAX_PRODUCTS as an id
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('LatchFillsRegister');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+(* Ids 1000, 1001, ...: not the register indices, so a mix-up of id and index shows. *)
+b_TempAllLatched := TRUE;
+FOR un_TempIndex := 0 TO VISU_GlobalConst_Param.VISU_un_MAX_PRODUCTS - 1 DO
+	b_TempAllLatched := b_TempAllLatched AND m_Latch(vio_Conveyor := fb_TempConveyor,
+		vi_udn_Id := 1000 + UINT_TO_UDINT(un_TempIndex), vi_lr_X := 0);
+END_FOR
+udn_TempMax := UINT_TO_UDINT(VISU_GlobalConst_Param.VISU_un_MAX_PRODUCTS);
+AssertTrue(Condition := b_TempAllLatched, Message := 'every product up to the limit latched');
+AssertEquals_UINT(Expected := VISU_GlobalConst_Param.VISU_un_MAX_PRODUCTS, Actual := fb_TempConveyor.m_ProductCount(),
+	Message := 'register full');
+AssertFalse(Condition := m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 1, vi_lr_X := 0),
+	Message := 'full register refuses one more');
+
+AssertEquals_INT(Expected := 0, Actual := fb_TempConveyor.m_FindProduct(vi_udn_Id := 1000), Message := 'first product found');
+AssertEquals_INT(Expected := 2000, Actual := fb_TempConveyor.m_FindProduct(vi_udn_Id := 3000), Message := 'middle product found');
+AssertEquals_INT(Expected := UINT_TO_INT(VISU_GlobalConst_Param.VISU_un_MAX_PRODUCTS) - 1,
+	Actual := fb_TempConveyor.m_FindProduct(vi_udn_Id := 1000 + udn_TempMax - 1), Message := 'last product found');
+AssertEquals_INT(Expected := -1, Actual := fb_TempConveyor.m_FindProduct(vi_udn_Id := 1000 + udn_TempMax),
+	Message := 'unknown id not found');
+
+AssertTrue(Condition := fb_TempConveyor.m_RemoveProduct(vi_udn_Id := 3000), Message := 'middle product removed');
+AssertEquals_INT(Expected := 2000, Actual := fb_TempConveyor.m_FindProduct(vi_udn_Id := 3001),
+	Message := 'next product moved up into its place');
+AssertEquals_INT(Expected := UINT_TO_INT(VISU_GlobalConst_Param.VISU_un_MAX_PRODUCTS) - 2,
+	Actual := fb_TempConveyor.m_FindProduct(vi_udn_Id := 1000 + udn_TempMax - 1), Message := 'last product moved up');
+AssertTrue(Condition := m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 1, vi_lr_X := 0),
+	Message := 'room for one product again');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_LatchRejectsZeroAndDuplicateId" Id="{4196c461-d85c-4692-83e9-80f1363aecd1}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_LatchProduct refuses id 0 and an id already in the register.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_LatchRejectsZeroAndDuplicateId
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('LatchRejectsZeroAndDuplicateId');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertFalse(Condition := m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 0, vi_lr_X := 0), Message := 'id 0 refused');
+AssertTrue(Condition := m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 4, vi_lr_X := 0), Message := 'id 4 latched');
+AssertFalse(Condition := m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 4, vi_lr_X := 10), Message := 'id 4 again refused');
+AssertEquals_UINT(Expected := 1, Actual := fb_TempConveyor.m_ProductCount(), Message := 'one product');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_LatchUsesGivenBeltPosition" Id="{3e478814-276c-443c-ae94-04ad6bc70f1e}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+With vi_b_UseLatchBeltPosition the product is latched at the given belt position (e.g. from a touch probe),<br>
+not at the current one; a robot's product enters as PLACED.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_LatchUsesGivenBeltPosition
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	TempPose							: ST_VisuPlanarPose;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('LatchUsesGivenBeltPosition');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempConveyor.m_SetBeltPosition(vi_lr_Position := 100);
+AssertTrue(Condition := fb_TempConveyor.m_LatchProduct(vi_udn_Id := 1, vi_LatchPose := TempPose, vi_udn_ProductType := 1,
+	vi_lr_LatchBeltPosition := 80, vi_b_UseLatchBeltPosition := TRUE, vi_e_State := E_VisuProductState.PLACED,
+	vi_udn_ClientId := 10), Message := 'latched');
+AssertEquals_LREAL(Expected := 80, Actual := fb_TempConveyor.vo_Visu.stState.aProducts[0].fLatchBeltPosition, Delta := 0.001,
+	Message := 'latched at the given belt position');
+AssertTrue(Condition := fb_TempConveyor.vo_Visu.stState.aProducts[0].eState = E_VisuProductState.PLACED,
+	Message := 'entered as PLACED');
+AssertTrue(Condition := fb_TempConveyor.vo_Visu.stState.aProducts[0].ePreviousState = E_VisuProductState.PLACED,
+	Message := 'previous state PLACED too');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_MoveProduct" Id="{2a0b5a1d-f122-4664-ba75-654584663a5b}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_MoveProduct puts a product at a new pose at the current belt position, from where the belt travel moves it<br>
+on; its state stays. An unknown product gives FALSE.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_MoveProduct
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	TempProduct							: ST_VisuProduct;
+	TempPose							: ST_VisuPlanarPose;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('MoveProduct');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 1, vi_lr_X := 0);
+fb_TempConveyor.m_SetProductState(vi_udn_Id := 1, vi_e_State := E_VisuProductState.ASSIGNED, vi_udn_ClientId := 10,
+	vi_udn_MoverId := 0, vi_udn_FingerId := 0);
+fb_TempConveyor.m_SetBeltPosition(vi_lr_Position := 200);
+TempPose.fX := 500;
+AssertTrue(Condition := fb_TempConveyor.m_MoveProduct(vi_udn_Id := 1, vi_Pose := TempPose), Message := 'product moved');
+fb_TempConveyor.m_SetBeltPosition(vi_lr_Position := 260);
+fb_TempConveyor.m_GetProduct(vi_un_Index := 0, vo_Product => TempProduct, vo_Pose => TempPose);
+AssertEquals_LREAL(Expected := 560, Actual := TempPose.fX, Delta := 0.001, Message := 'new pose 500 + belt travel 60 since the move');
+AssertTrue(Condition := TempProduct.eState = E_VisuProductState.ASSIGNED, Message := 'state kept');
+AssertFalse(Condition := fb_TempConveyor.m_MoveProduct(vi_udn_Id := 2, vi_Pose := TempPose), Message := 'unknown product');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RemoveProductKeepsOrder" Id="{0049d742-1b9b-4d80-b1d8-6fdec7f765db}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_RemoveProduct takes a product out of the middle: the others keep their order, the freed last entry is<br>
+invalid, and removing it again gives FALSE.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RemoveProductKeepsOrder
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('RemoveProductKeepsOrder');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 11, vi_lr_X := 0);
+m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 12, vi_lr_X := 0);
+m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 13, vi_lr_X := 0);
+AssertTrue(Condition := fb_TempConveyor.m_RemoveProduct(vi_udn_Id := 12), Message := 'product 12 removed');
+AssertEquals_UINT(Expected := 2, Actual := fb_TempConveyor.m_ProductCount(), Message := 'two products left');
+AssertEquals_INT(Expected := 0, Actual := fb_TempConveyor.m_FindProduct(vi_udn_Id := 11), Message := 'product 11 stays first');
+AssertEquals_INT(Expected := 1, Actual := fb_TempConveyor.m_FindProduct(vi_udn_Id := 13), Message := 'product 13 moved up');
+AssertEquals_INT(Expected := -1, Actual := fb_TempConveyor.m_FindProduct(vi_udn_Id := 12), Message := 'product 12 gone');
+AssertFalse(Condition := fb_TempConveyor.vo_Visu.stState.aProducts[2].bValid, Message := 'freed entry invalid');
+AssertFalse(Condition := fb_TempConveyor.m_RemoveProduct(vi_udn_Id := 12), Message := 'removing it again gives FALSE');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RemoveProductsBeyond" Id="{a78c0034-01d3-4277-90b6-2f089ee42ea8}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_RemoveProductsBeyond drops products that travelled beyond the given belt X, counted from the belt start<br>
+(origin shift + latch X + belt travel), keeps products a robot works on wherever they are, and keeps the<br>
+order and the product index of the rest.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RemoveProductsBeyond
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('RemoveProductsBeyond');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+(* The conveyor's coordinate system starts 100 mm after the belt start: belt X = 100 + latch X + travel. *)
+fb_TempConveyor.m_SetOriginShift(vi_lr_X := 100, vi_lr_Y := 0, vi_lr_Z := 0);
+m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 1, vi_lr_X := 900);	// belt X 1000
+m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 2, vi_lr_X := 950);	// belt X 1050, a robot works on it
+m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 3, vi_lr_X := 200);	// belt X 300
+m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 4, vi_lr_X := 960);	// belt X 1060
+fb_TempConveyor.m_SetProductState(vi_udn_Id := 2, vi_e_State := E_VisuProductState.ASSIGNED, vi_udn_ClientId := 10,
+	vi_udn_MoverId := 0, vi_udn_FingerId := 0);
+
+AssertEquals_UINT(Expected := 1, Actual := fb_TempConveyor.m_RemoveProductsBeyond(vi_lr_BeltX := 1000),
+	Message := 'only product 4 is beyond; product 1 on the limit stays');
+AssertEquals_UINT(Expected := 3, Actual := fb_TempConveyor.m_ProductCount(), Message := 'three products left');
+AssertEquals_UDINT(Expected := 1, Actual := fb_TempConveyor.vo_Visu.stState.aProducts[0].nId, Message := 'order kept: 1');
+AssertEquals_UDINT(Expected := 2, Actual := fb_TempConveyor.vo_Visu.stState.aProducts[1].nId, Message := 'order kept: 2');
+AssertEquals_UDINT(Expected := 3, Actual := fb_TempConveyor.vo_Visu.stState.aProducts[2].nId, Message := 'order kept: 3');
+AssertFalse(Condition := fb_TempConveyor.vo_Visu.stState.aProducts[3].bValid, Message := 'freed entry invalid');
+
+fb_TempConveyor.m_SetBeltPosition(vi_lr_Position := 100);
+AssertEquals_UINT(Expected := 1, Actual := fb_TempConveyor.m_RemoveProductsBeyond(vi_lr_BeltX := 1000),
+	Message := 'after 100 mm travel product 1 is beyond too; assigned product 2 stays');
+AssertEquals_INT(Expected := 0, Actual := fb_TempConveyor.m_FindProduct(vi_udn_Id := 2), Message := 'product 2 moved up');
+AssertEquals_INT(Expected := 1, Actual := fb_TempConveyor.m_FindProduct(vi_udn_Id := 3), Message := 'product 3 moved up');
+AssertEquals_UINT(Expected := 0, Actual := fb_TempConveyor.m_RemoveProductsBeyond(vi_lr_BeltX := 1000),
+	Message := 'nothing more to remove');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetProductStateKeepsPrevious" Id="{9ff018b2-6e00-4a30-8dd5-179df01edb5d}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_SetProductState keeps the state before a change as ePreviousState (a repeated call with the same state<br>
+keeps it), names the client and sets mover and finger; an unknown product gives FALSE.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SetProductStateKeepsPrevious
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('SetProductStateKeepsPrevious');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 1, vi_lr_X := 0);
+AssertTrue(Condition := fb_TempConveyor.m_SetProductState(vi_udn_Id := 1, vi_e_State := E_VisuProductState.ASSIGNED,
+	vi_udn_ClientId := 10, vi_udn_MoverId := 0, vi_udn_FingerId := 0), Message := 'assigned');
+AssertTrue(Condition := fb_TempConveyor.vo_Visu.stState.aProducts[0].ePreviousState = E_VisuProductState.DETECTED,
+	Message := 'previous state DETECTED');
+AssertEquals_UDINT(Expected := 10, Actual := fb_TempConveyor.vo_Visu.stState.aProducts[0].nLastClientId,
+	Message := 'client 10 assigned it');
+
+fb_TempConveyor.m_SetProductState(vi_udn_Id := 1, vi_e_State := E_VisuProductState.ASSIGNED, vi_udn_ClientId := 10,
+	vi_udn_MoverId := 0, vi_udn_FingerId := 0);
+AssertTrue(Condition := fb_TempConveyor.vo_Visu.stState.aProducts[0].ePreviousState = E_VisuProductState.DETECTED,
+	Message := 'same state again keeps the previous state');
+
+fb_TempConveyor.m_SetProductState(vi_udn_Id := 1, vi_e_State := E_VisuProductState.PICKED, vi_udn_ClientId := 20,
+	vi_udn_MoverId := 3, vi_udn_FingerId := 2);
+AssertTrue(Condition := fb_TempConveyor.vo_Visu.stState.aProducts[0].eState = E_VisuProductState.PICKED,
+	Message := 'state PICKED');
+AssertTrue(Condition := fb_TempConveyor.vo_Visu.stState.aProducts[0].ePreviousState = E_VisuProductState.ASSIGNED,
+	Message := 'previous state ASSIGNED');
+AssertEquals_UDINT(Expected := 20, Actual := fb_TempConveyor.vo_Visu.stState.aProducts[0].nLastClientId,
+	Message := 'client 20 picked it');
+AssertEquals_UDINT(Expected := 3, Actual := fb_TempConveyor.vo_Visu.stState.aProducts[0].nMoverId, Message := 'mover 3');
+AssertEquals_UDINT(Expected := 2, Actual := fb_TempConveyor.vo_Visu.stState.aProducts[0].nFingerId, Message := 'finger 2');
+
+AssertFalse(Condition := fb_TempConveyor.m_SetProductState(vi_udn_Id := 99, vi_e_State := E_VisuProductState.REJECTED,
+	vi_udn_ClientId := 70, vi_udn_MoverId := 0, vi_udn_FingerId := 0), Message := 'unknown product gives FALSE');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

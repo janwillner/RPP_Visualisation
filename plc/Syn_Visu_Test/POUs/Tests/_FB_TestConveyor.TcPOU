@@ -1,0 +1,238 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_TestConveyor" Id="{832ea29a-0ce3-4d97-b00f-95dfb3a4497f}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+TcUnit test suite of _FB_VisuConveyor's config and belt position: the config version only changes when a<br>
+value does, product types, the body flag and the unwrapping of a modulo belt position.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 9.4.0  ¦ 2026-11-09 ¦ J.Willner ¦ Unit tests<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_TestConveyor EXTENDS TcUnit.FB_TestSuite
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[m_ConfigureChangesVersionOnce();
+m_SetProductTypeAddsAndUpdates();
+m_SetProductTypeRejectsFullList();
+m_SetBodyVisible();
+m_SetModuloBeltPosition();
+]]></ST>
+    </Implementation>
+    <Method Name="m_ConfigureChangesVersionOnce" Id="{7f54833f-274c-4e56-bc49-747c37ff0306}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_Configure may be called every cycle: only a changed value raises the manifest's config version.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_ConfigureChangesVersionOnce
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	TempManifest						: ST_VisuManifest;
+	TempPose							: ST_VisuPose;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigureChangesVersionOnce');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempConveyor.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed');
+TempPose.fX := 100;
+AssertTrue(Condition := fb_TempConveyor.m_Configure(vi_Pose := TempPose, vi_lr_Length := 3000, vi_lr_Width := 400),
+	Message := 'first m_Configure changes the config');
+AssertEquals_UDINT(Expected := 3, Actual := TempManifest.nConfigVersion, Message := 'config version raised once');
+AssertFalse(Condition := fb_TempConveyor.m_Configure(vi_Pose := TempPose, vi_lr_Length := 3000, vi_lr_Width := 400),
+	Message := 'same values: no change');
+AssertEquals_UDINT(Expected := 3, Actual := TempManifest.nConfigVersion, Message := 'config version unchanged');
+AssertTrue(Condition := fb_TempConveyor.m_Configure(vi_Pose := TempPose, vi_lr_Length := 3500, vi_lr_Width := 400),
+	Message := 'new length changes the config');
+AssertEquals_UDINT(Expected := 4, Actual := TempManifest.nConfigVersion, Message := 'config version raised again');
+AssertEquals_LREAL(Expected := 3500, Actual := fb_TempConveyor.vo_Visu.stConfig.fLength, Delta := 0.001,
+	Message := 'length taken over');
+AssertEquals_LREAL(Expected := 100, Actual := fb_TempConveyor.vo_Visu.stConfig.stPose.fX, Delta := 0.001,
+	Message := 'pose taken over');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetBodyVisible" Id="{6b709493-ea0c-4649-9b22-46f40857af6b}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A conveyor has a body by default; m_SetBodyVisible(FALSE) removes it once.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SetBodyVisible
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('SetBodyVisible');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertTrue(Condition := fb_TempConveyor.vo_Visu.stConfig.bBody, Message := 'a body by default');
+AssertTrue(Condition := fb_TempConveyor.m_SetBodyVisible(vi_b_Visible := FALSE), Message := 'removing the body is a change');
+AssertFalse(Condition := fb_TempConveyor.vo_Visu.stConfig.bBody, Message := 'no body');
+AssertFalse(Condition := fb_TempConveyor.m_SetBodyVisible(vi_b_Visible := FALSE), Message := 'same value: no change');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetModuloBeltPosition" Id="{512793f5-5764-44d3-8fba-e74fd80bb80a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_SetModuloBeltPosition unwraps a modulo axis into a continuous belt position, forwards and backwards across<br>
+the wrap; a reset restarts it, a period of 0 passes the position through.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SetModuloBeltPosition
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('SetModuloBeltPosition');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempConveyor.m_SetModuloBeltPosition(vi_lr_ModuloPosition := 900, vi_lr_ModuloPeriod := 1000, vi_b_Reset := FALSE);
+AssertEquals_LREAL(Expected := 900, Actual := fb_TempConveyor.m_BeltPosition(), Delta := 0.001,
+	Message := 'first call starts at the modulo position');
+fb_TempConveyor.m_SetModuloBeltPosition(vi_lr_ModuloPosition := 100, vi_lr_ModuloPeriod := 1000, vi_b_Reset := FALSE);
+AssertEquals_LREAL(Expected := 1100, Actual := fb_TempConveyor.m_BeltPosition(), Delta := 0.001,
+	Message := 'forwards across the wrap');
+fb_TempConveyor.m_SetModuloBeltPosition(vi_lr_ModuloPosition := 950, vi_lr_ModuloPeriod := 1000, vi_b_Reset := FALSE);
+AssertEquals_LREAL(Expected := 950, Actual := fb_TempConveyor.m_BeltPosition(), Delta := 0.001,
+	Message := 'backwards across the wrap');
+fb_TempConveyor.m_SetModuloBeltPosition(vi_lr_ModuloPosition := 10, vi_lr_ModuloPeriod := 1000, vi_b_Reset := TRUE);
+AssertEquals_LREAL(Expected := 10, Actual := fb_TempConveyor.m_BeltPosition(), Delta := 0.001,
+	Message := 'reset restarts at the modulo position');
+fb_TempConveyor.m_SetModuloBeltPosition(vi_lr_ModuloPosition := 123, vi_lr_ModuloPeriod := 0, vi_b_Reset := FALSE);
+AssertEquals_LREAL(Expected := 123, Actual := fb_TempConveyor.m_BeltPosition(), Delta := 0.001,
+	Message := 'period 0 passes the position through');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetProductTypeAddsAndUpdates" Id="{d1a8a4f8-45bc-4af0-ba22-17c685e921cc}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_SetProductType adds a type per new id and updates the one with a known id; id 0 is refused. Setting the<br>
+same values again succeeds without raising the config version.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SetProductTypeAddsAndUpdates
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	TempManifest						: ST_VisuManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('SetProductTypeAddsAndUpdates');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempConveyor.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed');
+AssertTrue(Condition := fb_TempConveyor.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80,
+	vi_lr_Height := 40, vi_e_Shape := E_VisuProductShape.BOX, vi_lr_CornerRadius := 0), Message := 'type 1 added');
+AssertTrue(Condition := fb_TempConveyor.m_SetProductType(vi_udn_Id := 2, vi_lr_Length := 66, vi_lr_Width := 66,
+	vi_lr_Height := 120, vi_e_Shape := E_VisuProductShape.CYLINDER, vi_lr_CornerRadius := 0), Message := 'type 2 added');
+AssertTrue(Condition := fb_TempConveyor.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 150, vi_lr_Width := 80,
+	vi_lr_Height := 40, vi_e_Shape := E_VisuProductShape.ROUNDED_BOX, vi_lr_CornerRadius := 10), Message := 'type 1 updated');
+AssertEquals_UINT(Expected := 2, Actual := fb_TempConveyor.vo_Visu.stConfig.nProductTypeCount, Message := 'two types');
+AssertEquals_LREAL(Expected := 150, Actual := fb_TempConveyor.vo_Visu.stConfig.aProductTypes[0].fLength, Delta := 0.001,
+	Message := 'type 1 length updated in place');
+AssertTrue(Condition := fb_TempConveyor.vo_Visu.stConfig.aProductTypes[0].eShape = E_VisuProductShape.ROUNDED_BOX,
+	Message := 'type 1 shape updated');
+AssertEquals_UDINT(Expected := 5, Actual := TempManifest.nConfigVersion, Message := 'one config version per change');
+
+AssertTrue(Condition := fb_TempConveyor.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 150, vi_lr_Width := 80,
+	vi_lr_Height := 40, vi_e_Shape := E_VisuProductShape.ROUNDED_BOX, vi_lr_CornerRadius := 10),
+	Message := 'same values again succeed');
+AssertEquals_UDINT(Expected := 5, Actual := TempManifest.nConfigVersion, Message := 'same values: config version unchanged');
+
+AssertFalse(Condition := fb_TempConveyor.m_SetProductType(vi_udn_Id := 0, vi_lr_Length := 10, vi_lr_Width := 10,
+	vi_lr_Height := 10, vi_e_Shape := E_VisuProductShape.BOX, vi_lr_CornerRadius := 0), Message := 'id 0 refused');
+AssertEquals_UINT(Expected := 2, Actual := fb_TempConveyor.vo_Visu.stConfig.nProductTypeCount, Message := 'still two types');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetProductTypeRejectsFullList" Id="{91f598ce-504e-47db-99ee-d98f02b47738}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A conveyor takes VISU_un_MAX_PRODUCT_TYPES product types; a further new id is refused.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SetProductTypeRejectsFullList
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	un_TempType							: UINT;
+	b_TempAllAdded						: BOOL;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('SetProductTypeRejectsFullList');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+b_TempAllAdded := TRUE;
+FOR un_TempType := 1 TO VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES DO
+	b_TempAllAdded := b_TempAllAdded AND fb_TempConveyor.m_SetProductType(vi_udn_Id := UINT_TO_UDINT(un_TempType),
+		vi_lr_Length := 100, vi_lr_Width := 100, vi_lr_Height := 100, vi_e_Shape := E_VisuProductShape.BOX,
+		vi_lr_CornerRadius := 0);
+END_FOR
+AssertTrue(Condition := b_TempAllAdded, Message := 'every type up to the limit added');
+AssertFalse(Condition := fb_TempConveyor.m_SetProductType(vi_udn_Id := 999, vi_lr_Length := 100, vi_lr_Width := 100,
+	vi_lr_Height := 100, vi_e_Shape := E_VisuProductShape.BOX, vi_lr_CornerRadius := 0), Message := 'one more refused');
+AssertEquals_UINT(Expected := VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES,
+	Actual := fb_TempConveyor.vo_Visu.stConfig.nProductTypeCount, Message := 'type count at the limit');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>
