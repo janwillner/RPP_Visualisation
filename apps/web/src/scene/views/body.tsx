@@ -1,3 +1,4 @@
+/** The mesh of one body of a component drawn from its bodies (ADR 0007). */
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
@@ -5,10 +6,7 @@ import { OVERLAY, SOLID } from "../../palette";
 import type { SceneBody } from "../scene-model";
 import type { SourceFrame } from "../scene-frame";
 import type { LocalSelection } from "../SceneView";
-import { applyTransform, EdgeLines, FaultScope, noRaycast, OVERLAY_ORDER, SELECT_COLOR } from "./common";
-import { ROUND_SEGMENTS } from "./conveyor";
-
-/** The mesh of one body of a component drawn from its bodies (ADR 0007). */
+import { applyTransform, EdgeLines, FaultScope, noRaycast, OVERLAY_ORDER, ROUND_SEGMENTS, SELECT_COLOR } from "./common";
 
 /**
  * A body's solid standing on its bottom centre, local +Y up, +X along its length, +Z across (metres): a box, an

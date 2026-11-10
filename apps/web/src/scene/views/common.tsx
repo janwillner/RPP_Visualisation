@@ -1,3 +1,4 @@
+/** What the meshes of every kind of scene part share: solids with edge lines, the fault tint, overlays, placement. */
 import * as THREE from "three";
 import { Line } from "@react-three/drei";
 import type { ThreeElements } from "@react-three/fiber";
@@ -5,10 +6,10 @@ import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef } from "rea
 import { SOLID, STATUS } from "../../palette";
 import type { Transform, Vec3 } from "../scene-model";
 
-/** What the meshes of every kind of scene part share: solids with edge lines, the fault tint, overlays, placement. */
+/** Segments of a round outline (products, cylinder bodies): smooth enough up close, cheap for many products. */
+export const ROUND_SEGMENTS = 40;
 
 export const SELECT_COLOR = STATUS.select;
-
 /** Faulted components and movers glow in this colour; a selection highlight stays visible underneath. */
 export const FAULT_COLOR = STATUS.fault;
 

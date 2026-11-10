@@ -617,11 +617,22 @@ export type SensorState = z.infer<typeof SensorStateSchema>;
 export const StationStateSchema = componentState("station", bodyComponentState(), "Live state of a station.");
 export type StationState = z.infer<typeof StationStateSchema>;
 
+/** A component type's two schemas, whose `type` is the key they are listed under. */
+type SchemasOfType<K> = {
+  config: z.ZodTypeAny & { shape: { type: z.ZodLiteral<K> } };
+  state: z.ZodTypeAny & { shape: { type: z.ZodLiteral<K> } };
+};
+
+/** The table of component types, checked by the compiler: a schema listed under another type's key does not compile. */
+function componentSchemas<T extends { [K in keyof T]: SchemasOfType<K> }>(table: T): T {
+  return table;
+}
+
 /**
  * Every component type with its config and state schema, keyed by its `type`: the one list of component types. Both
  * unions below, the gateway's registry and the scene's kits follow from it; a new type needs one entry here.
  */
-export const COMPONENT_SCHEMAS = {
+export const COMPONENT_SCHEMAS = componentSchemas({
   conveyor: { config: ConveyorConfigSchema, state: ConveyorStateSchema },
   delta: { config: DeltaConfigSchema, state: DeltaStateSchema },
   xtsGantry: { config: XtsGantryConfigSchema, state: XtsGantryStateSchema },
@@ -630,7 +641,7 @@ export const COMPONENT_SCHEMAS = {
   vision: { config: VisionConfigSchema, state: VisionStateSchema },
   sensor: { config: SensorConfigSchema, state: SensorStateSchema },
   station: { config: StationConfigSchema, state: StationStateSchema },
-} as const;
+});
 export type ComponentType = keyof typeof COMPONENT_SCHEMAS;
 
 type ComponentSchemas = (typeof COMPONENT_SCHEMAS)[ComponentType];

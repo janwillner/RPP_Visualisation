@@ -1,3 +1,4 @@
+/** The kit of every component drawn only from the bodies it describes (ADR 0007). */
 import type { Body, BodyRole, BodyState, ComponentConfig } from "@rpp/protocol";
 import { child, frameFromPose, toMcs, toRendererTransform, type Vec3 } from "../frames";
 import { faultText } from "../../machine-facts";
@@ -12,8 +13,6 @@ import {
   snapOwner,
   type StateOf,
 } from "./kit";
-
-/** The kit of every component drawn only from the bodies it describes (ADR 0007). */
 
 /** Component types drawn only from the bodies they describe: every type whose config has bodies. */
 type BodyComponentType = Extract<ComponentConfig, { bodies: unknown }>["type"];

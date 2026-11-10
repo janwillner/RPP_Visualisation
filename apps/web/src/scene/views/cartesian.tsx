@@ -1,3 +1,4 @@
+/** The Cartesian robot's mesh: rails, bridge or beam, carriage, column and flange. */
 import * as THREE from "three";
 import { Html } from "@react-three/drei";
 import { type ThreeEvent, useFrame } from "@react-three/fiber";
@@ -8,8 +9,6 @@ import type { SourceFrame } from "../scene-frame";
 import type { LocalSelection } from "../SceneView";
 import { applyTransform, FaultScope, noRaycast, SELECT_COLOR, SolidBox } from "./common";
 import { XTS_COLORS } from "./xts";
-
-/** The Cartesian robot's mesh: rails, bridge or beam, carriage, column and flange. */
 
 const CARTESIAN_COLORS: Record<SceneCartesian["parts"][number]["key"], string> = {
   "rail left": SOLID.profile,

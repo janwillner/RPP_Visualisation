@@ -1,3 +1,4 @@
+/** The Delta robot's meshes: base, arms, effector plate, TCP triad, and its working area. */
 import * as THREE from "three";
 import { Html } from "@react-three/drei";
 import { type ThreeEvent, useFrame } from "@react-three/fiber";
@@ -19,8 +20,6 @@ import {
   SELECT_COLOR,
   SolidBox,
 } from "./common";
-
-/** The Delta robot's meshes: base, arms, effector plate, TCP triad, and its working area. */
 
 /** A Delta working area: see-through cylinder (and cone below it) with solid rims. */
 export function WorkingAreaMesh({ area: w, color }: { area: SceneWorkingArea; color: string }) {
@@ -46,7 +45,6 @@ export function WorkingAreaMesh({ area: w, color }: { area: SceneWorkingArea; co
 }
 
 const ARM_AZIMUTHS = [0, 120, 240].map((deg) => (deg * Math.PI) / 180);
-
 const DELTA_COLORS = {
   plate: SOLID.aluLight,
   arm: SOLID.dark,
@@ -56,12 +54,9 @@ const DELTA_COLORS = {
   joint: SOLID.aluLight,
   effector: SOLID.aluLight,
 };
-
 /** Half the spacing between the two rods of a lower-arm parallelogram, metres. */
 const ROD_HALF_SPACING = 0.035;
-
 const MOTOR_SIZE = [0.06, 0.11, 0.06] as const;
-
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
 /**

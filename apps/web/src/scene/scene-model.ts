@@ -3,6 +3,7 @@ import type {
   BodyShape,
   ComponentConfig,
   ComponentState,
+  ComponentType,
   ConfigMessage,
   ConveyorConfig,
   Product,
@@ -29,7 +30,6 @@ import {
   type BuildContext,
   carrierKey,
   type ComponentKit,
-  type ComponentType,
   extent,
   type Extent,
   flatBoxSize,
@@ -525,8 +525,8 @@ export interface SceneOptions {
 }
 
 /**
- * Every component type the scene knows. A new component type needs its kit in `kits/<type>.ts`, one entry here and,
- * for a new kind of part, a mesh in `views/<type>.tsx` with its entry in `PART_VIEWS` (`SceneView.tsx`).
+ * Every component type the scene knows. A new component type needs its kit in a module in `kits/`, one entry here
+ * and, for a new kind of part, a mesh in a module in `views/` with its entry in `PART_VIEWS` (`SceneView.tsx`).
  */
 const KITS: { [T in ComponentType]: ComponentKit<T> } = {
   conveyor: conveyorKit,
@@ -768,7 +768,6 @@ function withoutHidden(scene: SceneModel, hidden: ReadonlySet<number>): SceneMod
 
 /** A component across all sources: manifest ids are unique only within one source. */
 export type ComponentKey = string;
-
 export const componentKey = (sourceId: string, id: number): ComponentKey => `${sourceId}#${id}`;
 
 /** What one PLC source contributes to the machine scene. */
@@ -790,7 +789,6 @@ export interface SourceScene {
 }
 
 export type SourcedSnapPoint = SnapPoint & { sourceId: string };
-
 export type SourcedFaults = ComponentFaults & { sourceId: string };
 
 export interface MachineScene {

@@ -1,3 +1,4 @@
+/** XTS tracks laid out from their modules, and the parts of their movers; shared by the XTS gantry and loop kits. */
 import {
   alongModule,
   curveCentre,
@@ -14,8 +15,6 @@ import { apply, type Frame, type Mat3, mul, rotX, rotZ, toMcs, toRendererTransfo
 import { faultText } from "../../machine-facts";
 import type { SceneTrackModule, SnapPoint } from "../scene-model";
 import { type GripperSource, LABEL_LIFT, lifted, MM, type SnapOwner } from "./kit";
-
-/** XTS tracks laid out from their modules, and the parts of their movers; shared by the XTS gantry and loop kits. */
 
 /**
  * The plane an XTS track lies in, as a rotation in its component's frame taking the track's u (where the first module

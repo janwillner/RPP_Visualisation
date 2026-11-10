@@ -1,11 +1,10 @@
 import { COMPONENT_SCHEMAS, type ComponentConfig, type ComponentState, type ComponentType } from "@rpp/protocol";
+import { E_VisuComponentType } from "./plc-contract";
 import { mapPlc, type EntryMemory } from "./plc-mapping";
-
-export type ComponentKind = ComponentType;
 
 /** Where a component type lives in the PLC; everything else follows from its schemas in `@rpp/protocol`. */
 interface PlcComponentType {
-  /** `E_VisuComponentType` value in the manifest (library Syn_Visu; appended, never renumbered). */
+  /** `E_VisuComponentType` value in the manifest. */
   plcValue: number;
   /** PLC data type of the component's contract structure, checked during discovery. */
   plcType: string;
@@ -16,20 +15,20 @@ interface PlcComponentType {
  * needs its schemas in `COMPONENT_SCHEMAS` (`@rpp/protocol`), its PLC structure following the naming conventions of
  * `plc-mapping.ts`, and one entry here; the compiler asks for it.
  */
-export const COMPONENTS: Record<ComponentKind, PlcComponentType> = {
-  conveyor: { plcValue: 1, plcType: "ST_VisuConveyor" },
-  delta: { plcValue: 2, plcType: "ST_VisuDelta" },
-  xtsGantry: { plcValue: 3, plcType: "ST_VisuXtsGantry" },
-  xtsLoop: { plcValue: 4, plcType: "ST_VisuXtsLoop" },
-  cartesian: { plcValue: 5, plcType: "ST_VisuCartesian" },
-  vision: { plcValue: 6, plcType: "ST_VisuDetector" },
-  sensor: { plcValue: 7, plcType: "ST_VisuDetector" },
-  station: { plcValue: 8, plcType: "ST_VisuStation" },
+export const COMPONENTS: Record<ComponentType, PlcComponentType> = {
+  conveyor: { plcValue: E_VisuComponentType.CONVEYOR, plcType: "ST_VisuConveyor" },
+  delta: { plcValue: E_VisuComponentType.DELTA, plcType: "ST_VisuDelta" },
+  xtsGantry: { plcValue: E_VisuComponentType.XTS_GANTRY, plcType: "ST_VisuXtsGantry" },
+  xtsLoop: { plcValue: E_VisuComponentType.XTS_LOOP, plcType: "ST_VisuXtsLoop" },
+  cartesian: { plcValue: E_VisuComponentType.CARTESIAN, plcType: "ST_VisuCartesian" },
+  vision: { plcValue: E_VisuComponentType.VISION, plcType: "ST_VisuDetector" },
+  sensor: { plcValue: E_VisuComponentType.SENSOR, plcType: "ST_VisuDetector" },
+  station: { plcValue: E_VisuComponentType.STATION, plcType: "ST_VisuStation" },
 };
 
 /** The component type of a manifest entry's `eType`, undefined when unknown. */
-export function componentKind(plcValue: number): ComponentKind | undefined {
-  return (Object.keys(COMPONENTS) as ComponentKind[]).find((k) => COMPONENTS[k].plcValue === plcValue);
+export function componentKind(plcValue: number): ComponentType | undefined {
+  return (Object.keys(COMPONENTS) as ComponentType[]).find((k) => COMPONENTS[k].plcValue === plcValue);
 }
 
 export interface ComponentIdentity {
@@ -38,7 +37,7 @@ export interface ComponentIdentity {
   name: string;
 }
 
-export function mapConfig(kind: ComponentKind, identity: ComponentIdentity, raw: unknown): ComponentConfig {
+export function mapConfig(kind: ComponentType, identity: ComponentIdentity, raw: unknown): ComponentConfig {
   return mapPlc(COMPONENT_SCHEMAS[kind].config, raw, { type: kind, ...identity }) as ComponentConfig;
 }
 

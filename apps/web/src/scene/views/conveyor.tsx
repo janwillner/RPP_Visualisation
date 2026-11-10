@@ -1,3 +1,4 @@
+/** The meshes a conveyor adds besides its belt: its axis and its products, instanced on the belt or single. */
 import * as THREE from "three";
 import { Line } from "@react-three/drei";
 import { type ThreeEvent, useFrame } from "@react-three/fiber";
@@ -8,18 +9,14 @@ import type { SourceFrame } from "../scene-frame";
 import type { ProductGroup } from "../product-groups";
 import type { ProductState } from "@rpp/protocol";
 import type { LocalSelection } from "../SceneView";
-import { applyTransform, EdgeLines, noRaycast, SELECT_COLOR } from "./common";
-
-/** The meshes a conveyor adds besides its belt: its axis and its products, instanced on the belt or single. */
+import { applyTransform, EdgeLines, noRaycast, ROUND_SEGMENTS, SELECT_COLOR } from "./common";
 
 /** Height of the conveyor axis above the belt surface, so the line does not flicker against the belt. */
 const AXIS_LIFT = 0.004;
 
 /** Conveyor axis: radius of the origin ball, and radius and length of the direction arrow (m). */
 const AXIS_BALL = 0.01;
-
 const AXIS_ARROW = { radius: 0.015, length: 0.045 };
-
 /** The ball is small; this invisible sphere around it is what a click or tap has to hit. */
 const AXIS_HIT_RADIUS = 0.03;
 
@@ -72,11 +69,7 @@ export function ConveyorAxis(props: { conveyor: SceneConveyor; selected: boolean
 }
 
 const PRODUCT_COLORS: Record<ProductState, string> = PRODUCT;
-
 const MISSED_COLOR = STATUS.missed;
-
-/** Segments of a round product's outline: smooth enough up close, cheap for many products. */
-export const ROUND_SEGMENTS = 40;
 
 /**
  * A product's solid, centred, with local +X along its length, +Y up and +Z across (metres): a box, an (oval)
@@ -107,14 +100,11 @@ function productGeometry(p: SceneProduct): THREE.BufferGeometry {
   return new THREE.BoxGeometry(length, height, width);
 }
 
-export const ONE = new THREE.Vector3(1, 1, 1);
-
+const ONE = new THREE.Vector3(1, 1, 1);
 const PRODUCT_COLOR_OBJECTS = Object.fromEntries(
   Object.entries(PRODUCT_COLORS).map(([state, color]) => [state, new THREE.Color(color)]),
 ) as Record<ProductState, THREE.Color>;
-
 const SELECT_COLOR_OBJECT = new THREE.Color(SELECT_COLOR);
-
 const MISSED_COLOR_OBJECT = new THREE.Color(MISSED_COLOR);
 
 /**

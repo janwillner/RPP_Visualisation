@@ -122,7 +122,8 @@ type LimitedRobotType = LimitedRobot["type"];
 
 /**
  * Where the TCPs of each robot type that may have a limit area lie in its frame. A new such type needs an entry (the
- * compiler asks for it); its kit draws its flange from the same rule, so the drawn flange and the checked TCP agree.
+ * compiler asks for it). The XTS gantry and Cartesian kits draw their flange from the same rule (`gantryFlange`,
+ * `cartesianFlange`), so drawn flange and checked TCP agree; the Delta reports its TCP in the MCS, which both take as is.
  */
 const ROBOT_TCPS: {
   [T in LimitedRobotType]: (c: Extract<LimitedRobot, { type: T }>, state: Extract<ComponentState, { type: T }>) => RobotTcp[];

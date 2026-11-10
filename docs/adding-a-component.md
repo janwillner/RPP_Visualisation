@@ -4,9 +4,9 @@ What a new kind of machine part needs, from the PLC to the 3D view. First decide
 
 - **Drawn from bodies.** Anything the visualisation only has to show where it is, with its zones and a fault: a
   vision system, a sensor, a printer, a scale, a reject gate. It describes itself as bodies (boxes, cylinders,
-  frustums with a role), and the web app draws it without knowing it. This needs no web code at all and is the
-  first choice whenever it is enough. Often no new type is needed: a part that works on products at a conveyor is a
-  **station** (`_FB_VisuStation`), described by the application's own `m_SetBody` calls.
+  frustums with a role), and the web app draws it without knowing it. This needs no drawing code (only the type's
+  line in `KITS`) and is the first choice whenever it is enough. Often no new type is needed: a part that works on
+  products at a conveyor is a **station** (`_FB_VisuStation`), described by the application's own `m_SetBody` calls.
 - **Own drawing.** Anything whose look follows from real logic the visualisation has to compute: kinematics (the Delta's
   arms from its TCP), movers along a track, a product register. It gets its own scene kit and mesh.
 
@@ -28,12 +28,13 @@ station, which has its own structure with the same members.
 2. **Protocol** (`packages/protocol/src/model.ts`): `componentConfig("<type>", bodyComponentConfig(), "<description>")`
    and `componentState("<type>", bodyComponentState(), "<description>")`, and one entry in `COMPONENT_SCHEMAS`, from
    which both unions follow. The descriptions appear in `/docs/schema.json` (ADR 0012).
-3. **Gateway**: one entry in `COMPONENTS` (`components.ts`): its `E_VisuComponentType` value and contract structure;
-   and for tests its structure in `PlcStructures` (`plc-builders.ts`). The compiler asks for both.
+3. **Gateway**: the `E_VisuComponentType` value in `plc-contract.ts`, one entry in `COMPONENTS` (`components.ts`) with
+   that value and the contract structure, and for tests its structure in `PlcStructures` (`plc-builders.ts`). The
+   compiler asks for both entries.
 4. **Web**: one line in `KITS` (`scene-model.ts`): `<type>: bodyKit()` (`scene/kits/bodies.ts`).
 5. **Tests**: a gateway test that the config and state arrive (`gateway.test.ts`).
-6. **Docs**: `docs/plc-contract.md`, the guide's sections and reference (`docs/plc-library-guide.md`), `GLOSSARY.md` for the new term, and `CLAUDE.md` when the architecture summary
-   changes.
+6. **Docs**: `docs/plc-contract.md`, the guide's sections and reference (`docs/plc-library-guide.md`), `GLOSSARY.md`
+   for the new term, and `CLAUDE.md` when the architecture summary changes.
 
 ## Own drawing
 
@@ -46,26 +47,30 @@ Example: the Cartesian robot.
    (modules and their faults come with it, through `m_Modules`), `_FB_VisuZoneComponent` for anything else with
    zones, or `_FB_VisuComponent`.
 2. **Protocol**: the config and state schemas with `robotConfig` / `componentConfig` and `componentState`, and their
-   entry in `COMPONENT_SCHEMAS`. Field names are the PLC members without their prefix. Every schema and field gets a `.describe()`
-   text for `/docs/schema.json`; a test fails for a field without one (ADR 0012).
-3. **Gateway**: the TypeScript mirror of the structures in `plc-contract.ts`, one entry in `COMPONENTS` (its
-   `E_VisuComponentType` value and contract structure), a builder and its `PlcStructures` entry in `plc-builders.ts`. If a value needs more than the naming
-   rules (an enum that does not count from 0, a member named differently), register it in `plc-mapping.ts`
+   entry in `COMPONENT_SCHEMAS` (the compiler checks that the key is the schemas' `type`). Field names are the PLC
+   members without their prefix. Every schema and field gets a `.describe()` text for `/docs/schema.json`; a test
+   fails for a field without one (ADR 0012).
+3. **Gateway**: the TypeScript mirror of the structures and the `E_VisuComponentType` value in `plc-contract.ts`,
+   one entry in `COMPONENTS`, a builder and its `PlcStructures` entry in `plc-builders.ts`. If a value needs more than
+   the naming rules (an enum that does not count from 0, a member named differently), register it in `plc-mapping.ts`
    (`registerEnumTable`, `ALIASES`) rather than writing a mapper.
 4. **Web**:
-   - a kit in its own module `scene/kits/<type>.ts`, registered in `KITS` (`scene-model.ts`); the shared kit
-     vocabulary is in `scene/kits/kit.ts`. `build` adds its parts through the build context (`addZones`, `addGripper`,
-     `addFault`, carriers for products it carries (`carrierKey`), snap points) and
-     `interpolate` blends two states;
+   - a kit in its own module in `scene/kits/` (e.g. `cartesian.ts`; the XTS gantry and loop share the track layout in
+     `xts-track.ts`), registered in `KITS` (`scene-model.ts`); the shared kit vocabulary is in `kits/kit.ts`. `build`
+     adds its parts through the build context (`addZones`, `addGripper`, `addFault`, carriers for products it carries
+     (`carrierKey`), snap points) and `interpolate` blends two states;
    - for a new kind of part: its type, a list for it in `SceneModel` and its entry in `SCENE_PARTS` (which component
-     owns a part, for hiding, and what of it changes the drawn objects), its mesh in its own module `scene/views/<type>.tsx`
-     (shared mesh helpers in `scene/views/common.tsx`) and its entry in `PART_VIEWS` (`SceneView.tsx`). The compiler asks for both entries; the empty scene, hiding and the structural signature follow.
+     owns a part, for hiding, and what of it changes the drawn objects), its mesh in the type's module in
+     `scene/views/` (e.g. `cartesian.tsx`; XTS gantry and loop share `xts.tsx`; shared mesh helpers in `common.tsx`)
+     and its entry in `PART_VIEWS` (`SceneView.tsx`). The compiler asks for both entries; the empty scene, hiding and
+     the structural signature follow.
    The inspector (`stateRows`), the timeline (faults of the entries of any list in the state, e.g. movers or track
    modules) and the recording need nothing. A part with its own fault is passed to `addFault` with its name
    ("Mover 2", "Module 9");
    - a robot with a limit area (`limitedRobotConfig`; in the PLC `m_LimitArea` gives both boxes) calls `addLimitArea`
      in its kit and needs an entry in `ROBOT_TCPS` (`machine-facts.ts`) saying where its TCPs lie in its frame (the
-     compiler asks for it); its kit draws the flange from the same rule, so drawn flange and checked TCP agree.
+     compiler asks for it); its kit draws the flange from the same rule (like `gantryFlange`, `cartesianFlange`), so
+     drawn flange and checked TCP agree.
 5. **Simulator** (optional): an instance in `simulator.ts`, so the dev gateway and the browser tests show it.
 6. **Tests**: the gateway test for config and state, `buildScene` tests for what it draws.
 7. **Docs**: as above.

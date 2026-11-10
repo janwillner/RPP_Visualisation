@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION } from "@rpp/protocol";
+import { PROTOCOL_VERSION, type ComponentType } from "@rpp/protocol";
 import {
   E_VisuCartesianAxes,
   E_VisuProductShape,
@@ -35,7 +35,7 @@ import {
   type ST_VisuLimitArea,
   type ST_VisuZone,
 } from "./plc-contract";
-import { COMPONENTS, type ComponentKind } from "./components";
+import { COMPONENTS } from "./components";
 import type { InMemoryPlc } from "./in-memory-plc";
 
 /** Library defaults (constants in Syn_Visu, overridable per project). */
@@ -451,7 +451,7 @@ export function station(spec: DetectorSpec = {}): ST_VisuStation {
 }
 
 /** The contract structure of every component type; the constraint makes the compiler ask for a new type's entry. */
-type PlcStructures<T extends Record<ComponentKind, object> = {
+type PlcStructures<T extends Record<ComponentType, object> = {
   conveyor: ST_VisuConveyor;
   delta: ST_VisuDelta;
   xtsGantry: ST_VisuXtsGantry;
@@ -464,8 +464,8 @@ type PlcStructures<T extends Record<ComponentKind, object> = {
 
 /** One component of a machine defined in an in-memory PLC: its manifest entry and its contract structure. */
 export type MachineComponent = {
-  [K in ComponentKind]: { id: number; name: string; path: string; kind: K; value: PlcStructures[K] };
-}[ComponentKind];
+  [K in ComponentType]: { id: number; name: string; path: string; kind: K; value: PlcStructures[K] };
+}[ComponentType];
 
 /** Registers a manifest and its components in an in-memory PLC. */
 export function defineMachine(

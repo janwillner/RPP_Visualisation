@@ -54,7 +54,7 @@ import {
   SolidBox,
   useBox,
 } from "./views/common";
-import { ConveyorAxis, ONE, ProductInstances, ProductMesh } from "./views/conveyor";
+import { ConveyorAxis, ProductInstances, ProductMesh } from "./views/conveyor";
 import { DeltaMesh, WorkingAreaMesh } from "./views/delta";
 import { GantryMesh, LoopMesh } from "./views/xts";
 import { CartesianMesh } from "./views/cartesian";
@@ -804,7 +804,6 @@ function machineBox(structure: MachineBounds): THREE.Box3 {
   if (box.isEmpty()) box.set(new THREE.Vector3(-1, 0, -1), new THREE.Vector3(1, 1, 1));
   return box;
 }
-
 /** Quiet time after the last camera movement before it is reported as the camera's new place. */
 const CAMERA_SETTLE_MS = 400;
 

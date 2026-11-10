@@ -1,3 +1,4 @@
+/** The meshes of XTS gantries and loops: their tracks of motor modules and their movers. */
 import * as THREE from "three";
 import { Html } from "@react-three/drei";
 import { type ThreeEvent, useFrame } from "@react-three/fiber";
@@ -7,8 +8,6 @@ import { type SceneGantry, type SceneLoop, type SceneTrackModule, trackSignature
 import type { SourceFrame } from "../scene-frame";
 import type { LocalSelection } from "../SceneView";
 import { applyTransform, EdgeLines, FaultScope, noRaycast, placeBetween, SELECT_COLOR, SolidBox } from "./common";
-
-/** The meshes of XTS gantries and loops: their tracks of motor modules and their movers. */
 
 export const XTS_COLORS = {
   mover: SOLID.aluLight,

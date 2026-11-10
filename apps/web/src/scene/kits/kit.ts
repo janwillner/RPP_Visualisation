@@ -1,6 +1,11 @@
+/**
+ * What every component kit is built from: the kit's shape, the build context through which it adds its parts to the
+ * scene, and the helpers kits share (units, label heights, snap points, interpolation).
+ */
 import type {
   ComponentConfig,
   ComponentState,
+  ComponentType,
   ConveyorConfig,
   Finger,
   FingerState,
@@ -13,15 +18,7 @@ import type {
 import { child, type Frame, frameFromPose, toLocal, toMcs, toRenderer, type Vec3 } from "../frames";
 import type { SceneModel, SnapLayer, SnapPoint } from "../scene-model";
 
-/**
- * What every component kit is built from: the kit's shape, the build context through which it adds its parts to the
- * scene, and the helpers kits share (units, label heights, snap points, interpolation).
- */
-
-export type ComponentType = ComponentConfig["type"];
-
 export type ConfigOf<T extends ComponentType> = Extract<ComponentConfig, { type: T }>;
-
 export type StateOf<T extends ComponentType> = Extract<ComponentState, { type: T }>;
 
 /** What a component's kit adds its part of the scene through. */
@@ -99,6 +96,7 @@ export function sides(width: number): [string, number][] {
   ];
 }
 
+/** What makes the snap points of one component (`snapOwner`). */
 export type SnapOwner = ReturnType<typeof snapOwner>;
 
 /** A component's origin shift as a vector in its local frame. */
@@ -147,7 +145,7 @@ export function extent(min: number, max: number, minName: string, maxName: strin
  * in, its corners exist once and leave that axis's name out.
  */
 export function boxCorners(
-  owner: ReturnType<typeof snapOwner>,
+  owner: SnapOwner,
   prefix: string,
   layer: SnapLayer,
   [xs, ys, zs]: [Extent, Extent, Extent],

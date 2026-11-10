@@ -12,6 +12,19 @@ export const MANIFEST_PATH = "GVL_Visu.stManifest";
 /** PLC data type of the manifest, checked during discovery; the components' types are in `COMPONENTS`. */
 export const PLC_MANIFEST_TYPE = "ST_VisuManifest";
 
+/** E_VisuComponentType: the manifest's component type; the gateway's `COMPONENTS` says which type each value is. */
+export const E_VisuComponentType = {
+  NONE: 0,
+  CONVEYOR: 1,
+  DELTA: 2,
+  XTS_GANTRY: 3,
+  XTS_LOOP: 4,
+  CARTESIAN: 5,
+  VISION: 6,
+  SENSOR: 7,
+  STATION: 8,
+} as const;
+
 /** E_VisuProductState */
 export const E_VisuProductState = { DETECTED: 0, ASSIGNED: 1, PICKED: 2, REJECTED: 3, PLACED: 4 } as const;
 
