@@ -1129,3 +1129,36 @@ table.metrics td + td {
   font-size: 11px;
   color: var(--muted);
 }
+
+.configurator .tree .match {
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.configurator .tree .match.matched {
+  color: var(--ok);
+}
+
+.configurator .tree .match.changed {
+  color: var(--select);
+}
+
+.configurator .tree .match.draftOnly,
+.configurator .tree .match.typeMismatch {
+  color: var(--bad-text);
+}
+
+.configurator .tree.plcs li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+
+.configurator .tree .ok {
+  color: var(--ok);
+}

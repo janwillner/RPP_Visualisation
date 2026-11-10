@@ -12,6 +12,8 @@ export interface Issue {
   /** The component concerned. */
   key: ComponentKey;
   message: string;
+  /** Set for a hint that the draft assumed other hardware than its PLC has. */
+  hardware?: true;
 }
 
 export function validateDraft(draft: Draft): Issue[] {

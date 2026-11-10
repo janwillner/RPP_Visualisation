@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { COMPONENT_SCHEMAS, type ComponentConfig, type ConveyorConfig, type Draft } from "@rpp/protocol";
-import type { SceneFeed } from "../connection";
+import { defaultGatewayUrl, GatewayStore, useGateway, type SceneFeed } from "../connection";
 import { componentKey, type MachineScene } from "../scene/scene-model";
 import { SceneView, type CameraPreset, type Layers, type Selection } from "../scene/SceneView";
 import type { SourceInfo } from "../sources";
@@ -11,6 +11,7 @@ import { PALETTE_LABELS, PALETTE_TYPES, placementHeight, type PaletteType } from
 import { Configurator, DRAFT_FILE_EXTENSION, useConfigurator } from "./configurator";
 import { EditControls, type FloorPicker } from "./EditControls";
 import { keyOf } from "./edits";
+import type { Match } from "./reconciliation";
 import { properties, type PropertyField, type PropertyGroup } from "./property-fields";
 
 /** Every overlay of the draft is shown: zones, areas and markers are what is being configured. */
@@ -26,6 +27,25 @@ const isTyping = (e: KeyboardEvent) => {
   return target instanceof HTMLInputElement && target.type !== "checkbox";
 };
 
+/** How a component's place in the list reads against its PLC; nothing for a draft made offline. */
+const MATCH_LABELS: Record<Match, { text: string; title: string } | undefined> = {
+  matched: { text: "PLC", title: "The PLC has this component with the same values." },
+  changed: { text: "changed", title: "The PLC has this component with other values; writing would change it." },
+  draftOnly: { text: "not in PLC", title: "Its PLC has no component with this id." },
+  typeMismatch: { text: "other type", title: "Its PLC's component with this id is of another type." },
+  noPlc: undefined,
+};
+
+function MatchBadge({ match }: { match: Match }) {
+  const label = MATCH_LABELS[match];
+  if (!label) return null;
+  return (
+    <span className={`match ${match}`} title={label.title}>
+      {label.text}
+    </span>
+  );
+}
+
 /** Saves the draft to a file; a value still being typed is taken first. */
 function saveDraft(configurator: Configurator): void {
   (document.activeElement as HTMLElement | null)?.blur();
@@ -35,12 +55,23 @@ function saveDraft(configurator: Configurator): void {
 
 /** The configurator page (ADR 0016): palette and components on the left, the draft in 3D, its properties on the right. */
 export function ConfiguratorApp() {
+  // The gateway that served the page: its PLCs are imported from and shown live over the draft (read-only).
+  const store = useMemo(() => new GatewayStore(defaultGatewayUrl()), []);
+  const gateway = useGateway(store);
   const configurator = useMemo(
-    () => new Configurator(() => window.confirm("Discard the changes that were not saved?")),
-    [],
+    () => new Configurator(() => window.confirm("Discard the changes that were not saved?"), store),
+    [store],
   );
+  useEffect(() => {
+    store.start();
+    configurator.start();
+    return () => {
+      configurator.stop();
+      store.stop();
+    };
+  }, [store, configurator]);
   const snapshot = useConfigurator(configurator);
-  const { draft, selection, issues } = snapshot;
+  const { draft, selection, issues, matches, plcOnly, plcSources } = snapshot;
   const modelRef = useRef<MachineScene | undefined>(undefined);
   const floorRef = useRef<FloorPicker | undefined>(undefined);
   const handlePressed = useRef(false);
@@ -48,10 +79,10 @@ export function ConfiguratorApp() {
   const [cameraRequest, setCameraRequest] = useState<{ action: CameraPreset; seq: number }>({ action: "iso", seq: 0 });
   const fileInput = useRef<HTMLInputElement>(null);
 
-  // The 3D view reads the draft like a live machine: configuration only, no state.
+  // The 3D view reads the draft like a live machine: its configuration, the PLCs' live states over it, the ghosts.
   const feed = useMemo<SceneFeed>(
     () => ({
-      frame: () => configurator.frame(),
+      frame: (now) => configurator.frame(now),
       latestState: () => undefined,
       productHistory: () => ({ steps: [], now: 0 }),
       productEvents: () => ({ events: [], now: 0, since: 0 }),
@@ -60,15 +91,16 @@ export function ConfiguratorApp() {
   );
   const sources = useMemo<SourceInfo[]>(
     () =>
-      configurator.frame().map((s) => ({
+      configurator.drawnSources().map((s) => ({
         sourceId: s.sourceId,
         name: s.sourceId,
-        status: { plcConnected: true },
+        // A ghost is the PLC's version, never live.
+        status: { plcConnected: s.online },
         config: s.config,
       })),
-    // A new draft is a new frame.
+    // A new draft or reconciliation is a new set of sources (ghosts come and go).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [configurator, draft],
+    [configurator, draft, matches],
   );
   const selected = draft.components.find((c) => keyOf(c) === selection);
   const sceneSelection: Selection = selected && { kind: "component", id: selected.id, sourceId: selected.sourceId };
@@ -170,17 +202,60 @@ export function ConfiguratorApp() {
             </button>
           ))}
         </div>
+        <h3>PLCs</h3>
+        {plcSources.length === 0 ? (
+          <p className="muted">{gateway.socket === "open" ? "The gateway reads no PLC." : "Not connected to the gateway."}</p>
+        ) : (
+          <ul className="tree plcs">
+            {plcSources.map((s) => (
+              <li key={s.sourceId}>
+                <span className={s.status?.plcConnected ? "ok" : "warn"} title={s.sourceId}>
+                  {s.name}
+                </span>{" "}
+                <button
+                  disabled={!s.config}
+                  title="Take this PLC's configuration into the draft, in place of the draft's components of this PLC"
+                  onClick={() =>
+                    configurator.importSource(s.sourceId, (name) =>
+                      window.confirm(`Replace the changes to the components of ${name} with what the PLC has?`),
+                    )
+                  }
+                >
+                  Import
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         <h3>Components</h3>
         {draft.components.length === 0 && <p className="muted">None yet.</p>}
-        <ul className="tree">
+        <ul className="tree components">
           {draft.components.map((c, i) => (
             <li key={`${keyOf(c)}:${i}`}>
               <button className={keyOf(c) === selection ? "selected" : ""} onClick={() => configurator.select(keyOf(c))}>
                 {c.name} <span className="muted">#{c.id}</span>
+                <MatchBadge match={matches[keyOf(c)] ?? "noPlc"} />
               </button>
             </li>
           ))}
         </ul>
+        {plcOnly.length > 0 && (
+          <>
+            <h3>In the PLC, not in the draft</h3>
+            <ul className="tree plc-only">
+              {plcOnly.map((c) => (
+                <li key={keyOf(c)}>
+                  <span>
+                    {c.name} <span className="muted">#{c.id}</span>
+                  </span>{" "}
+                  <button title="Take this component from its PLC into the draft" onClick={() => configurator.importComponent(keyOf(c))}>
+                    Add
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
         {issues.length > 0 && (
           <>
             <h3>Problems</h3>
@@ -251,14 +326,23 @@ export function ConfiguratorApp() {
         {selected ? (
           // Keyed by the component: what a panel holds for one component (a conveyor chosen for a new zone) never
           // carries over to the next.
-          <Properties key={keyOf(selected)} component={selected} draft={draft} configurator={configurator} />
+          <Properties
+            key={keyOf(selected)}
+            component={selected}
+            draft={draft}
+            configurator={configurator}
+            hardwareDiffers={issues.some((i) => i.hardware && i.key === keyOf(selected))}
+          />
         ) : (
           <p className="muted">Select a component to edit its values.</p>
         )}
       </aside>
 
       <footer className="statusbar">
-        <span>Offline draft{snapshot.saved ? "" : " · not saved"}</span>
+        <span>
+          {plcSources.length > 0 ? `Gateway: ${gateway.socket} · ${plcSources.length} PLC` : "Offline draft"}
+          {snapshot.saved ? "" : " · not saved"}
+        </span>
         <span className="statusbar-version">v{APP_VERSION}</span>
       </footer>
     </div>
@@ -266,7 +350,7 @@ export function ConfiguratorApp() {
 }
 
 /** The selected component's values, from its type's schema; every change is one step for undo. */
-function Properties(props: { component: ComponentConfig; draft: Draft; configurator: Configurator }) {
+function Properties(props: { component: ComponentConfig; draft: Draft; configurator: Configurator; hardwareDiffers: boolean }) {
   const { component, configurator } = props;
   const key = keyOf(component);
   const description = (COMPONENT_SCHEMAS[component.type].config as { description?: string }).description;
@@ -283,6 +367,12 @@ function Properties(props: { component: ComponentConfig; draft: Draft; configura
   return (
     <div className="properties">
       <h3 title={description}>{component.name}</h3>
+      {props.hardwareDiffers && (
+        <p className="warn">
+          The PLC has other hardware for this component.{" "}
+          <button onClick={() => configurator.adoptPlcHardware(key)}>Take hardware from PLC</button>
+        </p>
+      )}
       <div className="group">
         <button title="Turn 90° clockwise (Shift+R)" onClick={() => configurator.rotate(key, -90)}>
           ↻ 90°

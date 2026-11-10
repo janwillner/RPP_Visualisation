@@ -16,7 +16,7 @@ test("configurator: places components, edits a value, undoes it, saves the draft
   const palette = page.locator(".palette");
   await palette.getByRole("button", { name: "Conveyor" }).click();
   await palette.getByRole("button", { name: "Delta" }).click();
-  const list = page.locator("aside.panel.left .tree");
+  const list = page.locator("aside.panel.left .components");
   await expect(list).toContainText("Conveyor 1");
   await expect(list).toContainText("Delta 2");
 
@@ -75,7 +75,7 @@ test("configurator: gives a Delta a zone on the conveyor and the conveyor a prod
   await end.press("Enter");
   await expect(page.locator(".issues")).toContainText("reaches past the belt");
 
-  await page.locator("aside.panel.left .tree").getByRole("button", { name: /Conveyor 1/ }).click();
+  await page.locator("aside.panel.left .components").getByRole("button", { name: /Conveyor 1/ }).click();
   await properties.getByRole("button", { name: "Add product type" }).click();
   const type = properties.getByRole("group", { name: "Product type 1" });
   await expect(type.getByLabel("Length", { exact: true })).toHaveValue("120");
@@ -84,4 +84,23 @@ test("configurator: gives a Delta a zone on the conveyor and the conveyor a prod
 
   await type.getByRole("button", { name: /Remove/ }).click();
   await expect(properties.getByRole("group", { name: "Product type 1" })).toHaveCount(0);
+});
+
+test("configurator: imports the simulator's configuration, reconciles it and marks a changed component", async ({ page }) => {
+  await page.goto("/configurator");
+  const plcs = page.locator("aside.panel.left .plcs");
+  await expect(plcs).toContainText("Simulator");
+  await plcs.getByRole("button", { name: "Import" }).first().click();
+
+  const list = page.locator("aside.panel.left .components");
+  const delta = list.getByRole("button", { name: /Delta 1/ });
+  await expect(delta).toContainText("PLC");
+  await expect(list.getByRole("button", { name: /Infeed/ })).toContainText("PLC");
+
+  await delta.click();
+  const x = page.locator("aside.panel.right fieldset").filter({ hasText: "Pose" }).first().getByLabel("X", { exact: true });
+  await x.fill(String(Number(await x.inputValue()) + 100));
+  await x.press("Enter");
+  await expect(delta).toContainText("changed");
+  await expect(page.locator(".statusbar")).toContainText("Gateway: open");
 });
