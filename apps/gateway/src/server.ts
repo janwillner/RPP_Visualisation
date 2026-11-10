@@ -16,6 +16,23 @@ export const WS_PATH = "/ws";
 export const HEALTH_PATH = "/health";
 export { DOCS_PATH, DOCS_SCHEMA_PATH } from "./docs-page";
 
+/** The answer to a command from a page of another origin. */
+export const FOREIGN_ORIGIN = "Commands are taken only from the gateway's own pages.";
+
+/**
+ * Whether a WebSocket was opened by one of the gateway's own pages: a browser sends the page's origin, which must
+ * name the host the socket was opened on. A client without an Origin header is no browser page (a tool, a script).
+ */
+function isOwnOrigin(request: IncomingMessage): boolean {
+  const origin = request.headers.origin;
+  if (origin === undefined) return true;
+  try {
+    return new URL(origin).host === request.headers.host;
+  } catch {
+    return false;
+  }
+}
+
 /** Above this many queued bytes, state snapshots to that client are dropped until it catches up. */
 const MAX_BUFFERED_BYTES = 1_000_000;
 
@@ -169,6 +186,8 @@ export function startServer({ gateway, port, host, staticDir, version = APP_VERS
   });
   wss.on("connection", (socket: WebSocket, request: IncomingMessage) => {
     const changes = new URL(request.url ?? "/", "http://localhost").searchParams.get("changes") === "1";
+    // A browser always names the page that opened the socket; one of another origin may only read (ADR 0017).
+    const commandsAllowed = isOwnOrigin(request);
     // Subscribing hands over the current status and config at once; later messages come through the shared listener.
     gateway.subscribe((message) => send(socket, JSON.stringify(message)))();
     const client: Client = { socket, changes, synced: new Set() };
@@ -186,12 +205,20 @@ export function startServer({ gateway, port, host, staticDir, version = APP_VERS
       const parsed = ClientMessageSchema.safeParse(json);
       if (!parsed.success) return;
       const command = parsed.data;
-      void gateway.command(command).then((result) => {
-        const answer: WriteResultMessage = result.ok
+      const answer = (result: { ok: true; stageId: number } | { ok: false; error: string }) => {
+        const message: WriteResultMessage = result.ok
           ? { kind: "writeResult", requestId: command.requestId, ok: true, stageId: result.stageId }
           : { kind: "writeResult", requestId: command.requestId, ok: false, error: result.error };
-        send(socket, JSON.stringify(answer));
-      });
+        send(socket, JSON.stringify(message));
+      };
+      if (!commandsAllowed) {
+        answer({ ok: false, error: FOREIGN_ORIGIN });
+        return;
+      }
+      gateway
+        .command(command)
+        .then(answer)
+        .catch((error: unknown) => answer({ ok: false, error: `The command failed: ${error instanceof Error ? error.message : String(error)}` }));
     });
   });
 

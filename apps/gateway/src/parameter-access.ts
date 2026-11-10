@@ -11,7 +11,7 @@ import {
   type TypedParameters,
 } from "@rpp/protocol";
 import { componentKind } from "./components";
-import { PLC_CONFIG_TYPES, type ST_ConfigManifest } from "./config-contract";
+import { PLC_CONFIG_MANIFEST_TYPE, PLC_CONFIG_TYPES, type ST_ConfigManifest } from "./config-contract";
 import { enumValue } from "./plc-contract";
 import { mapPlc, type EntryMemory } from "./plc-mapping";
 import { plcLeaves } from "./plc-writing";
@@ -60,8 +60,12 @@ export async function discoverParameters(
   allowWrite: boolean,
 ): Promise<ParameterDiscovery> {
   const none = (reason: string, present = true): ParameterDiscovery => ({ present, entries: [], reason, errors: [] });
-  if ((await plc.typeOf(manifestPath)) === undefined) {
+  const type = await plc.typeOf(manifestPath);
+  if (type === undefined) {
     return none(`The PLC has no Syn_Config (${manifestPath} not found): its components cannot be written.`, false);
+  }
+  if (type !== PLC_CONFIG_MANIFEST_TYPE && !type.endsWith(`.${PLC_CONFIG_MANIFEST_TYPE}`)) {
+    return none(`${manifestPath} is a ${type}, not Syn_Config's ${PLC_CONFIG_MANIFEST_TYPE}: nothing can be written.`);
   }
   const manifest = (await plc.read(manifestPath)) as ST_ConfigManifest;
   if (manifest.nProtocolVersion !== CONFIG_PROTOCOL_VERSION) {
@@ -94,13 +98,23 @@ export function parameterReadPaths(d: ParameterDiscovery): string[] {
   return d.entries.flatMap((e) => [`${e.path}.stStatus`, `${e.path}.stActive`]);
 }
 
-/** The `parameters` message from the values read at `parameterReadPaths`. */
+/**
+ * The `parameters` message from the values read at `parameterReadPaths`. A parameter FB of another layout (e.g. another
+ * Syn_Config version) leaves the source read-only with the reason; it never stops the visualisation.
+ */
 export function parametersMessage(sourceId: string, d: ParameterDiscovery, raws: readonly unknown[]): ParametersMessage {
-  const components = d.entries.map((e, i): ComponentParameters => {
-    const status = mapPlc(StatusSchema, raws[2 * i]);
-    const parameters = mapPlc(PARAMETER_SCHEMAS[e.type], raws[2 * i + 1], {}, e.memory);
-    return { id: e.id, ...status, set: { type: e.type, parameters } as TypedParameters };
-  });
+  let components: ComponentParameters[];
+  try {
+    components = d.entries.map((e, i): ComponentParameters => {
+      const status = mapPlc(StatusSchema, raws[2 * i]);
+      const parameters = mapPlc(PARAMETER_SCHEMAS[e.type], raws[2 * i + 1], {}, e.memory);
+      return { id: e.id, ...status, set: { type: e.type, parameters } as TypedParameters };
+    });
+  } catch (error) {
+    if (!(error instanceof TypeError)) throw error;
+    const reason = `Cannot read the parameter sets: ${error.message}. Does the gateway match the PLC's Syn_Config?`;
+    return { kind: "parameters", sourceId, writable: false, reason, components: [] };
+  }
   return { kind: "parameters", sourceId, writable: d.reason === undefined, ...(d.reason ? { reason: d.reason } : {}), components };
 }
 

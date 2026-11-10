@@ -110,12 +110,21 @@ describe("parameter sets (Syn_Config, ADR 0017)", () => {
     expect(await write(10, 0)).toMatchObject({ ok: false, error: "Component 10 is a delta in the PLC, not a conveyor." });
   });
 
+  it("keeps reading the visualisation when the config manifest has another layout, and says why nothing can be written", async () => {
+    const { plc, last, cycle } = setup();
+    plc.define("GVL_Config.stManifest", "ST_SomethingElse", { nVersion: 3 });
+    await cycle();
+    expect(last("status")).toMatchObject({ status: { plcConnected: true } });
+    expect(last("state")).toBeDefined();
+    expect(last("parameters")).toMatchObject({ writable: false, components: [], reason: expect.stringMatching(/Syn_Config/) });
+  });
+
   it("reports a set the application rejects, with its reason", async () => {
     const { last, cycle, gateway } = setup();
     await cycle();
     const set = structuredClone(component(last("parameters"), 10)!.set);
     if (set.type !== "delta") throw new Error("not a delta");
-    set.parameters.zones[0]!.conveyorId = 5;
+    set.parameters.zones[0]!.conveyorId = 0;
     const result = await gateway.command({ kind: "writeParameters", requestId: 1, sourceId: "plc1", componentId: 10, baseVersion: 0, set });
 
     await cycle();
@@ -123,7 +132,7 @@ describe("parameter sets (Syn_Config, ADR 0017)", () => {
       activeVersion: 0,
       handledStageId: (result as { stageId: number }).stageId,
       result: "rejected",
-      message: "Zone on conveyor 5, which the application does not have",
+      message: "Zone 1 lies on no conveyor",
     });
   });
 
@@ -139,6 +148,22 @@ describe("parameter sets (Syn_Config, ADR 0017)", () => {
     emulation!.applyAllowed = true;
     await cycle();
     expect(component(last("parameters"), 1)).toMatchObject({ activeVersion: 1, result: "applied" });
+  });
+
+  it("drops a set still waiting for the application when a reset comes", async () => {
+    const { last, cycle, gateway, emulation } = setup();
+    await cycle();
+    emulation!.applyAllowed = false;
+    const set = structuredClone(component(last("parameters"), 1)!.set);
+    if (set.type !== "conveyor") throw new Error("not a conveyor");
+    set.parameters.pose.x = 500;
+    await gateway.command({ kind: "writeParameters", requestId: 1, sourceId: "plc1", componentId: 1, baseVersion: 0, set });
+    await cycle();
+    await gateway.command({ kind: "resetParameters", requestId: 2, sourceId: "plc1", componentId: 1, baseVersion: 0 });
+    emulation!.applyAllowed = true;
+    await cycle();
+    await cycle();
+    expect(component(last("parameters"), 1)).toMatchObject({ activeVersion: 0, set: { parameters: { pose: { x: 0 } } } });
   });
 
   it("returns a component to its program values on a reset", async () => {

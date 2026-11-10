@@ -123,7 +123,7 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
     /// <summary>Writes leaf values in one sum-write, in order (ADR 0017); answers null.</summary>
     private JsonNode? WriteAll(JsonArray writes)
     {
-        SumWrite.Run(Client(), writes);
+        SumWrite.Run(Client(), Resolve, writes);
         return null;
     }
 

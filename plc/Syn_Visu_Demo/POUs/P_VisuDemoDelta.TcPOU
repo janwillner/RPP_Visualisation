@@ -103,8 +103,8 @@ VAR
 	b_FarPlace							: BOOL;	// the current robot places far downstream this time
 END_VAR
 VAR PERSISTENT
-	stInfeed1Set						: SynConfig.ST_ConfigConveyorSet;	// active parameter set of Infeed 1, kept over a restart
-	stDelta1Set							: SynConfig.ST_ConfigDeltaSet;	// active parameter set of Delta 1
+	Infeed1Set							: SynConfig.ST_ConfigConveyorSet;	// active parameter set of Infeed 1, kept over a restart
+	Delta1Set							: SynConfig.ST_ConfigDeltaSet;	// active parameter set of Delta 1
 END_VAR
 VAR CONSTANT
 	lr_BELT_LENGTH						: LREAL := 5000;	// [mm]
@@ -213,7 +213,7 @@ FOR udn_Type := 1 TO udn_TYPE_COUNT DO
 	Infeed1Default.aProductTypes[udn_Type - 1].fCornerRadius := lr_TYPE_CORNER_RADIUS[udn_Type];
 END_FOR
 fb_Infeed1Param.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Infeed1.m_Id());
-fb_Infeed1Param.m_Cycle(vio_Default := Infeed1Default, vio_Set := stInfeed1Set, vi_b_ApplyAllowed := TRUE);
+fb_Infeed1Param.m_Cycle(vio_Default := Infeed1Default, vio_Set := Infeed1Set, vi_b_ApplyAllowed := TRUE);
 
 FOR n_Belt := 0 TO 2 DO
 	CASE n_Belt OF
@@ -473,7 +473,7 @@ RobotDefault.aZones[2].fEndY := 0;
 (* Delta 1 runs with its parameter set (Syn_Config) once the configurator wrote one, also its pick logic. *)
 IF n_Robot = 0 THEN
 	fb_Delta1Param.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Delta1.m_Id());
-	fb_Delta1Param.m_Cycle(vio_Default := RobotDefault, vio_Set := stDelta1Set, vi_b_ApplyAllowed := TRUE);
+	fb_Delta1Param.m_Cycle(vio_Default := RobotDefault, vio_Set := Delta1Set, vi_b_ApplyAllowed := TRUE);
 	BasePose := fb_Delta1Param.m_Pose();
 	lr_BaseX := BasePose.fX;
 ELSE

@@ -18,9 +18,10 @@ are `plc/library/Syn_Config_<version>.library` and `.compiled-library`; the pack
 | `<sPath>.stStatus : ST_ConfigStatus` | read every cycle | `nActiveVersion` (0 = program values), `nHandledStageId`, `eResult` (`E_ConfigResult`: NONE, PENDING, APPLIED, REJECTED), `sMessage` |
 | `<sPath>.stActive : ST_Config<Type>Param` | read every cycle | the effective values |
 
-A write is one ADS sum-write in this order: `bStaged := FALSE` (withdraws a set still waiting), every leaf of the
-set, `nBaseVersion`, `nStageId`, `bReset := FALSE`, `bStaged := TRUE`. A reset writes `nBaseVersion`, `nStageId` and
-`bReset := TRUE`. The sub-commands of a sum-write run in order, so the PLC never sees a set staged half written. The
+A write goes in this order: `bStaged := FALSE` (withdraws a set still waiting), every leaf of the set,
+`nBaseVersion`, `nStageId`, `bReset := FALSE`, and `bStaged := TRUE`. A reset writes `nBaseVersion`, `nStageId` and
+`bReset := TRUE`. The ADS bridge sends all but the last value in one ADS sum-write and the last one (`bStaged` or
+`bReset`) in a second request, only when none of the others failed: the PLC never takes over a set written half. The
 parameter structures follow the naming convention of `docs/plc-contract.md`: the gateway derives every leaf path
 from the protocol's schema (`plc-writing.ts`); array indices count from 0 (the ADS bridge maps them to the lower
 bound; Syn_Config's arrays start at 0 anyway).
@@ -52,11 +53,11 @@ VAR
 	InfeedDefault				: SynConfig.ST_ConfigConveyorParam;	// program values, filled every cycle
 END_VAR
 VAR PERSISTENT
-	stInfeedSet					: SynConfig.ST_ConfigConveyorSet;	// the active set, kept over a restart
+	InfeedSet					: SynConfig.ST_ConfigConveyorSet;	// the active set, kept over a restart
 END_VAR
 
 fb_InfeedParam.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Infeed.m_Id());
-fb_InfeedParam.m_Cycle(vio_Default := InfeedDefault, vio_Set := stInfeedSet, vi_b_ApplyAllowed := b_MachineStopped);
+fb_InfeedParam.m_Cycle(vio_Default := InfeedDefault, vio_Set := InfeedSet, vi_b_ApplyAllowed := b_MachineStopped);
 fb_Infeed.m_Configure(vi_Pose := fb_InfeedParam.m_Pose(), vi_lr_Length := 3000, vi_lr_Width := 400);
 fb_InfeedParam.m_PassOn(vio_Visu := fb_Infeed);	// origin shift and product types to Syn_Visu
 ```

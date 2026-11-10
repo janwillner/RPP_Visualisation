@@ -19,14 +19,15 @@ for the shared types (pose, zone, product type, areas); Syn_Visu does not know i
   active set while one is valid, else the defaults; the application reads them through getters and passes them on to
   its own logic and to Syn_Visu (`fb_Infeed.m_Configure(vi_Pose := fb_InfeedParam.m_Pose(), …)`).
 - **Staging.** The gateway writes a proposed set into `vo_Config.stStaged` and `vo_Config.stStaging` (base version,
-  stage id, `bReset`, `bStaged` last) in one ADS sum-write; its sub-commands run in order, so a set is never seen
-  staged half written, and no checksum is needed. The FB checks a staged set when allowed (counts within the arrays,
+  stage id, `bReset`): every value in one ADS sum-write, then `bStaged` (or `bReset`) in a second request only when
+  none of the others failed, so a set is never taken over half written, and no checksum is needed. The FB checks a staged set when allowed (counts within the arrays,
   zones on conveyors the application knows) and takes it over or rejects it with a reason; `stStatus` tells the active
   version, the last stage id handled, the result and its message; `stActive` the effective values. `bReset` makes the
   active set invalid: the program values apply again.
 - **The gateway** finds the parameter FBs through the config manifest during discovery, reads their status and
   active values in its cyclic sum-read and sends a `parameters` message per source when they change. It accepts the
-  WebSocket commands `writeParameters` and `resetParameters` only when started with `--allow-write`, and only on the
+  WebSocket commands `writeParameters` and `resetParameters` only when started with `--allow-write` and only from its
+  own pages (a browser's Origin must name the gateway's host, so a foreign web page in the plant network cannot write), and only on the
   active version the client based its draft on (optimistic lock). It writes leaf values by path (`sumWrite`), the PLC
   member names following the contract's naming convention; the ADS bridge resolves their types from the symbols.
 - **The configurator** compares a component's active parameter set with what the visualisation shows: a difference

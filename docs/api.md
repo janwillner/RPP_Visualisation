@@ -108,7 +108,8 @@ a component's configuration its application runs with (a conveyor's pose and pro
   application does not allow taking it over), a rejection's `message` and the effective values in `set`. `writable`
   is false (with a `reason`) unless the gateway was started with `--allow-write`.
 - **`writeParameters`** and **`resetParameters`** (client → server): stage a set on one component, or return it to its
-  program values. `baseVersion` must be the component's `activeVersion`, else the command is refused (someone else
+  program values. A browser page of another origin than the gateway's is answered with an error: only the gateway's
+  own pages (and clients without an Origin header, such as scripts) may write. `baseVersion` must be the component's `activeVersion`, else the command is refused (someone else
   wrote in between). `requestId` is the client's own.
 - **`writeResult`** (server → that client only): `ok` with the `stageId` of the write, or `error`. Whether the PLC
   took the set over follows in `parameters`, once its `handledStageId` is that stage id.

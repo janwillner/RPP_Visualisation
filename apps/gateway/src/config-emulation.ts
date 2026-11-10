@@ -13,7 +13,7 @@ import {
 } from "./config-contract";
 import type { InMemoryPlc } from "./in-memory-plc";
 import { MAX_MANIFEST_ENTRIES } from "./plc-builders";
-import { enumValue, MANIFEST_PATH, type ST_VisuConveyor, type ST_VisuDelta, type ST_VisuManifest } from "./plc-contract";
+import { MANIFEST_PATH, type ST_VisuConveyor, type ST_VisuDelta, type ST_VisuManifest } from "./plc-contract";
 
 /**
  * The library Syn_Config and an application using it (ADR 0017), emulated on an in-memory PLC for the simulator and
@@ -92,7 +92,9 @@ export class ConfigEmulation {
       if (staging.bReset) {
         fb.persistent.bValid = false;
         Object.assign(status, { nHandledStageId: staging.nStageId, eResult: E_ConfigResult.APPLIED, sMessage: "" });
+        // As m_Handled does: a set still waiting is dropped with the reset.
         staging.bReset = false;
+        staging.bStaged = false;
       } else if (staging.bStaged) {
         if (!this.applyAllowed) {
           status.eResult = E_ConfigResult.PENDING;
@@ -117,23 +119,23 @@ export class ConfigEmulation {
     }
   }
 
-  /** Why a staged set cannot be taken over: a count past its array, a zone on a conveyor the application lacks. */
+  /**
+   * Why a staged set cannot be taken over, as the library's m_Invalid says it: a count past its array, a product type
+   * without a number or twice, a zone on no conveyor.
+   */
   private invalid(kind: EmulatedParameterFb["kind"], staged: Param): string | undefined {
     if (kind === "conveyor") {
       const p = staged as ST_ConfigConveyorParam;
-      return p.nProductTypeCount > p.aProductTypes.length ? `More than ${p.aProductTypes.length} product types` : undefined;
+      if (p.nProductTypeCount > p.aProductTypes.length) return `More than ${p.aProductTypes.length} product types`;
+      const types = p.aProductTypes.slice(0, p.nProductTypeCount);
+      if (types.some((t) => t.nId === 0)) return "A product type without a number";
+      const twice = types.find((t, i) => types.findIndex((o) => o.nId === t.nId) < i);
+      return twice ? `Product type ${twice.nId} is defined twice` : undefined;
     }
     const p = staged as ST_ConfigDeltaParam;
     if (p.nZoneCount > p.aZones.length) return `More than ${p.aZones.length} zones`;
-    const manifest = this.plc.get<ST_VisuManifest>(this.visuManifestPath);
-    const conveyors = new Set(
-      manifest.aEntries
-        .slice(0, manifest.nCount)
-        .filter((e) => enumValue(e.eType) === COMPONENTS.conveyor.plcValue)
-        .map((e) => e.nId),
-    );
-    const zone = p.aZones.slice(0, p.nZoneCount).find((z) => !conveyors.has(z.nConveyorId));
-    return zone ? `Zone on conveyor ${zone.nConveyorId}, which the application does not have` : undefined;
+    const zone = p.aZones.slice(0, p.nZoneCount).findIndex((z) => z.nConveyorId === 0);
+    return zone >= 0 ? `Zone ${zone + 1} lies on no conveyor` : undefined;
   }
 
   /** The application passes the effective values on to Syn_Visu, whose config version changes when they do. */

@@ -1,16 +1,17 @@
 using System.Buffers.Binary;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using TwinCAT.Ads;
-using TwinCAT.Ads.TypeSystem;
+using TwinCAT.TypeSystem;
 
 namespace AdsBridge;
 
 /// <summary>
-/// Writes leaf values by symbol path in one ADS sum-write (ADR 0017). The sub-commands run in the order given, so the
-/// PLC sees the last value (a parameter set's <c>bStaged</c>) only after all the others. An array index in a path counts
-/// from 0, as in every value read; it is mapped to the array's lower bound from its type name (<c>ARRAY [1..8] OF</c>).
+/// Writes leaf values by symbol path (ADR 0017), in two requests: every value but the last in one ADS sum-write, and
+/// the last one (a parameter set's <c>bStaged</c> or <c>bReset</c>) only when none of them failed. So the PLC never
+/// takes over a set written half. An array index in a path counts from 0, as in every value read; it is mapped to the
+/// array's lower bound from its type name (<c>ARRAY [1..8] OF</c>).
 /// </summary>
 internal static partial class SumWrite
 {
@@ -26,21 +27,24 @@ internal static partial class SumWrite
     [GeneratedRegex(@"^\s*ARRAY\s*\[\s*(-?\d+)\s*\.\.", RegexOptions.IgnoreCase)]
     private static partial Regex LowerBoundPattern();
 
-    public static void Run(AdsClient client, JsonArray writes)
+    /// <param name="resolve">The bridge's symbol lookup with its cache; null for a symbol that does not exist.</param>
+    public static void Run(AdsClient client, Func<string, ResolvedSymbol?> resolve, JsonArray writes)
     {
-        var lowerBounds = new Dictionary<string, int>();
         var leaves = writes.Select(w =>
         {
             string path = w!["path"]!.GetValue<string>();
-            string plcPath = PlcPath(client, path, lowerBounds);
-            var error = client.TryReadSymbol(plcPath, out IAdsSymbol? symbol);
-            if (error == AdsErrorCode.DeviceSymbolNotFound || (error == AdsErrorCode.NoError && symbol == null))
-                throw new SymbolNotFoundException(path);
-            if (error != AdsErrorCode.NoError) throw new AdsErrorException($"Reading symbol {plcPath} failed", error);
-            return new Leaf(path, symbol!.IndexGroup, symbol.IndexOffset, Encode(symbol, w["value"]!, path));
+            var symbol = resolve(PlcPath(resolve, path)) ?? throw new SymbolNotFoundException(path);
+            return new Leaf(path, symbol.IndexGroup, symbol.IndexOffset, Encode(symbol, w["value"]!, path));
         }).ToList();
         if (leaves.Count == 0) return;
+        Write(client, leaves.Take(leaves.Count - 1).ToList());
+        Write(client, [leaves[^1]]);
+    }
 
+    /// <summary>One sum-write; throws naming the first leaf the PLC refused.</summary>
+    private static void Write(AdsClient client, IReadOnlyList<Leaf> leaves)
+    {
+        if (leaves.Count == 0) return;
         // Request: per write (indexGroup, indexOffset, length), then all data. Response: per write an error code.
         int dataLength = leaves.Sum(l => l.Data.Length);
         var request = new byte[leaves.Count * 12 + dataLength];
@@ -64,22 +68,16 @@ internal static partial class SumWrite
     }
 
     /// <summary>The path with every array index moved from 0 to its array's lower bound.</summary>
-    private static string PlcPath(AdsClient client, string path, Dictionary<string, int> lowerBounds)
+    private static string PlcPath(Func<string, ResolvedSymbol?> resolve, string path)
     {
         var result = new StringBuilder();
         int last = 0;
         foreach (Match m in IndexPattern().Matches(path))
         {
             result.Append(path, last, m.Index - last);
-            string array = result.ToString();
-            if (!lowerBounds.TryGetValue(array, out int lower))
-            {
-                var error = client.TryReadSymbol(array, out IAdsSymbol? symbol);
-                if (error != AdsErrorCode.NoError || symbol == null) throw new SymbolNotFoundException(path);
-                var bound = LowerBoundPattern().Match(symbol.TypeName);
-                lower = bound.Success ? int.Parse(bound.Groups[1].Value) : 0;
-                lowerBounds[array] = lower;
-            }
+            var array = resolve(result.ToString()) ?? throw new SymbolNotFoundException(path);
+            var bound = LowerBoundPattern().Match(array.TypeName);
+            int lower = bound.Success ? int.Parse(bound.Groups[1].Value) : 0;
             result.Append('[').Append(int.Parse(m.Groups[1].Value) + lower).Append(']');
             last = m.Index + m.Length;
         }
@@ -89,12 +87,12 @@ internal static partial class SumWrite
 
     /// <summary>
     /// A JSON leaf value as the bytes of its symbol: a switch, a whole number (also an enumeration) of the symbol's size,
-    /// a REAL or LREAL, or a STRING padded with zeros.
+    /// a REAL or LREAL (also behind an alias), or a STRING padded with zeros.
     /// </summary>
-    private static byte[] Encode(IAdsSymbol symbol, JsonNode value, string path)
+    private static byte[] Encode(ResolvedSymbol symbol, JsonNode value, string path)
     {
         var bytes = new byte[symbol.ByteSize];
-        string type = symbol.TypeName.Trim().ToUpperInvariant();
+        string type = BaseTypeName(symbol);
         var json = value.AsValue();
         if (json.TryGetValue(out bool flag))
         {
@@ -129,5 +127,14 @@ internal static partial class SumWrite
             default: throw new InvalidOperationException($"{path} is {symbol.TypeName}, which this bridge cannot write");
         }
         return bytes;
+    }
+
+    /// <summary>The name of the symbol's type with aliases resolved and without a namespace, upper case.</summary>
+    private static string BaseTypeName(ResolvedSymbol symbol)
+    {
+        IDataType? type = symbol.DataType;
+        while (type is IAliasType alias && alias.BaseType != null) type = alias.BaseType;
+        string name = (type?.Name ?? symbol.TypeName).Trim().ToUpperInvariant();
+        return name.Contains('.') && !name.StartsWith("STRING") ? name[(name.LastIndexOf('.') + 1)..] : name;
     }
 }

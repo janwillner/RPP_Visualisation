@@ -201,7 +201,13 @@ export function createGateway({
         });
       }
     }
-    params = await discoverParameters(plc, configManifestPath, allowWrite);
+    try {
+      params = await discoverParameters(plc, configManifestPath, allowWrite);
+    } catch (error) {
+      // A layout the gateway does not know leaves the source read-only; connection errors propagate.
+      if (!(error instanceof TypeError) && !(error instanceof SymbolNotFoundError)) throw error;
+      params = { present: true, entries: [], reason: `Cannot read ${configManifestPath}: ${error.message}`, errors: [] };
+    }
     return result();
   }
 
@@ -292,6 +298,8 @@ export function createGateway({
     discovery = next;
     restartChanges(next);
     emit(next.config);
+    // A client drops a source's parameter sets with its new config: they are sent again with the next snapshot.
+    parameters = undefined;
     return next;
   }
 

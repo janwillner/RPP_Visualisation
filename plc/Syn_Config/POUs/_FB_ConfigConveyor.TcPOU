@@ -10,10 +10,10 @@ DESCRIPTION:<br>
 Parameter set of one conveyor (ADR 0017): its pose, origin shift and product types, written by the configurator,<br>
 taken over when the application allows it. Typical cycle, before the Syn_Visu calls of the conveyor:<br>
   fb_InfeedParam.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Infeed.m_Id());<br>
-  fb_InfeedParam.m_Cycle(vio_Default := InfeedDefault, vio_Set := stInfeedSet, vi_b_ApplyAllowed := b_Stopped);<br>
+  fb_InfeedParam.m_Cycle(vio_Default := InfeedDefault, vio_Set := InfeedSet, vi_b_ApplyAllowed := b_Stopped);<br>
   fb_Infeed.m_Configure(vi_Pose := fb_InfeedParam.m_Pose(), vi_lr_Length := 3000, vi_lr_Width := 400);<br>
   fb_InfeedParam.m_PassOn(vio_Visu := fb_Infeed);<br>
-stInfeedSet is the application's VAR PERSISTENT ST_ConfigConveyorSet; InfeedDefault its program values.<br>
+InfeedSet is the application's VAR PERSISTENT ST_ConfigConveyorSet; InfeedDefault its program values.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
 vo_Config is the contract structure the gateway reads and writes at the path in the config manifest.<br>

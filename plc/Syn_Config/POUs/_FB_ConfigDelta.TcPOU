@@ -10,7 +10,7 @@ DESCRIPTION:<br>
 Parameter set of one Delta robot (ADR 0017): its pose, origin shift, zones, working area, limit area and TCP<br>
 limit area, written by the configurator, taken over when the application allows it. Typical cycle:<br>
   fb_Delta1Param.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Delta1.m_Id());<br>
-  fb_Delta1Param.m_Cycle(vio_Default := Delta1Default, vio_Set := stDelta1Set, vi_b_ApplyAllowed := b_Stopped);<br>
+  fb_Delta1Param.m_Cycle(vio_Default := Delta1Default, vio_Set := Delta1Set, vi_b_ApplyAllowed := b_Stopped);<br>
   fb_Delta1.m_Configure(vi_Pose := fb_Delta1Param.m_Pose(), vi_lr_BaseRadius := 200, ...);<br>
   fb_Delta1Param.m_PassOn(vio_Visu := fb_Delta1);<br>
 The application's pick logic takes its zones from m_Zone / m_Active, not from its own constants.<br>
