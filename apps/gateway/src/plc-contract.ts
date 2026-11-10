@@ -9,20 +9,10 @@
 /** Default symbol path of the manifest; overridable per gateway (`manifestPath`) when the application names its GVL differently. */
 export const MANIFEST_PATH = "GVL_Visu.stManifest";
 
-/** Expected PLC data type names, checked against the symbol table during discovery. */
-export const PLC_TYPES = {
-  manifest: "ST_VisuManifest",
-  conveyor: "ST_VisuConveyor",
-  delta: "ST_VisuDelta",
-  xtsGantry: "ST_VisuXtsGantry",
-  xtsLoop: "ST_VisuXtsLoop",
-  cartesian: "ST_VisuCartesian",
-  vision: "ST_VisuDetector",
-  sensor: "ST_VisuDetector",
-  station: "ST_VisuStation",
-} as const;
+/** PLC data type of the manifest, checked during discovery; the components' types are in `COMPONENTS`. */
+export const PLC_MANIFEST_TYPE = "ST_VisuManifest";
 
-/** E_VisuComponentType */
+/** E_VisuComponentType: the manifest's component type; the gateway's `COMPONENTS` says which type each value is. */
 export const E_VisuComponentType = {
   NONE: 0,
   CONVEYOR: 1,

@@ -1,82 +1,34 @@
-import {
-  CartesianConfigSchema,
-  CartesianStateSchema,
-  ConveyorConfigSchema,
-  ConveyorStateSchema,
-  DeltaConfigSchema,
-  DeltaStateSchema,
-  SensorConfigSchema,
-  SensorStateSchema,
-  StationConfigSchema,
-  StationStateSchema,
-  VisionConfigSchema,
-  VisionStateSchema,
-  XtsGantryConfigSchema,
-  XtsGantryStateSchema,
-  XtsLoopConfigSchema,
-  XtsLoopStateSchema,
-  type ComponentConfig,
-  type ComponentState,
-} from "@rpp/protocol";
-import type { z } from "zod";
-import { E_VisuComponentType, PLC_TYPES } from "./plc-contract";
+import { COMPONENT_SCHEMAS, type ComponentConfig, type ComponentState, type ComponentType } from "@rpp/protocol";
+import { E_VisuComponentType } from "./plc-contract";
 import { mapPlc, type EntryMemory } from "./plc-mapping";
 
-export type ComponentKind = ComponentConfig["type"];
-
-/** What the gateway needs to know about one component type: everything else follows from the schemas. */
-interface ComponentSpec {
+/** Where a component type lives in the PLC; everything else follows from its schemas in `@rpp/protocol`. */
+interface PlcComponentType {
   /** `E_VisuComponentType` value in the manifest. */
   plcValue: number;
   /** PLC data type of the component's contract structure, checked during discovery. */
   plcType: string;
-  config: z.ZodTypeAny;
-  state: z.ZodTypeAny;
 }
 
 /**
- * Every component type the gateway reads. A new component needs its schemas in `@rpp/protocol`, its PLC structure
- * following the naming conventions of `plc-mapping.ts`, and one entry here.
+ * Every component type the gateway reads, by its `E_VisuComponentType` value and contract structure. A new component
+ * needs its schemas in `COMPONENT_SCHEMAS` (`@rpp/protocol`), its PLC structure following the naming conventions of
+ * `plc-mapping.ts`, and one entry here; the compiler asks for it.
  */
-export const COMPONENTS: Record<ComponentKind, ComponentSpec> = {
-  conveyor: {
-    plcValue: E_VisuComponentType.CONVEYOR,
-    plcType: PLC_TYPES.conveyor,
-    config: ConveyorConfigSchema,
-    state: ConveyorStateSchema,
-  },
-  delta: { plcValue: E_VisuComponentType.DELTA, plcType: PLC_TYPES.delta, config: DeltaConfigSchema, state: DeltaStateSchema },
-  xtsGantry: {
-    plcValue: E_VisuComponentType.XTS_GANTRY,
-    plcType: PLC_TYPES.xtsGantry,
-    config: XtsGantryConfigSchema,
-    state: XtsGantryStateSchema,
-  },
-  xtsLoop: {
-    plcValue: E_VisuComponentType.XTS_LOOP,
-    plcType: PLC_TYPES.xtsLoop,
-    config: XtsLoopConfigSchema,
-    state: XtsLoopStateSchema,
-  },
-  cartesian: {
-    plcValue: E_VisuComponentType.CARTESIAN,
-    plcType: PLC_TYPES.cartesian,
-    config: CartesianConfigSchema,
-    state: CartesianStateSchema,
-  },
-  vision: { plcValue: E_VisuComponentType.VISION, plcType: PLC_TYPES.vision, config: VisionConfigSchema, state: VisionStateSchema },
-  sensor: { plcValue: E_VisuComponentType.SENSOR, plcType: PLC_TYPES.sensor, config: SensorConfigSchema, state: SensorStateSchema },
-  station: {
-    plcValue: E_VisuComponentType.STATION,
-    plcType: PLC_TYPES.station,
-    config: StationConfigSchema,
-    state: StationStateSchema,
-  },
+export const COMPONENTS: Record<ComponentType, PlcComponentType> = {
+  conveyor: { plcValue: E_VisuComponentType.CONVEYOR, plcType: "ST_VisuConveyor" },
+  delta: { plcValue: E_VisuComponentType.DELTA, plcType: "ST_VisuDelta" },
+  xtsGantry: { plcValue: E_VisuComponentType.XTS_GANTRY, plcType: "ST_VisuXtsGantry" },
+  xtsLoop: { plcValue: E_VisuComponentType.XTS_LOOP, plcType: "ST_VisuXtsLoop" },
+  cartesian: { plcValue: E_VisuComponentType.CARTESIAN, plcType: "ST_VisuCartesian" },
+  vision: { plcValue: E_VisuComponentType.VISION, plcType: "ST_VisuDetector" },
+  sensor: { plcValue: E_VisuComponentType.SENSOR, plcType: "ST_VisuDetector" },
+  station: { plcValue: E_VisuComponentType.STATION, plcType: "ST_VisuStation" },
 };
 
 /** The component type of a manifest entry's `eType`, undefined when unknown. */
-export function componentKind(plcValue: number): ComponentKind | undefined {
-  return (Object.keys(COMPONENTS) as ComponentKind[]).find((k) => COMPONENTS[k].plcValue === plcValue);
+export function componentKind(plcValue: number): ComponentType | undefined {
+  return (Object.keys(COMPONENTS) as ComponentType[]).find((k) => COMPONENTS[k].plcValue === plcValue);
 }
 
 export interface ComponentIdentity {
@@ -85,8 +37,8 @@ export interface ComponentIdentity {
   name: string;
 }
 
-export function mapConfig(kind: ComponentKind, identity: ComponentIdentity, raw: unknown): ComponentConfig {
-  return mapPlc(COMPONENTS[kind].config, raw, { type: kind, ...identity }) as ComponentConfig;
+export function mapConfig(kind: ComponentType, identity: ComponentIdentity, raw: unknown): ComponentConfig {
+  return mapPlc(COMPONENT_SCHEMAS[kind].config, raw, { type: kind, ...identity }) as ComponentConfig;
 }
 
 /**
@@ -94,7 +46,7 @@ export function mapConfig(kind: ComponentKind, identity: ComponentIdentity, raw:
  * entries of lists such as movers.
  */
 export function mapState(config: ComponentConfig, raw: unknown, memory?: EntryMemory): ComponentState {
-  const state = mapPlc(COMPONENTS[config.type].state, raw, { type: config.type, id: config.id }, memory) as ComponentState;
+  const state = mapPlc(COMPONENT_SCHEMAS[config.type].state, raw, { type: config.type, id: config.id }, memory) as ComponentState;
   return withConfiguredCounts(state, config);
 }
 
