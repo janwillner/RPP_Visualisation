@@ -30,7 +30,7 @@ station, which has its own structure with the same members.
    which both unions follow. The descriptions appear in `/docs/schema.json` (ADR 0012).
 3. **Gateway**: one entry in `COMPONENTS` (`components.ts`): its `E_VisuComponentType` value and contract structure;
    and for tests its structure in `PlcStructures` (`plc-builders.ts`). The compiler asks for both.
-4. **Web**: one line in `KITS` (`scene-model.ts`): `<type>: bodyKit()`.
+4. **Web**: one line in `KITS` (`scene-model.ts`): `<type>: bodyKit()` (`scene/kits/bodies.ts`).
 5. **Tests**: a gateway test that the config and state arrive (`gateway.test.ts`).
 6. **Docs**: `docs/plc-contract.md`, the guide's sections and reference (`docs/plc-library-guide.md`), `GLOSSARY.md` for the new term, and `CLAUDE.md` when the architecture summary
    changes.
@@ -53,12 +53,13 @@ Example: the Cartesian robot.
    rules (an enum that does not count from 0, a member named differently), register it in `plc-mapping.ts`
    (`registerEnumTable`, `ALIASES`) rather than writing a mapper.
 4. **Web**:
-   - a kit in `KITS` (`scene-model.ts`): `build` adds its parts through the build context (`addZones`, `addGripper`,
+   - a kit in its own module `scene/kits/<type>.ts`, registered in `KITS` (`scene-model.ts`); the shared kit
+     vocabulary is in `scene/kits/kit.ts`. `build` adds its parts through the build context (`addZones`, `addGripper`,
      `addFault`, carriers for products it carries (`carrierKey`), snap points) and
      `interpolate` blends two states;
    - for a new kind of part: its type, a list for it in `SceneModel` and its entry in `SCENE_PARTS` (which component
-     owns a part, for hiding, and what of it changes the drawn objects), and in `SceneView.tsx` its mesh and its entry
-     in `PART_VIEWS`. The compiler asks for both entries; the empty scene, hiding and the structural signature follow.
+     owns a part, for hiding, and what of it changes the drawn objects), its mesh in its own module `scene/views/<type>.tsx`
+     (shared mesh helpers in `scene/views/common.tsx`) and its entry in `PART_VIEWS` (`SceneView.tsx`). The compiler asks for both entries; the empty scene, hiding and the structural signature follow.
    The inspector (`stateRows`), the timeline (faults of the entries of any list in the state, e.g. movers or track
    modules) and the recording need nothing. A part with its own fault is passed to `addFault` with its name
    ("Mover 2", "Module 9");

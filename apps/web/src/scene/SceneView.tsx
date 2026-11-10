@@ -1,41 +1,64 @@
-import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
-import { Canvas, useFrame, useThree, type ThreeElements, type ThreeEvent } from "@react-three/fiber";
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import * as THREE from "three";
+import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import {
+  Fragment,
+  type MutableRefObject,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { AXES, OVERLAY, PRODUCT, SOLID, STAGE, STATUS } from "../palette";
+import { AXES, OVERLAY, SOLID, STAGE } from "../palette";
 import type { CameraPose } from "../view-settings";
 import type { SceneFeed } from "../connection";
 import type { SourceInfo } from "../sources";
-import type {
-  ProductDisplay,
-  SceneAllocation,
-  SceneBody,
-  SceneBoxArea,
-  SceneCartesian,
-  SceneDelta,
-  SceneFinger,
-  SceneGantry,
-  SceneLoop,
-  SceneModel,
-  SceneTrackModule,
-  SceneOrigin,
-  SceneProduct,
-  SceneWorkingArea,
-  SceneZone,
-  SnapPoint,
-  Transform,
-  Vec3,
-  MachineScene,
-  SceneConveyor,
-  SceneFaultLabel,
-  SourcedFaults,
+import {
+  availableSnapPoints,
+  buildMachineScene,
+  emptyScene,
+  type MachineScene,
+  type SceneAllocation,
+  type SceneBoxArea,
+  type SceneConveyor,
+  type SceneDelta,
+  type SceneFaultLabel,
+  type SceneFinger,
+  type SceneModel,
+  type SceneOrigin,
+  type SceneZone,
+  type SnapPoint,
+  type SourcedFaults,
+  type Transform,
+  type Vec3,
 } from "./scene-model";
-import { availableSnapPoints, buildMachineScene, emptyScene, trackSignature } from "./scene-model";
 import { MachineFrame, SourceFrame } from "./scene-frame";
-import { PressTracker, pickOnScreen, type PointerSample, type Projection, type ScreenPoint } from "./picking";
-import { isGrouped, type ProductGroup } from "./product-groups";
-import type { ConfigMessage, ProductState } from "@rpp/protocol";
+import { pickOnScreen, type PointerSample, PressTracker, type Projection, type ScreenPoint } from "./picking";
+import { isGrouped } from "./product-groups";
+import type { ConfigMessage } from "@rpp/protocol";
+import {
+  applyTransform,
+  FAULT_COLOR,
+  FaultScope,
+  noRaycast,
+  Outline,
+  OVERLAY_ORDER,
+  OverlayMaterial,
+  placeBetween,
+  rectangle,
+  SELECT_COLOR,
+  showFault,
+  SolidBox,
+  useBox,
+} from "./views/common";
+import { ConveyorAxis, ONE, ProductInstances, ProductMesh } from "./views/conveyor";
+import { DeltaMesh, WorkingAreaMesh } from "./views/delta";
+import { GantryMesh, LoopMesh } from "./views/xts";
+import { CartesianMesh } from "./views/cartesian";
+import { BodyMesh } from "./views/body";
 
 export interface Layers {
   workingAreas: boolean;
@@ -99,99 +122,6 @@ export interface SceneViewProps {
 
 const EMPTY: SceneModel = emptyScene();
 
-
-const PRODUCT_COLORS: Record<ProductState, string> = PRODUCT;
-const MISSED_COLOR = STATUS.missed;
-const SELECT_COLOR = STATUS.select;
-/** Faulted components and movers glow in this colour; a selection highlight stays visible underneath. */
-const FAULT_COLOR = STATUS.fault;
-
-/**
- * The fine outline along the edges of a solid part; it fades with its source like everything else. With `color`, it is
- * the whole drawing of an outline-only object (a placeholder): in that colour, unlit and not tone mapped.
- */
-function EdgeLines({ geometry, color }: { geometry: THREE.BufferGeometry; color?: string }) {
-  // Only edges where faces meet at a clear angle: no lines along the facets of a round part.
-  const edges = useMemo(() => new THREE.EdgesGeometry(geometry, 30), [geometry]);
-  useEffect(() => () => edges.dispose(), [edges]);
-  return (
-    <lineSegments geometry={edges} raycast={noRaycast}>
-      {color ? (
-        <lineBasicMaterial color={color} transparent opacity={0.9} toneMapped={false} />
-      ) : (
-        <lineBasicMaterial color={SOLID.edge} transparent opacity={0.55} />
-      )}
-    </lineSegments>
-  );
-}
-
-/** A box geometry that stays the same object while its size does, for meshes with edge lines. */
-function useBox(x: number, y: number, z: number): THREE.BoxGeometry {
-  const geometry = useMemo(() => new THREE.BoxGeometry(x, y, z), [x, y, z]);
-  useEffect(() => () => geometry.dispose(), [geometry]);
-  return geometry;
-}
-
-/** A solid box with edge lines; `children` is its material. */
-function SolidBox(props: { size: readonly [number, number, number]; children: ReactNode } & Omit<ThreeElements["mesh"], "args" | "children">) {
-  const { size, children, ...mesh } = props;
-  const geometry = useBox(size[0], size[1], size[2]);
-  return (
-    <mesh geometry={geometry} {...mesh}>
-      {children}
-      <EdgeLines geometry={geometry} />
-    </mesh>
-  );
-}
-
-/** Share of a part's own colour left while it glows red: little, so a light part reads red, not pink. */
-const FAULT_BASE_SHARE = 0.3;
-
-/**
- * Makes a lit part glow red while `faulted`, its own colour (e.g. the selection) dimmed but still underneath; back
- * to normal when the fault is gone. Safe to call again and again, also after the colour was set anew.
- */
-function showFault(material: THREE.MeshStandardMaterial, faulted: boolean): void {
-  const u = material.userData as { faultBaseColor?: number; faultDimmedColor?: number };
-  if (faulted) {
-    if (material.color.getHex() !== u.faultDimmedColor) {
-      u.faultBaseColor = material.color.getHex();
-      material.color.multiplyScalar(FAULT_BASE_SHARE);
-      u.faultDimmedColor = material.color.getHex();
-    }
-  } else if (u.faultDimmedColor !== undefined) {
-    if (material.color.getHex() === u.faultDimmedColor) material.color.setHex(u.faultBaseColor!);
-    u.faultDimmedColor = undefined;
-  }
-  material.emissive.set(faulted ? FAULT_COLOR : "#000000");
-  material.emissiveIntensity = faulted ? 0.9 : 1;
-}
-
-/**
- * Tints every standard material below `root` red while `faulted`, except inside nested fault scopes, which tint
- * themselves (a faulted mover inside a gantry without fault).
- */
-function tint(root: THREE.Object3D | null, faulted: boolean): void {
-  if (!root) return;
-  const visit = (o: THREE.Object3D) => {
-    const material = (o as THREE.Mesh).material;
-    if (material instanceof THREE.MeshStandardMaterial) showFault(material, faulted);
-    for (const c of o.children) if (!c.userData.faultScope) visit(c);
-  };
-  visit(root);
-}
-
-/** A group whose content is tinted red while `faulted`. Re-applied on every render, so new meshes are covered. */
-function FaultScope({ faulted, children }: { faulted: boolean; children: ReactNode }) {
-  const ref = useRef<THREE.Group>(null);
-  useLayoutEffect(() => tint(ref.current, faulted));
-  return (
-    <group ref={ref} userData={{ faultScope: true }}>
-      {children}
-    </group>
-  );
-}
-
 /** Opacity factor of everything a source draws while the gateway cannot read its PLC. */
 const OFFLINE_OPACITY = 0.25;
 
@@ -248,34 +178,6 @@ function FaultLabel({ label, frame }: { label: SceneFaultLabel; frame: SourceFra
       </Html>
     </group>
   );
-}
-
-function applyTransform(object: THREE.Object3D | null, t: Transform | undefined): void {
-  if (!object || !t) return;
-  object.position.set(...t.position);
-  object.quaternion.set(...t.quaternion);
-}
-
-const UP = new THREE.Vector3(0, 1, 0);
-
-/** Objects that should never be picked (transparent volumes, markers). */
-const noRaycast = () => null;
-
-/** Orient a unit-height cylinder mesh between two points. */
-function placeBetween(mesh: THREE.Object3D | null, a: Vec3 | undefined, b: Vec3 | undefined): void {
-  if (!mesh || !a || !b) {
-    if (mesh) mesh.visible = false;
-    return;
-  }
-  const va = new THREE.Vector3(...a);
-  const vb = new THREE.Vector3(...b);
-  const dir = vb.clone().sub(va);
-  const length = dir.length();
-  mesh.visible = length > 0;
-  if (length === 0) return;
-  mesh.position.copy(va).addScaledVector(dir, 0.5);
-  mesh.quaternion.setFromUnitVectors(UP, dir.normalize());
-  mesh.scale.set(1, length, 1);
 }
 
 const EMPTY_MACHINE: MachineScene = { sources: [], snapPoints: [], origins: [], faults: [] };
@@ -527,63 +429,6 @@ function SourceContent(props: {
   );
 }
 
-/** Height of the conveyor axis above the belt surface, so the line does not flicker against the belt. */
-const AXIS_LIFT = 0.004;
-
-/** Conveyor axis: radius of the origin ball, and radius and length of the direction arrow (m). */
-const AXIS_BALL = 0.01;
-const AXIS_ARROW = { radius: 0.015, length: 0.045 };
-/** The ball is small; this invisible sphere around it is what a click or tap has to hit. */
-const AXIS_HIT_RADIUS = 0.03;
-
-/**
- * A conveyor's X axis on the belt, in its frame, as a violet overlay: a small ball at its shifted origin, a line
- * along the axis and a small conveying direction arrow at the belt end. The ball selects the conveyor, also one
- * without a body. Renderer local axes: belt X -> x, belt Y -> −z.
- */
-function ConveyorAxis(props: { conveyor: SceneConveyor; selected: boolean; onSelect: () => void }) {
-  const { conveyor: c, selected, onSelect } = props;
-  const z = -c.axis.originY;
-  const color = selected ? SELECT_COLOR : OVERLAY.conveyorAxis;
-  return (
-    <>
-      <mesh position={[c.axis.originX, AXIS_LIFT, z]} raycast={noRaycast}>
-        <sphereGeometry args={[AXIS_BALL, 16, 12]} />
-        <meshBasicMaterial color={color} toneMapped={false} />
-      </mesh>
-      <mesh
-        position={[c.axis.originX, AXIS_LIFT, z]}
-        userData={{ label: c.name }}
-        onClick={(e) => {
-          e.stopPropagation();
-          onSelect();
-        }}
-      >
-        <sphereGeometry args={[AXIS_HIT_RADIUS, 12, 8]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
-      <Line
-        points={[
-          [c.axis.originX, AXIS_LIFT, z],
-          [c.length, AXIS_LIFT, z],
-        ]}
-        color={color}
-        lineWidth={2}
-        toneMapped={false}
-        raycast={noRaycast}
-      />
-      <mesh
-        position={[c.length + AXIS_ARROW.length / 2, AXIS_LIFT, z]}
-        rotation={[0, 0, -Math.PI / 2]}
-        raycast={noRaycast}
-      >
-        <coneGeometry args={[AXIS_ARROW.radius, AXIS_ARROW.length, 16]} />
-        <meshBasicMaterial color={color} toneMapped={false} />
-      </mesh>
-    </>
-  );
-}
-
 /**
  * A zone's conveyor coordinate system: a white dashed line lying on the belt, across the whole zone width. It lies
  * above every zone overlay (the allocation limit bar's top is 11 mm) and is drawn after them, so the limit bar cannot
@@ -608,54 +453,6 @@ function CcsLine({ transform, width }: { transform: Transform; width: number }) 
       />
     </group>
   );
-}
-
-/** Overlays are drawn after the solid parts: transparent areas on a belt then never flicker against it. */
-const OVERLAY_ORDER = 1;
-
-/**
- * The see-through fill of an overlay: unlit and not tone mapped, so it keeps its palette colour however the scene
- * is lit, and casts no shadow (only lit parts do).
- */
-function OverlayMaterial({ color, opacity, doubleSided }: { color: string; opacity: number; doubleSided?: boolean }) {
-  return (
-    <meshBasicMaterial
-      color={color}
-      transparent
-      opacity={opacity}
-      side={doubleSided ? THREE.DoubleSide : THREE.FrontSide}
-      depthWrite={false}
-      toneMapped={false}
-    />
-  );
-}
-
-/** The solid border of an overlay along `points`, so the area stays clear in front of any background. */
-function Outline({ points, color }: { points: Vec3[]; color: string }) {
-  return (
-    <Line points={points} color={color} lineWidth={1.5} toneMapped={false} renderOrder={OVERLAY_ORDER} raycast={noRaycast} />
-  );
-}
-
-/** A closed rectangle lying `height` above the local x-z plane, centred on the origin. */
-function rectangle(length: number, width: number, height: number): Vec3[] {
-  const x = length / 2;
-  const z = width / 2;
-  return [
-    [-x, height, -z],
-    [x, height, -z],
-    [x, height, z],
-    [-x, height, z],
-    [-x, height, -z],
-  ];
-}
-
-/** A closed circle of `radius` at `height` in the local x-z plane. */
-function circle(radius: number, height: number, segments = 64): Vec3[] {
-  return Array.from({ length: segments + 1 }, (_, i) => {
-    const a = (i / segments) * Math.PI * 2;
-    return [Math.cos(a) * radius, height, Math.sin(a) * radius];
-  });
 }
 
 /** Fill of a violated limit area or TCP limit area: it lights up. */
@@ -698,29 +495,6 @@ function BoxAreaMesh(props: {
       <lineSegments geometry={edges} raycast={noRaycast} renderOrder={OVERLAY_ORDER}>
         <lineBasicMaterial color={color} toneMapped={false} />
       </lineSegments>
-    </group>
-  );
-}
-
-/** A Delta working area: see-through cylinder (and cone below it) with solid rims. */
-function WorkingAreaMesh({ area: w, color }: { area: SceneWorkingArea; color: string }) {
-  const rims = [circle(w.radius, w.zMax), circle(w.radius, w.zMin)];
-  if (w.coneHeight > 0) rims.push(circle(w.coneBottomRadius, w.zMin - w.coneHeight));
-  return (
-    <group ref={(o) => applyTransform(o, w.transform)}>
-      <mesh position={[0, (w.zMin + w.zMax) / 2, 0]} raycast={noRaycast} renderOrder={OVERLAY_ORDER}>
-        <cylinderGeometry args={[w.radius, w.radius, w.zMax - w.zMin, 48, 1, true]} />
-        <OverlayMaterial color={color} opacity={0.1} doubleSided />
-      </mesh>
-      {w.coneHeight > 0 && (
-        <mesh position={[0, w.zMin - w.coneHeight / 2, 0]} raycast={noRaycast} renderOrder={OVERLAY_ORDER}>
-          <cylinderGeometry args={[w.radius, w.coneBottomRadius, w.coneHeight, 48, 1, true]} />
-          <OverlayMaterial color={color} opacity={0.1} doubleSided />
-        </mesh>
-      )}
-      {rims.map((points, i) => (
-        <Outline key={i} points={points} color={color} />
-      ))}
     </group>
   );
 }
@@ -792,519 +566,6 @@ function FingerMesh(props: {
         <meshStandardMaterial color={FINGER_COLORS.rod} />
       </mesh>
     </>
-  );
-}
-
-/** Segments of a round product's outline: smooth enough up close, cheap for many products. */
-const ROUND_SEGMENTS = 40;
-
-/**
- * A product's solid, centred, with local +X along its length, +Y up and +Z across (metres): a box, an (oval)
- * cylinder whose length and width are its diameters, or a box with rounded vertical edges.
- */
-function productGeometry(p: SceneProduct): THREE.BufferGeometry {
-  const { length, width, height } = p.size;
-  if (p.shape === "cylinder") {
-    const cylinder = new THREE.CylinderGeometry(0.5, 0.5, height, ROUND_SEGMENTS);
-    cylinder.scale(length, 1, width);
-    return cylinder;
-  }
-  const r = Math.min(p.cornerRadius, length / 2, width / 2);
-  if (p.shape === "roundedBox" && r > 0) {
-    // Outline in the shape's (x, y) plane, extruded along its z: turned so that z becomes up and y becomes −Z.
-    const x = length / 2 - r;
-    const y = width / 2 - r;
-    const outline = new THREE.Shape();
-    outline.absarc(x, y, r, 0, Math.PI / 2, false);
-    outline.absarc(-x, y, r, Math.PI / 2, Math.PI, false);
-    outline.absarc(-x, -y, r, Math.PI, (3 * Math.PI) / 2, false);
-    outline.absarc(x, -y, r, (3 * Math.PI) / 2, 2 * Math.PI, false);
-    const solid = new THREE.ExtrudeGeometry(outline, { depth: height, bevelEnabled: false, curveSegments: 6 });
-    solid.rotateX(-Math.PI / 2);
-    solid.translate(0, -height / 2, 0);
-    return solid;
-  }
-  return new THREE.BoxGeometry(length, height, width);
-}
-
-const ONE = new THREE.Vector3(1, 1, 1);
-const PRODUCT_COLOR_OBJECTS = Object.fromEntries(
-  Object.entries(PRODUCT_COLORS).map(([state, color]) => [state, new THREE.Color(color)]),
-) as Record<ProductState, THREE.Color>;
-const SELECT_COLOR_OBJECT = new THREE.Color(SELECT_COLOR);
-const MISSED_COLOR_OBJECT = new THREE.Color(MISSED_COLOR);
-
-/**
- * One group of products as one instanced mesh, with their edge lines as one instanced line set sharing its instance
- * matrices: thousands of products cost a few draw calls instead of two each. Positions and colours are written every
- * frame; React renders it again only when the group needs more room.
- */
-function ProductInstances(props: {
-  group: ProductGroup;
-  frame: SourceFrame;
-  selected: { conveyorId: number; productId: number } | undefined;
-  onSelect: (s: LocalSelection) => void;
-}) {
-  const { group, frame, selected, onSelect } = props;
-  const { sample, capacity } = group;
-  const mesh = useRef<THREE.InstancedMesh>(null);
-  /** The products drawn this frame, by instance index, for picking. */
-  const drawn = useRef<SceneProduct[]>([]);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const geometry = useMemo(() => productGeometry(sample), [group.key]);
-  // The edges of one solid, drawn once per instance through the mesh's instance matrices (set once the mesh exists).
-  const edges = useMemo(() => {
-    const solidEdges = new THREE.EdgesGeometry(geometry, 30);
-    const instanced = new THREE.InstancedBufferGeometry();
-    instanced.setAttribute("position", solidEdges.getAttribute("position"));
-    instanced.instanceCount = 0;
-    return instanced;
-  }, [geometry]);
-  useEffect(
-    () => () => {
-      geometry.dispose();
-      edges.dispose();
-    },
-    [geometry, edges],
-  );
-  // Like the edges of every solid part, but placed per instance: three.js adds the instance matrix to any material
-  // that defines USE_INSTANCING, and draws an InstancedBufferGeometry once per instance, lines too.
-  const edgeMaterial = useMemo(() => {
-    const material = new THREE.LineBasicMaterial({ color: SOLID.edge, transparent: true, opacity: 0.55 });
-    Object.assign(material, { defines: { USE_INSTANCING: "" } });
-    return material;
-  }, []);
-  useEffect(() => () => edgeMaterial.dispose(), [edgeMaterial]);
-  const matrix = useMemo(() => new THREE.Matrix4(), []);
-  const position = useMemo(() => new THREE.Vector3(), []);
-  const quaternion = useMemo(() => new THREE.Quaternion(), []);
-
-  useFrame(() => {
-    const m = mesh.current;
-    if (!m) return;
-    const list = frame.members.get(group.key) ?? [];
-    const n = Math.min(list.length, capacity);
-    for (let i = 0; i < n; i++) {
-      const p = list[i]!;
-      position.set(...p.transform.position);
-      quaternion.set(...p.transform.quaternion);
-      m.setMatrixAt(i, matrix.compose(position, quaternion, ONE));
-      const isSelected = selected?.conveyorId === p.conveyorId && selected.productId === p.productId;
-      m.setColorAt(
-        i,
-        isSelected ? SELECT_COLOR_OBJECT : p.display === "missed" ? MISSED_COLOR_OBJECT : PRODUCT_COLOR_OBJECTS[p.state],
-      );
-    }
-    m.count = n;
-    edges.instanceCount = n;
-    m.instanceMatrix.needsUpdate = true;
-    if (m.instanceColor) m.instanceColor.needsUpdate = true;
-    // Picking computes them again from the instances, which move.
-    m.boundingSphere = null;
-    m.boundingBox = null;
-    drawn.current = list;
-  });
-
-  return (
-    <>
-      <instancedMesh
-        ref={(m: THREE.InstancedMesh | null) => {
-          mesh.current = m;
-          if (m) edges.setAttribute("instanceMatrix", m.instanceMatrix);
-        }}
-        args={[geometry, undefined, capacity]}
-        count={0}
-        frustumCulled={false}
-        userData={{ label: "Product" }}
-        onClick={(e: ThreeEvent<MouseEvent>) => {
-          const p = e.instanceId === undefined ? undefined : drawn.current[e.instanceId];
-          if (!p) return;
-          e.stopPropagation();
-          onSelect({ kind: "product", conveyorId: p.conveyorId, productId: p.productId });
-        }}
-      >
-        <meshStandardMaterial
-          color="#fff"
-          emissive={sample.display === "missed" ? MISSED_COLOR : "#000"}
-          emissiveIntensity={0.4}
-          roughness={0.6}
-        />
-      </instancedMesh>
-      <lineSegments geometry={edges} material={edgeMaterial} frustumCulled={false} raycast={noRaycast} />
-    </>
-  );
-}
-
-function ProductMesh(props: {
-  product: SceneProduct;
-  selected: boolean;
-  lookup: (key: string) => SceneProduct | undefined;
-  onSelect: (s: LocalSelection) => void;
-}) {
-  const { product, selected, lookup, onSelect } = props;
-  const ref = useRef<THREE.Mesh>(null);
-  useFrame(() => applyTransform(ref.current, lookup(product.key)?.transform));
-  const display: ProductDisplay = product.display;
-  const color = selected ? SELECT_COLOR : display === "missed" ? MISSED_COLOR : PRODUCT_COLORS[product.state];
-  const { shape, cornerRadius, size } = product;
-  const geometry = useMemo(
-    () => productGeometry(product),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [shape, cornerRadius, size.length, size.width, size.height],
-  );
-  useEffect(() => () => geometry.dispose(), [geometry]);
-  return (
-    <mesh
-      ref={(m) => {
-        ref.current = m;
-        applyTransform(m, product.transform);
-      }}
-      geometry={geometry}
-      userData={{ label: `Product #${product.productId} (${product.display})` }}
-      onClick={(e: ThreeEvent<MouseEvent>) => {
-        e.stopPropagation();
-        onSelect({ kind: "product", conveyorId: product.conveyorId, productId: product.productId });
-      }}
-    >
-      {display === "placeholder" ? (
-        // Where the picked product lay: its outline only, unlit like the other overlays; the hidden fill keeps it
-        // clickable.
-        <>
-          <meshBasicMaterial visible={false} />
-          <EdgeLines geometry={geometry} color={color} />
-        </>
-      ) : (
-        <>
-          <meshStandardMaterial
-            color={color}
-            emissive={display === "missed" ? MISSED_COLOR : "#000"}
-            emissiveIntensity={0.4}
-            roughness={0.6}
-          />
-          <EdgeLines geometry={geometry} />
-        </>
-      )}
-    </mesh>
-  );
-}
-
-/**
- * A body's solid standing on its bottom centre, local +Y up, +X along its length, +Z across (metres): a box, an
- * (oval) cylinder whose length and width are its diameters, or a rectangular frustum.
- */
-function bodyGeometry(b: SceneBody): THREE.BufferGeometry {
-  const { length, width, height } = b.size;
-  if (b.shape === "frustum") {
-    const [x0, z0, x1, z1] = [length / 2, width / 2, b.top.length / 2, b.top.width / 2];
-    // Bottom corners 0–3, top corners 4–7, counter-clockwise seen from above.
-    const corners = [
-      [-x0, 0, z0], [x0, 0, z0], [x0, 0, -z0], [-x0, 0, -z0],
-      [-x1, height, z1], [x1, height, z1], [x1, height, -z1], [-x1, height, -z1],
-    ];
-    const faces = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
-    const positions = faces.flatMap(([a, b, c, d]) => [a, b, c, a, c, d].flatMap((i) => corners[i!]!));
-    const frustum = new THREE.BufferGeometry();
-    frustum.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-    frustum.computeVertexNormals();
-    return frustum;
-  }
-  const solid =
-    b.shape === "cylinder" ? new THREE.CylinderGeometry(0.5, 0.5, height, ROUND_SEGMENTS) : new THREE.BoxGeometry(1, height, 1);
-  solid.scale(length, 1, width);
-  solid.translate(0, height / 2, 0);
-  return solid;
-}
-
-const BODY_COLORS = { structure: SOLID.profile, sensor: SOLID.sensor, beam: OVERLAY.beam, fieldOfView: OVERLAY.fieldOfView };
-
-/**
- * One body a component is drawn from (`role` sets the look): a machine part (structure, sensor head) lit with edge
- * lines, in the active colour while active (e.g. a pusher at work) and red while its component is faulted; or an
- * overlay (beam, field of view) on the zones layer, unlit and see-through, lighting up while active. Only machine parts select their component: an overlay would cover
- * the products inside it.
- */
-function BodyMesh(props: {
-  body: SceneBody;
-  frame: SourceFrame;
-  selected: boolean;
-  onSelect: (s: LocalSelection) => void;
-}) {
-  const { body, frame, selected, onSelect } = props;
-  const overlay = body.role === "beam" || body.role === "fieldOfView";
-  const fill = useRef<THREE.MeshBasicMaterial>(null);
-  const solid = useRef<THREE.MeshStandardMaterial>(null);
-  const { shape, size, top } = body;
-  const geometry = useMemo(
-    () => bodyGeometry(body),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [shape, size.length, size.width, size.height, top.length, top.width],
-  );
-  useEffect(() => () => geometry.dispose(), [geometry]);
-  useFrame(() => {
-    const active = frame.part("bodies", body.key)?.active ?? false;
-    if (fill.current) fill.current.opacity = active ? 0.55 : body.role === "beam" ? 0.25 : 0.08;
-    // A faulted part keeps its red tint, a selected one the selection colour.
-    if (solid.current && !body.faulted && !selected) solid.current.color.set(active ? SOLID.bodyActive : BODY_COLORS[body.role]);
-  });
-  const color = selected ? SELECT_COLOR : BODY_COLORS[body.role];
-  return (
-    <group ref={(o) => applyTransform(o, body.transform)}>
-      {overlay ? (
-        <mesh geometry={geometry} renderOrder={OVERLAY_ORDER} raycast={noRaycast}>
-          <meshBasicMaterial ref={fill} color={color} transparent opacity={0.08} depthWrite={false} toneMapped={false} />
-          <EdgeLines geometry={geometry} color={color} />
-        </mesh>
-      ) : (
-        <FaultScope faulted={body.faulted}>
-          <mesh
-            geometry={geometry}
-            userData={{ label: `#${body.componentId}` }}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelect({ kind: "component", id: body.componentId });
-            }}
-          >
-            <meshStandardMaterial ref={solid} color={color} roughness={0.6} />
-            <EdgeLines geometry={geometry} />
-          </mesh>
-        </FaultScope>
-      )}
-    </group>
-  );
-}
-
-const ARM_AZIMUTHS = [0, 120, 240].map((deg) => (deg * Math.PI) / 180);
-const DELTA_COLORS = {
-  plate: SOLID.aluLight,
-  arm: SOLID.dark,
-  motor: SOLID.motor,
-  gearbox: SOLID.aluDark,
-  rod: SOLID.dark,
-  joint: SOLID.aluLight,
-  effector: SOLID.aluLight,
-};
-/** Half the spacing between the two rods of a lower-arm parallelogram, metres. */
-const ROD_HALF_SPACING = 0.035;
-const MOTOR_SIZE = [0.06, 0.11, 0.06] as const;
-const Y_AXIS = new THREE.Vector3(0, 1, 0);
-
-/**
- * Plate outline in the base's local MCS plane (x, y), metres: a triangle whose edge midpoints carry the
- * shoulders (inradius = baseRadius), with its corners cut off.
- */
-function basePlateShape(baseRadius: number): THREE.Shape {
-  const corners = [60, 180, 300].map((deg) => {
-    const a = (deg * Math.PI) / 180;
-    return new THREE.Vector2(Math.cos(a), Math.sin(a)).multiplyScalar(baseRadius * 2);
-  });
-  const points: THREE.Vector2[] = [];
-  corners.forEach((c, i) => {
-    const prev = corners[(i + 2) % 3]!;
-    const next = corners[(i + 1) % 3]!;
-    points.push(c.clone().lerp(prev, 0.22), c.clone().lerp(next, 0.22));
-  });
-  return new THREE.Shape(points);
-}
-
-/**
- * Effector plate outline in the effector's local MCS plane (x, y), metres: a hexagon whose six corners are the
- * centres of the lower arms' ball joints (two per arm, `ROD_HALF_SPACING` either side of the arm's joint point at
- * `radius`), so the plate ends exactly in the ball heads.
- */
-function effectorPlateShape(radius: number): THREE.Shape {
-  const corners = ARM_AZIMUTHS.flatMap((a) => {
-    const joint = new THREE.Vector2(Math.cos(a), Math.sin(a)).multiplyScalar(radius);
-    const along = new THREE.Vector2(-Math.sin(a), Math.cos(a)).multiplyScalar(ROD_HALF_SPACING);
-    return [joint.clone().sub(along), joint.clone().add(along)];
-  });
-  return new THREE.Shape(corners);
-}
-
-/** Small arrow along +Y of its own frame, for the TCP axis triad. */
-function TriadArrow({ color, quaternion }: { color: string; quaternion: THREE.Quaternion }) {
-  return (
-    <group quaternion={quaternion}>
-      <mesh position={[0, 0.04, 0]} raycast={noRaycast}>
-        <cylinderGeometry args={[0.003, 0.003, 0.08, 8]} />
-        <meshBasicMaterial color={color} depthTest={false} transparent toneMapped={false} />
-      </mesh>
-      <mesh position={[0, 0.088, 0]} raycast={noRaycast}>
-        <coneGeometry args={[0.008, 0.018, 12]} />
-        <meshBasicMaterial color={color} depthTest={false} transparent toneMapped={false} />
-      </mesh>
-    </group>
-  );
-}
-
-// Triad along the MCS axes (renderer frame): MCS X -> +X, MCS Y -> -Z, MCS Z -> +Y.
-const TRIAD = [
-  { color: AXES.x, quaternion: new THREE.Quaternion().setFromUnitVectors(Y_AXIS, new THREE.Vector3(1, 0, 0)) },
-  { color: AXES.y, quaternion: new THREE.Quaternion().setFromUnitVectors(Y_AXIS, new THREE.Vector3(0, 0, -1)) },
-  { color: AXES.z, quaternion: new THREE.Quaternion() },
-];
-
-function DeltaMesh(props: {
-  delta: SceneDelta;
-  frame: SourceFrame;
-  showTcp: boolean;
-  selected: boolean;
-  onSelect: (s: LocalSelection) => void;
-}) {
-  const { delta, frame, showTcp, selected, onSelect } = props;
-  const { id, name, baseRadius, effectorRadius } = delta;
-  const base = useRef<THREE.Group>(null);
-  const effector = useRef<THREE.Group>(null);
-  const upper = useRef<(THREE.Mesh | null)[]>([]);
-  /** Per arm: elbow bar, effector bar, two rods, four ball joints. */
-  const lower = useRef<(THREE.Object3D | null)[][]>([[], [], []]);
-  const setpoint = useRef<THREE.Mesh>(null);
-  /** Axis triad at the actual TCP, unturned: the TCP is reported in the MCS. */
-  const triad = useRef<THREE.Group>(null);
-
-  // Static parts in the base's local frame (renderer axes: MCS local Y is local -Z).
-  const parts = useMemo(() => {
-    const plate = new THREE.ExtrudeGeometry(basePlateShape(baseRadius), { depth: 0.02, bevelEnabled: false });
-    plate.rotateX(-Math.PI / 2);
-    const effectorPlate = new THREE.ExtrudeGeometry(effectorPlateShape(effectorRadius), {
-      depth: 0.012,
-      bevelEnabled: false,
-    });
-    effectorPlate.rotateX(-Math.PI / 2);
-    effectorPlate.translate(0, -0.006, 0);
-    const motors = ARM_AZIMUTHS.map((a) => {
-      const radial = new THREE.Vector3(Math.cos(a), 0, -Math.sin(a));
-      const tangent = new THREE.Vector3(-Math.sin(a), 0, -Math.cos(a));
-      const shoulder = radial.clone().multiplyScalar(baseRadius);
-      return {
-        quaternion: new THREE.Quaternion().setFromUnitVectors(Y_AXIS, tangent),
-        gearbox: shoulder.clone().addScaledVector(tangent, 0.05),
-        motor: shoulder.clone().addScaledVector(tangent, 0.13),
-        hub: shoulder,
-      };
-    });
-    return { plate, effectorPlate, motors };
-  }, [baseRadius, effectorRadius]);
-
-  useFrame(() => {
-    const d = frame.part("deltas", id);
-    if (!d) return;
-    applyTransform(base.current, d.base);
-    if (effector.current) {
-      effector.current.visible = d.effector !== null;
-      applyTransform(effector.current, d.effector ?? undefined);
-    }
-    const baseCentre = new THREE.Vector3(...d.base.position);
-    const baseUp = Y_AXIS.clone().applyQuaternion(new THREE.Quaternion(...d.base.quaternion));
-    for (let i = 0; i < 3; i++) {
-      placeBetween(upper.current[i] ?? null, d.shoulders[i], d.elbows[i]);
-      const [elbowBar, effectorBar, rodA, rodB, ...balls] = lower.current[i] ?? [];
-      const elbow = d.elbows[i];
-      const joint = d.effectorJoints[i];
-      const shoulder = d.shoulders[i];
-      const visible = Boolean(elbow && joint && shoulder);
-      for (const o of [elbowBar, effectorBar, rodA, rodB, ...balls]) if (o) o.visible = visible;
-      if (!visible) continue;
-      // The parallelogram's rods are offset along the shoulder axis (tangential to the base).
-      const radial = new THREE.Vector3(...shoulder!).sub(baseCentre);
-      const offset = new THREE.Vector3().crossVectors(baseUp, radial).normalize().multiplyScalar(ROD_HALF_SPACING);
-      const e = new THREE.Vector3(...elbow!);
-      const j = new THREE.Vector3(...joint!);
-      const ends = [e.clone().add(offset), e.clone().sub(offset), j.clone().add(offset), j.clone().sub(offset)];
-      const v = (p: THREE.Vector3) => p.toArray() as Vec3;
-      placeBetween(elbowBar ?? null, v(ends[0]!), v(ends[1]!));
-      placeBetween(effectorBar ?? null, v(ends[2]!), v(ends[3]!));
-      placeBetween(rodA ?? null, v(ends[0]!), v(ends[2]!));
-      placeBetween(rodB ?? null, v(ends[1]!), v(ends[3]!));
-      balls.forEach((b, k) => b?.position.copy(ends[k]!));
-    }
-    if (triad.current) {
-      triad.current.visible = showTcp && d.actualTcp !== null;
-      if (d.actualTcp) triad.current.position.set(...d.actualTcp);
-    }
-    if (setpoint.current) {
-      setpoint.current.visible = showTcp && d.setpointTcp !== null;
-      if (d.setpointTcp) setpoint.current.position.set(...d.setpointTcp);
-    }
-  });
-
-  const highlight = selected ? SELECT_COLOR : undefined;
-  const select = (e: ThreeEvent<MouseEvent>) => {
-    e.stopPropagation();
-    onSelect({ kind: "component", id });
-  };
-  const setLower = (arm: number, slot: number) => (o: THREE.Object3D | null) => {
-    lower.current[arm]![slot] = o;
-  };
-  return (
-    <group userData={{ label: name }}>
-      <FaultScope faulted={delta.fault !== null}>
-        <group ref={base}>
-          <mesh geometry={parts.plate} onClick={select}>
-            <meshStandardMaterial color={highlight ?? DELTA_COLORS.plate} metalness={0.2} roughness={0.65} />
-            <EdgeLines geometry={parts.plate} />
-          </mesh>
-          {parts.motors.map((m, i) => (
-            <group key={i}>
-              <mesh position={m.hub} quaternion={m.quaternion} onClick={select}>
-                <cylinderGeometry args={[0.035, 0.035, 0.05, 20]} />
-                <meshStandardMaterial color={DELTA_COLORS.gearbox} metalness={0.3} roughness={0.55} />
-              </mesh>
-              <mesh position={m.gearbox} quaternion={m.quaternion} onClick={select}>
-                <cylinderGeometry args={[0.03, 0.03, 0.05, 20]} />
-                <meshStandardMaterial color={DELTA_COLORS.gearbox} metalness={0.3} roughness={0.55} />
-              </mesh>
-              <SolidBox size={MOTOR_SIZE} position={m.motor} quaternion={m.quaternion} onClick={select}>
-                <meshStandardMaterial color={DELTA_COLORS.motor} roughness={0.7} />
-              </SolidBox>
-            </group>
-          ))}
-          <Html position={[0, 0.1, 0]} className="label" zIndexRange={[10, 0]}>
-            {name}
-          </Html>
-        </group>
-        {[0, 1, 2].map((i) => (
-          <group key={i}>
-            <mesh ref={(m) => (upper.current[i] = m)} onClick={select}>
-              <cylinderGeometry args={[0.022, 0.022, 1, 16]} />
-              <meshStandardMaterial color={highlight ?? DELTA_COLORS.arm} roughness={0.5} />
-            </mesh>
-            {[0, 1].map((k) => (
-              <mesh key={"bar" + k} ref={setLower(i, k)} onClick={select}>
-                <cylinderGeometry args={[0.006, 0.006, 1, 8]} />
-                <meshStandardMaterial color={DELTA_COLORS.joint} metalness={0.35} roughness={0.5} />
-              </mesh>
-            ))}
-            {[2, 3].map((k) => (
-              <mesh key={"rod" + k} ref={setLower(i, k)} onClick={select}>
-                <cylinderGeometry args={[0.006, 0.006, 1, 8]} />
-                <meshStandardMaterial color={highlight ?? DELTA_COLORS.rod} roughness={0.5} />
-              </mesh>
-            ))}
-            {[4, 5, 6, 7].map((k) => (
-              <mesh key={"ball" + k} ref={setLower(i, k)} raycast={noRaycast}>
-                <sphereGeometry args={[0.011, 12, 12]} />
-                <meshStandardMaterial color={DELTA_COLORS.joint} metalness={0.35} roughness={0.5} />
-              </mesh>
-            ))}
-          </group>
-        ))}
-        <group ref={effector} userData={{ label: name + " TCP" }}>
-          <mesh geometry={parts.effectorPlate} onClick={select}>
-            <meshStandardMaterial color={DELTA_COLORS.effector} metalness={0.3} roughness={0.5} />
-            <EdgeLines geometry={parts.effectorPlate} />
-          </mesh>
-        </group>
-        <group ref={triad} userData={{ label: name + " TCP axes" }}>
-          {TRIAD.map((t) => (
-            <TriadArrow key={t.color} color={t.color} quaternion={t.quaternion} />
-          ))}
-        </group>
-        <mesh ref={setpoint} userData={{ label: name + " setpoint TCP" }}>
-          <octahedronGeometry args={[0.018]} />
-          <meshBasicMaterial color={OVERLAY.setpoint} wireframe depthTest={false} transparent toneMapped={false} />
-        </mesh>
-      </FaultScope>
-    </group>
   );
 }
 
@@ -1491,323 +752,6 @@ function OriginTriad({ origin }: { origin: SceneOrigin }) {
   );
 }
 
-const XTS_COLORS = {
-  mover: SOLID.aluLight,
-  arm: SOLID.dark,
-  cup: SOLID.gripper,
-  cupActive: SOLID.gripperActive,
-  track: SOLID.profile,
-  tool: OVERLAY.xtsTool,
-};
-
-/**
- * XTS gantry: a beam of track modules lifted by the common Z axis, movers with their X arm, gripper column and
- * suction cup (green while the gripper is active, with a mark along the gripper's orientation).
- */
-function GantryMesh(props: {
-  gantry: SceneGantry;
-  frame: SourceFrame;
-  selected: boolean;
-  onSelect: (s: LocalSelection) => void;
-}) {
-  const { gantry, frame, selected, onSelect } = props;
-  const { id, name, moverLength, moverWidth } = gantry;
-  const track = useRef<THREE.Group>(null);
-  const carriages = useRef<(THREE.Object3D | null)[]>([]);
-  const arms = useRef<(THREE.Mesh | null)[]>([]);
-  const columns = useRef<(THREE.Mesh | null)[]>([]);
-  const tips = useRef<(THREE.Group | null)[]>([]);
-  const cups = useRef<(THREE.MeshStandardMaterial | null)[]>([]);
-  const select = (e: ThreeEvent<MouseEvent>) => {
-    e.stopPropagation();
-    onSelect({ kind: "component", id });
-  };
-
-  useFrame(() => {
-    const g = frame.part("gantries", id);
-    if (!g) return;
-    applyTransform(track.current, g.track);
-    gantry.movers.forEach((m, i) => {
-      const live = g.movers.find((x) => x.id === m.id);
-      const carriage = carriages.current[i];
-      if (carriage) {
-        carriage.visible = Boolean(live);
-        if (live) {
-          carriage.position.set(...live.carriage);
-          carriage.quaternion.set(...g.track.quaternion);
-        }
-      }
-      placeBetween(arms.current[i] ?? null, live?.carriage, live?.armEnd);
-      placeBetween(columns.current[i] ?? null, live?.armEnd, live?.tip.position);
-      const tip = tips.current[i];
-      if (tip) {
-        tip.visible = Boolean(live);
-        if (live) applyTransform(tip, live.tip);
-      }
-      cups.current[i]?.color.set(live?.gripperActive ? XTS_COLORS.cupActive : XTS_COLORS.cup);
-    });
-  });
-
-  const gantryFaulted = gantry.fault !== null;
-  return (
-    <group userData={{ label: name }}>
-      <FaultScope faulted={gantryFaulted}>
-        <group ref={track}>
-          {/* The track modules form the beam above the movers. */}
-          <TrackModuleMeshes modules={gantry.modules} faulted={gantryFaulted} selected={selected} onClick={select} />
-          <Html position={[0, 0.16, 0]} className="label" zIndexRange={[10, 0]}>
-            {name}
-          </Html>
-        </group>
-        {gantry.movers.map((m, i) => (
-          <FaultScope key={m.id} faulted={gantryFaulted || m.fault !== null}>
-            <group ref={(o) => (carriages.current[i] = o)}>
-              <SolidBox size={[moverWidth, 0.04, moverLength]} position={[0, -0.02, 0]} onClick={select}>
-                <meshStandardMaterial color={selected ? SELECT_COLOR : XTS_COLORS.mover} metalness={0.25} roughness={0.55} />
-              </SolidBox>
-              <Html position={[0, -0.05, 0]} className="label" zIndexRange={[10, 0]}>
-                {m.id}
-              </Html>
-            </group>
-            <mesh ref={(o) => (arms.current[i] = o)} onClick={select}>
-              <cylinderGeometry args={[0.012, 0.012, 1, 12]} />
-              <meshStandardMaterial color={XTS_COLORS.arm} roughness={0.5} />
-            </mesh>
-            <mesh ref={(o) => (columns.current[i] = o)} onClick={select}>
-              <cylinderGeometry args={[0.018, 0.018, 1, 16]} />
-              <meshStandardMaterial color={XTS_COLORS.arm} roughness={0.5} />
-            </mesh>
-            <group ref={(o) => (tips.current[i] = o)}>
-              <mesh position={[0, 0.006, 0]} raycast={noRaycast}>
-                <cylinderGeometry args={[0.022, 0.016, 0.012, 20]} />
-                <meshStandardMaterial ref={(mat) => (cups.current[i] = mat)} color={XTS_COLORS.cup} />
-              </mesh>
-            </group>
-          </FaultScope>
-        ))}
-      </FaultScope>
-    </group>
-  );
-}
-
-/** Gap at each end of a track module, metres, so that the joints between modules show. */
-const MODULE_JOINT = 0.0015;
-
-/**
- * One track module's solid in its module frame (MCS axes, metres; see `SceneTrackModule`): a box for a straight
- * module, a quarter ring around the curve's centre for a curve module.
- */
-function trackModuleGeometry(m: SceneTrackModule): THREE.BufferGeometry {
-  const [a0, a1] = m.across;
-  const [d0, d1] = m.depth;
-  if (m.turn === 0) {
-    const geometry = new THREE.BoxGeometry(Math.max(m.length - 2 * MODULE_JOINT, 0.001), a1 - a0, d1 - d0);
-    geometry.translate(m.length / 2, (a0 + a1) / 2, (d0 + d1) / 2);
-    return geometry;
-  }
-  // The track line runs at radius R around the centre (0, turn · R); a point `a` across it lies at R − turn · a.
-  const { radius: r, turn: t } = m;
-  const cy = t * r;
-  const radii = [r - t * a0, r - t * a1];
-  const [inner, outer] = [Math.min(...radii), Math.max(...radii)];
-  const joint = MODULE_JOINT / r;
-  // The module starts straight "below" (left curve) or "above" (right curve) the centre and sweeps towards +X.
-  const from = -t * (Math.PI / 2) + t * joint;
-  const to = from + t * (m.length / r - 2 * joint);
-  const shape = new THREE.Shape();
-  shape.moveTo(outer * Math.cos(from), cy + outer * Math.sin(from));
-  shape.absarc(0, cy, outer, from, to, t < 0);
-  shape.absarc(0, cy, inner, to, from, t > 0);
-  shape.closePath();
-  const geometry = new THREE.ExtrudeGeometry(shape, { depth: d1 - d0, bevelEnabled: false, curveSegments: 24 });
-  geometry.translate(0, 0, d0);
-  return geometry;
-}
-
-function TrackModuleMesh(props: { module: SceneTrackModule; selected: boolean; onClick: (e: ThreeEvent<MouseEvent>) => void }) {
-  const { module: m, selected, onClick } = props;
-  const signature = trackSignature([m]);
-  // Rebuilt only when the module's shape changes, not with every new scene object.
-  const geometry = useMemo(() => trackModuleGeometry(m), [signature]);
-  useEffect(() => () => geometry.dispose(), [geometry]);
-  return (
-    <group position={m.transform.position} quaternion={m.transform.quaternion}>
-      {/* Turns the module frame's MCS axes into the renderer's: (x, y, z) → (x, z, −y). */}
-      <group rotation={[-Math.PI / 2, 0, 0]}>
-        <mesh geometry={geometry} onClick={onClick}>
-          <meshStandardMaterial color={selected ? SOLID.selectedStructure : XTS_COLORS.track} metalness={0.25} roughness={0.6} />
-          <EdgeLines geometry={geometry} />
-        </mesh>
-      </group>
-    </group>
-  );
-}
-
-/** The track modules of an XTS gantry or loop, inside its track group; red with their own fault or the component's. */
-function TrackModuleMeshes(props: {
-  modules: readonly SceneTrackModule[];
-  /** The whole component is faulted. */
-  faulted: boolean;
-  selected: boolean;
-  onClick: (e: ThreeEvent<MouseEvent>) => void;
-}) {
-  return (
-    <>
-      {props.modules.map((m) => (
-        <FaultScope key={m.key} faulted={props.faulted || m.fault !== null}>
-          <TrackModuleMesh module={m} selected={props.selected} onClick={props.onClick} />
-        </FaultScope>
-      ))}
-    </>
-  );
-}
-
-/** XTS loop: the oval track, movers turning with the tangent, and each mover's tool point. */
-function LoopMesh(props: {
-  loop: SceneLoop;
-  frame: SourceFrame;
-  selected: boolean;
-  onSelect: (s: LocalSelection) => void;
-}) {
-  const { loop, frame, selected, onSelect } = props;
-  const { id, name, moverLength, moverWidth } = loop;
-  const base = useRef<THREE.Group>(null);
-  const movers = useRef<(THREE.Group | null)[]>([]);
-  const tools = useRef<(THREE.Mesh | null)[]>([]);
-  const select = (e: ThreeEvent<MouseEvent>) => {
-    e.stopPropagation();
-    onSelect({ kind: "component", id });
-  };
-
-  useFrame(() => {
-    const l = frame.part("loops", id);
-    if (!l) return;
-    applyTransform(base.current, l.base);
-    loop.movers.forEach((m, i) => {
-      const live = l.movers.find((x) => x.id === m.id);
-      const mover = movers.current[i];
-      const tool = tools.current[i];
-      if (mover) {
-        mover.visible = Boolean(live);
-        if (live) applyTransform(mover, live.transform);
-      }
-      if (tool) {
-        tool.visible = Boolean(live);
-        if (live) tool.position.set(...live.tool);
-      }
-    });
-  });
-
-  const loopFaulted = loop.fault !== null;
-  return (
-    <group userData={{ label: name }}>
-      <FaultScope faulted={loopFaulted}>
-        <group ref={base}>
-          <TrackModuleMeshes modules={loop.modules} faulted={loopFaulted} selected={selected} onClick={select} />
-          <Html position={loop.label} className="label" zIndexRange={[10, 0]}>
-            {name}
-          </Html>
-        </group>
-        {loop.movers.map((m, i) => (
-          <FaultScope key={m.id} faulted={loopFaulted || m.fault !== null}>
-            <group ref={(o) => (movers.current[i] = o)}>
-              {/* Outwards is the mover's local −Y (MCS −Z). */}
-              <SolidBox size={[moverLength, 0.04, moverWidth]} position={[0, -0.03, 0]} onClick={select}>
-                <meshStandardMaterial color={selected ? SELECT_COLOR : XTS_COLORS.mover} metalness={0.25} roughness={0.55} />
-              </SolidBox>
-              <Html position={[0, -0.07, moverWidth / 2]} className="label" zIndexRange={[10, 0]}>
-                {m.id}
-              </Html>
-            </group>
-            <mesh ref={(o) => (tools.current[i] = o)} raycast={noRaycast}>
-              <sphereGeometry args={[0.008, 10, 10]} />
-              <meshBasicMaterial color={XTS_COLORS.tool} toneMapped={false} />
-            </mesh>
-          </FaultScope>
-        ))}
-      </FaultScope>
-    </group>
-  );
-}
-
-const CARTESIAN_COLORS: Record<SceneCartesian["parts"][number]["key"], string> = {
-  "rail left": SOLID.profile,
-  "rail right": SOLID.profile,
-  bridge: SOLID.aluDark,
-  beam: SOLID.aluDark,
-  carriage: SOLID.aluLight,
-  column: SOLID.aluMid,
-};
-
-/**
- * Cartesian robot: rails, bridge (or a fixed beam without a Y axis), carriage and column as boxes, and a flange plate at the column's lower end (green
- * while the gripper is active and no fingers are configured).
- */
-function CartesianMesh(props: {
-  robot: SceneCartesian;
-  frame: SourceFrame;
-  selected: boolean;
-  onSelect: (s: LocalSelection) => void;
-}) {
-  const { robot, frame, selected, onSelect } = props;
-  const { id, name } = robot;
-  const parts = useRef<(THREE.Mesh | null)[]>([]);
-  const flange = useRef<THREE.Group>(null);
-  const cup = useRef<THREE.MeshStandardMaterial>(null);
-  const select = (e: ThreeEvent<MouseEvent>) => {
-    e.stopPropagation();
-    onSelect({ kind: "component", id });
-  };
-
-  useFrame(() => {
-    const live = frame.part("cartesians", id);
-    if (!live) return;
-    live.parts.forEach((p, i) => applyTransform(parts.current[i] ?? null, p.transform));
-    if (flange.current) {
-      flange.current.visible = Boolean(live.flange);
-      if (live.flange) applyTransform(flange.current, live.flange);
-    }
-    cup.current?.color.set(live.gripperActive ? XTS_COLORS.cupActive : XTS_COLORS.cup);
-  });
-
-  // Labelled at a rail or the beam, which do not move.
-  const rail = robot.parts.find((p) => p.key === "rail left") ?? robot.parts.find((p) => p.key === "beam");
-  return (
-    <group userData={{ label: name }}>
-      <FaultScope faulted={robot.fault !== null}>
-        {robot.parts.map((p, i) => (
-          <SolidBox
-            key={p.key}
-            size={[p.size[0], p.size[2], p.size[1]]}
-            ref={(o: THREE.Mesh | null) => {
-              parts.current[i] = o;
-            }}
-            onClick={select}
-          >
-            {/* Renderer local axes: MCS X -> x, MCS Z -> y, MCS Y -> −z (see size). */}
-            <meshStandardMaterial
-              color={selected ? (p.key === "carriage" ? SELECT_COLOR : SOLID.selectedStructure) : CARTESIAN_COLORS[p.key]}
-              metalness={0.25}
-              roughness={0.6}
-            />
-          </SolidBox>
-        ))}
-        {rail && (
-          <Html position={rail.transform.position} className="label" zIndexRange={[10, 0]}>
-            {name}
-          </Html>
-        )}
-        <group ref={flange}>
-          <mesh position={[0, -0.006, 0]} raycast={noRaycast}>
-            <cylinderGeometry args={[0.05, 0.05, 0.012, 24]} />
-            <meshStandardMaterial ref={cup} color={XTS_COLORS.cup} />
-          </mesh>
-        </group>
-      </FaultScope>
-    </group>
-  );
-}
-
 /** MCS axes at the origin: X red, Y green, Z blue (Z is up). */
 function McsAxes() {
   const axes = useMemo(() => {
@@ -1834,7 +778,6 @@ function McsAxes() {
   );
 }
 
-
 /** What the camera rig needs of the OrbitControls instance. */
 interface OrbitControlsLike {
   target: THREE.Vector3;
@@ -1842,7 +785,6 @@ interface OrbitControlsLike {
   addEventListener(type: "change", listener: () => void): void;
   removeEventListener(type: "change", listener: () => void): void;
 }
-
 
 /** The parts that give the machine its extent: conveyors and Delta bases of all sources. */
 interface MachineBounds {
@@ -1862,6 +804,7 @@ function machineBox(structure: MachineBounds): THREE.Box3 {
   if (box.isEmpty()) box.set(new THREE.Vector3(-1, 0, -1), new THREE.Vector3(1, 1, 1));
   return box;
 }
+
 /** Quiet time after the last camera movement before it is reported as the camera's new place. */
 const CAMERA_SETTLE_MS = 400;
 
@@ -1947,7 +890,6 @@ function CameraRig(props: {
 
   return null;
 }
-
 
 /** A soft round spot, white in the middle and transparent at the rim, for the floor to fade into the stage. */
 function fadeTexture(): THREE.Texture {
