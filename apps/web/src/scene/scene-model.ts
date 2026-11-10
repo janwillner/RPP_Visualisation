@@ -57,7 +57,16 @@ import {
   type Transform,
   type Vec3,
 } from "./frames";
-import { faultText, isMissed, limitBoxKey, limitViolations, productBeltX, tcpLimitBoxes } from "../machine-facts";
+import {
+  cartesianFlange,
+  faultText,
+  gantryFlange,
+  isMissed,
+  limitBoxKey,
+  limitViolations,
+  productBeltX,
+  tcpLimitBoxes,
+} from "../machine-facts";
 import { isGrouped } from "./product-groups";
 
 /**
@@ -1584,12 +1593,14 @@ function buildGantry(c: XtsGantryConfig, state: XtsGantryState | undefined) {
   const gantryFault = faultText(state?.fault);
   const parts = new MoverParts(c.name, owner, gantryFault, track.top);
   parts.snapPoints.push(...track.boundaries.map((b) => owner.atMcs(b.label, b.mcs, "structure", true)));
+  const pointAt = trackPoints(c.modules, false);
   const movers = (state?.movers ?? []).map((m): SceneGantryMover => {
     // Mover frame: +X its X axis (to the right of the track), +Y along the track, +Z up.
     const at = track.at(m.position);
     const mover = child(group, at.origin, mul(at.rotation, rotZ(-90)));
     const toolX = m.x + c.toolOffsetX;
-    const tip = child(mover, [toolX, 0, c.toolOffsetZ]);
+    // The flange where the TCP limit area is checked, turned with the mover.
+    const tip: Frame = { rotation: mover.rotation, origin: toMcs(frame, gantryFlange(c, pointAt, z, m)) };
     const fault = parts.add(m, mover, tip, LABEL_LIFT.gantryMover, "flange");
     return {
       id: m.id,
@@ -1725,7 +1736,9 @@ function buildCartesian(c: CartesianConfig, state: CartesianState | undefined) {
   const yMin = hasY ? c.yMin : 0;
   const yMax = hasY ? c.yMax : 0;
   const zMax = hasZ ? c.zMax : c.zMin;
-  const axes = state ? { x: state.x, y: hasY ? state.y : 0, z: hasZ ? state.z : c.zMin } : null;
+  // The flange where the TCP limit area is checked; a missing axis stays put.
+  const at = state ? cartesianFlange(c, state) : null;
+  const axes = at ? { x: at[0], y: at[1], z: at[2] } : null;
   const { x, y, z } = axes ?? { x: c.xMin, y: yMin, z: zMax };
   const railX: [string, number][] = hasY
     ? [

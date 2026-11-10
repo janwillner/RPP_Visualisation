@@ -1,5 +1,7 @@
 import {
   trackPoints,
+  type CartesianConfig,
+  type CartesianState,
   type ComponentConfig,
   type ComponentState,
   type ConveyorConfig,
@@ -88,9 +90,9 @@ function boxOf(frame: Frame, a: LimitArea, at: Vec3 = [0, 0, 0]): FrameBox {
 
 /**
  * A gantry mover's gripper flange in the gantry's frame: on the track (lifted by the common Z axis) at its position,
- * the X axis turned with the track there.
+ * the X axis turned with the track there. The scene draws the flange here too.
  */
-function gantryFlange(
+export function gantryFlange(
   c: XtsGantryConfig,
   pointAt: (s: number) => TrackPoint,
   z: number,
@@ -102,21 +104,45 @@ function gantryFlange(
   return [-p.v + arm[0], p.u + arm[1], z + arm[2]];
 }
 
-/** Every TCP of a robot in its frame: one per gantry mover (by id), else one with mover 0. */
-function robotTcps(c: LimitedRobot, state: ComponentState): { moverId: number; tcp: Vec3 }[] {
-  if (c.type === "delta" && state.type === "delta") {
+/**
+ * A Cartesian robot's flange in its frame: an axis it does not have stays put (no Y: on the beam's line; no Z: at
+ * `zMin`). The scene draws the flange here too.
+ */
+export function cartesianFlange(c: CartesianConfig, state: CartesianState): Vec3 {
+  return [state.x, c.axes === "xz" ? 0 : state.y, c.axes === "xy" ? c.zMin : state.z];
+}
+
+/** One TCP of a robot in its frame; `moverId` 0 for a robot without movers. */
+interface RobotTcp {
+  moverId: number;
+  tcp: Vec3;
+}
+
+type LimitedRobotType = LimitedRobot["type"];
+
+/**
+ * Where the TCPs of each robot type that may have a limit area lie in its frame. A new such type needs an entry (the
+ * compiler asks for it); its kit draws its flange from the same rule, so the drawn flange and the checked TCP agree.
+ */
+const ROBOT_TCPS: {
+  [T in LimitedRobotType]: (c: Extract<LimitedRobot, { type: T }>, state: Extract<ComponentState, { type: T }>) => RobotTcp[];
+} = {
+  delta: (c, state) => {
     const t = state.actualTcp;
     return [{ moverId: 0, tcp: toLocal(frameFromPose(c.pose), [t.x, t.y, t.z]) }];
-  }
-  if (c.type === "cartesian" && state.type === "cartesian") {
-    return [{ moverId: 0, tcp: [state.x, c.axes === "xz" ? 0 : state.y, c.axes === "xy" ? c.zMin : state.z] }];
-  }
-  if (c.type === "xtsGantry" && state.type === "xtsGantry") {
+  },
+  cartesian: (c, state) => [{ moverId: 0, tcp: cartesianFlange(c, state) }],
+  xtsGantry: (c, state) => {
     // Recordings made before protocol 12 have no track modules: the track runs straight along +Y.
     const pointAt = trackPoints(c.modules ?? [], false);
     return state.movers.map((m) => ({ moverId: m.id, tcp: gantryFlange(c, pointAt, state.z, m) }));
-  }
-  return [];
+  },
+};
+
+/** Every TCP of a robot in its frame: one per gantry mover (by id), else one with mover 0. */
+function robotTcps(c: LimitedRobot, state: ComponentState): RobotTcp[] {
+  if (state.type !== c.type) return [];
+  return (ROBOT_TCPS[c.type] as (c: LimitedRobot, state: ComponentState) => RobotTcp[])(c, state);
 }
 
 /**

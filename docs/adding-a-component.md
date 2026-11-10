@@ -63,8 +63,8 @@ Example: the Cartesian robot.
    modules) and the recording need nothing. A part with its own fault is passed to `addFault` with its name
    ("Mover 2", "Module 9");
    - a robot with a limit area (`limitedRobotConfig`; in the PLC `m_LimitArea` gives both boxes) calls `addLimitArea`
-     in its kit and needs a branch in `robotTcps` (`machine-facts.ts`) saying where its TCPs lie in its frame;
-     without it its TCP limit area is neither drawn nor checked.
+     in its kit and needs an entry in `ROBOT_TCPS` (`machine-facts.ts`) saying where its TCPs lie in its frame (the
+     compiler asks for it); its kit draws the flange from the same rule, so drawn flange and checked TCP agree.
 5. **Simulator** (optional): an instance in `simulator.ts`, so the dev gateway and the browser tests show it.
 6. **Tests**: the gateway test for config and state, `buildScene` tests for what it draws.
 7. **Docs**: as above.
