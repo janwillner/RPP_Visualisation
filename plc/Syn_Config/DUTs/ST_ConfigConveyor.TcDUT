@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigConveyor" Id="{6b07eba1-2622-4d46-b88d-ba87be036220}">
+    <Declaration><![CDATA[TYPE ST_ConfigConveyor :
+STRUCT
+	(* vo_Config of _FB_ConfigConveyor: the gateway writes stStaging and stStaged, reads stStatus and stActive. *)
+	stStaging : ST_ConfigStaging;
+	stStaged : ST_ConfigConveyorParam;
+	stStatus : ST_ConfigStatus;
+	stActive : ST_ConfigConveyorParam; // effective values: the active set while one is valid, else the program values
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

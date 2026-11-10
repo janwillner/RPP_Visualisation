@@ -1,0 +1,24 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <GVL Name="CONFIG_GlobalConst" Id="{07a0700c-e9eb-4e56-b871-6a104e3d29f3}">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Global constants of the Syn_Config library.<br>
+****************************************************************************************************)
+{attribute 'qualified_only'}
+VAR_GLOBAL CONSTANT
+	(* Version of the Syn_Config <-> gateway contract (ADR 0017). The gateway writes nothing to a PLC whose config
+	   manifest reports another value. Bump together with CONFIG_PROTOCOL_VERSION in the gateway.
+	   1: conveyor (pose, origin shift, product types) and Delta (pose, origin shift, zones, working, limit and
+	      TCP limit area). *)
+	CONFIG_un_PROTOCOL_VERSION			: UINT := 1;
+	(* Version of this library (config manifest sLibraryVersion). Bump together with _FC_GetVersionSynConfig and the
+	   project version. *)
+	CONFIG_str_LIBRARY_VERSION			: STRING(15) := '1.0.0';
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

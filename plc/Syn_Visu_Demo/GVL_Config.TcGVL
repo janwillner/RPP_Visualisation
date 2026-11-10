@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <GVL Name="GVL_Config" Id="{9abaebe9-ead4-476b-8361-6c7d2ae57fae}">
+    <Declaration><![CDATA[(* The application's config manifest (ADR 0017): the gateway finds the parameter FBs of Syn_Config at
+   GVL_Config.stManifest. *)
+{attribute 'qualified_only'}
+VAR_GLOBAL
+	stManifest : SynConfig.ST_ConfigManifest;
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

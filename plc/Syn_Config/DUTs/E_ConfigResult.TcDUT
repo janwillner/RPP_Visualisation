@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="E_ConfigResult" Id="{c169dde0-ef21-4866-84c2-2c444f6a1f04}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_ConfigResult :
+(
+	(* What became of the last staged parameter set. Values are part of the gateway contract: append, never renumber. *)
+	NONE := 0,		// nothing staged since the PLC started
+	PENDING := 1,	// staged, waiting for the application to allow taking it over
+	APPLIED := 2,	// taken over (or reset to the program values)
+	REJECTED := 3	// not taken over; ST_ConfigStatus.sMessage says why
+) UINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

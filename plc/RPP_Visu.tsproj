@@ -18,6 +18,7 @@
 			<Project File="Syn_Visu.xti"/>
 			<Project File="Syn_Visu_Demo.xti"/>
 			<Project File="Syn_Visu_Test.xti"/>
+			<Project File="Syn_Config.xti"/>
 		</Plc>
 	</Project>
 </TcSmProject>

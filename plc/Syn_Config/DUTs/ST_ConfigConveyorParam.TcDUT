@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigConveyorParam" Id="{06004179-b5a7-4375-9cc2-980ba58b532d}">
+    <Declaration><![CDATA[TYPE ST_ConfigConveyorParam :
+STRUCT
+	(* A conveyor's parameter set: what the configurator writes, never the belt's length or width (hardware).
+	   Members as in SynVisu.ST_VisuConveyorConfig. *)
+	stPose : SynVisu.ST_VisuPose; // MCS, belt start on the belt surface; local +X = conveying direction
+	stOriginShift : SynVisu.ST_VisuPosition; // mm in the local frame from stPose: origin of the belt coordinates
+	nProductTypeCount : UINT;
+	aProductTypes : ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES - 1] OF SynVisu.ST_VisuProductType;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

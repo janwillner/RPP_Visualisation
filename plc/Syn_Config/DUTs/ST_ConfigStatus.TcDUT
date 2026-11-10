@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigStatus" Id="{2c4e1ea8-2488-4253-b62e-20738ed3c1de}">
+    <Declaration><![CDATA[TYPE ST_ConfigStatus :
+STRUCT
+	nActiveVersion : UDINT; // version of the active set; 0 while the program values apply
+	nHandledStageId : UDINT; // nStageId of the last staging handled (taken over, rejected or reset)
+	eResult : E_ConfigResult; // what became of it
+	sMessage : STRING(80); // why it was rejected; empty otherwise
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -1,0 +1,245 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_ConfigComponent" Id="{8144eabf-0414-48cf-a42e-ae33381db23d}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Base of every parameter FB (_FB_ConfigConveyor, _FB_ConfigDelta, ...): the config manifest entry and what is<br>
+done with a staging (ADR 0017). Not used directly.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 1.0.0 ¦ 2026-11-10 ¦ J.Willner ¦ First version: conveyor and Delta<br>
+****************************************************************************************************)
+{attribute 'reflection'}
+FUNCTION_BLOCK ABSTRACT _FB_ConfigComponent
+VAR
+	udn_ComponentId						: UDINT;	// [-] id of the Syn_Visu component, 0 = not registered
+	(* Device tree path of this instance, e.g. 'RPP_Visu.Syn_Visu_Demo.P_VisuDemoDelta.fb_InfeedParam', set by TwinCAT
+	   at initialisation. *)
+	{attribute 'instance-path'}
+	{attribute 'noinit'}
+	str_InstancePath					: STRING(255);
+	str_SymbolPath						: STRING(255);	// symbol path of vo_Config for the manifest, from str_InstancePath
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_ComponentType" Id="{8a3f1799-f713-48d9-9d25-0f2fde3438ec}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Type of the Syn_Visu component this FB parametrises. Overridden by every derived FB.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_ComponentType : SynVisu.E_VisuComponentType]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ComponentType := SynVisu.E_VisuComponentType.NONE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Handled" Id="{df9c043a-7a5a-4dad-9e20-eb3ec1b9aa9d}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Reports the staging as handled: taken over (or reset) with an empty vi_str_Rejection, else rejected for that<br>
+reason. Clears bStaged and bReset. TRUE when taken over.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_Handled : BOOL
+VAR_IN_OUT
+	vio_Staging							: ST_ConfigStaging;	// vo_Config.stStaging
+	vio_Status							: ST_ConfigStatus;	// vo_Config.stStatus
+END_VAR
+VAR_INPUT
+	vi_str_Rejection					: STRING(80);	// why the set is not taken over; '' = taken over
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Handled := vi_str_Rejection = '';
+vio_Status.nHandledStageId := vio_Staging.nStageId;
+IF m_Handled THEN
+	vio_Status.eResult := E_ConfigResult.APPLIED;
+	vio_Status.sMessage := '';
+ELSE
+	vio_Status.eResult := E_ConfigResult.REJECTED;
+	vio_Status.sMessage := vi_str_Rejection;
+END_IF
+vio_Staging.bStaged := FALSE;
+vio_Staging.bReset := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Id" Id="{5c696fcf-6ed9-4c83-b6ae-84f4a80853e6}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Id given to m_Register (the Syn_Visu component's id); 0 while not registered.<br>
+****************************************************************************************************)
+METHOD m_Id : UDINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Id := udn_ComponentId;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Register" Id="{dea46dbd-b229-471e-a63d-532074204272}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Adds this parameter FB to the config manifest under the id of the Syn_Visu component it parametrises.<br>
+Idempotent: call it every cycle. The symbol path the gateway reads comes from the instance's own path, as in<br>
+Syn_Visu (VISU_un_INSTANCE_PATH_SKIP).<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for vi_udn_Id = 0, an id already used by a different entry, or a full manifest.<br>
+****************************************************************************************************)
+METHOD m_Register : BOOL
+VAR_IN_OUT
+	vio_Manifest						: ST_ConfigManifest;	// GVL_Config.stManifest of the application
+END_VAR
+VAR_INPUT
+	vi_udn_Id							: UDINT;	// [-] id of the Syn_Visu component, e.g. fb_Infeed.m_Id()
+END_VAR
+VAR
+	e_TempType							: SynVisu.E_VisuComponentType;
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Register := FALSE;
+(* Always report the contract version of the library actually running, also after an online change. *)
+vio_Manifest.nProtocolVersion := CONFIG_GlobalConst.CONFIG_un_PROTOCOL_VERSION;
+vio_Manifest.sLibraryVersion := CONFIG_GlobalConst.CONFIG_str_LIBRARY_VERSION;
+e_TempType := m_ComponentType();
+IF vi_udn_Id = 0 OR e_TempType = SynVisu.E_VisuComponentType.NONE THEN
+	RETURN;
+END_IF
+IF str_SymbolPath = '' THEN
+	str_SymbolPath := m_SymbolPath();
+END_IF
+
+(* An existing entry with the same id must match exactly. *)
+un_TempIndex := 0;
+WHILE un_TempIndex < vio_Manifest.nCount AND un_TempIndex < CONFIG_GlobalConst_Param.CONFIG_un_MAX_MANIFEST_ENTRIES DO
+	IF vio_Manifest.aEntries[un_TempIndex].nId = vi_udn_Id THEN
+		m_Register := vio_Manifest.aEntries[un_TempIndex].eType = e_TempType
+					AND vio_Manifest.aEntries[un_TempIndex].sPath = str_SymbolPath;
+		IF m_Register THEN
+			udn_ComponentId := vi_udn_Id;
+		END_IF
+		RETURN;
+	END_IF
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE
+
+(* New entry. *)
+IF vio_Manifest.nCount >= CONFIG_GlobalConst_Param.CONFIG_un_MAX_MANIFEST_ENTRIES THEN
+	RETURN;
+END_IF
+vio_Manifest.aEntries[vio_Manifest.nCount].nId := vi_udn_Id;
+vio_Manifest.aEntries[vio_Manifest.nCount].eType := e_TempType;
+vio_Manifest.aEntries[vio_Manifest.nCount].sPath := str_SymbolPath;
+vio_Manifest.nCount := vio_Manifest.nCount + 1;
+udn_ComponentId := vi_udn_Id;
+m_Register := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Staging" Id="{d4ebcb18-f74c-43a9-91ce-e82b1791c11d}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+What to do with the staging this cycle: a reset at once; a staged set only while the application allows it<br>
+(else the status says PENDING) and only on the active version it is based on (else it is rejected here).<br>
+****************************************************************************************************)
+METHOD PROTECTED m_Staging : E_ConfigAction
+VAR_IN_OUT
+	vio_Staging							: ST_ConfigStaging;	// vo_Config.stStaging
+	vio_Status							: ST_ConfigStatus;	// vo_Config.stStatus
+END_VAR
+VAR_INPUT
+	vi_b_ApplyAllowed					: BOOL;	// [-] the application allows taking a set over now
+	vi_udn_ActiveVersion				: UDINT;	// [-] version of the active set, 0 = program values
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Staging := E_ConfigAction.NONE;
+IF vio_Staging.bReset THEN
+	m_Staging := E_ConfigAction.RESET;
+ELSIF vio_Staging.bStaged THEN
+	IF NOT vi_b_ApplyAllowed THEN
+		vio_Status.eResult := E_ConfigResult.PENDING;
+	ELSIF vio_Staging.nBaseVersion <> vi_udn_ActiveVersion THEN
+		m_Handled(vio_Staging := vio_Staging, vio_Status := vio_Status,
+			vi_str_Rejection := CONCAT(CONCAT('Based on version ', UDINT_TO_STRING(vio_Staging.nBaseVersion)),
+				CONCAT(', but version ', CONCAT(UDINT_TO_STRING(vi_udn_ActiveVersion), ' is active'))));
+	ELSE
+		m_Staging := E_ConfigAction.TAKE_OVER;
+	END_IF
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SymbolPath" Id="{64cb17b7-8cbf-432c-88d0-b28843c0335e}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Symbol path of this instance's vo_Config as the gateway reads it, from the instance path TwinCAT sets: the<br>
+first VISU_un_INSTANCE_PATH_SKIP segments (TwinCAT project, PLC project) are left out, '.vo_Config' is appended.<br>
+E.g. 'RPP_Visu.Syn_Visu_Demo.P_VisuDemoDelta.fb_InfeedParam' -> 'P_VisuDemoDelta.fb_InfeedParam.vo_Config'.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SymbolPath : STRING(255)
+VAR
+	un_TempRead							: UINT;	// [-] byte index in str_InstancePath
+	un_TempWrite						: UINT;	// [-] byte index in the result
+	un_TempDots							: UINT;	// [-] dots passed
+END_VAR
+VAR CONSTANT
+	un_MAX_INDEX						: UINT := 255;	// [-] last byte of a STRING(255), its terminating zero
+	by_DOT								: BYTE := 16#2E;	// '.'
+	str_SUFFIX							: STRING(15) := '.vo_Config';	// every parameter FB's contract structure
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[(* Skip the leading segments, up to and including the VISU_un_INSTANCE_PATH_SKIP-th dot. *)
+un_TempRead := 0;
+un_TempDots := 0;
+WHILE un_TempDots < SynVisu.VISU_GlobalConst_Param.VISU_un_INSTANCE_PATH_SKIP AND un_TempRead < un_MAX_INDEX
+	AND str_InstancePath[un_TempRead] <> 0
+DO
+	IF str_InstancePath[un_TempRead] = by_DOT THEN
+		un_TempDots := un_TempDots + 1;
+	END_IF
+	un_TempRead := un_TempRead + 1;
+END_WHILE
+IF un_TempDots < SynVisu.VISU_GlobalConst_Param.VISU_un_INSTANCE_PATH_SKIP THEN
+	un_TempRead := 0;
+END_IF
+
+(* The rest of the instance path, then the contract structure. *)
+un_TempWrite := 0;
+WHILE un_TempRead < un_MAX_INDEX AND str_InstancePath[un_TempRead] <> 0 AND un_TempWrite < un_MAX_INDEX DO
+	m_SymbolPath[un_TempWrite] := str_InstancePath[un_TempRead];
+	un_TempRead := un_TempRead + 1;
+	un_TempWrite := un_TempWrite + 1;
+END_WHILE
+un_TempRead := 0;
+WHILE str_SUFFIX[un_TempRead] <> 0 AND un_TempWrite < un_MAX_INDEX DO
+	m_SymbolPath[un_TempWrite] := str_SUFFIX[un_TempRead];
+	un_TempRead := un_TempRead + 1;
+	un_TempWrite := un_TempWrite + 1;
+END_WHILE
+m_SymbolPath[un_TempWrite] := 0;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

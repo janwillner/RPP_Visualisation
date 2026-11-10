@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <GVL Name="CONFIG_GlobalConst_Param" Id="{64ba3dd5-022f-4915-ac5b-7910775dd6fe}">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Library parameters of Syn_Config: array sizes of the interface structures. The lists of a parameter set have the
+sizes of Syn_Visu's (VISU_GlobalConst_Param), so every set fits the visualisation it is passed on to.<br>
+****************************************************************************************************)
+{attribute 'qualified_only'}
+VAR_GLOBAL CONSTANT
+	CONFIG_un_MAX_MANIFEST_ENTRIES		: UINT := 32;	// [-] parameter FBs in the config manifest
+END_VAR]]></Declaration>
+  </GVL>
+</TcPlcObject>

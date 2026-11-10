@@ -1,0 +1,217 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_ConfigConveyor" Id="{9047897c-0f7f-40cc-9040-9fed01cb8873}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Parameter set of one conveyor (ADR 0017): its pose, origin shift and product types, written by the configurator,<br>
+taken over when the application allows it. Typical cycle, before the Syn_Visu calls of the conveyor:<br>
+  fb_InfeedParam.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Infeed.m_Id());<br>
+  fb_InfeedParam.m_Cycle(vio_Default := InfeedDefault, vio_Set := stInfeedSet, vi_b_ApplyAllowed := b_Stopped);<br>
+  fb_Infeed.m_Configure(vi_Pose := fb_InfeedParam.m_Pose(), vi_lr_Length := 3000, vi_lr_Width := 400);<br>
+  fb_InfeedParam.m_PassOn(vio_Visu := fb_Infeed);<br>
+stInfeedSet is the application's VAR PERSISTENT ST_ConfigConveyorSet; InfeedDefault its program values.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+vo_Config is the contract structure the gateway reads and writes at the path in the config manifest.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 1.0.0 ¦ 2026-11-10 ¦ J.Willner ¦ First version<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_ConfigConveyor EXTENDS _FB_ConfigComponent
+VAR_OUTPUT
+	vo_Config							: ST_ConfigConveyor;	// contract structure of the gateway
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_Active" Id="{71d7e490-8ffd-4edb-86a4-a63c8201c547}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+All effective values (origin shift, product types, ...), for the application's own logic.<br>
+****************************************************************************************************)
+METHOD m_Active : ST_ConfigConveyorParam]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Active := vo_Config.stActive;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_ComponentType" Id="{eea44a1d-b5d5-4fb2-8b4b-cac09786007c}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A conveyor.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_ComponentType : SynVisu.E_VisuComponentType]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ComponentType := SynVisu.E_VisuComponentType.CONVEYOR;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Cycle" Id="{b95e0e3c-883d-4bb1-949e-f7a899517a19}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Every cycle: handles a staged set or a reset (a set only while vi_b_ApplyAllowed), keeps the active set in<br>
+vio_Set and gives the effective values in vo_Config.stActive: the active set while one is valid, else the<br>
+program values vio_Default.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+TRUE in the cycle a set was taken over or reset.<br>
+****************************************************************************************************)
+METHOD m_Cycle : BOOL
+VAR_IN_OUT CONSTANT
+	vio_Default							: ST_ConfigConveyorParam;	// the application's program values
+END_VAR
+VAR_IN_OUT
+	vio_Set								: ST_ConfigConveyorSet;	// the application's VAR PERSISTENT active set
+END_VAR
+VAR_INPUT
+	vi_b_ApplyAllowed					: BOOL;	// [-] a staged set may be taken over now, e.g. while the machine stands
+END_VAR
+VAR
+	str_TempRejection					: STRING(80);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Cycle := FALSE;
+CASE m_Staging(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_b_ApplyAllowed := vi_b_ApplyAllowed,
+	vi_udn_ActiveVersion := SEL(vio_Set.bValid, 0, vio_Set.nVersion)) OF
+	E_ConfigAction.RESET:
+		vio_Set.bValid := FALSE;
+		m_Handled(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_str_Rejection := '');
+		m_Cycle := TRUE;
+	E_ConfigAction.TAKE_OVER:
+		str_TempRejection := m_Invalid(vio_Param := vo_Config.stStaged);
+		IF str_TempRejection = '' THEN
+			vio_Set.nLastVersion := vio_Set.nLastVersion + 1;
+			vio_Set.nVersion := vio_Set.nLastVersion;
+			vio_Set.stParam := vo_Config.stStaged;
+			vio_Set.bValid := TRUE;
+			m_Cycle := TRUE;
+		END_IF
+		m_Handled(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_str_Rejection := str_TempRejection);
+END_CASE
+
+
+(****************************************************************************************************
+EFFECTIVE VALUES
+****************************************************************************************************)
+IF vio_Set.bValid THEN
+	vo_Config.stActive := vio_Set.stParam;
+	vo_Config.stStatus.nActiveVersion := vio_Set.nVersion;
+ELSE
+	vo_Config.stActive := vio_Default;
+	vo_Config.stStatus.nActiveVersion := 0;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Invalid" Id="{eff486d8-462d-4d6e-b70b-5fd052067ef0}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Why a staged set cannot be taken over; '' when it can: more product types than the list holds, a product type<br>
+without a number or a number used twice.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Invalid : STRING(80)
+VAR_IN_OUT CONSTANT
+	vio_Param							: ST_ConfigConveyorParam;	// the staged set
+END_VAR
+VAR
+	un_TempIndex						: UINT;
+	un_TempOther						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Invalid := '';
+IF vio_Param.nProductTypeCount > SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES THEN
+	m_Invalid := CONCAT('More than ', CONCAT(UINT_TO_STRING(SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES), ' product types'));
+	RETURN;
+END_IF
+un_TempIndex := 0;
+WHILE un_TempIndex < vio_Param.nProductTypeCount DO
+	IF vio_Param.aProductTypes[un_TempIndex].nId = 0 THEN
+		m_Invalid := 'A product type without a number';
+		RETURN;
+	END_IF
+	un_TempOther := 0;
+	WHILE un_TempOther < un_TempIndex DO
+		IF vio_Param.aProductTypes[un_TempOther].nId = vio_Param.aProductTypes[un_TempIndex].nId THEN
+			m_Invalid := CONCAT('Product type ', CONCAT(UDINT_TO_STRING(vio_Param.aProductTypes[un_TempIndex].nId), ' is defined twice'));
+			RETURN;
+		END_IF
+		un_TempOther := un_TempOther + 1;
+	END_WHILE
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_PassOn" Id="{14c7609c-0128-4ce9-a05d-914ede3890ee}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Passes the effective origin shift and product types on to the conveyor's Syn_Visu FB, so the visualisation shows<br>
+what the machine uses. The pose goes with the application's own m_Configure call (with the belt's length and<br>
+width, hardware): vi_Pose := m_Pose(). Call it after m_Cycle, every cycle; Syn_Visu's config version only<br>
+changes when a value does.<br>
+*****************************************************************************************************<br>
+LIMITS:<br>
+Syn_Visu cannot remove a product type: one the set no longer has stays in the visualisation until the<br>
+application restarts (the configurator warns of the difference).<br>
+****************************************************************************************************)
+METHOD m_PassOn : BOOL
+VAR_IN_OUT
+	vio_Visu							: SynVisu._FB_VisuConveyor;	// the conveyor's Syn_Visu FB
+END_VAR
+VAR
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_PassOn := TRUE;
+vio_Visu.m_SetOriginShift(vi_lr_X := vo_Config.stActive.stOriginShift.fX, vi_lr_Y := vo_Config.stActive.stOriginShift.fY,
+	vi_lr_Z := vo_Config.stActive.stOriginShift.fZ);
+un_TempIndex := 0;
+WHILE un_TempIndex < vo_Config.stActive.nProductTypeCount
+	AND un_TempIndex < SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES
+DO
+	vio_Visu.m_SetProductType(vi_udn_Id := vo_Config.stActive.aProductTypes[un_TempIndex].nId,
+		vi_lr_Length := vo_Config.stActive.aProductTypes[un_TempIndex].fLength,
+		vi_lr_Width := vo_Config.stActive.aProductTypes[un_TempIndex].fWidth,
+		vi_lr_Height := vo_Config.stActive.aProductTypes[un_TempIndex].fHeight,
+		vi_e_Shape := vo_Config.stActive.aProductTypes[un_TempIndex].eShape,
+		vi_lr_CornerRadius := vo_Config.stActive.aProductTypes[un_TempIndex].fCornerRadius);
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Pose" Id="{276d3011-cdaa-46c9-956b-b4e784020cb2}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Effective pose of the belt start (MCS), for the application's logic and its Syn_Visu m_Configure call.<br>
+****************************************************************************************************)
+METHOD m_Pose : SynVisu.ST_VisuPose]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Pose := vo_Config.stActive.stPose;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

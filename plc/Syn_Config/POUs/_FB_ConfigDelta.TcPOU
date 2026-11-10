@@ -1,0 +1,272 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_ConfigDelta" Id="{81c755fc-7215-4b2b-96a4-0e696e3e9cd2}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Parameter set of one Delta robot (ADR 0017): its pose, origin shift, zones, working area, limit area and TCP<br>
+limit area, written by the configurator, taken over when the application allows it. Typical cycle:<br>
+  fb_Delta1Param.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Delta1.m_Id());<br>
+  fb_Delta1Param.m_Cycle(vio_Default := Delta1Default, vio_Set := stDelta1Set, vi_b_ApplyAllowed := b_Stopped);<br>
+  fb_Delta1.m_Configure(vi_Pose := fb_Delta1Param.m_Pose(), vi_lr_BaseRadius := 200, ...);<br>
+  fb_Delta1Param.m_PassOn(vio_Visu := fb_Delta1);<br>
+The application's pick logic takes its zones from m_Zone / m_Active, not from its own constants.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+vo_Config is the contract structure the gateway reads and writes at the path in the config manifest.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 1.0.0 ¦ 2026-11-10 ¦ J.Willner ¦ First version<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_ConfigDelta EXTENDS _FB_ConfigComponent
+VAR_OUTPUT
+	vo_Config							: ST_ConfigDelta;	// contract structure of the gateway
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_Active" Id="{892799c0-9099-4e51-ae2c-653fc97e1327}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+All effective values (zones, working and limit areas, ...), for the application's own logic.<br>
+****************************************************************************************************)
+METHOD m_Active : ST_ConfigDeltaParam]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Active := vo_Config.stActive;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_ComponentType" Id="{80d968cf-0c4c-48f3-a21c-738e59b951fc}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A Delta robot.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_ComponentType : SynVisu.E_VisuComponentType]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ComponentType := SynVisu.E_VisuComponentType.DELTA;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Cycle" Id="{55609248-b51c-4028-a529-7706d718eaa7}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Every cycle: handles a staged set or a reset (a set only while vi_b_ApplyAllowed), keeps the active set in<br>
+vio_Set and gives the effective values in vo_Config.stActive: the active set while one is valid, else the<br>
+program values vio_Default.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+TRUE in the cycle a set was taken over or reset.<br>
+****************************************************************************************************)
+METHOD m_Cycle : BOOL
+VAR_IN_OUT CONSTANT
+	vio_Default							: ST_ConfigDeltaParam;	// the application's program values
+END_VAR
+VAR_IN_OUT
+	vio_Set								: ST_ConfigDeltaSet;	// the application's VAR PERSISTENT active set
+END_VAR
+VAR_INPUT
+	vi_b_ApplyAllowed					: BOOL;	// [-] a staged set may be taken over now, e.g. while the machine stands
+END_VAR
+VAR
+	str_TempRejection					: STRING(80);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Cycle := FALSE;
+CASE m_Staging(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_b_ApplyAllowed := vi_b_ApplyAllowed,
+	vi_udn_ActiveVersion := SEL(vio_Set.bValid, 0, vio_Set.nVersion)) OF
+	E_ConfigAction.RESET:
+		vio_Set.bValid := FALSE;
+		m_Handled(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_str_Rejection := '');
+		m_Cycle := TRUE;
+	E_ConfigAction.TAKE_OVER:
+		str_TempRejection := m_Invalid(vio_Param := vo_Config.stStaged);
+		IF str_TempRejection = '' THEN
+			vio_Set.nLastVersion := vio_Set.nLastVersion + 1;
+			vio_Set.nVersion := vio_Set.nLastVersion;
+			vio_Set.stParam := vo_Config.stStaged;
+			vio_Set.bValid := TRUE;
+			m_Cycle := TRUE;
+		END_IF
+		m_Handled(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_str_Rejection := str_TempRejection);
+END_CASE
+
+
+(****************************************************************************************************
+EFFECTIVE VALUES
+****************************************************************************************************)
+IF vio_Set.bValid THEN
+	vo_Config.stActive := vio_Set.stParam;
+	vo_Config.stStatus.nActiveVersion := vio_Set.nVersion;
+ELSE
+	vo_Config.stActive := vio_Default;
+	vo_Config.stStatus.nActiveVersion := 0;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Invalid" Id="{3ba3e387-b7e3-4abe-a51a-555520fb57d1}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Why a staged set cannot be taken over; '' when it can: more zones than the list holds, or a zone on no<br>
+conveyor (id 0).<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Invalid : STRING(80)
+VAR_IN_OUT CONSTANT
+	vio_Param							: ST_ConfigDeltaParam;	// the staged set
+END_VAR
+VAR
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Invalid := '';
+IF vio_Param.nZoneCount > SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES THEN
+	m_Invalid := CONCAT('More than ', CONCAT(UINT_TO_STRING(SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES), ' zones'));
+	RETURN;
+END_IF
+un_TempIndex := 0;
+WHILE un_TempIndex < vio_Param.nZoneCount DO
+	IF vio_Param.aZones[un_TempIndex].nConveyorId = 0 THEN
+		m_Invalid := CONCAT('Zone ', CONCAT(UINT_TO_STRING(un_TempIndex + 1), ' lies on no conveyor'));
+		RETURN;
+	END_IF
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_PassOn" Id="{259edc68-b5dc-464d-aec3-df8d64817c9e}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Passes the effective origin shift, working area, limit areas and zones on to the Delta's Syn_Visu FB, so the<br>
+visualisation shows what the machine uses. The pose goes with the application's own m_Configure call (with the<br>
+arm geometry, hardware): vi_Pose := m_Pose(). Call it after m_Cycle, every cycle; Syn_Visu's config version only<br>
+changes when a value does (the zones are cleared only when the set has fewer than the visualisation).<br>
+****************************************************************************************************)
+METHOD m_PassOn : BOOL
+VAR_IN_OUT
+	vio_Visu							: SynVisu._FB_VisuDelta;	// the Delta's Syn_Visu FB
+END_VAR
+VAR
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_PassOn := TRUE;
+vio_Visu.m_SetOriginShift(vi_lr_X := vo_Config.stActive.stOriginShift.fX, vi_lr_Y := vo_Config.stActive.stOriginShift.fY,
+	vi_lr_Z := vo_Config.stActive.stOriginShift.fZ);
+vio_Visu.m_SetWorkingArea(vi_lr_Radius := vo_Config.stActive.stWorkingArea.fRadius,
+	vi_lr_ZMin := vo_Config.stActive.stWorkingArea.fZMin, vi_lr_ZMax := vo_Config.stActive.stWorkingArea.fZMax,
+	vi_lr_ConeHeight := vo_Config.stActive.stWorkingArea.fConeHeight,
+	vi_lr_ConeBottomRadius := vo_Config.stActive.stWorkingArea.fConeBottomRadius);
+
+
+(****************************************************************************************************
+LIMIT AREAS
+****************************************************************************************************)
+IF vo_Config.stActive.stLimitArea.bActive THEN
+	vio_Visu.m_SetLimitArea(vi_lr_XMin := vo_Config.stActive.stLimitArea.fXMin, vi_lr_XMax := vo_Config.stActive.stLimitArea.fXMax,
+		vi_lr_YMin := vo_Config.stActive.stLimitArea.fYMin, vi_lr_YMax := vo_Config.stActive.stLimitArea.fYMax,
+		vi_lr_ZMin := vo_Config.stActive.stLimitArea.fZMin, vi_lr_ZMax := vo_Config.stActive.stLimitArea.fZMax);
+ELSE
+	vio_Visu.m_ClearLimitArea();
+END_IF
+IF vo_Config.stActive.stTcpLimitArea.bActive THEN
+	vio_Visu.m_SetTcpLimitArea(vi_lr_XMin := vo_Config.stActive.stTcpLimitArea.fXMin,
+		vi_lr_XMax := vo_Config.stActive.stTcpLimitArea.fXMax, vi_lr_YMin := vo_Config.stActive.stTcpLimitArea.fYMin,
+		vi_lr_YMax := vo_Config.stActive.stTcpLimitArea.fYMax, vi_lr_ZMin := vo_Config.stActive.stTcpLimitArea.fZMin,
+		vi_lr_ZMax := vo_Config.stActive.stTcpLimitArea.fZMax);
+ELSE
+	vio_Visu.m_ClearTcpLimitArea();
+END_IF
+
+
+(****************************************************************************************************
+ZONES
+****************************************************************************************************)
+(* Syn_Visu's zone count only grows: cleared first when the set has fewer zones. *)
+IF vio_Visu.vo_Visu.stConfig.nZoneCount > vo_Config.stActive.nZoneCount THEN
+	vio_Visu.m_ClearZones();
+END_IF
+un_TempIndex := 0;
+WHILE un_TempIndex < vo_Config.stActive.nZoneCount AND un_TempIndex < SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES DO
+	vio_Visu.m_SetZone(vi_un_Zone := un_TempIndex + 1, vi_udn_ConveyorId := vo_Config.stActive.aZones[un_TempIndex].nConveyorId,
+		vi_lr_Start := vo_Config.stActive.aZones[un_TempIndex].fStart, vi_lr_End := vo_Config.stActive.aZones[un_TempIndex].fEnd,
+		vi_lr_AllocationOffset := vo_Config.stActive.aZones[un_TempIndex].fAllocationOffset,
+		vi_lr_CcsOffset := vo_Config.stActive.aZones[un_TempIndex].fCcsOffset,
+		vi_lr_StartY := vo_Config.stActive.aZones[un_TempIndex].fStartY, vi_lr_EndY := vo_Config.stActive.aZones[un_TempIndex].fEndY);
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Pose" Id="{3bfb4653-d713-4059-847e-4083afeb0e49}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Effective pose of the base centre (MCS), for the application's logic and its Syn_Visu m_Configure call.<br>
+****************************************************************************************************)
+METHOD m_Pose : SynVisu.ST_VisuPose]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Pose := vo_Config.stActive.stPose;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Zone" Id="{0fd56679-9703-4d72-a159-1df3aeda8a30}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Effective zone vi_un_Zone (1-based, as in Syn_Visu's m_SetZone), for the application's pick and place logic.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+A zone with nConveyorId = 0 for a number outside 1..m_ZoneCount().<br>
+****************************************************************************************************)
+METHOD m_Zone : SynVisu.ST_VisuZone
+VAR_INPUT
+	vi_un_Zone							: UINT;	// [-] 1-based
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF vi_un_Zone >= 1 AND vi_un_Zone <= vo_Config.stActive.nZoneCount
+	AND vi_un_Zone <= SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES
+THEN
+	m_Zone := vo_Config.stActive.aZones[vi_un_Zone - 1];
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_ZoneCount" Id="{433ca3c7-f116-4ad7-90e8-496147f9c07d}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Number of effective zones.<br>
+****************************************************************************************************)
+METHOD m_ZoneCount : UINT]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ZoneCount := vo_Config.stActive.nZoneCount;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>
