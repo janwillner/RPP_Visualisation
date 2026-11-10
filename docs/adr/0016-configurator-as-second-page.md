@@ -33,6 +33,12 @@ the draft, the selection, undo and redo (a drag in the 3D view is one step), the
 - The palette offers conveyor and Delta robot first; their hardware geometry (arm lengths and the like) is assumed
   until a PLC reports its own. Zones, product types, grippers, the other component types, importing from a PLC and
   writing to it follow in their own steps.
+- The handles that edit the draft in 3D (moving a component, a zone's start, end, CCS and sides) are drawn by the
+  configurator inside `SceneView`, not as `SCENE_PARTS`: they exist only for the selected component, follow the draft
+  rather than a PLC state and would only burden the visualisation's scene model. A product type's preview is an
+  ordinary product of a state the draft makes up, so the kits draw it.
+- Zone warnings follow one rule in `machine-facts.ts` (`zoneWarnings`) for the visualisation's scene and the
+  configurator's problems.
 - Writing a draft to a PLC needs a writable parameter set in Syn_Visu that the application takes over itself; that
   decision gets its own ADR.
 - Unknown paths still fall back to the visualisation; a path naming a page of the built app (`/configurator`) is

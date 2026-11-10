@@ -11,6 +11,7 @@ import {
   type Product,
   type TrackPoint,
   type XtsGantryConfig,
+  type Zone,
 } from "@rpp/protocol";
 import type { SourceInfo } from "./sources";
 import {
@@ -30,6 +31,37 @@ import {
  * Rules about the machine that the 3D scene, the timeline, the product history, the metrics and the inspector all
  * follow, so that they agree: how a fault reads, where a product is and when it is missed, what a component is called.
  */
+
+/** Whether a belt coordinate (mm from the conveyor's shifted origin) lies between the belt start and end. */
+export function onBelt(belt: ConveyorConfig, beltCoordinate: number): boolean {
+  const fromStart = belt.originShift.x + beltCoordinate;
+  return fromStart >= 0 && fromStart <= belt.length;
+}
+
+/**
+ * A zone's two sides across its belt in belt coordinates (mm, Y of the conveyor's coordinate system): the belt edges
+ * when it spans the whole width (`startY = endY`), else its bounds, also where they reach past the belt's sides.
+ */
+export function zoneSides(zone: Zone, belt: ConveyorConfig): { left: number; right: number } {
+  if (zone.startY === zone.endY) return { left: belt.width / 2 - belt.originShift.y, right: -belt.width / 2 - belt.originShift.y };
+  return { left: Math.max(zone.startY, zone.endY), right: Math.min(zone.startY, zone.endY) };
+}
+
+/**
+ * What is wrong with a zone of `owner` on its belt: an end past the belt start or end, or its CCS past them. The CCS
+ * may lie outside its zone.
+ */
+export function zoneWarnings(owner: string, zone: Zone, belt: ConveyorConfig): string[] {
+  const warnings: string[] = [];
+  const beltRange = `${-belt.originShift.x} to ${belt.length - belt.originShift.x} mm`;
+  if (!onBelt(belt, zone.start) || !onBelt(belt, zone.end)) {
+    warnings.push(`${owner}: zone on ${belt.name} (${zone.start} to ${zone.end} mm) reaches past the belt (${beltRange})`);
+  }
+  if (!onBelt(belt, zone.ccsOffset)) {
+    warnings.push(`${owner}: CCS of the zone on ${belt.name} (${zone.ccsOffset} mm) lies outside the belt (${beltRange})`);
+  }
+  return warnings;
+}
 
 /** The message to show for a fault; the PLC may leave it empty. */
 export function faultText(fault: Fault | null | undefined): string | null {
@@ -57,6 +89,7 @@ export function componentName(source: SourceInfo | undefined, id: number, fallba
 
 /** One entry of a list in a state, by the list's name: "movers" → "mover", "modules" → "module". */
 export function singular(list: string): string {
+  if (list.endsWith("ies")) return `${list.slice(0, -3)}y`;
   return list.endsWith("s") ? list.slice(0, -1) : list;
 }
 

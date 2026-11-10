@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
-import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, PROTOCOL_VERSION, emptyDraft, type ConfigMessage, type Draft } from "@rpp/protocol";
-import type { ComponentKey, SceneSource } from "../scene/scene-model";
+import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, PROTOCOL_VERSION, emptyDraft, type ConfigMessage, type ConveyorConfig, type ConveyorState, type Draft, type ProductType, type StateMessage, type Zone } from "@rpp/protocol";
+import { componentKey, type ComponentKey, type SceneSource } from "../scene/scene-model";
+import { zoneSides } from "../machine-facts";
+import { beltRange, mcsToBelt } from "./belt-coordinates";
 import { defaultComponent, PALETTE_LABELS, type PaletteType } from "./component-defaults";
 import { applyEdit, keyOf, type Edit } from "./edits";
 import { validateDraft, type Issue } from "./validation";
@@ -15,6 +17,12 @@ export const DRAFT_SOURCE = "draft";
 
 /** Positions are placed on this grid, mm. */
 export const GRID_MM = 10;
+
+/** An edge of a zone that can be dragged: along the belt its start, end and CCS, across it its two sides. */
+export type ZoneEdge = "start" | "end" | "ccs" | "left" | "right";
+
+/** Length of a new zone along its belt, mm. */
+const ZONE_LENGTH = 500;
 
 /** Extension of a saved draft file. */
 export const DRAFT_FILE_EXTENSION = ".rpp-draft.json";
@@ -98,6 +106,66 @@ export class Configurator {
     this.edit({ kind: "set", key, path, value });
     // A new id or source is a new key: the selection follows the component.
     if (selection === key) this.select(keyOf(this.snapshot.draft.components[index]!));
+  }
+
+  /**
+   * Adds a zone to a robot, detector or station on a conveyor of the same source: the middle 500 mm of the belt (all
+   * of it when shorter), across the whole width, its CCS at the zone start.
+   */
+  addZone(ownerKey: ComponentKey, conveyorKey: ComponentKey): void {
+    const owner = this.component(ownerKey);
+    const belt = this.component(conveyorKey);
+    if (!owner || !("zones" in owner) || belt?.type !== "conveyor") return;
+    if (belt.sourceId !== owner.sourceId) {
+      this.set_({ notice: `A zone lies on a conveyor of the same PLC: ${belt.name} belongs to another source.` });
+      return;
+    }
+    const range = beltRange(belt);
+    const middle = (range.start + range.end) / 2;
+    const half = Math.min(ZONE_LENGTH, belt.length) / 2;
+    // On the grid, but never past the belt, whose ends need not be on the grid.
+    const onBelt = (v: number) => Math.min(range.end, Math.max(range.start, snap(v)));
+    const zone: Zone = {
+      conveyorId: belt.id,
+      start: onBelt(middle - half),
+      end: onBelt(middle + half),
+      allocationOffset: 0,
+      ccsOffset: onBelt(middle - half),
+      startY: 0,
+      endY: 0,
+    };
+    this.set(ownerKey, ["zones"], [...owner.zones, zone]);
+  }
+
+  /**
+   * Moves one edge of a zone to the point of the 3D view over its belt (MCS mm), on the grid in belt coordinates:
+   * its start, end or CCS along the belt, or its left (+Y) or right side across it. A zone over the whole width gets
+   * its other side at the belt edge.
+   */
+  dragZone(ownerKey: ComponentKey, index: number, edge: ZoneEdge, at: { x: number; y: number; z?: number }): void {
+    const owner = this.component(ownerKey);
+    const zone = owner && "zones" in owner ? owner.zones[index] : undefined;
+    const belt = zone && this.conveyor(owner!.sourceId, zone.conveyorId);
+    if (!zone || !belt) return;
+    const point = mcsToBelt(belt, at);
+    const x = snap(point.x);
+    const y = snap(point.y);
+    const lane = zoneSides(zone, belt);
+    // A side stays at least one grid step beside the other, so the lane neither collapses nor flips over.
+    const changes: Partial<Zone> =
+      edge === "start" ? { start: x }
+      : edge === "end" ? { end: x }
+      : edge === "ccs" ? { ccsOffset: x }
+      : edge === "left" ? { startY: Math.max(y, lane.right + GRID_MM), endY: lane.right }
+      : { startY: lane.left, endY: Math.min(y, lane.left - GRID_MM) };
+    this.set(ownerKey, ["zones", String(index)], { ...zone, ...changes });
+  }
+
+  /** Removes the entry at `index` of one of a component's lists, e.g. a zone or a product type. */
+  removeListEntry(key: ComponentKey, list: string, index: number): void {
+    const entries = (this.component(key) as Record<string, unknown> | undefined)?.[list];
+    if (!Array.isArray(entries) || index < 0 || index >= entries.length) return;
+    this.set(key, [list], entries.filter((_, i) => i !== index));
   }
 
   remove(key: ComponentKey): void {
@@ -222,19 +290,36 @@ export class Configurator {
       }
       config.components.push(c);
     }
-    const sources = [...bySource.values()].map((config) => ({
-      sourceId: config.sourceId,
-      config,
-      snapshots: [],
-      renderTime: 0,
-      online: true,
-    }));
+    const sources = [...bySource.values()].map((config) => {
+      // The only state of a draft: a preview product of each type on its conveyor.
+      const previews = config.components.flatMap((c) => (c.type === "conveyor" && c.productTypes.length > 0 ? [previewState(c)] : []));
+      const snapshots: StateMessage[] =
+        previews.length === 0
+          ? []
+          : [{ kind: "state", sourceId: config.sourceId, configVersion: 1, timestamp: "0", tRel: 0, components: previews }];
+      return { sourceId: config.sourceId, config, snapshots, renderTime: 0, online: true };
+    });
     this.framed = { draft, sources };
     return sources;
   }
 
+  /** Adds a product type to a conveyor: the next free number, a 120 × 80 × 40 mm box to start from. */
+  addProductType(conveyorKey: ComponentKey): void {
+    const belt = this.component(conveyorKey);
+    if (belt?.type !== "conveyor") return;
+    const id = 1 + Math.max(0, ...belt.productTypes.map((t) => t.id));
+    const type: ProductType = { id, length: 120, width: 80, height: 40, shape: "box", cornerRadius: 0 };
+    this.set(conveyorKey, ["productTypes"], [...belt.productTypes, type]);
+  }
+
   private component(key: ComponentKey) {
     return this.snapshot.draft.components.find((c) => keyOf(c) === key);
+  }
+
+  /** The conveyor a zone of a component in `sourceId` refers to by its manifest id. */
+  private conveyor(sourceId: string, id: number) {
+    const c = this.component(componentKey(sourceId, id));
+    return c?.type === "conveyor" ? c : undefined;
   }
 
   private replaceAllowed(): boolean {
@@ -282,4 +367,36 @@ export class Configurator {
 /** The configurator's snapshot for a React component, re-rendered on every change. */
 export function useConfigurator(configurator: Configurator): ConfiguratorSnapshot {
   return useSyncExternalStore(configurator.subscribe, configurator.getSnapshot);
+}
+
+/** Gap between the preview products on a belt, and before the first one, mm. */
+const PREVIEW_GAP = 100;
+
+/**
+ * A conveyor's state in the draft: one product of each of its types, lying on the belt centre one after the other
+ * from the belt start, PREVIEW_GAP apart.
+ */
+function previewState(belt: ConveyorConfig): ConveyorState {
+  let fromStart = 0;
+  const products: ConveyorState["products"] = [];
+  for (const [i, t] of belt.productTypes.entries()) {
+    // Only what fits: a product past the belt end would show as missed.
+    if (fromStart + PREVIEW_GAP + t.length > belt.length) break;
+    fromStart += PREVIEW_GAP + t.length / 2;
+    const x = fromStart - belt.originShift.x;
+    fromStart += t.length / 2;
+    products.push({
+      id: i + 1,
+      // In the conveyor's coordinate system, whose origin may lie above or below the belt surface.
+      latchPose: { x, y: 0 - belt.originShift.y, z: 0 - belt.originShift.z, rz: 0 },
+      latchBeltPosition: 0,
+      state: "detected" as const,
+      previousState: "detected" as const,
+      lastClientId: 0,
+      moverId: 0,
+      fingerId: 0,
+      productType: t.id,
+    });
+  }
+  return { type: "conveyor", id: belt.id, timestamp: "0", beltPosition: 0, products, fault: null };
 }

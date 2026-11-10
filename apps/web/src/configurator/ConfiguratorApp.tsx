@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { COMPONENT_SCHEMAS, type ComponentConfig } from "@rpp/protocol";
+import { COMPONENT_SCHEMAS, type ComponentConfig, type ConveyorConfig, type Draft } from "@rpp/protocol";
 import type { SceneFeed } from "../connection";
 import { componentKey, type MachineScene } from "../scene/scene-model";
 import { SceneView, type CameraPreset, type Layers, type Selection } from "../scene/SceneView";
 import type { SourceInfo } from "../sources";
 import { download } from "../download";
 import { APP_VERSION } from "../version";
+import { ViewControls } from "../ViewControls";
 import { PALETTE_LABELS, PALETTE_TYPES, placementHeight, type PaletteType } from "./component-defaults";
 import { Configurator, DRAFT_FILE_EXTENSION, useConfigurator } from "./configurator";
 import { EditControls, type FloorPicker } from "./EditControls";
 import { keyOf } from "./edits";
-import { propertyGroups, type PropertyField } from "./property-fields";
+import { properties, type PropertyField, type PropertyGroup } from "./property-fields";
 
 /** Every overlay of the draft is shown: zones, areas and markers are what is being configured. */
 const LAYERS: Layers = { workingAreas: true, limitAreas: true, zones: true, tcpMarkers: true, faultLabels: true };
@@ -44,7 +45,7 @@ export function ConfiguratorApp() {
   const floorRef = useRef<FloorPicker | undefined>(undefined);
   const handlePressed = useRef(false);
   const viewportRef = useRef<HTMLElement>(null);
-  const [cameraRequest] = useState<{ action: CameraPreset; seq: number }>({ action: "iso", seq: 0 });
+  const [cameraRequest, setCameraRequest] = useState<{ action: CameraPreset; seq: number }>({ action: "iso", seq: 0 });
   const fileInput = useRef<HTMLInputElement>(null);
 
   // The 3D view reads the draft like a live machine: configuration only, no state.
@@ -238,6 +239,7 @@ export function ConfiguratorApp() {
             pressedRef={handlePressed}
           />
         </SceneView>
+        <ViewControls onCamera={(action) => setCameraRequest((r) => ({ action, seq: r.seq + 1 }))} />
         {snapshot.notice && (
           <div className="recording-notice" role="alert">
             {snapshot.notice} <button onClick={() => configurator.dismissNotice()}>OK</button>
@@ -247,7 +249,9 @@ export function ConfiguratorApp() {
 
       <aside className="panel right">
         {selected ? (
-          <Properties component={selected} configurator={configurator} />
+          // Keyed by the component: what a panel holds for one component (a conveyor chosen for a new zone) never
+          // carries over to the next.
+          <Properties key={keyOf(selected)} component={selected} draft={draft} configurator={configurator} />
         ) : (
           <p className="muted">Select a component to edit its values.</p>
         )}
@@ -262,9 +266,20 @@ export function ConfiguratorApp() {
 }
 
 /** The selected component's values, from its type's schema; every change is one step for undo. */
-function Properties({ component, configurator }: { component: ComponentConfig; configurator: Configurator }) {
+function Properties(props: { component: ComponentConfig; draft: Draft; configurator: Configurator }) {
+  const { component, configurator } = props;
   const key = keyOf(component);
   const description = (COMPONENT_SCHEMAS[component.type].config as { description?: string }).description;
+  const { groups, lists } = properties(component);
+  // A zone lies on a conveyor of the component's own source.
+  const conveyors = props.draft.components.filter(
+    (c): c is ConveyorConfig => c.type === "conveyor" && c.sourceId === component.sourceId,
+  );
+  const commit = (path: string[]) => (value: unknown) => configurator.set(key, path, value);
+  const fieldsOf = (group: PropertyGroup) =>
+    group.fields.map((field) => (
+      <Field key={field.path.join(".")} field={field} conveyors={conveyors} onCommit={commit(field.path)} />
+    ));
   return (
     <div className="properties">
       <h3 title={description}>{component.name}</h3>
@@ -279,20 +294,86 @@ function Properties({ component, configurator }: { component: ComponentConfig; c
           Remove
         </button>
       </div>
-      {propertyGroups(component).map((group) => (
-        <fieldset key={group.title || "component"}>
-          {group.title && <legend>{group.title}</legend>}
-          {group.fields.map((field) => (
-            <Field key={field.path.join(".")} field={field} onCommit={(value) => configurator.set(key, field.path, value)} />
-          ))}
-        </fieldset>
+      {groups
+        .filter((g) => !g.entry)
+        .map((group) => (
+          <fieldset key={group.title || "component"}>
+            {group.title && <legend>{group.title}</legend>}
+            {fieldsOf(group)}
+          </fieldset>
+        ))}
+      {lists.map((list) => (
+        <section key={list.name} className="property-list" aria-label={list.title}>
+          <div className="property-list-head" title={list.hint}>
+            <h4>{list.title}</h4>
+            <AddEntry list={list.name} component={component} conveyors={conveyors} configurator={configurator} />
+          </div>
+          {groups
+            .filter((g) => g.entry?.list === list.name)
+            .map((group) => (
+              <fieldset key={group.title} aria-label={group.title}>
+                <legend>
+                  {group.title}{" "}
+                  <button
+                    className="link-button"
+                    title={`Remove ${group.title.toLowerCase()}`}
+                    onClick={() => configurator.removeListEntry(key, list.name, group.entry!.index)}
+                  >
+                    Remove
+                  </button>
+                </legend>
+                {fieldsOf(group)}
+              </fieldset>
+            ))}
+        </section>
       ))}
     </div>
   );
 }
 
-function Field({ field, onCommit }: { field: PropertyField; onCommit: (value: unknown) => void }) {
+/** Adds an entry to a list the configurator knows how to start: a zone on a chosen conveyor, a product type. */
+function AddEntry(props: { list: string; component: ComponentConfig; conveyors: ConveyorConfig[]; configurator: Configurator }) {
+  const { list, component, conveyors, configurator } = props;
+  const key = keyOf(component);
+  const [conveyor, setConveyor] = useState<number | undefined>(undefined);
+  if (list === "productTypes") return <button onClick={() => configurator.addProductType(key)}>Add product type</button>;
+  if (list !== "zones") return null;
+  if (conveyors.length === 0) return <span className="muted">No conveyor in this source</span>;
+  const chosen = conveyors.find((c) => c.id === conveyor) ?? conveyors[0]!;
+  return (
+    <span className="group">
+      <select aria-label="Conveyor of the new zone" value={chosen.id} onChange={(e) => setConveyor(Number(e.target.value))}>
+        {conveyors.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}
+          </option>
+        ))}
+      </select>
+      <button onClick={() => configurator.addZone(key, componentKey(chosen.sourceId, chosen.id))}>Add zone</button>
+    </span>
+  );
+}
+
+function Field(props: { field: PropertyField; conveyors: ConveyorConfig[]; onCommit: (value: unknown) => void }) {
+  const { field, onCommit } = props;
   const label = field.kind === "number" && field.unit ? `${field.label} [${field.unit}]` : field.label;
+  // A zone names its conveyor by manifest id: chosen from the conveyors of the source.
+  if (field.kind === "number" && field.key === "conveyorId") {
+    const known = props.conveyors.some((c) => c.id === field.value);
+    return (
+      <label className="property" title={field.hint}>
+        <span>Conveyor</span>
+        <select aria-label="Conveyor" value={field.value} onChange={(e) => onCommit(Number(e.target.value))}>
+          {!known && <option value={field.value}>#{field.value} (unknown)</option>}
+          {props.conveyors.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
   return (
     <label className="property" title={field.hint}>
       <span>{label}</span>

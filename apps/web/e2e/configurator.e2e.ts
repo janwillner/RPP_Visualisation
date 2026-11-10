@@ -57,3 +57,31 @@ test("configurator: places components, edits a value, undoes it, saves the draft
   await list.getByRole("button", { name: /Conveyor 1/ }).click();
   await expect(properties.getByLabel("Length", { exact: true })).toHaveValue("3500");
 });
+
+test("configurator: gives a Delta a zone on the conveyor and the conveyor a product type, and warns of a zone past the belt", async ({ page }) => {
+  await page.goto("/configurator");
+  const palette = page.locator(".palette");
+  await palette.getByRole("button", { name: "Conveyor" }).click();
+  await palette.getByRole("button", { name: "Delta" }).click();
+  const properties = page.locator("aside.panel.right");
+  await expect(properties.locator("h3")).toHaveText("Delta 2");
+
+  await properties.getByRole("button", { name: "Add zone" }).click();
+  const zone = properties.getByRole("group", { name: "Zone 1" });
+  await expect(zone.getByLabel("Start", { exact: true })).toHaveValue("750");
+  await expect(zone.getByLabel("Conveyor", { exact: true })).toHaveValue("1");
+  const end = zone.getByLabel("End", { exact: true });
+  await end.fill("2100");
+  await end.press("Enter");
+  await expect(page.locator(".issues")).toContainText("reaches past the belt");
+
+  await page.locator("aside.panel.left .tree").getByRole("button", { name: /Conveyor 1/ }).click();
+  await properties.getByRole("button", { name: "Add product type" }).click();
+  const type = properties.getByRole("group", { name: "Product type 1" });
+  await expect(type.getByLabel("Length", { exact: true })).toHaveValue("120");
+  await type.getByLabel("Shape", { exact: true }).selectOption("cylinder");
+  await expect(type.getByLabel("Shape", { exact: true })).toHaveValue("cylinder");
+
+  await type.getByRole("button", { name: /Remove/ }).click();
+  await expect(properties.getByRole("group", { name: "Product type 1" })).toHaveCount(0);
+});

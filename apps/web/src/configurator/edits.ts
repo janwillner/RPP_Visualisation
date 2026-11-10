@@ -36,10 +36,18 @@ export function applyEdit(draft: Draft, edit: Edit): Draft {
   }
 }
 
-/** A copy of `target` with the value at `path` replaced; the objects along the path are copied, nothing is changed. */
+/**
+ * A copy of `target` with the value at `path` replaced; the objects and lists along the path are copied, nothing is
+ * changed. A list entry is named by its index, e.g. `["zones", "1", "end"]`.
+ */
 function setIn(target: unknown, path: readonly string[], value: unknown): unknown {
   if (path.length === 0) return value;
   const [head, ...rest] = path as [string, ...string[]];
+  if (Array.isArray(target)) {
+    const list = [...target];
+    list[Number(head)] = setIn(list[Number(head)], rest, value);
+    return list;
+  }
   const object = target as Record<string, unknown>;
   return { ...object, [head]: setIn(object[head], rest, value) };
 }

@@ -1101,3 +1101,31 @@ table.metrics td + td {
   border-radius: 4px;
   padding: 2px 6px;
 }
+
+.configurator .property-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
+.configurator .property-list-head h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.configurator .property-list-head select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.configurator legend .link-button {
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
