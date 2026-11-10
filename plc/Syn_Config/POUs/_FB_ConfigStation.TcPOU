@@ -1,0 +1,54 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_ConfigStation" Id="{16c1eeda-e8fc-4296-bf1c-a73a17824c95}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Parameter set of one station (reject unit, labeller, ..., ADR 0017): its pose, origin shift and zones. See<br>
+_FB_ConfigBodyComponent.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ New<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_ConfigStation EXTENDS _FB_ConfigBodyComponent]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_ComponentType" Id="{aa33f3a3-c460-4e5b-a592-4fdb3b93a387}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A station.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_ComponentType : SynVisu.E_VisuComponentType]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ComponentType := SynVisu.E_VisuComponentType.STATION;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_PassOn" Id="{65e9a97e-81b7-4579-bc07-27cec0d1781d}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Passes the effective origin shift and zones on to the station's Syn_Visu FB. The pose goes with the<br>
+application's own m_Configure call: vi_Pose := m_Pose(); its bodies stay the application's (hardware). Call it<br>
+after m_Cycle, every cycle.<br>
+****************************************************************************************************)
+METHOD m_PassOn : BOOL
+VAR_IN_OUT
+	vio_Visu							: SynVisu._FB_VisuStation;	// the station's Syn_Visu FB
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_PassOn := m_PassOnBody(vio_Visu := vio_Visu, vi_un_VisuZoneCount := vio_Visu.vo_Visu.stConfig.nZoneCount);]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

@@ -1,4 +1,4 @@
-import type { ConveyorConfig, Draft } from "@rpp/protocol";
+import { moduleStarts, type ConveyorConfig, type Draft, type TrackModule } from "@rpp/protocol";
 import { zoneWarnings } from "../machine-facts";
 import { componentKey, type ComponentKey } from "../scene/scene-model";
 import { keyOf } from "./edits";
@@ -34,6 +34,15 @@ export function validateDraft(draft: Draft): Issue[] {
         seen.add(t.id);
       }
     }
+    if (c.type === "xtsGantry" || c.type === "xtsLoop") {
+      if (c.modules.length === 0) error("the track has no modules");
+      c.modules.forEach((m, i) => {
+        if (!(m.length > 0)) error(`track module ${i + 1} has no length`);
+      });
+      if (c.type === "xtsLoop" && !closed(c.modules)) {
+        issues.push({ severity: "warning", key, message: `${c.name}: the track does not end where it starts` });
+      }
+    }
     // A zone refers to its conveyor by manifest id within the component's source.
     if ("zones" in c) {
       c.zones.forEach((zone, i) => {
@@ -44,4 +53,14 @@ export function validateDraft(draft: Draft): Issue[] {
     }
   }
   return issues;
+}
+
+/** Positions closer than this count as the same, mm; a heading as the same within this, degrees. */
+const CLOSED_TOLERANCE = 1;
+
+/** Whether a track ends where it starts, running on in the direction it started in: an XTS loop. */
+function closed(modules: readonly TrackModule[]): boolean {
+  const end = moduleStarts(modules).at(-1)!;
+  const turn = (((end.heading % 360) + 540) % 360) - 180;
+  return Math.hypot(end.u, end.v) < CLOSED_TOLERANCE && Math.abs(turn) < CLOSED_TOLERANCE && modules.length > 0;
 }

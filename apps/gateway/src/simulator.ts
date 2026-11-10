@@ -1212,11 +1212,18 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
     Object.assign(cartXy.stState, { nTimestamp: now, fX: 600 + 450 * Math.cos(b), fY: 400 + 300 * Math.sin(b) });
   }
 
-  // Syn_Config for the Delta infeed and Delta 1: the configurator writes their parameter sets (ADR 0017), taken over
-  // at once and passed on to the visualisation, as an application with the library does.
+  // Syn_Config for the Delta infeed, Delta 1 and one component of every other type: the configurator writes their
+  // parameter sets (ADR 0017), taken over at once and passed on to the visualisation, as an application with the
+  // library does. The simulated motion keeps to its own track and axes.
   const config = new ConfigEmulation(plc, [
     { id: INFEED.id, kind: "conveyor", path: "MAIN.fbInfeedParam.vo_Config", visuPath: INFEED.path },
     { id: ROBOT.id, kind: "delta", path: "MAIN.fbDelta1Param.vo_Config", visuPath: ROBOT.path },
+    { id: LOOP.id, kind: "xtsLoop", path: "MAIN.fbFxxParam.vo_Config", visuPath: LOOP.path },
+    { id: GANTRY.id, kind: "xtsGantry", path: "MAIN.fbIdhParam.vo_Config", visuPath: GANTRY.path },
+    { id: CART.id, kind: "cartesian", path: "MAIN.fbCartesianParam.vo_Config", visuPath: CART.path },
+    { id: VISION.id, kind: "vision", path: "MAIN.fbVisionParam.vo_Config", visuPath: VISION.path },
+    { id: SENSOR.id, kind: "sensor", path: "MAIN.fbSensorParam.vo_Config", visuPath: SENSOR.path },
+    { id: REJECT.id, kind: "station", path: "MAIN.fbRejectUnitParam.vo_Config", visuPath: REJECT.path },
   ]);
 
   return {

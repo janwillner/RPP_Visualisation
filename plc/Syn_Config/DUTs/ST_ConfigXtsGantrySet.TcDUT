@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigXtsGantrySet" Id="{352fee49-9ca4-4b47-a684-c8ba256d0e3a}">
+    <Declaration><![CDATA[TYPE ST_ConfigXtsGantrySet :
+STRUCT
+	(* An XTS gantry's active parameter set as the application keeps it, in a VAR PERSISTENT variable passed to
+	   _FB_ConfigXtsGantry.m_Cycle. *)
+	bValid : BOOL; // FALSE: no set active, the program values apply
+	nVersion : UDINT; // version of stParam
+	nLastVersion : UDINT; // last version handed out; versions never repeat, also after a reset
+	stParam : ST_ConfigXtsGantryParam;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

@@ -260,7 +260,7 @@ The PLC's version of a component the draft has changed, drawn faded beside the d
 _Avoid_: shadow, preview, overlay
 
 **Parameter set**:
-The part of a component's configuration its application runs with and the configurator writes (pose, zones, product types, areas; never hardware), held by its parameter FB of the library Syn_Config.
+The part of a component's configuration its application runs with and the configurator writes (pose, zones, product types, an XTS track's modules, areas; never hardware), held by its parameter FB of the library Syn_Config.
 _Avoid_: recipe, settings, parameters (alone)
 
 **Staging**:

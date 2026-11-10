@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
-import { COMPONENT_SCHEMAS, type ComponentConfig, type ConveyorConfig, type Draft } from "@rpp/protocol";
+import { COMPONENT_SCHEMAS, TrackModuleKindSchema, type ComponentConfig, type ConveyorConfig, type Draft, type TrackModuleKind } from "@rpp/protocol";
 import { defaultGatewayUrl, GatewayStore, useGateway, type SceneFeed } from "../connection";
 import { componentKey, type MachineScene } from "../scene/scene-model";
 import { SceneView, type CameraPreset, type Layers, type Selection } from "../scene/SceneView";
@@ -7,7 +7,7 @@ import type { SourceInfo } from "../sources";
 import { download } from "../download";
 import { APP_VERSION } from "../version";
 import { ViewControls } from "../ViewControls";
-import { PALETTE_LABELS, PALETTE_TYPES, placementHeight, type PaletteType } from "./component-defaults";
+import { PALETTE_LABELS, PALETTE_TYPES, placementHeight, type AreaField, type PaletteType } from "./component-defaults";
 import { Configurator, DRAFT_FILE_EXTENSION, useConfigurator } from "./configurator";
 import { EditControls, type FloorPicker } from "./EditControls";
 import { keyOf } from "./edits";
@@ -378,7 +378,7 @@ function Properties(props: {
   const { component, configurator } = props;
   const key = keyOf(component);
   const description = (COMPONENT_SCHEMAS[component.type].config as { description?: string }).description;
-  const { groups, lists } = properties(component);
+  const { groups, lists, optionals } = properties(component);
   // A zone lies on a conveyor of the component's own source.
   const conveyors = props.draft.components.filter(
     (c): c is ConveyorConfig => c.type === "conveyor" && c.sourceId === component.sourceId,
@@ -423,13 +423,36 @@ function Properties(props: {
         </button>
       </div>
       {groups
-        .filter((g) => !g.entry)
+        .filter((g) => !g.entry && !g.optional)
         .map((group) => (
           <fieldset key={group.title || "component"}>
             {group.title && <legend>{group.title}</legend>}
             {fieldsOf(group)}
           </fieldset>
         ))}
+      {optionals.map((optional) => {
+        const group = groups.find((g) => g.optional === optional.name);
+        const field = optional.name as AreaField;
+        if (!group) {
+          return (
+            <div key={optional.name} className="property-list-head" title={optional.hint}>
+              <h4>{optional.title}</h4>
+              <button onClick={() => configurator.addArea(key, field)}>Add {optional.title.toLowerCase()}</button>
+            </div>
+          );
+        }
+        return (
+          <fieldset key={optional.name} aria-label={optional.title} title={optional.hint}>
+            <legend>
+              {optional.title}{" "}
+              <button className="link-button" title={`Remove ${optional.title.toLowerCase()}`} onClick={() => configurator.removeArea(key, field)}>
+                Remove
+              </button>
+            </legend>
+            {fieldsOf(group)}
+          </fieldset>
+        );
+      })}
       {lists.map((list) => (
         <section key={list.name} className="property-list" aria-label={list.title}>
           <div className="property-list-head" title={list.hint}>
@@ -459,12 +482,29 @@ function Properties(props: {
   );
 }
 
-/** Adds an entry to a list the configurator knows how to start: a zone on a chosen conveyor, a product type. */
+/**
+ * Adds an entry to a list the configurator knows how to start: a zone on a chosen conveyor, a product type, a track
+ * module of a chosen kind, a body.
+ */
 function AddEntry(props: { list: string; component: ComponentConfig; conveyors: ConveyorConfig[]; configurator: Configurator }) {
   const { list, component, conveyors, configurator } = props;
   const key = keyOf(component);
   const [conveyor, setConveyor] = useState<number | undefined>(undefined);
+  const [moduleKind, setModuleKind] = useState<TrackModuleKind>("straight");
   if (list === "productTypes") return <button onClick={() => configurator.addProductType(key)}>Add product type</button>;
+  if (list === "bodies") return <button onClick={() => configurator.addBody(key)}>Add body</button>;
+  if (list === "modules") {
+    return (
+      <span className="group">
+        <select aria-label="Kind of the new module" value={moduleKind} onChange={(e) => setModuleKind(e.target.value as TrackModuleKind)}>
+          {TrackModuleKindSchema.options.map((k) => (
+            <option key={k}>{k}</option>
+          ))}
+        </select>
+        <button onClick={() => configurator.addModule(key, moduleKind)}>Add module</button>
+      </span>
+    );
+  }
   if (list !== "zones") return null;
   if (conveyors.length === 0) return <span className="muted">No conveyor in this source</span>;
   const chosen = conveyors.find((c) => c.id === conveyor) ?? conveyors[0]!;

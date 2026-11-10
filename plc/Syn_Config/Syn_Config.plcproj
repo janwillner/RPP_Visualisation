@@ -18,7 +18,7 @@
     <LibraryReferences>{4aaf00a1-38c8-4cd5-b616-5f1157d1ccbb}</LibraryReferences>
     <Company>Syntegon Group</Company>
     <Title>SynConfig</Title>
-    <ProjectVersion>1.0.0.0</ProjectVersion>
+    <ProjectVersion>1.1.0.0</ProjectVersion>
     <DefaultNamespace>SynConfig</DefaultNamespace>
     <Description>Parameter sets the RPP configurator writes and the application takes over (ADR 0017).</Description>
   </PropertyGroup>
@@ -40,6 +40,24 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="DUTs\E_ConfigResult.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigBodyComponent.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigBodyComponentParam.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigBodyComponentSet.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigCartesian.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigCartesianParam.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigCartesianSet.TcDUT">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="DUTs\ST_ConfigConveyor.TcDUT">
@@ -72,10 +90,34 @@
     <Compile Include="DUTs\ST_ConfigStatus.TcDUT">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="DUTs\ST_ConfigXtsGantry.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigXtsGantryParam.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigXtsGantrySet.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigXtsLoop.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigXtsLoopParam.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigXtsLoopSet.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="GVLs\CONFIG_GlobalConst.TcGVL">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="GVLs\CONFIG_GlobalConst_Param.TcGVL">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FB_ConfigBodyComponent.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FB_ConfigCartesian.TcPOU">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\_FB_ConfigComponent.TcPOU">
@@ -85,6 +127,21 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\_FB_ConfigDelta.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FB_ConfigSensor.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FB_ConfigStation.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FB_ConfigVision.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FB_ConfigXtsGantry.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FB_ConfigXtsLoop.TcPOU">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\_FC_GetVersionSynConfig.TcPOU">

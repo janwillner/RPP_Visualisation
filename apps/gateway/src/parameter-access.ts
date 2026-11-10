@@ -78,17 +78,17 @@ export async function discoverParameters(
   const errors: DiscoveryError[] = [];
   for (const e of manifest.aEntries.slice(0, manifest.nCount)) {
     const type = componentKind(enumValue(e.eType));
-    if (type !== "conveyor" && type !== "delta") {
+    if (type === undefined || !(type in PLC_CONFIG_TYPES)) {
       errors.push({ componentId: e.nId, path: e.sPath, message: `Syn_Config has no parameter set for this type yet` });
       continue;
     }
     const actual = await plc.typeOf(e.sPath);
-    const expected = PLC_CONFIG_TYPES[type];
+    const expected = PLC_CONFIG_TYPES[type as ParameterType];
     if (actual !== expected && !actual?.endsWith(`.${expected}`)) {
       errors.push({ componentId: e.nId, path: e.sPath, message: `Symbol has expected type ${expected} but is ${actual ?? "missing"}` });
       continue;
     }
-    entries.push({ id: e.nId, type, path: e.sPath, memory: new Map() });
+    entries.push({ id: e.nId, type: type as ParameterType, path: e.sPath, memory: new Map() });
   }
   return { present: true, entries, reason: allowWrite ? undefined : NOT_ALLOWED, errors };
 }

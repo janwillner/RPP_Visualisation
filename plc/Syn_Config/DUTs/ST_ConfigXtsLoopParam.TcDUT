@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigXtsLoopParam" Id="{63414501-28e9-4450-bf01-be8ac22229cf}">
+    <Declaration><![CDATA[TYPE ST_ConfigXtsLoopParam :
+STRUCT
+	(* An XTS loop's parameter set: what the configurator writes, never its tool offset or mover size (hardware).
+	   Members as in SynVisu.ST_VisuXtsLoopConfig. *)
+	stPose : SynVisu.ST_VisuPose; // MCS, start of module 1
+	stOriginShift : SynVisu.ST_VisuPosition; // mm in the loop's local frame
+	nModuleCount : UINT;
+	aModules : ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF SynVisu.ST_VisuTrackModule;
+	nZoneCount : UINT;
+	aZones : ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF SynVisu.ST_VisuZone;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

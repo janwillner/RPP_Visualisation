@@ -1,0 +1,146 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_ConfigBodyComponent" Id="{f3d50d8c-cdcb-4ccc-974a-c46ca4f3e9ad}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Base of the parameter FBs of components drawn from their bodies (_FB_ConfigVision, _FB_ConfigSensor,<br>
+_FB_ConfigStation, ADR 0017): their pose, origin shift and zones, written by the configurator, taken over when<br>
+the application allows it. The bodies are hardware and stay the application's. Typical cycle:<br>
+  fb_VisionParam.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Vision.m_Id());<br>
+  fb_VisionParam.m_Cycle(vio_Default := VisionDefault, vio_Set := VisionSet, vi_b_ApplyAllowed := b_Stopped);<br>
+  fb_Vision.m_Configure(vi_Pose := fb_VisionParam.m_Pose(), vi_lr_FieldLength := 400, ...);<br>
+  fb_VisionParam.m_PassOn(vio_Visu := fb_Vision);<br>
+Not used directly.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+vo_Config is the contract structure the gateway reads and writes at the path in the config manifest.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ New<br>
+****************************************************************************************************)
+FUNCTION_BLOCK ABSTRACT _FB_ConfigBodyComponent EXTENDS _FB_ConfigComponent
+VAR_OUTPUT
+	vo_Config							: ST_ConfigBodyComponent;	// contract structure of the gateway
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_Active" Id="{b655cdd7-e426-4d58-8790-211013fd69e9}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+All effective values (zones, ...), for the application's own logic.<br>
+****************************************************************************************************)
+METHOD m_Active : ST_ConfigBodyComponentParam]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Active := vo_Config.stActive;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Cycle" Id="{e33baa3f-bf63-45e3-a963-1a96167f7621}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Every cycle: handles a staged set or a reset (a set only while vi_b_ApplyAllowed), keeps the active set in<br>
+vio_Set and gives the effective values in vo_Config.stActive: the active set while one is valid, else the<br>
+program values vio_Default.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+TRUE in the cycle a set was taken over or reset.<br>
+****************************************************************************************************)
+METHOD m_Cycle : BOOL
+VAR_IN_OUT CONSTANT
+	vio_Default							: ST_ConfigBodyComponentParam;	// the application's program values
+END_VAR
+VAR_IN_OUT
+	vio_Set								: ST_ConfigBodyComponentSet;	// the application's VAR PERSISTENT active set
+END_VAR
+VAR_INPUT
+	vi_b_ApplyAllowed					: BOOL;	// [-] a staged set may be taken over now, e.g. while the machine stands
+END_VAR
+VAR
+	str_TempRejection					: STRING(80);
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Cycle := FALSE;
+CASE m_Staging(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_b_ApplyAllowed := vi_b_ApplyAllowed,
+	vi_udn_ActiveVersion := SEL(vio_Set.bValid, 0, vio_Set.nVersion)) OF
+	E_ConfigAction.RESET:
+		vio_Set.bValid := FALSE;
+		m_Handled(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_str_Rejection := '');
+		m_Cycle := TRUE;
+	E_ConfigAction.TAKE_OVER:
+		str_TempRejection := m_InvalidZones(vio_aZones := vo_Config.stStaged.aZones, vi_un_Count := vo_Config.stStaged.nZoneCount);
+		IF str_TempRejection = '' THEN
+			vio_Set.nLastVersion := vio_Set.nLastVersion + 1;
+			vio_Set.nVersion := vio_Set.nLastVersion;
+			vio_Set.stParam := vo_Config.stStaged;
+			vio_Set.bValid := TRUE;
+			m_Cycle := TRUE;
+		END_IF
+		m_Handled(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_str_Rejection := str_TempRejection);
+END_CASE
+
+
+(****************************************************************************************************
+EFFECTIVE VALUES
+****************************************************************************************************)
+IF vio_Set.bValid THEN
+	vo_Config.stActive := vio_Set.stParam;
+	vo_Config.stStatus.nActiveVersion := vio_Set.nVersion;
+ELSE
+	vo_Config.stActive := vio_Default;
+	vo_Config.stStatus.nActiveVersion := 0;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_PassOnBody" Id="{cb08f9d6-4dfa-48ea-a028-e28a64f4ad7c}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Passes the effective origin shift and zones on to the component's Syn_Visu FB; for m_PassOn of the derived FB,<br>
+which knows where the visualisation keeps its zone count.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_PassOnBody : BOOL
+VAR_IN_OUT
+	vio_Visu							: SynVisu._FB_VisuBodyComponent;	// the component's Syn_Visu FB
+END_VAR
+VAR_INPUT
+	vi_un_VisuZoneCount					: UINT;	// [-] zones the visualisation has now, its stConfig.nZoneCount
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_PassOnBody := TRUE;
+vio_Visu.m_SetOriginShift(vi_lr_X := vo_Config.stActive.stOriginShift.fX, vi_lr_Y := vo_Config.stActive.stOriginShift.fY,
+	vi_lr_Z := vo_Config.stActive.stOriginShift.fZ);
+m_PassOnZones(vio_Visu := vio_Visu, vio_aZones := vo_Config.stActive.aZones, vi_un_Count := vo_Config.stActive.nZoneCount,
+	vi_un_VisuCount := vi_un_VisuZoneCount);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Pose" Id="{46ae1179-8197-4f19-b8c4-48bd3c65cc5f}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Effective pose (MCS), for the application's logic and its Syn_Visu m_Configure call.<br>
+****************************************************************************************************)
+METHOD m_Pose : SynVisu.ST_VisuPose]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Pose := vo_Config.stActive.stPose;]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

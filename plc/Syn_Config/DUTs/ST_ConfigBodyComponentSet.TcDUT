@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigBodyComponentSet" Id="{613b8f37-7020-480a-b13b-8f1ff394aac8}">
+    <Declaration><![CDATA[TYPE ST_ConfigBodyComponentSet :
+STRUCT
+	(* The active parameter set of a vision system, product sensor or station as the application keeps it, in a
+	   VAR PERSISTENT variable passed to m_Cycle of _FB_ConfigVision, _FB_ConfigSensor or _FB_ConfigStation. *)
+	bValid : BOOL; // FALSE: no set active, the program values apply
+	nVersion : UDINT; // version of stParam
+	nLastVersion : UDINT; // last version handed out; versions never repeat, also after a reset
+	stParam : ST_ConfigBodyComponentParam;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

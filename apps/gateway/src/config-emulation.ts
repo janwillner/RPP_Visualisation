@@ -1,4 +1,4 @@
-import { CONFIG_PROTOCOL_VERSION } from "@rpp/protocol";
+import { CONFIG_PROTOCOL_VERSION, PARAMETER_SCHEMAS, type ParameterType } from "@rpp/protocol";
 import { COMPONENTS } from "./components";
 import {
   CONFIG_MANIFEST_PATH,
@@ -6,14 +6,13 @@ import {
   PLC_CONFIG_MANIFEST_TYPE,
   PLC_CONFIG_TYPES,
   type ST_ConfigComponent,
-  type ST_ConfigConveyorParam,
-  type ST_ConfigDeltaParam,
   type ST_ConfigManifest,
   type ST_ConfigManifestEntry,
 } from "./config-contract";
 import type { InMemoryPlc } from "./in-memory-plc";
 import { MAX_MANIFEST_ENTRIES } from "./plc-builders";
-import { MANIFEST_PATH, type ST_VisuConveyor, type ST_VisuDelta, type ST_VisuManifest } from "./plc-contract";
+import { MANIFEST_PATH, type ST_VisuManifest, type ST_VisuProductType, type ST_VisuTrackModule, type ST_VisuZone } from "./plc-contract";
+import { plcMembers } from "./plc-writing";
 
 /**
  * The library Syn_Config and an application using it (ADR 0017), emulated on an in-memory PLC for the simulator and
@@ -25,14 +24,17 @@ import { MANIFEST_PATH, type ST_VisuConveyor, type ST_VisuDelta, type ST_VisuMan
 export interface EmulatedParameterFb {
   /** Id of the Syn_Visu component. */
   id: number;
-  kind: keyof typeof PLC_CONFIG_TYPES;
+  kind: ParameterType;
   /** Symbol path of the parameter FB's `vo_Config`. */
   path: string;
   /** Symbol path of the Syn_Visu component's interface structure (its `stConfig` is passed the effective values). */
   visuPath: string;
 }
 
-type Param = ST_ConfigConveyorParam | ST_ConfigDeltaParam;
+/** A parameter structure (`ST_Config<Type>Param`): the members of the Syn_Visu config the parameter set holds. */
+type Param = Record<string, unknown>;
+/** A Syn_Visu component structure, of which the emulation reads and writes only `stConfig`. */
+type VisuComponent = { stConfig: Record<string, unknown> };
 
 /** What the application keeps in its `VAR PERSISTENT` variable. */
 interface PersistentSet {
@@ -69,7 +71,7 @@ export class ConfigEmulation {
     plc.define(options.manifestPath ?? CONFIG_MANIFEST_PATH, PLC_CONFIG_MANIFEST_TYPE, manifest);
     this.fbs = entries.map((entry) => {
       // The program values: what the application passes to Syn_Visu without a parameter set.
-      const defaults = paramOf(entry.kind, plc.get<ST_VisuConveyor | ST_VisuDelta>(entry.visuPath).stConfig);
+      const defaults = paramOf(entry.kind, plc.get<VisuComponent>(entry.visuPath).stConfig);
       const fb: ST_ConfigComponent<Param> = {
         stStaging: { nBaseVersion: 0, nStageId: 0, bReset: false, bStaged: false },
         stStaged: structuredClone(defaults),
@@ -102,7 +104,7 @@ export class ConfigEmulation {
           const reason =
             staging.nBaseVersion !== active()
               ? `Based on version ${staging.nBaseVersion}, but version ${active()} is active`
-              : this.invalid(fb.entry.kind, vo.stStaged);
+              : this.invalid(vo.stStaged);
           if (reason) {
             Object.assign(status, { nHandledStageId: staging.nStageId, eResult: E_ConfigResult.REJECTED, sMessage: reason });
           } else {
@@ -121,51 +123,43 @@ export class ConfigEmulation {
 
   /**
    * Why a staged set cannot be taken over, as the library's m_Invalid says it: a count past its array, a product type
-   * without a number or twice, a zone on no conveyor.
+   * without a number or twice, a track without modules or a module without a length (checked before the zones, as
+   * the XTS parameter FBs do), a zone on no conveyor.
    */
-  private invalid(kind: EmulatedParameterFb["kind"], staged: Param): string | undefined {
-    if (kind === "conveyor") {
-      const p = staged as ST_ConfigConveyorParam;
-      if (p.nProductTypeCount > p.aProductTypes.length) return `More than ${p.aProductTypes.length} product types`;
-      const types = p.aProductTypes.slice(0, p.nProductTypeCount);
-      if (types.some((t) => t.nId === 0)) return "A product type without a number";
-      const twice = types.find((t, i) => types.findIndex((o) => o.nId === t.nId) < i);
-      return twice ? `Product type ${twice.nId} is defined twice` : undefined;
+  private invalid(staged: Param): string | undefined {
+    const counted = <T>(list: string, count: string, name: string): T[] | string => {
+      const entries = (staged[list] as T[] | undefined) ?? [];
+      const n = (staged[count] as number | undefined) ?? 0;
+      return n > entries.length ? `More than ${entries.length} ${name}` : entries.slice(0, n);
+    };
+    const types = counted<ST_VisuProductType>("aProductTypes", "nProductTypeCount", "product types");
+    if (typeof types === "string") return types;
+    if (types.some((t) => t.nId === 0)) return "A product type without a number";
+    const twice = types.find((t, i) => types.findIndex((o) => o.nId === t.nId) < i);
+    if (twice) return `Product type ${twice.nId} is defined twice`;
+    if ("aModules" in staged) {
+      const modules = counted<ST_VisuTrackModule>("aModules", "nModuleCount", "track modules");
+      if (typeof modules === "string") return modules;
+      if (modules.length === 0) return "A track without modules";
+      const module = modules.findIndex((m) => !(m.fLength > 0));
+      if (module >= 0) return `Track module ${module + 1} has no length`;
     }
-    const p = staged as ST_ConfigDeltaParam;
-    if (p.nZoneCount > p.aZones.length) return `More than ${p.aZones.length} zones`;
-    const zone = p.aZones.slice(0, p.nZoneCount).findIndex((z) => z.nConveyorId === 0);
+    const zones = counted<ST_VisuZone>("aZones", "nZoneCount", "zones");
+    if (typeof zones === "string") return zones;
+    const zone = zones.findIndex((z) => z.nConveyorId === 0);
     return zone >= 0 ? `Zone ${zone + 1} lies on no conveyor` : undefined;
   }
 
   /** The application passes the effective values on to Syn_Visu, whose config version changes when they do. */
   private passOn(entry: EmulatedParameterFb, active: Param): void {
-    const visu = this.plc.get<ST_VisuConveyor | ST_VisuDelta>(entry.visuPath).stConfig as unknown as Record<string, unknown>;
+    const visu = this.plc.get<VisuComponent>(entry.visuPath).stConfig;
     const before = JSON.stringify(visu);
     Object.assign(visu, structuredClone(active));
     if (JSON.stringify(visu) !== before) this.plc.get<ST_VisuManifest>(this.visuManifestPath).nConfigVersion += 1;
   }
 }
 
-/** The parameter fields of a Syn_Visu config: what Syn_Config holds of it. */
-function paramOf(kind: EmulatedParameterFb["kind"], config: ST_VisuConveyor["stConfig"] | ST_VisuDelta["stConfig"]): Param {
-  if (kind === "conveyor") {
-    const c = config as ST_VisuConveyor["stConfig"];
-    return structuredClone({
-      stPose: c.stPose,
-      stOriginShift: c.stOriginShift,
-      nProductTypeCount: c.nProductTypeCount,
-      aProductTypes: c.aProductTypes,
-    });
-  }
-  const c = config as ST_VisuDelta["stConfig"];
-  return structuredClone({
-    stPose: c.stPose,
-    stOriginShift: c.stOriginShift,
-    nZoneCount: c.nZoneCount,
-    aZones: c.aZones,
-    stWorkingArea: c.stWorkingArea,
-    stLimitArea: c.stLimitArea,
-    stTcpLimitArea: c.stTcpLimitArea,
-  });
+/** The parameter fields of a Syn_Visu config: what Syn_Config holds of it, by the naming convention. */
+function paramOf(kind: ParameterType, config: Record<string, unknown>): Param {
+  return structuredClone(Object.fromEntries(plcMembers(PARAMETER_SCHEMAS[kind]).map((m) => [m, config[m]])));
 }

@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigBodyComponentParam" Id="{aaf31183-3a29-4bd3-8c4a-d02e70d71d6f}">
+    <Declaration><![CDATA[TYPE ST_ConfigBodyComponentParam :
+STRUCT
+	(* The parameter set of a component drawn from its bodies (vision system, product sensor, station): what the
+	   configurator writes, never its bodies (hardware). Members as in SynVisu.ST_VisuDetectorConfig. *)
+	stPose : SynVisu.ST_VisuPose; // MCS
+	stOriginShift : SynVisu.ST_VisuPosition; // mm in the component's local frame
+	nZoneCount : UINT;
+	aZones : ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF SynVisu.ST_VisuZone;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>
