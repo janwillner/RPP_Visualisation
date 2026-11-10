@@ -23,7 +23,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: `node ../gateway/node_modules/tsx/dist/cli.mjs ../gateway/src/main.ts --driver sim --port ${PORT} --host 127.0.0.1 --static-dir dist`,
+    command: `node ../gateway/node_modules/tsx/dist/cli.mjs ../gateway/src/main.ts --driver sim --allow-write --port ${PORT} --host 127.0.0.1 --static-dir dist`,
     url: `http://127.0.0.1:${PORT}/health`,
     reuseExistingServer: false,
     timeout: 30_000,

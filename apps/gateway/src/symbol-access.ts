@@ -17,6 +17,12 @@ export interface SymbolAccess {
    * `changes` value) starts with every entry. Adapters that cannot do this return the whole arrays.
    */
   sumRead(paths: readonly string[], options?: SumReadOptions): Promise<unknown[]>;
+  /**
+   * Write several leaf values (numbers, switches, texts, enumerations) in one request, in the given order: the PLC
+   * sees the last one written after the others (ADR 0017). An index into an array counts from 0 as in the values
+   * read; the adapter maps it to the array's lower bound. Rejects with `SymbolNotFoundError` for a missing path.
+   */
+  sumWrite(writes: readonly SymbolWrite[]): Promise<void>;
 }
 
 export interface SumReadOptions {
@@ -42,4 +48,10 @@ export class SymbolNotFoundError extends Error {
     super(`Symbol not found: ${path}`);
     this.name = "SymbolNotFoundError";
   }
+}
+
+/** One leaf value to write, by its symbol path; array indices count from 0 as in the values read. */
+export interface SymbolWrite {
+  path: string;
+  value: number | boolean | string;
 }

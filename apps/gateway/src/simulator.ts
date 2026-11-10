@@ -1,4 +1,5 @@
 import { TrackModuleSchema, trackLength, trackPoint, type TrackModule, type Vec3 } from "@rpp/protocol";
+import { ConfigEmulation } from "./config-emulation";
 import { InMemoryPlc } from "./in-memory-plc";
 import { mapPlc } from "./plc-mapping";
 import {
@@ -54,6 +55,8 @@ import {
  */
 export interface Simulator {
   plc: InMemoryPlc;
+  /** Syn_Config of the Delta infeed and Delta 1, with an application that allows taking a set over at once. */
+  config: ConfigEmulation;
   /** Advance the simulated machine by `dtMs` milliseconds. */
   step(dtMs: number): void;
 }
@@ -1209,9 +1212,18 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
     Object.assign(cartXy.stState, { nTimestamp: now, fX: 600 + 450 * Math.cos(b), fY: 400 + 300 * Math.sin(b) });
   }
 
+  // Syn_Config for the Delta infeed and Delta 1: the configurator writes their parameter sets (ADR 0017), taken over
+  // at once and passed on to the visualisation, as an application with the library does.
+  const config = new ConfigEmulation(plc, [
+    { id: INFEED.id, kind: "conveyor", path: "MAIN.fbInfeedParam.vo_Config", visuPath: INFEED.path },
+    { id: ROBOT.id, kind: "delta", path: "MAIN.fbDelta1Param.vo_Config", visuPath: ROBOT.path },
+  ]);
+
   return {
     plc,
+    config,
     step(dtMs) {
+      config.step();
       const dtS = dtMs / 1000;
       simMs += dtMs;
       now += BigInt(Math.round(dtMs * 1_000_000));

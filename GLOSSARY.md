@@ -259,6 +259,18 @@ _Avoid_: sync, diff, comparison
 The PLC's version of a component the draft has changed, drawn faded beside the draft's, so the change shows in 3D.
 _Avoid_: shadow, preview, overlay
 
+**Parameter set**:
+The part of a component's configuration its application runs with and the configurator writes (pose, zones, product types, areas; never hardware), held by its parameter FB of the library Syn_Config.
+_Avoid_: recipe, settings, parameters (alone)
+
+**Staging**:
+Writing a parameter set into a component's parameter FB, where it waits until the application allows taking it over.
+_Avoid_: upload, download, commit
+
+**Program values**:
+The configuration an application gives in its code, which applies while no parameter set is active.
+_Avoid_: defaults (in prose), factory settings
+
 **Palette**:
 The component types the configurator offers to place, by dragging onto the floor or by a click.
 _Avoid_: toolbox, library (the PLC library is something else)

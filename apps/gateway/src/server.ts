@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
-import { RegisterEncoder, withRegisters } from "@rpp/protocol";
+import { ClientMessageSchema, RegisterEncoder, withRegisters, type WriteResultMessage } from "@rpp/protocol";
 import type { MessageSource } from "./gateway";
 import { createDocsPage, DOCS_PATH, DOCS_SCHEMA_PATH } from "./docs-page";
 import { watchHealth } from "./health";
@@ -50,7 +50,7 @@ export interface ServerOptions {
   version?: string;
 }
 
-/** One HTTP port serving the built web app plus the read-only WebSocket fan-out. */
+/** One HTTP port serving the built web app plus the WebSocket fan-out, which takes commands on parameter sets only. */
 export function startServer({ gateway, port, host, staticDir, version = APP_VERSION }: ServerOptions): Promise<Server> {
   const root = staticDir ? resolve(staticDir) : undefined;
   const health = watchHealth(gateway, version);
@@ -174,7 +174,25 @@ export function startServer({ gateway, port, host, staticDir, version = APP_VERS
     const client: Client = { socket, changes, synced: new Set() };
     clients.add(client);
     socket.on("close", () => clients.delete(client));
-    // Read-only: anything the browser sends is ignored.
+    // The only thing a browser may send is a command on parameter sets (ADR 0017); anything else is ignored. The
+    // answer goes to this client only; whether writing is allowed at all, the gateway decides.
+    socket.on("message", (data) => {
+      let json: unknown;
+      try {
+        json = JSON.parse(String(data));
+      } catch {
+        return;
+      }
+      const parsed = ClientMessageSchema.safeParse(json);
+      if (!parsed.success) return;
+      const command = parsed.data;
+      void gateway.command(command).then((result) => {
+        const answer: WriteResultMessage = result.ok
+          ? { kind: "writeResult", requestId: command.requestId, ok: true, stageId: result.stageId }
+          : { kind: "writeResult", requestId: command.requestId, ok: false, error: result.error };
+        send(socket, JSON.stringify(answer));
+      });
+    });
   });
 
   function send(socket: WebSocket, json: string): void {

@@ -525,7 +525,7 @@ describe("gateway discovery", () => {
     defineMachine(plc, [infeed], { manifestPath: "GVL_RppVisu.stManifest" });
     const gateway = createGateway({ plc, sourceId: "plc1", manifestPath: "GVL_RppVisu.stManifest" });
     const messages: GatewayMessage[] = [];
-    gateway.subscribe((m) => messages.push(m));
+    gateway.subscribe((m) => messages.push(m as GatewayMessage));
 
     await gateway.cycle();
 
@@ -617,7 +617,7 @@ describe("gateway subscribers", () => {
     await t.gateway.cycle();
 
     const late: GatewayMessage[] = [];
-    t.gateway.subscribe((m) => late.push(m));
+    t.gateway.subscribe((m) => late.push(m as GatewayMessage));
     await t.gateway.cycle();
 
     expect(late.map((m) => m.kind)).toEqual(["status", "config", "state"]);
@@ -712,7 +712,7 @@ describe("gateway with several PLC sources", () => {
     await t.cycleAll();
 
     const late: GatewayMessage[] = [];
-    combineGateways(t.gateways).subscribe((m) => late.push(m));
+    combineGateways(t.gateways).subscribe((m) => late.push(m as GatewayMessage));
 
     expect(late.map((m) => [m.kind, m.sourceId])).toEqual([
       ["status", "ads:5.1.2.3.1.1:851"],
@@ -1333,6 +1333,7 @@ describe("gateway registers read as changes", () => {
     // Answers with changes as if it remembered more than it does: the ids of products it does not send.
     let forget = false;
     const access: SymbolAccess = {
+      sumWrite: async () => {},
       read: (path) => plc.read(path),
       typeOf: (path) => plc.typeOf(path),
       async sumRead(paths, options) {
@@ -1347,7 +1348,7 @@ describe("gateway registers read as changes", () => {
     };
     const gateway = createGateway({ plc: access, sourceId: "plc1" });
     const messages: GatewayMessage[] = [];
-    gateway.subscribe((m) => messages.push(m));
+    gateway.subscribe((m) => messages.push(m as GatewayMessage));
     register(plc, [{ nId: 1 }, { nId: 2 }]);
     await gateway.cycle();
     forget = true;

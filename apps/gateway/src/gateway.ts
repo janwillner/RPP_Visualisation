@@ -1,14 +1,24 @@
 import {
   PROTOCOL_VERSION,
+  type ClientMessage,
   type ComponentConfig,
   type ComponentState,
   type ConfigMessage,
   type DiscoveryError,
   type GatewayMessage,
   type GatewayStatus,
+  type ParametersMessage,
 } from "@rpp/protocol";
 import { AcquisitionStatsRecorder } from "./acquisition-stats";
 import { COMPONENTS, componentKind, mapConfig, mapState as mapComponentState } from "./components";
+import { CONFIG_MANIFEST_PATH } from "./config-contract";
+import {
+  commandWrites,
+  discoverParameters,
+  parameterReadPaths,
+  parametersMessage,
+  type ParameterDiscovery,
+} from "./parameter-access";
 import { MANIFEST_PATH, enumValue, type ST_VisuManifest } from "./plc-contract";
 import { UnknownEntryError, type EntryMemory } from "./plc-mapping";
 import { SymbolNotFoundError, type SymbolAccess } from "./symbol-access";
@@ -26,11 +36,21 @@ export interface GatewayOptions {
   configRecheckMs?: number;
   /** Symbol path of the application's manifest. Default `GVL_Visu.stManifest`. */
   manifestPath?: string;
+  /** Symbol path of the application's Syn_Config manifest (ADR 0017). Default `GVL_Config.stManifest`. */
+  configManifestPath?: string;
+  /** Parameter sets may be written (`--allow-write`); default false: the gateway only reads. */
+  allowWrite?: boolean;
   /** Clock in ms (injectable for tests). */
   now?: () => number;
 }
 
-export type GatewayListener = (message: GatewayMessage) => void;
+/** What a gateway publishes about its source: the visualisation's messages and the parameter sets (ADR 0017). */
+export type SourceMessage = GatewayMessage | ParametersMessage;
+
+export type GatewayListener = (message: SourceMessage) => void;
+
+/** The outcome of a client's command: staged under a stage id, or refused. */
+export type GatewayCommandResult = { ok: true; stageId: number } | { ok: false; error: string };
 
 /** After a failed attempt, the PLC is tried again only after this long, so an unreachable IPC costs little. */
 export const RECONNECT_MS = 5000;
@@ -41,6 +61,8 @@ export interface MessageSource {
   subscribe(listener: GatewayListener): () => void;
   /** How reading a source performs (`GET /health`); undefined for a source this does not read. */
   acquisition(sourceId: string): AcquisitionStatsRecorder | undefined;
+  /** Carries out a client's command on the source it names (ADR 0017). */
+  command(command: ClientMessage): Promise<GatewayCommandResult>;
 }
 
 /** Reads one PLC (one source). */
@@ -66,6 +88,10 @@ export function combineGateways(gateways: readonly Gateway[]): MessageSource {
       };
     },
     acquisition: (sourceId) => gateways.find((g) => g.sourceId === sourceId)?.acquisition(sourceId),
+    async command(command) {
+      const gateway = gateways.find((g) => g.sourceId === command.sourceId);
+      return gateway ? gateway.command(command) : { ok: false, error: `Unknown source ${command.sourceId}` };
+    },
   };
 }
 
@@ -80,6 +106,7 @@ interface ActiveComponent {
 interface Discovery {
   config: ConfigMessage;
   active: ActiveComponent[];
+  parameters: ParameterDiscovery;
 }
 
 export function createGateway({
@@ -88,6 +115,8 @@ export function createGateway({
   sourceName = sourceId,
   configRecheckMs = 1000,
   manifestPath = MANIFEST_PATH,
+  configManifestPath = CONFIG_MANIFEST_PATH,
+  allowWrite = false,
   now = () => performance.now(),
 }: GatewayOptions): Gateway {
   const configVersionPath = `${manifestPath}.nConfigVersion`;
@@ -101,8 +130,12 @@ export function createGateway({
   /** Time of the last failed attempt; undefined while connected. */
   let failedAt: number | undefined;
   const stats = new AcquisitionStatsRecorder();
+  /** The last `parameters` message, sent again only when it changes. */
+  let parameters: ParametersMessage | undefined;
+  /** Stage ids of this gateway's writes: from its start time, so another run's ids are unlikely to repeat. */
+  let stageId = Math.floor(Date.now() / 1000) % 1_000_000_000;
 
-  const emit = (message: GatewayMessage) => {
+  const emit = (message: SourceMessage) => {
     for (const l of listeners) l(message);
   };
 
@@ -111,6 +144,7 @@ export function createGateway({
     const libraryVersion = manifest.sLibraryVersion?.trim() || undefined;
     const errors: DiscoveryError[] = [];
     const active: ActiveComponent[] = [];
+    let params: ParameterDiscovery = { present: false, entries: [], reason: "The PLC's Syn_Visu does not match this gateway.", errors: [] };
     const result = (): Discovery => ({
       config: {
         kind: "config",
@@ -119,9 +153,10 @@ export function createGateway({
         ...(libraryVersion ? { libraryVersion } : {}),
         configVersion: manifest.nConfigVersion,
         components: active.map((a) => a.config),
-        errors,
+        errors: [...errors, ...params.errors],
       },
       active,
+      parameters: params,
     });
 
     if (manifest.nProtocolVersion !== PROTOCOL_VERSION) {
@@ -166,6 +201,7 @@ export function createGateway({
         });
       }
     }
+    params = await discoverParameters(plc, configManifestPath, allowWrite);
     return result();
   }
 
@@ -180,6 +216,7 @@ export function createGateway({
   function restartChanges(current: Discovery): void {
     session += 1;
     for (const a of current.active) a.memory.clear();
+    for (const e of current.parameters.entries) e.memory.clear();
   }
 
   /**
@@ -188,24 +225,31 @@ export function createGateway({
    */
   async function publishSnapshot(current: Discovery, retry = true): Promise<boolean> {
     const readStart = performance.now();
-    const [protocolVersion, configVersion, ...raws] = await plc.sumRead(
-      [protocolVersionPath, configVersionPath, ...current.active.map((a) => a.statePath)],
+    const paramPaths = parameterReadPaths(current.parameters);
+    const [protocolVersion, configVersion, ...rest] = await plc.sumRead(
+      [protocolVersionPath, configVersionPath, ...current.active.map((a) => a.statePath), ...paramPaths],
       { changes: changesSession() },
     );
     if (protocolVersion !== current.config.protocolVersion || configVersion !== current.config.configVersion) {
       return false;
     }
-    if (current.active.length === 0) return true;
+    const raws = rest.slice(0, current.active.length);
     const mapStart = performance.now();
     let components: ComponentState[];
+    let params: ParametersMessage | undefined;
     try {
       components = current.active.map((a, i) => mapState(a, raws[i]));
+      if (current.parameters.present) {
+        params = parametersMessage(sourceId, current.parameters, rest.slice(current.active.length));
+      }
     } catch (error) {
       // Out of step with the PLC access (e.g. a restarted ADS bridge): read again with every entry.
       if (!(error instanceof UnknownEntryError) || !retry) throw error;
       restartChanges(current);
       return publishSnapshot(current, false);
     }
+    if (params) publishParameters(params);
+    if (current.active.length === 0) return true;
     stats.recordSnapshot(mapStart - readStart, performance.now() - mapStart, components);
     const newest = components.reduce((max, c) => (BigInt(c.timestamp) > max ? BigInt(c.timestamp) : max), 0n);
     t0 ??= newest;
@@ -220,8 +264,16 @@ export function createGateway({
     return true;
   }
 
+  /** Sends the parameter sets when they differ from the last ones sent. */
+  function publishParameters(next: ParametersMessage): void {
+    if (parameters && JSON.stringify(parameters) === JSON.stringify(next)) return;
+    parameters = next;
+    emit(next);
+  }
+
   async function rediscover(): Promise<Discovery> {
     const next = await discover();
+    parameters = undefined;
     setStatus({ plcConnected: true });
     discovery = next;
     t0 = undefined;
@@ -251,9 +303,24 @@ export function createGateway({
       listeners.add(listener);
       listener(statusMessage());
       if (discovery) listener(discovery.config);
+      if (discovery && parameters) listener(parameters);
       return () => listeners.delete(listener);
     },
     acquisition: (id) => (id === sourceId ? stats : undefined),
+    async command(command) {
+      if (command.sourceId !== sourceId) return { ok: false, error: `Unknown source ${command.sourceId}` };
+      const current = discovery;
+      if (!current || !status.plcConnected) return { ok: false, error: "The PLC is not connected." };
+      const id = (stageId += 1);
+      const planned = commandWrites(command, current.parameters, parameters, id);
+      if ("error" in planned) return { ok: false, error: planned.error };
+      try {
+        await plc.sumWrite(planned.writes);
+      } catch (error) {
+        return { ok: false, error: `Writing to the PLC failed: ${error instanceof Error ? error.message : String(error)}` };
+      }
+      return { ok: true, stageId: id };
+    },
     async cycle() {
       if (failedAt !== undefined && now() - failedAt < RECONNECT_MS) return;
       try {

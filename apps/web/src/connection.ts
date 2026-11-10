@@ -1,5 +1,14 @@
 import { useSyncExternalStore } from "react";
-import { GatewayMessageSchema, RegisterDecoder, RegisterGapError, type GatewayMessage, type StateMessage } from "@rpp/protocol";
+import {
+  RegisterDecoder,
+  RegisterGapError,
+  ServerMessageSchema,
+  type ClientMessage,
+  type GatewayMessage,
+  type ParametersMessage,
+  type StateMessage,
+  type WriteResultMessage,
+} from "@rpp/protocol";
 import { METRICS_WINDOW_MS } from "./metrics";
 import { ProductHistory, type ProductEvent, type ProductStep } from "./product-history";
 import type { SceneSource } from "./scene/scene-model";
@@ -14,6 +23,8 @@ export interface GatewaySnapshot {
   socket: SocketState;
   /** In the order the gateway first reported them. */
   sources: readonly SourceInfo[];
+  /** Per source its PLC's parameter sets (ADR 0017), when it has Syn_Config; only the configurator uses them. */
+  parameters: Readonly<Record<string, ParametersMessage>>;
   protocolError: string | undefined;
 }
 
@@ -49,7 +60,9 @@ export class GatewayStore implements SceneFeed {
   private retryMs = 500;
   private stopped = true;
   private listeners = new Set<() => void>();
-  private snapshot: GatewaySnapshot = { socket: "connecting", sources: [], protocolError: undefined };
+  private snapshot: GatewaySnapshot = { socket: "connecting", sources: [], parameters: {}, protocolError: undefined };
+  /** Commands sent and waiting for their `writeResult`, by request id. */
+  private readonly commands = new Map<number, (answer: WriteResultMessage) => void>();
   /** States arrive in register form, only the changed products listed (ADR 0013); this restores them whole. */
   private readonly registers = new RegisterDecoder();
 
@@ -110,6 +123,21 @@ export class GatewayStore implements SceneFeed {
     return { events: this.products.events(now - windowMs, now), now, since: this.firstStateAt ?? now };
   }
 
+  /**
+   * Sends a command on parameter sets (ADR 0017) and gives the gateway's answer; a lost connection answers that the
+   * command may not have arrived.
+   */
+  command(command: ClientMessage): Promise<WriteResultMessage> {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return Promise.resolve({ kind: "writeResult", requestId: command.requestId, ok: false, error: "Not connected to the gateway." });
+    }
+    return new Promise((resolve) => {
+      this.commands.set(command.requestId, resolve);
+      socket.send(JSON.stringify(command));
+    });
+  }
+
   /** Every source with its config, snapshots and render time, as the machine scene takes them. */
   frame(now = performance.now()): SceneSource[] {
     return this.sources.sceneSources(now);
@@ -137,6 +165,11 @@ export class GatewayStore implements SceneFeed {
       this.socket = undefined;
       // Recorded like the gateway's own status, so recordings show the outage too.
       for (const message of this.sources.gatewayLost()) this.dispatch(message, JSON.stringify(message));
+      // Commands still waiting will not be answered on this connection.
+      for (const [requestId, answer] of this.commands) {
+        answer({ kind: "writeResult", requestId, ok: false, error: "The connection to the gateway was lost; the command may not have arrived." });
+      }
+      this.commands.clear();
       this.update({ socket: "closed" });
       if (this.stopped) return;
       this.retryTimer = setTimeout(() => this.connect(), this.retryMs);
@@ -155,12 +188,22 @@ export class GatewayStore implements SceneFeed {
       this.update({ protocolError: "Gateway sent invalid JSON" });
       return;
     }
-    const parsed = GatewayMessageSchema.safeParse(json);
+    const parsed = ServerMessageSchema.safeParse(json);
     if (!parsed.success) {
       this.update({ protocolError: parsed.error.issues[0]?.message ?? "Invalid message from gateway" });
       return;
     }
-    let message = parsed.data;
+    // Parameter sets and command answers concern the configurator only: never recorded, not part of the sources.
+    if (parsed.data.kind === "parameters") {
+      this.update({ parameters: { ...this.snapshot.parameters, [parsed.data.sourceId]: parsed.data } });
+      return;
+    }
+    if (parsed.data.kind === "writeResult") {
+      this.commands.get(parsed.data.requestId)?.(parsed.data);
+      this.commands.delete(parsed.data.requestId);
+      return;
+    }
+    let message: GatewayMessage = parsed.data;
     if (message.kind === "state") {
       try {
         message = this.registers.decode(message);

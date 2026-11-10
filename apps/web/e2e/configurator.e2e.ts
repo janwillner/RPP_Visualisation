@@ -104,3 +104,30 @@ test("configurator: imports the simulator's configuration, reconciles it and mar
   await expect(delta).toContainText("changed");
   await expect(page.locator(".statusbar")).toContainText("Gateway: open");
 });
+
+test("configurator: writes a changed zone to the simulator, which takes it over and shows it", async ({ page }) => {
+  await page.goto("/configurator");
+  await page.locator("aside.panel.left .plcs").getByRole("button", { name: "Import" }).first().click();
+  const list = page.locator("aside.panel.left .components");
+  const delta = list.getByRole("button", { name: /Delta 1/ });
+  await delta.click();
+
+  const zone = page.locator("aside.panel.right").getByRole("group", { name: "Zone 1" });
+  const end = zone.getByLabel("End", { exact: true });
+  const before = Number(await end.inputValue());
+  await end.fill(String(before + 100));
+  await end.press("Enter");
+  await expect(delta).toContainText("changed");
+
+  await page.locator("aside.panel.left .plcs").getByRole("button", { name: "Write…" }).first().click();
+  const dialog = page.getByRole("dialog", { name: /Write to/ });
+  await expect(dialog).toContainText("Delta 1");
+  await expect(dialog).toContainText("zones.1.end");
+  await expect(dialog).toContainText(String(before + 100));
+  await dialog.getByRole("button", { name: "Write", exact: true }).click();
+
+  await expect(delta).toContainText("written");
+  // The simulated application passed the new set on to Syn_Visu: the PLC now has what the draft has.
+  await expect(delta).toContainText("PLC");
+  await expect(delta).not.toContainText("changed");
+});

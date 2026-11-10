@@ -71,6 +71,8 @@ function runtime(sourceId: string, name: string, plc: SymbolAccess, close: () =>
     sourceName: name,
     configRecheckMs: options.configRecheckMs,
     manifestPath: options.manifestPath,
+    configManifestPath: options.configManifestPath,
+    allowWrite: options.allowWrite,
   });
   return { name, gateway, close };
 }

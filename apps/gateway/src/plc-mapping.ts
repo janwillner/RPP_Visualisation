@@ -197,3 +197,13 @@ function singular(name: string): string {
   if (name.endsWith("ies")) return `${name.slice(0, -3)}y`;
   return name.endsWith("s") ? name.slice(0, -1) : name;
 }
+
+/** The PLC value of an enumeration option: its index, unless a table is registered (`registerEnumTable`). */
+export function plcEnumValue(schema: z.ZodEnum<[string, ...string[]]>, option: string): number {
+  const table = ENUM_TABLES.get(enumKey(schema.options));
+  if (table) {
+    const entry = Object.entries(table).find(([, o]) => o === option);
+    if (entry) return Number(entry[0]);
+  }
+  return Math.max(0, schema.options.indexOf(option));
+}

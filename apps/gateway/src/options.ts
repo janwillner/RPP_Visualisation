@@ -1,5 +1,6 @@
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { CONFIG_MANIFEST_PATH } from "./config-contract";
 import { MANIFEST_PATH } from "./plc-contract";
 
 const drivers = ["sim", "ads", "ads-tcp"] as const;
@@ -28,6 +29,10 @@ export interface GatewayOptions {
   simProducts: number;
   /** Symbol path of the application's manifest. */
   manifestPath: string;
+  /** Symbol path of the application's Syn_Config manifest (ADR 0017). */
+  configManifestPath: string;
+  /** Parameter sets may be written to the PLCs (ADR 0017); off by default: the gateway only reads. */
+  allowWrite: boolean;
   port: number;
   host?: string;
   /** AdsBridge.exe (packaged) or AdsBridge.dll (run through `dotnet`). */
@@ -105,6 +110,17 @@ export const OPTION_HELP: readonly OptionHelp[] = [
     flag: "--manifest-path <symbol>",
     text: ["Symbol path of the application's manifest (default: GVL_Visu.stManifest)"],
   },
+  {
+    flag: "--config-manifest-path <symbol>",
+    text: ["Symbol path of the application's Syn_Config manifest (default: GVL_Config.stManifest)"],
+  },
+  {
+    flag: "--allow-write",
+    text: [
+      "Let the configurator write parameter sets to the PLCs (Syn_Config, ADR 0017);",
+      "without it the gateway only reads",
+    ],
+  },
   { flag: "--port <port>", text: ["HTTP + WebSocket port (default: 8080)"] },
   { flag: "--host <addr>", text: ["Bind address (default: all interfaces)"] },
   {
@@ -122,14 +138,19 @@ export function helpText(): string {
   return ["Usage: gateway [options]", ...lines].join("\n");
 }
 
-const stringKeys = ["driver", "amsNetId", "routerAddress", "localAmsNetId", "host", "manifestPath"] as const;
+const stringKeys = ["driver", "amsNetId", "routerAddress", "localAmsNetId", "host", "manifestPath", "configManifestPath"] as const;
+/** Switches: a flag without a value on the command line, true or false in the config file. */
+const booleanKeys = ["allowWrite"] as const;
 /** String settings holding paths; relative ones resolve against the config file's folder or the working directory. */
 const pathKeys = ["adsBridge", "staticDir"] as const;
 const numberKeys = ["adsPort", "routerPort", "cycleMs", "configRecheckMs", "simProducts", "port"] as const;
 
 type StringKey = (typeof stringKeys)[number] | (typeof pathKeys)[number];
 type NumberKey = (typeof numberKeys)[number];
-type Settings = Partial<Record<StringKey, string> & Record<NumberKey, number>> & { sources?: PlcSource[] };
+type BooleanKey = (typeof booleanKeys)[number];
+type Settings = Partial<Record<StringKey, string> & Record<NumberKey, number> & Record<BooleanKey, boolean>> & {
+  sources?: PlcSource[];
+};
 
 const DEFAULT_AMS_NET_ID = "127.0.0.1.1.1";
 const DEFAULT_ADS_PORT = 851;
@@ -163,6 +184,7 @@ export function resolveGatewayOptions(argv: readonly string[], env: OptionsEnvir
     const v = flag(key);
     if (v !== undefined) fromFlags[key] = toNumber(v, `--${kebab(key)}`);
   }
+  for (const key of booleanKeys) if (values[kebab(key)] === true) fromFlags[key] = true;
   const configPath = typeof values.config === "string" ? values.config : undefined;
   const settings: Settings = { ...(configPath ? readConfigFile(configPath, env) : {}), ...fromFlags };
 
@@ -186,6 +208,8 @@ export function resolveGatewayOptions(argv: readonly string[], env: OptionsEnvir
     configRecheckMs: settings.configRecheckMs ?? 1000,
     simProducts,
     manifestPath: settings.manifestPath ?? MANIFEST_PATH,
+    configManifestPath: settings.configManifestPath ?? CONFIG_MANIFEST_PATH,
+    allowWrite: settings.allowWrite ?? false,
     port: settings.port ?? 8080,
     ...(settings.host !== undefined ? { host: settings.host } : {}),
     adsBridge: settings.adsBridge ?? defaultBridge(env),
@@ -240,6 +264,7 @@ function parseFlags(argv: readonly string[]): Record<string, string | boolean | 
       options: {
         config: { type: "string" },
         help: { type: "boolean", default: false },
+        ...Object.fromEntries(booleanKeys.map((k) => [kebab(k), { type: "boolean" as const }])),
         ...Object.fromEntries(
           [...stringKeys, ...pathKeys, ...numberKeys].map((k) => [kebab(k), { type: "string" as const }]),
         ),
@@ -285,7 +310,14 @@ function readConfigFile(path: string, env: OptionsEnvironment): Settings {
       continue;
     }
     const isPath = isOneOf(pathKeys, key);
-    const expected = isPath || isOneOf(stringKeys, key) ? "string" : isOneOf(numberKeys, key) ? "number" : undefined;
+    const expected =
+      isPath || isOneOf(stringKeys, key)
+        ? "string"
+        : isOneOf(numberKeys, key)
+          ? "number"
+          : isOneOf(booleanKeys, key)
+            ? "boolean"
+            : undefined;
     if (!expected) throw new OptionsError(`Config file ${path}: unknown key "${key}"`);
     if (typeof value !== expected || (expected === "number" && !Number.isFinite(value))) {
       throw new OptionsError(`Config file ${path}: "${key}" must be a ${expected}`);

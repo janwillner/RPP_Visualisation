@@ -8,7 +8,9 @@ describe("simulator", () => {
     const sim = createSimulator({ seed: 1 });
     const gateway = createGateway({ plc: sim.plc, sourceId: "sim" });
     const messages: GatewayMessage[] = [];
-    gateway.subscribe((m) => messages.push(GatewayMessageSchema.parse(JSON.parse(JSON.stringify(m)))));
+    gateway.subscribe((m) => {
+      if (m.kind !== "parameters") messages.push(GatewayMessageSchema.parse(JSON.parse(JSON.stringify(m))));
+    });
 
     // 60 simulated seconds at a 20 ms cycle.
     for (let i = 0; i < 3000; i++) {
@@ -165,6 +167,7 @@ describe("simulator", () => {
     const gateway = createGateway({ plc: sim.plc, sourceId: "sim" });
     const states: StateMessage[] = [];
     gateway.subscribe((m) => {
+      if (m.kind === "parameters") return;
       const parsed = GatewayMessageSchema.parse(JSON.parse(JSON.stringify(m)));
       if (parsed.kind === "state") states.push(parsed);
     });

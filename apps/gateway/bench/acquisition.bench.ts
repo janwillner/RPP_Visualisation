@@ -27,7 +27,9 @@ function machineWith(products: number) {
   defineMachine(plc, [{ id: 1, name: "Buffer belt", path: "MAIN.stBuffer", kind: "conveyor", value }]);
   const gateway = createGateway({ plc, sourceId: "bench", configRecheckMs: 0 });
   let last: GatewayMessage | undefined;
-  gateway.subscribe((m) => (last = m));
+  gateway.subscribe((m) => {
+    if (m.kind !== "parameters") last = m;
+  });
   return { gateway, last: () => last };
 }
 

@@ -31,6 +31,19 @@ describe("resolveGatewayOptions", () => {
     ]);
   });
 
+  it("only reads unless writing parameter sets is allowed by --allow-write or \"allowWrite\": true (ADR 0017)", () => {
+    expect(resolveGatewayOptions([], env())).toMatchObject({ allowWrite: false, configManifestPath: "GVL_Config.stManifest" });
+    expect(resolveGatewayOptions(["--allow-write"], env()).allowWrite).toBe(true);
+    const fromFile = resolveGatewayOptions(
+      ["--config", "/data/config.json"],
+      env({ "/data/config.json": JSON.stringify({ allowWrite: true, configManifestPath: "GVL_Params.stManifest" }) }),
+    );
+    expect(fromFile).toMatchObject({ allowWrite: true, configManifestPath: "GVL_Params.stManifest" });
+    expect(() =>
+      resolveGatewayOptions(["--config", "/data/config.json"], env({ "/data/config.json": JSON.stringify({ allowWrite: "yes" }) })),
+    ).toThrow(/"allowWrite" must be a boolean/);
+  });
+
   it("reads the manifest symbol path from the config file and defaults to GVL_Visu.stManifest", () => {
     const configured = resolveGatewayOptions(
       ["--config", "/data/config.json"],

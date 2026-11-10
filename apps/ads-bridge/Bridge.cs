@@ -68,6 +68,7 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
             "typeOf" => TypeOf(request["path"]!.GetValue<string>()),
             "read" => Read(request["path"]!.GetValue<string>()),
             "sumRead" => SumRead(request["paths"]!.AsArray().Select(p => p!.GetValue<string>()).ToList(), request["changes"]?.GetValue<string>()),
+            "sumWrite" => WriteAll(request["writes"]!.AsArray()),
             _ => throw new InvalidOperationException($"Unknown op '{op}'"),
         };
     }
@@ -117,6 +118,13 @@ public sealed class Bridge(BridgeOptions options) : IDisposable
         var resolved = new ResolvedSymbol(symbol.IndexGroup, symbol.IndexOffset, symbol.ByteSize, symbol.TypeName, dataType, arrays, entries);
         _symbols[path] = resolved;
         return resolved;
+    }
+
+    /// <summary>Writes leaf values in one sum-write, in order (ADR 0017); answers null.</summary>
+    private JsonNode? WriteAll(JsonArray writes)
+    {
+        SumWrite.Run(Client(), writes);
+        return null;
     }
 
     private ResolvedSymbol Require(string path) => Resolve(path) ?? throw new SymbolNotFoundException(path);

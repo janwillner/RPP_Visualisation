@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
-import { SymbolNotFoundError, type SumReadOptions, type SymbolAccess } from "./symbol-access";
+import { SymbolNotFoundError, type SumReadOptions, type SymbolAccess, type SymbolWrite } from "./symbol-access";
 
 export interface AdsBridgeOptions {
   /** The self-contained AdsBridge.exe (packaged) or the built AdsBridge.dll (apps/ads-bridge, run through `dotnet`). */
@@ -55,6 +55,10 @@ export class AdsBridgeSymbolAccess implements SymbolAccess {
   async sumRead(paths: readonly string[], options: SumReadOptions = {}): Promise<unknown[]> {
     const changes = options.changes === undefined ? {} : { changes: options.changes };
     return (await this.request({ op: "sumRead", paths, ...changes }, paths.join(", "))) as unknown[];
+  }
+
+  async sumWrite(writes: readonly SymbolWrite[]): Promise<void> {
+    await this.request({ op: "sumWrite", writes }, writes.map((w) => w.path).join(", "));
   }
 
   close(): void {
