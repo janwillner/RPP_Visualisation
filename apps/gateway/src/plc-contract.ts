@@ -9,31 +9,8 @@
 /** Default symbol path of the manifest; overridable per gateway (`manifestPath`) when the application names its GVL differently. */
 export const MANIFEST_PATH = "GVL_Visu.stManifest";
 
-/** Expected PLC data type names, checked against the symbol table during discovery. */
-export const PLC_TYPES = {
-  manifest: "ST_VisuManifest",
-  conveyor: "ST_VisuConveyor",
-  delta: "ST_VisuDelta",
-  xtsGantry: "ST_VisuXtsGantry",
-  xtsLoop: "ST_VisuXtsLoop",
-  cartesian: "ST_VisuCartesian",
-  vision: "ST_VisuDetector",
-  sensor: "ST_VisuDetector",
-  station: "ST_VisuStation",
-} as const;
-
-/** E_VisuComponentType */
-export const E_VisuComponentType = {
-  NONE: 0,
-  CONVEYOR: 1,
-  DELTA: 2,
-  XTS_GANTRY: 3,
-  XTS_LOOP: 4,
-  CARTESIAN: 5,
-  VISION: 6,
-  SENSOR: 7,
-  STATION: 8,
-} as const;
+/** PLC data type of the manifest, checked during discovery; the components' types are in `COMPONENTS`. */
+export const PLC_MANIFEST_TYPE = "ST_VisuManifest";
 
 /** E_VisuProductState */
 export const E_VisuProductState = { DETECTED: 0, ASSIGNED: 1, PICKED: 2, REJECTED: 3, PLACED: 4 } as const;

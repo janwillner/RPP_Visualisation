@@ -26,11 +26,11 @@ station, which has its own structure with the same members.
    - a detector reuses `ST_VisuDetector`; a type of its own gets a structure with the same members, like
      `ST_VisuStation`.
 2. **Protocol** (`packages/protocol/src/model.ts`): `componentConfig("<type>", bodyComponentConfig(), "<description>")`
-   and `componentState("<type>", bodyComponentState(), "<description>")`, added to both unions. The descriptions
-   appear in `/docs/schema.json` (ADR 0012).
-3. **Gateway**: the `E_VisuComponentType` value in `plc-contract.ts` and its `PLC_TYPES` entry, one entry in
-   `COMPONENTS` (`components.ts`), and for tests the `MachineComponent` entry in `plc-builders.ts`.
-4. **Web**: one line in `KITS` (`scene-model.ts`): `<type>: bodyKit()`, and the type in `BodyComponentType`.
+   and `componentState("<type>", bodyComponentState(), "<description>")`, and one entry in `COMPONENT_SCHEMAS`, from
+   which both unions follow. The descriptions appear in `/docs/schema.json` (ADR 0012).
+3. **Gateway**: one entry in `COMPONENTS` (`components.ts`): its `E_VisuComponentType` value and contract structure;
+   and for tests its structure in `PlcStructures` (`plc-builders.ts`). The compiler asks for both.
+4. **Web**: one line in `KITS` (`scene-model.ts`): `<type>: bodyKit()`.
 5. **Tests**: a gateway test that the config and state arrive (`gateway.test.ts`).
 6. **Docs**: `docs/plc-contract.md`, the guide's sections and reference (`docs/plc-library-guide.md`), `GLOSSARY.md` for the new term, and `CLAUDE.md` when the architecture summary
    changes.
@@ -45,11 +45,11 @@ Example: the Cartesian robot.
    where they lie through `m_Zones` and `m_Fingers`), `_FB_VisuXtsTrack` for one whose movers run on an XTS track
    (modules and their faults come with it, through `m_Modules`), `_FB_VisuZoneComponent` for anything else with
    zones, or `_FB_VisuComponent`.
-2. **Protocol**: the config and state schemas with `robotConfig` / `componentConfig` and `componentState`, added to
-   both unions. Field names are the PLC members without their prefix. Every schema and field gets a `.describe()`
+2. **Protocol**: the config and state schemas with `robotConfig` / `componentConfig` and `componentState`, and their
+   entry in `COMPONENT_SCHEMAS`. Field names are the PLC members without their prefix. Every schema and field gets a `.describe()`
    text for `/docs/schema.json`; a test fails for a field without one (ADR 0012).
-3. **Gateway**: the TypeScript mirror of the structures in `plc-contract.ts`, the `E_VisuComponentType` value and its
-   `PLC_TYPES` entry, one entry in `COMPONENTS`, a builder in `plc-builders.ts`. If a value needs more than the naming
+3. **Gateway**: the TypeScript mirror of the structures in `plc-contract.ts`, one entry in `COMPONENTS` (its
+   `E_VisuComponentType` value and contract structure), a builder and its `PlcStructures` entry in `plc-builders.ts`. If a value needs more than the naming
    rules (an enum that does not count from 0, a member named differently), register it in `plc-mapping.ts`
    (`registerEnumTable`, `ALIASES`) rather than writing a mapper.
 4. **Web**:

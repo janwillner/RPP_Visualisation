@@ -7,7 +7,7 @@ import {
   E_VisuModuleKind,
   E_VisuProductState,
   MANIFEST_PATH,
-  PLC_TYPES,
+  PLC_MANIFEST_TYPE,
   type ST_VisuCartesian,
   type ST_VisuCartesianConfig,
   type ST_VisuCartesianState,
@@ -35,7 +35,7 @@ import {
   type ST_VisuLimitArea,
   type ST_VisuZone,
 } from "./plc-contract";
-import { COMPONENTS } from "./components";
+import { COMPONENTS, type ComponentKind } from "./components";
 import type { InMemoryPlc } from "./in-memory-plc";
 
 /** Library defaults (constants in Syn_Visu, overridable per project). */
@@ -450,18 +450,22 @@ export function station(spec: DetectorSpec = {}): ST_VisuStation {
   return detector(spec);
 }
 
-type Entry<K extends keyof typeof PLC_TYPES, V> = { id: number; name: string; path: string; kind: K; value: V };
+/** The contract structure of every component type; the constraint makes the compiler ask for a new type's entry. */
+type PlcStructures<T extends Record<ComponentKind, object> = {
+  conveyor: ST_VisuConveyor;
+  delta: ST_VisuDelta;
+  xtsGantry: ST_VisuXtsGantry;
+  xtsLoop: ST_VisuXtsLoop;
+  cartesian: ST_VisuCartesian;
+  vision: ST_VisuDetector;
+  sensor: ST_VisuDetector;
+  station: ST_VisuStation;
+}> = T;
 
-export type MachineComponent =
-  | Entry<"conveyor", ST_VisuConveyor>
-  | Entry<"delta", ST_VisuDelta>
-  | Entry<"xtsGantry", ST_VisuXtsGantry>
-  | Entry<"xtsLoop", ST_VisuXtsLoop>
-  | Entry<"cartesian", ST_VisuCartesian>
-  | Entry<"vision", ST_VisuDetector>
-  | Entry<"sensor", ST_VisuDetector>
-  | Entry<"station", ST_VisuStation>;
-
+/** One component of a machine defined in an in-memory PLC: its manifest entry and its contract structure. */
+export type MachineComponent = {
+  [K in ComponentKind]: { id: number; name: string; path: string; kind: K; value: PlcStructures[K] };
+}[ComponentKind];
 
 /** Registers a manifest and its components in an in-memory PLC. */
 export function defineMachine(
@@ -483,6 +487,6 @@ export function defineMachine(
     // Left out like a library older than 5.1 does.
     ...(options.libraryVersion !== undefined ? { sLibraryVersion: options.libraryVersion } : {}),
   };
-  plc.define(options.manifestPath ?? MANIFEST_PATH, PLC_TYPES.manifest, manifest);
+  plc.define(options.manifestPath ?? MANIFEST_PATH, PLC_MANIFEST_TYPE, manifest);
   for (const c of components) plc.define(c.path, COMPONENTS[c.kind].plcType, c.value);
 }

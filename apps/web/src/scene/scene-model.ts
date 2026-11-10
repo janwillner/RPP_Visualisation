@@ -772,8 +772,8 @@ const KITS: { [T in ComponentType]: ComponentKit<T> } = {
   station: bodyKit(),
 };
 
-/** Component types drawn only from the bodies they describe. */
-type BodyComponentType = "vision" | "sensor" | "station";
+/** Component types drawn only from the bodies they describe: every type whose config has bodies. */
+type BodyComponentType = Extract<ComponentConfig, { bodies: unknown }>["type"];
 
 /** Roles drawn as overlays: on the zones layer, also for their snap points. */
 const OVERLAY_ROLES: ReadonlySet<BodyRole> = new Set(["beam", "fieldOfView"]);

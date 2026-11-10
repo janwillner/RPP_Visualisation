@@ -487,20 +487,6 @@ export const StationConfigSchema = componentConfig(
 );
 export type StationConfig = z.infer<typeof StationConfigSchema>;
 
-export const ComponentConfigSchema = z
-  .discriminatedUnion("type", [
-    ConveyorConfigSchema,
-    DeltaConfigSchema,
-    XtsGantryConfigSchema,
-    XtsLoopConfigSchema,
-    CartesianConfigSchema,
-    VisionConfigSchema,
-    SensorConfigSchema,
-    StationConfigSchema,
-  ])
-  .describe("The configuration of one component, by its `type`.");
-export type ComponentConfig = z.infer<typeof ComponentConfigSchema>;
-
 const productStates = ["detected", "assigned", "picked", "rejected", "placed"] as const;
 
 export const ProductStateSchema = z
@@ -631,17 +617,36 @@ export type SensorState = z.infer<typeof SensorStateSchema>;
 export const StationStateSchema = componentState("station", bodyComponentState(), "Live state of a station.");
 export type StationState = z.infer<typeof StationStateSchema>;
 
+/**
+ * Every component type with its config and state schema, keyed by its `type`: the one list of component types. Both
+ * unions below, the gateway's registry and the scene's kits follow from it; a new type needs one entry here.
+ */
+export const COMPONENT_SCHEMAS = {
+  conveyor: { config: ConveyorConfigSchema, state: ConveyorStateSchema },
+  delta: { config: DeltaConfigSchema, state: DeltaStateSchema },
+  xtsGantry: { config: XtsGantryConfigSchema, state: XtsGantryStateSchema },
+  xtsLoop: { config: XtsLoopConfigSchema, state: XtsLoopStateSchema },
+  cartesian: { config: CartesianConfigSchema, state: CartesianStateSchema },
+  vision: { config: VisionConfigSchema, state: VisionStateSchema },
+  sensor: { config: SensorConfigSchema, state: SensorStateSchema },
+  station: { config: StationConfigSchema, state: StationStateSchema },
+} as const;
+export type ComponentType = keyof typeof COMPONENT_SCHEMAS;
+
+type ComponentSchemas = (typeof COMPONENT_SCHEMAS)[ComponentType];
+
+/** The schemas of one side (config or state) of every component type, as a discriminated union needs them. */
+function schemasOf<S extends keyof ComponentSchemas>(side: S): [ComponentSchemas[S], ...ComponentSchemas[S][]] {
+  return Object.values(COMPONENT_SCHEMAS).map((s) => s[side]) as [ComponentSchemas[S], ...ComponentSchemas[S][]];
+}
+
+export const ComponentConfigSchema = z
+  .discriminatedUnion("type", schemasOf("config"))
+  .describe("The configuration of one component, by its `type`.");
+export type ComponentConfig = z.infer<typeof ComponentConfigSchema>;
+
 export const ComponentStateSchema = z
-  .discriminatedUnion("type", [
-    ConveyorStateSchema,
-    DeltaStateSchema,
-    XtsGantryStateSchema,
-    XtsLoopStateSchema,
-    CartesianStateSchema,
-    VisionStateSchema,
-    SensorStateSchema,
-    StationStateSchema,
-  ])
+  .discriminatedUnion("type", schemasOf("state"))
   .describe("The live state of one component, by its `type`.");
 export type ComponentState = z.infer<typeof ComponentStateSchema>;
 
