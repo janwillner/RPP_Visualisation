@@ -234,6 +234,7 @@ describe("parameter sets (Syn_Config, ADR 0017)", () => {
     p.originShift = { x: 10, y: 20, z: 30 };
     if ("modules" in p) p.modules = [...(p.modules as unknown[]), { kind: "curveLeft", length: 250 }];
     if ("tcpLimitArea" in p) p.tcpLimitArea = { xMin: -60, xMax: 60, yMin: -60, yMax: 60, zMin: -100, zMax: 20 };
+    if ("limitArea" in p) p.limitArea = { xMin: 0, xMax: 600, yMin: -100, yMax: 1500, zMin: -500, zMax: -100 };
     const result = await gateway.command({ kind: "writeParameters", requestId: 1, sourceId: "plc1", componentId: 20, baseVersion: 0, set });
     expect(result).toMatchObject({ ok: true });
 
@@ -241,6 +242,34 @@ describe("parameter sets (Syn_Config, ADR 0017)", () => {
     expect(component(lastOf("parameters") as ParametersMessage, 20)).toMatchObject({ activeVersion: 1, result: "applied", set });
     const shown = (lastOf("config") as ConfigMessage).components.find((c) => c.id === 20);
     expect(shown).toMatchObject(set.parameters);
+  });
+
+  it("removes a robot's limit area and TCP limit area: the visualisation shows none", async () => {
+    const plc = new InMemoryPlc();
+    const box = { fXMin: 0, fXMax: 1000, fYMin: 0, fYMax: 800, fZMin: -600, fZMax: -100 };
+    defineMachine(plc, [{ id: 40, name: "Cartesian", path: "MAIN.stCart", kind: "cartesian", value: cartesian({ limitArea: box, tcpLimitArea: box }) }]);
+    const emulation = new ConfigEmulation(plc, [{ id: 40, kind: "cartesian", path: "MAIN.fbCartParam.vo_Config", visuPath: "MAIN.stCart" }]);
+    const gateway = createGateway({ plc, sourceId: "plc1", allowWrite: true, now: () => 0 });
+    let parameters: ParametersMessage | undefined;
+    let config: ConfigMessage | undefined;
+    gateway.subscribe((m) => {
+      if (m.kind === "parameters") parameters = m;
+      if (m.kind === "config") config = m;
+    });
+    emulation.step();
+    await gateway.cycle();
+    expect(config?.components[0]).toMatchObject({ limitArea: { xMax: 1000 }, tcpLimitArea: { yMax: 800 } });
+
+    const set = structuredClone(component(parameters, 40)!.set);
+    if (set.type !== "cartesian") throw new Error("not a Cartesian robot");
+    set.parameters.limitArea = null;
+    set.parameters.tcpLimitArea = null;
+    await gateway.command({ kind: "writeParameters", requestId: 1, sourceId: "plc1", componentId: 40, baseVersion: 0, set });
+    emulation.step();
+    await gateway.cycle();
+
+    expect(component(parameters, 40)).toMatchObject({ activeVersion: 1, result: "applied", set });
+    expect(config?.components[0]).toMatchObject({ limitArea: null, tcpLimitArea: null });
   });
 
   it("rejects an XTS track without modules or with a module without a length", async () => {

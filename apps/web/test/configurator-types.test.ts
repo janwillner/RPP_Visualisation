@@ -138,7 +138,7 @@ describe("Configurator: every component type (#24)", () => {
       const { c, key, component } = placed("cartesian");
       expect(properties(component()).optionals).toEqual([
         expect.objectContaining({ name: "limitArea", title: "Limit area", present: false }),
-        expect.objectContaining({ name: "tcpLimitArea", title: "Tcp limit area", present: false }),
+        expect.objectContaining({ name: "tcpLimitArea", title: "TCP limit area", present: false }),
       ]);
 
       c.addArea(key, "limitArea");
@@ -169,6 +169,35 @@ describe("Configurator: every component type (#24)", () => {
       const { c, key, component } = placed("delta");
       c.addArea(key, "limitArea");
       expect(component()).toMatchObject({ limitArea: { xMin: -700, xMax: 700, yMin: -700, yMax: 700, zMin: -1300, zMax: -700 } });
+    });
+
+    it("starts a Cartesian robot's limit area flat where it lacks an axis", () => {
+      const { c, key, component } = placed("cartesian");
+      c.set(key, ["axes"], "xz");
+      c.addArea(key, "limitArea");
+      expect(component()).toMatchObject({ limitArea: { yMin: 0, yMax: 0, zMin: -600, zMax: 0 } });
+      expect(c.getSnapshot().issues).toEqual([]);
+
+      c.removeArea(key, "limitArea");
+      c.set(key, ["axes"], "xy");
+      c.addArea(key, "limitArea");
+      expect(component()).toMatchObject({ limitArea: { yMin: 0, yMax: 1000, zMin: -600, zMax: -600 } });
+      expect(shown(c)[0]).toMatchObject({ axes: "xy" });
+    });
+
+    it("starts an XTS gantry's limit area along its track as far as the flanges reach, also with a curve", () => {
+      const { c, key, component } = placed("xtsGantry");
+      c.addArea(key, "limitArea");
+      // Six straight modules along local +Y; X axes 0..700 with the flange 150 ahead, Z −200..0 with it 400 below.
+      expect(component()).toMatchObject({ limitArea: { xMin: 150, xMax: 850, yMin: 0, yMax: 1500, zMin: -600, zMax: -400 } });
+
+      c.removeArea(key, "limitArea");
+      c.addModule(key, "curveLeft");
+      c.addArea(key, "limitArea");
+      // A left curve (a quarter circle of 250 mm, radius ≈ 159 mm) ends ahead and to the left, towards local −X.
+      const area = (component() as XtsGantryConfig).limitArea!;
+      expect(area.yMax).toBeCloseTo(1500 + 159.15, 1);
+      expect(area.xMin).toBeCloseTo(150 - 159.15, 1);
     });
 
     it("has no optional areas for components without them", () => {

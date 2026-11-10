@@ -28,9 +28,17 @@ const SHOWN_ELSEWHERE = new Set(["type", "id", "timestamp", "fault", "products"]
 /** All lengths of the protocol are mm, all angles degrees. */
 const unitOf = (key: string) => (key === "rx" || key === "ry" || key === "rz" ? "°" : "mm");
 
-/** `gripperActive` → "Gripper active", `x` → "X". */
+/** Abbreviations a field name holds, written as the domain writes them. */
+const ABBREVIATIONS: Record<string, string> = { tcp: "TCP", ccs: "CCS" };
+
+/** `gripperActive` → "Gripper active", `x` → "X", `tcpLimitArea` → "TCP limit area". */
 export function fieldLabel(key: string): string {
-  const words = key.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+  const words = key
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(" ")
+    .map((w) => ABBREVIATIONS[w] ?? w)
+    .join(" ");
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 

@@ -107,6 +107,10 @@ export const TypedParametersSchema = z
   .describe("A parameter set with the type of its component.");
 export type TypedParameters = z.infer<typeof TypedParametersSchema>;
 
+/** Every parameter type is one option of `TypedParametersSchema`: a type left out of it does not compile. */
+const everyTypeTyped: [Exclude<ParameterType, TypedParameters["type"]>] extends [never] ? true : never = true;
+void everyTypeTyped;
+
 export const ParameterResultSchema = z
   .enum(["none", "pending", "applied", "rejected"])
   .describe(

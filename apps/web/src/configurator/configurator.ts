@@ -1,9 +1,9 @@
 import { useSyncExternalStore } from "react";
-import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, PROTOCOL_VERSION, emptyDraft, type Body, type TrackModuleKind, type ClientMessage, type ComponentConfig, type ConfigMessage, type ParametersMessage, type WriteResultMessage, type ConveyorConfig, type ConveyorState, type Draft, type ProductType, type StateMessage, type Zone } from "@rpp/protocol";
+import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, PROTOCOL_VERSION, emptyDraft, type TrackModuleKind, type ClientMessage, type ComponentConfig, type ConfigMessage, type ParametersMessage, type WriteResultMessage, type ConveyorConfig, type ConveyorState, type Draft, type ProductType, type StateMessage, type Zone } from "@rpp/protocol";
 import { componentKey, type ComponentKey, type SceneSource } from "../scene/scene-model";
 import { zoneSides } from "../machine-facts";
 import { beltRange, mcsToBelt } from "./belt-coordinates";
-import { defaultArea, defaultComponent, HARDWARE_FIELDS, PALETTE_LABELS, XTS_MODULE_LENGTH, type AreaField, type PaletteType } from "./component-defaults";
+import { defaultArea, defaultComponent, newBody, HARDWARE_FIELDS, PALETTE_LABELS, XTS_MODULE_LENGTH, type AreaField, type PaletteType } from "./component-defaults";
 import { applyEdit, keyOf, type Edit } from "./edits";
 import type { SourceInfo } from "../sources";
 import { hardwareHints, reconcile, type Match, type Reconciliation } from "./reconciliation";
@@ -333,22 +333,20 @@ export class Configurator {
   addBody(key: ComponentKey): void {
     const c = this.component(key);
     if (!c || !("bodies" in c)) return;
-    const pose = { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 };
-    const body: Body = { shape: "box", role: "structure", pose, length: 100, width: 100, height: 100, topLength: 0, topWidth: 0 };
-    this.set(key, ["bodies"], [...c.bodies, body]);
+    this.set(key, ["bodies"], [...c.bodies, newBody()]);
   }
 
   /** Gives a robot a limit area or a TCP limit area it does not have yet, starting as `defaultArea`. */
   addArea(key: ComponentKey, field: AreaField): void {
     const c = this.component(key);
-    if (!c || !(field in c) || (c as Record<string, unknown>)[field] !== null) return;
+    if (!c || !("limitArea" in c) || c[field] !== null) return;
     this.set(key, [field], defaultArea(c, field));
   }
 
   /** Removes a robot's limit area or TCP limit area. */
   removeArea(key: ComponentKey, field: AreaField): void {
     const c = this.component(key);
-    if (!c || !(field in c)) return;
+    if (!c || !("limitArea" in c)) return;
     this.set(key, [field], null);
   }
 

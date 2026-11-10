@@ -55,12 +55,14 @@ export function validateDraft(draft: Draft): Issue[] {
   return issues;
 }
 
-/** Positions closer than this count as the same, mm; a heading as the same within this, degrees. */
-const CLOSED_TOLERANCE = 1;
+/** A track end this close to its start closes the loop, mm. */
+const CLOSED_DISTANCE_MM = 1;
+/** A track end heading this close to its start heading closes the loop, degrees. */
+const CLOSED_HEADING_DEG = 1;
 
 /** Whether a track ends where it starts, running on in the direction it started in: an XTS loop. */
 function closed(modules: readonly TrackModule[]): boolean {
   const end = moduleStarts(modules).at(-1)!;
   const turn = (((end.heading % 360) + 540) % 360) - 180;
-  return Math.hypot(end.u, end.v) < CLOSED_TOLERANCE && Math.abs(turn) < CLOSED_TOLERANCE && modules.length > 0;
+  return Math.hypot(end.u, end.v) < CLOSED_DISTANCE_MM && Math.abs(turn) < CLOSED_HEADING_DEG && modules.length > 0;
 }

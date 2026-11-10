@@ -7,7 +7,7 @@ import type { SourceInfo } from "../sources";
 import { download } from "../download";
 import { APP_VERSION } from "../version";
 import { ViewControls } from "../ViewControls";
-import { PALETTE_LABELS, PALETTE_TYPES, placementHeight, type AreaField, type PaletteType } from "./component-defaults";
+import { PALETTE_LABELS, PALETTE_TYPES, placementHeight, isAreaField, type PaletteType } from "./component-defaults";
 import { Configurator, DRAFT_FILE_EXTENSION, useConfigurator } from "./configurator";
 import { EditControls, type FloorPicker } from "./EditControls";
 import { keyOf } from "./edits";
@@ -432,12 +432,14 @@ function Properties(props: {
         ))}
       {optionals.map((optional) => {
         const group = groups.find((g) => g.optional === optional.name);
-        const field = optional.name as AreaField;
+        const field = optional.name;
+        // Only the areas have an editor yet; another optional value would need its own default.
+        if (!isAreaField(field)) return null;
         if (!group) {
           return (
             <div key={optional.name} className="property-list-head" title={optional.hint}>
               <h4>{optional.title}</h4>
-              <button onClick={() => configurator.addArea(key, field)}>Add {optional.title.toLowerCase()}</button>
+              <button onClick={() => configurator.addArea(key, field)}>Add {inSentence(optional.title)}</button>
             </div>
           );
         }
@@ -445,7 +447,7 @@ function Properties(props: {
           <fieldset key={optional.name} aria-label={optional.title} title={optional.hint}>
             <legend>
               {optional.title}{" "}
-              <button className="link-button" title={`Remove ${optional.title.toLowerCase()}`} onClick={() => configurator.removeArea(key, field)}>
+              <button className="link-button" title={`Remove ${inSentence(optional.title)}`} onClick={() => configurator.removeArea(key, field)}>
                 Remove
               </button>
             </legend>
@@ -481,6 +483,9 @@ function Properties(props: {
     </div>
   );
 }
+
+/** A label inside a sentence: "Limit area" → "limit area", "TCP limit area" stays. */
+const inSentence = (title: string) => (/^[A-Z][a-z]/.test(title) ? title.charAt(0).toLowerCase() + title.slice(1) : title);
 
 /**
  * Adds an entry to a list the configurator knows how to start: a zone on a chosen conveyor, a product type, a track

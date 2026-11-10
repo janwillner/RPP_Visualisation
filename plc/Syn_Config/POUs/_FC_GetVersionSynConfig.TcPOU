@@ -11,7 +11,7 @@ Runtime-readable version of the Syn_Config library.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 1.0.0 ¦ 2026-11-10 ¦ J.Willner ¦ Parameter sets of conveyors and Deltas (ADR 0017, protocol 1)<br>
-Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ Every other component type: XTS gantry, XTS loop, Cartesian, vision, sensor, station<br>
+Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ Every other component type (#24)<br>
 ****************************************************************************************************)
 FUNCTION _FC_GetVersionSynConfig : UINT
 VAR_INPUT

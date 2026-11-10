@@ -1,3 +1,4 @@
+import { moduleStarts } from "@rpp/protocol";
 import type {
   Body,
   CartesianConfig,
@@ -186,28 +187,49 @@ export const HARDWARE_FIELDS: { [T in ComponentType]: readonly (keyof Extract<Co
   station: ["bodies"],
 };
 
+/** A body added to a detector or station: a 100 mm box standing on its origin, to edit from there. */
+export const newBody = (): Body => box(at(0, 0, 0), 100, 100, 100);
+
 /** The optional areas a robot may have. */
-export type AreaField = "limitArea" | "tcpLimitArea";
+export const AREA_FIELDS = ["limitArea", "tcpLimitArea"] as const;
+export type AreaField = (typeof AREA_FIELDS)[number];
+export const isAreaField = (field: string): field is AreaField => (AREA_FIELDS as readonly string[]).includes(field);
+
+/** A robot that may have a limit area and a TCP limit area. */
+export type LimitedRobot = Extract<ComponentConfig, { limitArea: unknown }>;
 
 /**
  * The box a new optional area starts as: a limit area as the robot's reach (a Delta's working area, a Cartesian
- * robot's strokes, the reach of an XTS gantry's flanges), a TCP limit area as a box around the flange.
+ * robot's strokes, flat where it lacks an axis; the reach of an XTS gantry's flanges along its track), a TCP limit area
+ * as a box around the flange.
  */
-export function defaultArea(c: ComponentConfig, field: AreaField): LimitArea {
+export function defaultArea(c: LimitedRobot, field: AreaField): LimitArea {
   if (field === "tcpLimitArea") return { xMin: -60, xMax: 60, yMin: -60, yMax: 60, zMin: -100, zMax: 20 };
   switch (c.type) {
     case "delta": {
       const { radius: r, zMin, zMax } = c.workingArea;
       return { xMin: -r, xMax: r, yMin: -r, yMax: r, zMin, zMax };
     }
-    case "cartesian":
-      return { xMin: c.xMin, xMax: c.xMax, yMin: c.yMin, yMax: c.yMax, zMin: c.zMin, zMax: c.zMax };
-    case "xtsGantry": {
-      const length = c.modules.reduce((sum, m) => sum + m.length, 0);
-      const { toolOffsetX: x, toolOffsetZ: z } = c;
-      return { xMin: c.xMin + x, xMax: c.xMax + x, yMin: 0, yMax: length, zMin: c.zMin + z, zMax: c.zMax + z };
+    case "cartesian": {
+      // Without a Y axis Y is always 0; without a Z axis the flange stays at zMin.
+      const [yMin, yMax] = c.axes === "xz" ? [0, 0] : [c.yMin, c.yMax];
+      const [zMin, zMax] = c.axes === "xy" ? [c.zMin, c.zMin] : [c.zMin, c.zMax];
+      return { xMin: c.xMin, xMax: c.xMax, yMin, yMax, zMin, zMax };
     }
-    default:
-      return { xMin: -500, xMax: 500, yMin: -500, yMax: 500, zMin: -500, zMax: 0 };
+    case "xtsGantry": {
+      // The track runs along local +Y (u of its plane) and a curve turns it towards local −X (v, to its left).
+      const ends = moduleStarts(c.modules);
+      const along = ends.map((p) => p.u);
+      const across = ends.map((p) => -p.v);
+      const { toolOffsetX: x, toolOffsetZ: z } = c;
+      return {
+        xMin: c.xMin + x + Math.min(...across),
+        xMax: c.xMax + x + Math.max(...across),
+        yMin: Math.min(...along),
+        yMax: Math.max(...along),
+        zMin: c.zMin + z,
+        zMax: c.zMax + z,
+      };
+    }
   }
 }

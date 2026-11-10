@@ -9,10 +9,10 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 Parameter set of one Cartesian robot (ADR 0017): its pose, origin shift, zones, limit area and TCP limit area,<br>
 written by the configurator, taken over when the application allows it. Typical cycle:<br>
-  fb_CartesianParam.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Cartesian.m_Id());<br>
-  fb_CartesianParam.m_Cycle(vio_Default := CartesianDefault, vio_Set := CartesianSet, vi_b_ApplyAllowed := b_Stopped);<br>
-  fb_Cartesian.m_Configure(vi_Pose := fb_CartesianParam.m_Pose(), vi_lr_XMin := 0, ...);<br>
-  fb_CartesianParam.m_PassOn(vio_Visu := fb_Cartesian);<br>
+  fb_CartParam.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Cart.m_Id());<br>
+  fb_CartParam.m_Cycle(vio_Default := CartDefault, vio_Set := CartSet, vi_b_ApplyAllowed := b_Stopped);<br>
+  fb_Cart.m_Configure(vi_Pose := fb_CartParam.m_Pose(), vi_lr_XMin := 0, ...);<br>
+  fb_CartParam.m_PassOn(vio_Visu := fb_Cart);<br>
 The application's logic takes its zones and limit areas from m_Active, not from its own constants.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>

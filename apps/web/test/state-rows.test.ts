@@ -36,8 +36,8 @@ describe("stateRows", () => {
       fault: null,
     };
     expect(stateRows(state).values).toEqual([
-      { label: "Actual tcp", value: "X 10.0 · Y -20.0 · Z -800.0 mm" },
-      { label: "Setpoint tcp", value: "X 11.0 · Y -20.0 · Z -800.0 mm" },
+      { label: "Actual TCP", value: "X 10.0 · Y -20.0 · Z -800.0 mm" },
+      { label: "Setpoint TCP", value: "X 11.0 · Y -20.0 · Z -800.0 mm" },
     ]);
   });
 

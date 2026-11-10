@@ -20,7 +20,7 @@ vo_Config is the contract structure the gateway reads and writes at the path in 
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 1.0.0 ¦ 2026-11-10 ¦ J.Willner ¦ First version<br>
-Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ m_PassOn and m_Invalid through the helpers of _FB_ConfigComponent<br>
+Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ m_PassOn, m_Invalid through the shared helpers<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_ConfigDelta EXTENDS _FB_ConfigComponent
 VAR_OUTPUT

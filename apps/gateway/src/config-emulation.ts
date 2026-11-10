@@ -141,7 +141,7 @@ export class ConfigEmulation {
       const modules = counted<ST_VisuTrackModule>("aModules", "nModuleCount", "track modules");
       if (typeof modules === "string") return modules;
       if (modules.length === 0) return "A track without modules";
-      const module = modules.findIndex((m) => !(m.fLength > 0));
+      const module = modules.findIndex((m) => m.fLength <= 0);
       if (module >= 0) return `Track module ${module + 1} has no length`;
     }
     const zones = counted<ST_VisuZone>("aZones", "nZoneCount", "zones");

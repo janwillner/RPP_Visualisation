@@ -7,12 +7,13 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Base of every parameter FB (_FB_ConfigConveyor, _FB_ConfigDelta, _FB_ConfigXtsGantry, ...): the config manifest entry and what is<br>
-done with a staging (ADR 0017). Not used directly.<br>
+Base of every parameter FB (_FB_ConfigConveyor, _FB_ConfigDelta, _FB_ConfigXtsGantry, ...): the config<br>
+manifest entry, what is done with a staging (ADR 0017) and the helpers for zones, limit areas and track modules<br>
+the derived FBs share. Not used directly.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 1.0.0 ¦ 2026-11-10 ¦ J.Willner ¦ First version: conveyor and Delta<br>
-Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ Shared helpers for zones, limit areas and track modules (m_PassOn..., m_Invalid...)<br>
+Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ Helpers m_PassOn..., m_Invalid... for every type<br>
 ****************************************************************************************************)
 {attribute 'reflection'}
 FUNCTION_BLOCK ABSTRACT _FB_ConfigComponent
@@ -100,7 +101,8 @@ none at all, or a module without a length.<br>
 ****************************************************************************************************)
 METHOD PROTECTED m_InvalidModules : STRING(80)
 VAR_IN_OUT CONSTANT
-	vio_aModules						: ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF SynVisu.ST_VisuTrackModule;	// staged modules
+	(* staged modules *)
+	vio_aModules						: ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF SynVisu.ST_VisuTrackModule;
 END_VAR
 VAR_INPUT
 	vi_un_Count							: UINT;	// [-] staged modules in vio_aModules
@@ -140,7 +142,8 @@ no conveyor (id 0).<br>
 ****************************************************************************************************)
 METHOD PROTECTED m_InvalidZones : STRING(80)
 VAR_IN_OUT CONSTANT
-	vio_aZones							: ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF SynVisu.ST_VisuZone;	// staged zones
+	(* staged zones *)
+	vio_aZones							: ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF SynVisu.ST_VisuZone;
 END_VAR
 VAR_INPUT
 	vi_un_Count							: UINT;	// [-] staged zones in vio_aZones
@@ -216,7 +219,8 @@ VAR_IN_OUT
 	vio_Visu							: SynVisu._FB_VisuXtsTrack;	// the track's Syn_Visu FB
 END_VAR
 VAR_IN_OUT CONSTANT
-	vio_aModules						: ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF SynVisu.ST_VisuTrackModule;	// effective modules
+	(* effective modules *)
+	vio_aModules						: ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF SynVisu.ST_VisuTrackModule;
 END_VAR
 VAR_INPUT
 	vi_un_Count							: UINT;	// [-] effective modules in vio_aModules
@@ -254,7 +258,8 @@ VAR_IN_OUT
 	vio_Visu							: SynVisu._FB_VisuZoneComponent;	// the component's Syn_Visu FB
 END_VAR
 VAR_IN_OUT CONSTANT
-	vio_aZones							: ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF SynVisu.ST_VisuZone;	// effective zones
+	(* effective zones *)
+	vio_aZones							: ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF SynVisu.ST_VisuZone;
 END_VAR
 VAR_INPUT
 	vi_un_Count							: UINT;	// [-] effective zones in vio_aZones
