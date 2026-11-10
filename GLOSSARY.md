@@ -240,3 +240,17 @@ _Avoid_: generic component, unit, device
 **Body**:
 One solid a component is drawn from as its PLC describes it: a box, a cylinder or a frustum with a role (a machine part, a sensing part, a beam, a field of view). A conveyor's body is its belt, drawn from its length and width, not described by the PLC; the PLC only says whether it has one (see Conveyor).
 _Avoid_: shape (a product type has a shape), part
+
+## Configurator
+
+**Configurator**:
+The second page of the web app (`/configurator`): the machine's components are placed in 3D and given their configuration, to be written to the PLC later. The visualisation's counterpart.
+_Avoid_: editor, designer, RPP_Configurator (the product name, not a term)
+
+**Draft**:
+A machine as the configurator edits it: every component's configuration with its source and manifest id, saved as a JSON file. It is made offline, without a PLC.
+_Avoid_: project, layout, model, recipe
+
+**Palette**:
+The component types the configurator offers to place, by dragging onto the floor or by a click.
+_Avoid_: toolbox, library (the PLC library is something else)

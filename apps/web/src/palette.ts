@@ -57,6 +57,8 @@ export const OVERLAY = {
   setpoint: "#ffee58",
   snapPoint: "#ffffff",
   xtsTool: "#ffb74d",
+  /** The configurator's handle that drags the selected component over the floor. */
+  moveHandle: STATUS.select,
 } as const;
 
 /** Coordinate axes: X red, Y green, Z blue, as in every CAD tool. */

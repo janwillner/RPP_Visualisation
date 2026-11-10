@@ -109,8 +109,10 @@ export function startServer({ gateway, port, host, staticDir, version = APP_VERS
     try {
       if ((await stat(file)).isDirectory()) file = join(file, "index.html");
     } catch {
-      // Unknown paths fall back to the single-page app.
-      file = join(root, "index.html");
+      // A page of the web app by its name, e.g. /configurator (ADR 0016); any other unknown path falls back to the
+      // visualisation.
+      const page = `${file.replace(/[\\/]+$/, "")}.html`;
+      file = (await isFile(page)) ? page : join(root, "index.html");
     }
     try {
       await stat(file);
@@ -183,4 +185,12 @@ export function startServer({ gateway, port, host, staticDir, version = APP_VERS
     server.once("error", fail);
     server.listen(port, host, () => done(server));
   });
+}
+
+async function isFile(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isFile();
+  } catch {
+    return false;
+  }
 }

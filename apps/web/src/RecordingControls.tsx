@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { download } from "./download";
 import { usePlayer, type Player, type PlayerSnapshot } from "./player";
 import { SPEEDS, type TimelineEvent } from "./recording";
 import { useViewer, type Viewer, type ViewerSnapshot } from "./viewer";
@@ -46,15 +47,6 @@ export function useRecordingControls(viewer: Viewer): RecordingControls {
     open: (file) => void viewer.open(file.name, async () => new Uint8Array(await file.arrayBuffer())),
     save: () => void viewer.save().then((file) => file && download(file.bytes as BlobPart, file.name)),
   };
-}
-
-function download(bytes: BlobPart, name: string): void {
-  const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 /** mm:ss.s */

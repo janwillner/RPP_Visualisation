@@ -118,6 +118,8 @@ export interface SceneViewProps {
   hidden: ReadonlySet<string>;
   /** Called whenever the set of active faults changes (hidden components included). */
   onFaults: (faults: SourcedFaults[]) => void;
+  /** Drawn inside the 3D view, e.g. the configurator's handles; they may use the canvas, camera and controls. */
+  children?: ReactNode;
 }
 
 const EMPTY: SceneModel = emptyScene();
@@ -1021,6 +1023,7 @@ export function SceneView(props: SceneViewProps) {
       onPointerDown={(e) => presses.pointerDown(clientSample(e.nativeEvent))}
     >
       <SceneContent {...props} onSelect={onSelect} />
+      {props.children}
       {/* One finger orbits, two pinch and pan; in measure mode one finger picks a point instead. */}
       <OrbitControls
         makeDefault
