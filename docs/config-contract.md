@@ -7,6 +7,8 @@ references `Syn_Visu` for the shared types. The TypeScript mirror is `apps/gatew
 neutral model `packages/protocol/src/parameters.ts`. Change the three together, and bump
 `CONFIG_GlobalConst.CONFIG_un_PROTOCOL_VERSION` / `CONFIG_PROTOCOL_VERSION` on any breaking change. Exported releases
 are `plc/library/Syn_Config_<version>.library` and `.compiled-library`; the package ships the newest compiled one.
+Its unit tests are the TcUnit suites `_FB_TestConfig*` in `plc/Syn_Visu_Test`, run against the installed library
+(`docs/status.md`): install a new version before testing it.
 
 ## What the gateway reads and writes
 

@@ -1,0 +1,403 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_TestConfigStaging" Id="{4e682200-50f1-4b62-b8ee-93797b6552a3}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+TcUnit test suite of a parameter FB's m_Cycle (ADR 0017), on SynConfig._FB_ConfigConveyor: the program values<br>
+while no set is active, a staged set taken over, waiting while the application does not allow it, rejected on<br>
+another active version or when invalid, and a reset back to the program values. The tests write vo_Config's<br>
+stStaging and stStaged as the gateway does over ADS.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 2.0.0 ¦ 2026-11-11 ¦ J.Willner ¦ Unit tests<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_TestConfigStaging EXTENDS TcUnit.FB_TestSuite
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[m_ProgramValuesWithoutSet();
+m_StagedSetTakenOver();
+m_StagedSetWaitsUntilAllowed();
+m_StagedSetOnOtherVersionRejected();
+m_ResetReturnsToProgramValues();
+m_InvalidProductTypesRejected();
+]]></ST>
+    </Implementation>
+    <Method Name="m_InvalidProductTypesRejected" Id="{5b5ed334-7115-4d9e-9594-25e6249f4a24}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A conveyor set is rejected with the reason when a product type has no number, a number is used twice or there<br>
+are more product types than the list holds; the active set stays as it was.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_InvalidProductTypesRejected
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigConveyor;
+	TempDefault							: SynConfig.ST_ConfigConveyorParam;
+	TempSet								: SynConfig.ST_ConfigConveyorSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	TempStaged							: SynConfig.ST_ConfigConveyorParam;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigInvalidProductTypesRejected');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+TempDefault := m_ValidSet(vi_lr_X := 100);
+
+(* A product type without a number. *)
+TempStaged := m_ValidSet(vi_lr_X := 250);
+TempStaged.aProductTypes[1].nId := 0;
+m_Stage(vio_Param := fb_TempParam, vio_Staged := TempStaged, vi_udn_BaseVersion := 0, vi_udn_StageId := 1);
+AssertFalse(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE),
+	Message := 'type without a number: not taken over');
+AssertTrue(Condition := fb_TempParam.vo_Config.stStatus.eResult = SynConfig.E_ConfigResult.REJECTED, Message := 'rejected');
+AssertEquals_STRING(Expected := 'A product type without a number', Actual := fb_TempParam.vo_Config.stStatus.sMessage,
+	Message := 'reason: no number');
+
+(* A number used twice. *)
+TempStaged := m_ValidSet(vi_lr_X := 250);
+TempStaged.aProductTypes[0].nId := 3;
+TempStaged.aProductTypes[1].nId := 3;
+m_Stage(vio_Param := fb_TempParam, vio_Staged := TempStaged, vi_udn_BaseVersion := 0, vi_udn_StageId := 2);
+AssertFalse(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE),
+	Message := 'number twice: not taken over');
+AssertEquals_STRING(Expected := 'Product type 3 is defined twice', Actual := fb_TempParam.vo_Config.stStatus.sMessage,
+	Message := 'reason: defined twice');
+
+(* More product types than the list holds. *)
+TempStaged := m_ValidSet(vi_lr_X := 250);
+TempStaged.nProductTypeCount := VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES + 1;
+m_Stage(vio_Param := fb_TempParam, vio_Staged := TempStaged, vi_udn_BaseVersion := 0, vi_udn_StageId := 3);
+AssertFalse(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE),
+	Message := 'too many types: not taken over');
+AssertEquals_STRING(Expected := CONCAT('More than ', CONCAT(UINT_TO_STRING(VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES),
+	' product types')), Actual := fb_TempParam.vo_Config.stStatus.sMessage, Message := 'reason: too many');
+AssertEquals_UDINT(Expected := 3, Actual := fb_TempParam.vo_Config.stStatus.nHandledStageId, Message := 'last stage id handled');
+
+AssertFalse(Condition := TempSet.bValid, Message := 'still no active set');
+AssertEquals_LREAL(Expected := 100, Actual := fb_TempParam.vo_Config.stActive.stPose.fX, Delta := 0.001,
+	Message := 'program values still effective');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_ProgramValuesWithoutSet" Id="{1bc8d81c-74f6-41d8-a970-13ac87471f98}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Without an active set the program values are effective, under version 0, and nothing has been handled.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_ProgramValuesWithoutSet
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigConveyor;
+	TempDefault							: SynConfig.ST_ConfigConveyorParam;
+	TempSet								: SynConfig.ST_ConfigConveyorSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	TempPose							: ST_VisuPose;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigProgramValuesWithoutSet');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+TempDefault := m_ValidSet(vi_lr_X := 100);
+AssertFalse(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE),
+	Message := 'nothing staged: no change');
+TempPose := fb_TempParam.m_Pose();
+AssertEquals_LREAL(Expected := 100, Actual := TempPose.fX, Delta := 0.001, Message := 'program pose effective');
+AssertEquals_UINT(Expected := 2, Actual := fb_TempParam.vo_Config.stActive.nProductTypeCount, Message := 'program product types effective');
+AssertEquals_UDINT(Expected := 0, Actual := fb_TempParam.vo_Config.stStatus.nActiveVersion, Message := 'version 0: program values');
+AssertTrue(Condition := fb_TempParam.vo_Config.stStatus.eResult = SynConfig.E_ConfigResult.NONE, Message := 'nothing handled');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_ResetReturnsToProgramValues" Id="{6ed7f933-143f-4eb7-81ed-da42e795bd9b}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A reset makes the active set invalid at once (also while a take-over is not allowed): the program values apply<br>
+under version 0. Versions never repeat: the next set taken over gets version 2, not 1.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_ResetReturnsToProgramValues
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigConveyor;
+	TempDefault							: SynConfig.ST_ConfigConveyorParam;
+	TempSet								: SynConfig.ST_ConfigConveyorSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	TempStaged							: SynConfig.ST_ConfigConveyorParam;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigResetReturnsToProgramValues');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+TempDefault := m_ValidSet(vi_lr_X := 100);
+TempStaged := m_ValidSet(vi_lr_X := 250);
+m_Stage(vio_Param := fb_TempParam, vio_Staged := TempStaged, vi_udn_BaseVersion := 0, vi_udn_StageId := 1);
+fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
+AssertEquals_UDINT(Expected := 1, Actual := fb_TempParam.vo_Config.stStatus.nActiveVersion, Message := 'version 1 active');
+
+_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempParam.vo_Config.stStaging), vi_udn_BaseVersion := 1, vi_udn_StageId := 2,
+	vi_b_Reset := TRUE);
+AssertTrue(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := FALSE),
+	Message := 'reset handled, even while not allowed');
+AssertFalse(Condition := TempSet.bValid, Message := 'active set invalid');
+AssertEquals_UDINT(Expected := 0, Actual := fb_TempParam.vo_Config.stStatus.nActiveVersion, Message := 'version 0');
+AssertEquals_LREAL(Expected := 100, Actual := fb_TempParam.vo_Config.stActive.stPose.fX, Delta := 0.001,
+	Message := 'program values effective again');
+AssertTrue(Condition := fb_TempParam.vo_Config.stStatus.eResult = SynConfig.E_ConfigResult.APPLIED, Message := 'reset applied');
+AssertEquals_UDINT(Expected := 2, Actual := fb_TempParam.vo_Config.stStatus.nHandledStageId, Message := 'stage id handled');
+AssertFalse(Condition := fb_TempParam.vo_Config.stStaging.bReset, Message := 'reset flag cleared');
+
+m_Stage(vio_Param := fb_TempParam, vio_Staged := TempStaged, vi_udn_BaseVersion := 0, vi_udn_StageId := 3);
+fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
+AssertEquals_UDINT(Expected := 2, Actual := fb_TempParam.vo_Config.stStatus.nActiveVersion, Message := 'next set gets version 2');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Stage" Id="{48432c50-6d91-4cca-a58b-d61e8c68e499}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Stages a set on a conveyor's parameter FB as the gateway does: the set into vo_Config.stStaged, then stStaging<br>
+(_FC_TestConfigStage). The FB handles it in its next m_Cycle.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Stage : BOOL
+VAR_IN_OUT
+	vio_Param							: SynConfig._FB_ConfigConveyor;	// the parameter FB under test
+END_VAR
+VAR_IN_OUT CONSTANT
+	vio_Staged							: SynConfig.ST_ConfigConveyorParam;	// the set to stage
+END_VAR
+VAR_INPUT
+	vi_udn_BaseVersion					: UDINT;	// [-] active version the set is based on
+	vi_udn_StageId						: UDINT;	// [-] the gateway's id of this staging
+END_VAR
+VAR
+	p_TempStaged						: POINTER TO SynConfig.ST_ConfigConveyorParam;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[p_TempStaged := ADR(vio_Param.vo_Config.stStaged);
+p_TempStaged^ := vio_Staged;
+m_Stage := _FC_TestConfigStage(vi_p_Staging := ADR(vio_Param.vo_Config.stStaging), vi_udn_BaseVersion := vi_udn_BaseVersion,
+	vi_udn_StageId := vi_udn_StageId, vi_b_Reset := FALSE);
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_StagedSetOnOtherVersionRejected" Id="{c6cdc518-4a54-429b-ad76-26e750b0444a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A set staged on another version than the active one is rejected with the reason, even while a take-over is<br>
+allowed: someone else changed the set since the configurator read it.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_StagedSetOnOtherVersionRejected
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigConveyor;
+	TempDefault							: SynConfig.ST_ConfigConveyorParam;
+	TempSet								: SynConfig.ST_ConfigConveyorSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	TempStaged							: SynConfig.ST_ConfigConveyorParam;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigStagedSetOnOtherVersionRejected');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+TempDefault := m_ValidSet(vi_lr_X := 100);
+TempStaged := m_ValidSet(vi_lr_X := 250);
+m_Stage(vio_Param := fb_TempParam, vio_Staged := TempStaged, vi_udn_BaseVersion := 5, vi_udn_StageId := 9);
+
+AssertFalse(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE),
+	Message := 'not taken over');
+AssertTrue(Condition := fb_TempParam.vo_Config.stStatus.eResult = SynConfig.E_ConfigResult.REJECTED, Message := 'rejected');
+AssertEquals_STRING(Expected := 'Based on version 5, but version 0 is active', Actual := fb_TempParam.vo_Config.stStatus.sMessage,
+	Message := 'the reason');
+AssertEquals_UDINT(Expected := 9, Actual := fb_TempParam.vo_Config.stStatus.nHandledStageId, Message := 'stage id handled');
+AssertFalse(Condition := fb_TempParam.vo_Config.stStaging.bStaged, Message := 'staged flag cleared');
+AssertFalse(Condition := TempSet.bValid, Message := 'no active set');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_StagedSetTakenOver" Id="{b7908878-aabf-4eae-b270-bed79057eaef}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A set staged on the active version is taken over while the application allows it: it becomes the active set<br>
+under version 1 and the effective values, the status names the stage id as applied and the flags are cleared.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_StagedSetTakenOver
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigConveyor;
+	TempDefault							: SynConfig.ST_ConfigConveyorParam;
+	TempSet								: SynConfig.ST_ConfigConveyorSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	TempPose							: ST_VisuPose;
+	TempStaged							: SynConfig.ST_ConfigConveyorParam;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigStagedSetTakenOver');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+TempDefault := m_ValidSet(vi_lr_X := 100);
+TempStaged := m_ValidSet(vi_lr_X := 250);
+m_Stage(vio_Param := fb_TempParam, vio_Staged := TempStaged, vi_udn_BaseVersion := 0, vi_udn_StageId := 7);
+
+AssertTrue(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE),
+	Message := 'set taken over');
+AssertTrue(Condition := TempSet.bValid, Message := 'active set valid');
+AssertEquals_UDINT(Expected := 1, Actual := TempSet.nVersion, Message := 'first version');
+AssertEquals_UDINT(Expected := 1, Actual := fb_TempParam.vo_Config.stStatus.nActiveVersion, Message := 'status names the version');
+AssertEquals_UDINT(Expected := 7, Actual := fb_TempParam.vo_Config.stStatus.nHandledStageId, Message := 'stage id handled');
+AssertTrue(Condition := fb_TempParam.vo_Config.stStatus.eResult = SynConfig.E_ConfigResult.APPLIED, Message := 'applied');
+AssertEquals_STRING(Expected := '', Actual := fb_TempParam.vo_Config.stStatus.sMessage, Message := 'no message');
+AssertFalse(Condition := fb_TempParam.vo_Config.stStaging.bStaged, Message := 'staged flag cleared');
+TempPose := fb_TempParam.m_Pose();
+AssertEquals_LREAL(Expected := 250, Actual := TempPose.fX, Delta := 0.001, Message := 'staged pose effective');
+
+AssertFalse(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE),
+	Message := 'next cycle: no change');
+AssertEquals_UDINT(Expected := 1, Actual := fb_TempParam.vo_Config.stStatus.nActiveVersion, Message := 'still version 1');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_StagedSetWaitsUntilAllowed" Id="{1329ac46-7b87-459b-b58c-78c66470069c}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+While the application does not allow a take-over the staged set waits (PENDING, still staged, the program values<br>
+stay effective); it is taken over in the first cycle that allows it.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_StagedSetWaitsUntilAllowed
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigConveyor;
+	TempDefault							: SynConfig.ST_ConfigConveyorParam;
+	TempSet								: SynConfig.ST_ConfigConveyorSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	TempStaged							: SynConfig.ST_ConfigConveyorParam;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigStagedSetWaitsUntilAllowed');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+TempDefault := m_ValidSet(vi_lr_X := 100);
+TempStaged := m_ValidSet(vi_lr_X := 250);
+m_Stage(vio_Param := fb_TempParam, vio_Staged := TempStaged, vi_udn_BaseVersion := 0, vi_udn_StageId := 3);
+
+AssertFalse(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := FALSE),
+	Message := 'not allowed: not taken over');
+AssertTrue(Condition := fb_TempParam.vo_Config.stStatus.eResult = SynConfig.E_ConfigResult.PENDING, Message := 'pending');
+AssertTrue(Condition := fb_TempParam.vo_Config.stStaging.bStaged, Message := 'still staged');
+AssertFalse(Condition := TempSet.bValid, Message := 'no active set yet');
+AssertEquals_LREAL(Expected := 100, Actual := fb_TempParam.vo_Config.stActive.stPose.fX, Delta := 0.001,
+	Message := 'program values still effective');
+
+AssertTrue(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE),
+	Message := 'allowed: taken over');
+AssertTrue(Condition := fb_TempParam.vo_Config.stStatus.eResult = SynConfig.E_ConfigResult.APPLIED, Message := 'applied');
+AssertEquals_UDINT(Expected := 3, Actual := fb_TempParam.vo_Config.stStatus.nHandledStageId, Message := 'stage id handled');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_ValidSet" Id="{57369c18-e466-45fb-a01b-f72ef93ea21f}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A conveyor parameter set that can be taken over: the pose at X = vi_lr_X and two product types (1 and 2).<br>
+****************************************************************************************************)
+METHOD PRIVATE m_ValidSet : SynConfig.ST_ConfigConveyorParam
+VAR_INPUT
+	vi_lr_X								: LREAL;	// [mm] X of the pose, to tell sets apart
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ValidSet.stPose.fX := vi_lr_X;
+m_ValidSet.stOriginShift.fX := 50;
+m_ValidSet.nProductTypeCount := 2;
+m_ValidSet.aProductTypes[0].nId := 1;
+m_ValidSet.aProductTypes[0].fLength := 120;
+m_ValidSet.aProductTypes[0].fWidth := 80;
+m_ValidSet.aProductTypes[0].fHeight := 40;
+m_ValidSet.aProductTypes[0].eShape := E_VisuProductShape.BOX;
+m_ValidSet.aProductTypes[1].nId := 2;
+m_ValidSet.aProductTypes[1].fLength := 66;
+m_ValidSet.aProductTypes[1].fWidth := 66;
+m_ValidSet.aProductTypes[1].fHeight := 120;
+m_ValidSet.aProductTypes[1].eShape := E_VisuProductShape.CYLINDER;
+]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

@@ -1,0 +1,500 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_TestConfigRobot" Id="{baa61f71-176f-4ca0-bcc0-c13bb4db01b7}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+TcUnit test suite of the robots' parameter FBs (SynConfig._FB_ConfigDelta, _FB_ConfigXtsGantry,<br>
+_FB_ConfigXtsLoop, _FB_ConfigCartesian): which staged sets are rejected and why (zones, gripper fingers, track<br>
+modules), and m_PassOn handing the effective values on to the robot's Syn_Visu FB, its config version changing<br>
+only when a value does, its lists shrinking with the set.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 2.0.0 ¦ 2026-11-11 ¦ J.Willner ¦ Unit tests<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_TestConfigRobot EXTENDS TcUnit.FB_TestSuite
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[m_DeltaRejectsInvalidZonesAndFingers();
+m_XtsTracksRejectInvalidModules();
+m_CartesianTakesOverFingers();
+m_DeltaPassOn();
+m_DeltaPassOnShrinksLists();
+m_XtsGantryPassOnModules();
+]]></ST>
+    </Implementation>
+    <Method Name="m_CartesianTakesOverFingers" Id="{587b4754-13f7-41a4-b9a0-cf55ddb650bc}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A Cartesian robot's set takes its gripper fingers over with their offsets on the flange (ADR 0018); a finger<br>
+without a height is rejected.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_CartesianTakesOverFingers
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigCartesian;
+	TempDefault							: SynConfig.ST_ConfigCartesianParam;
+	TempSet								: SynConfig.ST_ConfigCartesianSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	TempStaged							: SynConfig.ST_ConfigCartesianParam;
+	p_TempStaged						: POINTER TO SynConfig.ST_ConfigCartesianParam;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigCartesianTakesOverFingers');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+p_TempStaged := ADR(fb_TempParam.vo_Config.stStaged);
+TempStaged.nFingerCount := 2;
+TempStaged.aFingers[0].fDiameter := 30;
+TempStaged.aFingers[0].fHeight := 60;
+TempStaged.aFingers[1].fDiameter := 30;
+TempStaged.aFingers[1].fHeight := 0;
+TempStaged.aFingers[1].stOffset.fY := -45;
+TempStaged.aFingers[1].stOffset.fRz := 90;
+
+p_TempStaged^ := TempStaged;
+_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempParam.vo_Config.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 1,
+	vi_b_Reset := FALSE);
+AssertFalse(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE),
+	Message := 'finger without a height: not taken over');
+AssertEquals_STRING(Expected := 'Finger 2 has no diameter or height', Actual := fb_TempParam.vo_Config.stStatus.sMessage,
+	Message := 'reason');
+
+TempStaged.aFingers[1].fHeight := 60;
+p_TempStaged^ := TempStaged;
+_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempParam.vo_Config.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 2,
+	vi_b_Reset := FALSE);
+AssertTrue(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE),
+	Message := 'valid fingers taken over');
+AssertEquals_UINT(Expected := 2, Actual := fb_TempParam.vo_Config.stActive.nFingerCount, Message := 'two fingers effective');
+AssertEquals_LREAL(Expected := -45, Actual := fb_TempParam.vo_Config.stActive.aFingers[1].stOffset.fY, Delta := 0.001,
+	Message := 'offset Y kept');
+AssertEquals_LREAL(Expected := 90, Actual := fb_TempParam.vo_Config.stActive.aFingers[1].stOffset.fRz, Delta := 0.001,
+	Message := 'offset rotation kept');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_DeltaPassOn" Id="{95a67e0b-3c76-4134-90d8-b0a0a20a75f5}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_PassOn hands a Delta's effective origin shift, working area, limit areas, zones and fingers with their offsets<br>
+on to its Syn_Visu FB. Called every cycle with the same values, it leaves Syn_Visu's config version alone.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_DeltaPassOn
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigDelta;
+	fb_TempVisu							: _FB_VisuDelta;
+	TempVisuManifest					: ST_VisuManifest;
+	TempDefault							: SynConfig.ST_ConfigDeltaParam;
+	TempSet								: SynConfig.ST_ConfigDeltaSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	udn_TempVersion						: UDINT;	// [-] Syn_Visu's config version after the first m_PassOn
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigDeltaPassOn');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempVisu.m_Register(vio_Manifest := TempVisuManifest, vi_udn_Id := 10, vi_str_Name := 'Delta 1');
+TempDefault := m_DeltaSet(vi_un_Zones := 2, vi_un_Fingers := 3);
+fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
+AssertTrue(Condition := fb_TempParam.m_PassOn(vio_Visu := fb_TempVisu), Message := 'passed on');
+
+AssertEquals_LREAL(Expected := 20, Actual := fb_TempVisu.vo_Visu.stConfig.stOriginShift.fY, Delta := 0.001,
+	Message := 'origin shift');
+AssertEquals_LREAL(Expected := 700, Actual := fb_TempVisu.vo_Visu.stConfig.stWorkingArea.fRadius, Delta := 0.001,
+	Message := 'working area');
+AssertTrue(Condition := fb_TempVisu.vo_Visu.stConfig.stLimitArea.bActive, Message := 'limit area set');
+AssertEquals_LREAL(Expected := 400, Actual := fb_TempVisu.vo_Visu.stConfig.stLimitArea.fXMax, Delta := 0.001,
+	Message := 'limit area values');
+AssertFalse(Condition := fb_TempVisu.vo_Visu.stConfig.stTcpLimitArea.bActive, Message := 'no TCP limit area');
+AssertEquals_UINT(Expected := 2, Actual := fb_TempVisu.vo_Visu.stConfig.nZoneCount, Message := 'two zones');
+AssertEquals_LREAL(Expected := 2000, Actual := fb_TempVisu.vo_Visu.stConfig.aZones[1].fStart, Delta := 0.001,
+	Message := 'zone 2 start');
+AssertEquals_UINT(Expected := 3, Actual := fb_TempVisu.vo_Visu.stConfig.nFingerCount, Message := 'three fingers');
+AssertEquals_LREAL(Expected := 40, Actual := fb_TempVisu.vo_Visu.stConfig.aFingers[2].fDiameter, Delta := 0.001,
+	Message := 'finger 3 diameter');
+AssertEquals_LREAL(Expected := 120, Actual := fb_TempVisu.vo_Visu.stConfig.aFingers[2].stOffset.fX, Delta := 0.001,
+	Message := 'finger 3 offset X');
+AssertEquals_LREAL(Expected := 60, Actual := fb_TempVisu.vo_Visu.stConfig.aFingers[2].stOffset.fRz, Delta := 0.001,
+	Message := 'finger 3 offset rotation');
+
+udn_TempVersion := TempVisuManifest.nConfigVersion;
+fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
+fb_TempParam.m_PassOn(vio_Visu := fb_TempVisu);
+AssertEquals_UDINT(Expected := udn_TempVersion, Actual := TempVisuManifest.nConfigVersion,
+	Message := 'same values again: config version unchanged');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_DeltaPassOnShrinksLists" Id="{e2061383-821a-4912-9189-e5bfb65fc710}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Syn_Visu's zone and finger counts only grow, so m_PassOn clears them when the effective set has fewer: after a<br>
+set with fewer zones and no fingers the visualisation has exactly those; an inactive limit area is cleared.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_DeltaPassOnShrinksLists
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigDelta;
+	fb_TempVisu							: _FB_VisuDelta;
+	TempDefault							: SynConfig.ST_ConfigDeltaParam;
+	TempSet								: SynConfig.ST_ConfigDeltaSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigDeltaPassOnShrinksLists');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+TempDefault := m_DeltaSet(vi_un_Zones := 3, vi_un_Fingers := 3);
+fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
+fb_TempParam.m_PassOn(vio_Visu := fb_TempVisu);
+AssertEquals_UINT(Expected := 3, Actual := fb_TempVisu.vo_Visu.stConfig.nZoneCount, Message := 'three zones first');
+AssertEquals_UINT(Expected := 3, Actual := fb_TempVisu.vo_Visu.stConfig.nFingerCount, Message := 'three fingers first');
+
+(* The program values change: one zone, no gripper, no limit area. *)
+TempDefault := m_DeltaSet(vi_un_Zones := 1, vi_un_Fingers := 0);
+TempDefault.stLimitArea.bActive := FALSE;
+fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
+fb_TempParam.m_PassOn(vio_Visu := fb_TempVisu);
+AssertEquals_UINT(Expected := 1, Actual := fb_TempVisu.vo_Visu.stConfig.nZoneCount, Message := 'one zone left');
+AssertEquals_LREAL(Expected := 1000, Actual := fb_TempVisu.vo_Visu.stConfig.aZones[0].fStart, Delta := 0.001,
+	Message := 'the remaining zone');
+AssertEquals_UINT(Expected := 0, Actual := fb_TempVisu.vo_Visu.stConfig.nFingerCount, Message := 'no fingers left');
+AssertFalse(Condition := fb_TempVisu.vo_Visu.stConfig.stLimitArea.bActive, Message := 'limit area cleared');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_DeltaRejectsInvalidZonesAndFingers" Id="{961f42a1-b571-496e-8382-45cc64f5caef}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A Delta set is rejected with the reason for a zone on no conveyor, a finger without a diameter or height, or more<br>
+zones or fingers than the lists hold; zones are checked before fingers. A valid set is then taken over.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_DeltaRejectsInvalidZonesAndFingers
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigDelta;
+	TempDefault							: SynConfig.ST_ConfigDeltaParam;
+	TempSet								: SynConfig.ST_ConfigDeltaSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	TempStaged							: SynConfig.ST_ConfigDeltaParam;
+	p_TempStaged						: POINTER TO SynConfig.ST_ConfigDeltaParam;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigDeltaRejectsInvalidZonesAndFingers');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+TempDefault := m_DeltaSet(vi_un_Zones := 1, vi_un_Fingers := 1);
+p_TempStaged := ADR(fb_TempParam.vo_Config.stStaged);
+
+(* A zone on no conveyor, and a finger without a diameter: the zone is named. *)
+TempStaged := m_DeltaSet(vi_un_Zones := 2, vi_un_Fingers := 2);
+TempStaged.aZones[0].nConveyorId := 0;
+TempStaged.aFingers[1].fDiameter := 0;
+p_TempStaged^ := TempStaged;
+_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempParam.vo_Config.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 1,
+	vi_b_Reset := FALSE);
+AssertFalse(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE),
+	Message := 'zone on no conveyor: not taken over');
+AssertTrue(Condition := fb_TempParam.vo_Config.stStatus.eResult = SynConfig.E_ConfigResult.REJECTED, Message := 'rejected');
+AssertEquals_STRING(Expected := 'Zone 1 lies on no conveyor', Actual := fb_TempParam.vo_Config.stStatus.sMessage,
+	Message := 'reason: the zone, checked first');
+
+(* A finger without a diameter. *)
+TempStaged := m_DeltaSet(vi_un_Zones := 2, vi_un_Fingers := 2);
+TempStaged.aFingers[1].fDiameter := 0;
+p_TempStaged^ := TempStaged;
+_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempParam.vo_Config.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 2,
+	vi_b_Reset := FALSE);
+fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
+AssertEquals_STRING(Expected := 'Finger 2 has no diameter or height', Actual := fb_TempParam.vo_Config.stStatus.sMessage,
+	Message := 'reason: finger without a diameter');
+
+(* A finger without a height. *)
+TempStaged := m_DeltaSet(vi_un_Zones := 2, vi_un_Fingers := 2);
+TempStaged.aFingers[0].fHeight := 0;
+p_TempStaged^ := TempStaged;
+_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempParam.vo_Config.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 3,
+	vi_b_Reset := FALSE);
+fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
+AssertEquals_STRING(Expected := 'Finger 1 has no diameter or height', Actual := fb_TempParam.vo_Config.stStatus.sMessage,
+	Message := 'reason: finger without a height');
+
+(* More zones, then more fingers than the lists hold. *)
+TempStaged := m_DeltaSet(vi_un_Zones := 2, vi_un_Fingers := 2);
+TempStaged.nZoneCount := VISU_GlobalConst_Param.VISU_un_MAX_ZONES + 1;
+p_TempStaged^ := TempStaged;
+_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempParam.vo_Config.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 4,
+	vi_b_Reset := FALSE);
+fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
+AssertEquals_STRING(Expected := CONCAT('More than ', CONCAT(UINT_TO_STRING(VISU_GlobalConst_Param.VISU_un_MAX_ZONES), ' zones')),
+	Actual := fb_TempParam.vo_Config.stStatus.sMessage, Message := 'reason: too many zones');
+TempStaged := m_DeltaSet(vi_un_Zones := 2, vi_un_Fingers := 2);
+TempStaged.nFingerCount := VISU_GlobalConst_Param.VISU_un_MAX_FINGERS + 1;
+p_TempStaged^ := TempStaged;
+_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempParam.vo_Config.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 5,
+	vi_b_Reset := FALSE);
+fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
+AssertEquals_STRING(Expected := CONCAT('More than ', CONCAT(UINT_TO_STRING(VISU_GlobalConst_Param.VISU_un_MAX_FINGERS), ' fingers')),
+	Actual := fb_TempParam.vo_Config.stStatus.sMessage, Message := 'reason: too many fingers');
+AssertFalse(Condition := TempSet.bValid, Message := 'no set taken over so far');
+
+(* A valid set. *)
+TempStaged := m_DeltaSet(vi_un_Zones := 2, vi_un_Fingers := 2);
+p_TempStaged^ := TempStaged;
+_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempParam.vo_Config.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 6,
+	vi_b_Reset := FALSE);
+AssertTrue(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE),
+	Message := 'valid set taken over');
+AssertEquals_UINT(Expected := 2, Actual := fb_TempParam.m_ZoneCount(), Message := 'its zones effective');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_DeltaSet" Id="{806726bf-1b72-49b4-9864-6c2c6402e7e2}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A Delta parameter set that can be taken over: origin shift (10, 20, 30), a working area of radius 700, a limit<br>
+area, no TCP limit area, vi_un_Zones zones on conveyor 1 (zone n from n * 1000) and vi_un_Fingers fingers of<br>
+40 x 50 mm, finger n at X = (n - 1) * 60 mm, turned by (n - 1) * 30 degrees.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_DeltaSet : SynConfig.ST_ConfigDeltaParam
+VAR_INPUT
+	vi_un_Zones							: UINT;	// [-] zones, at most VISU_un_MAX_ZONES
+	vi_un_Fingers						: UINT;	// [-] fingers, at most VISU_un_MAX_FINGERS
+END_VAR
+VAR
+	un_TempIndex						: UINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_DeltaSet.stPose.fX := 1000;
+m_DeltaSet.stPose.fZ := 1900;
+m_DeltaSet.stOriginShift.fX := 10;
+m_DeltaSet.stOriginShift.fY := 20;
+m_DeltaSet.stOriginShift.fZ := 30;
+m_DeltaSet.stWorkingArea.fRadius := 700;
+m_DeltaSet.stWorkingArea.fZMin := -1300;
+m_DeltaSet.stWorkingArea.fZMax := -700;
+m_DeltaSet.stLimitArea.fXMin := -500;
+m_DeltaSet.stLimitArea.fXMax := 400;
+m_DeltaSet.stLimitArea.fYMin := -600;
+m_DeltaSet.stLimitArea.fYMax := 600;
+m_DeltaSet.stLimitArea.fZMin := -1300;
+m_DeltaSet.stLimitArea.fZMax := -700;
+m_DeltaSet.stLimitArea.bActive := TRUE;
+
+m_DeltaSet.nZoneCount := MIN(vi_un_Zones, VISU_GlobalConst_Param.VISU_un_MAX_ZONES);
+FOR un_TempIndex := 1 TO m_DeltaSet.nZoneCount DO
+	m_DeltaSet.aZones[un_TempIndex - 1].nConveyorId := 1;
+	m_DeltaSet.aZones[un_TempIndex - 1].fStart := UINT_TO_LREAL(un_TempIndex) * 1000;
+	m_DeltaSet.aZones[un_TempIndex - 1].fEnd := UINT_TO_LREAL(un_TempIndex) * 1000 + 500;
+END_FOR
+
+m_DeltaSet.nFingerCount := MIN(vi_un_Fingers, VISU_GlobalConst_Param.VISU_un_MAX_FINGERS);
+FOR un_TempIndex := 1 TO m_DeltaSet.nFingerCount DO
+	m_DeltaSet.aFingers[un_TempIndex - 1].fDiameter := 40;
+	m_DeltaSet.aFingers[un_TempIndex - 1].fHeight := 50;
+	m_DeltaSet.aFingers[un_TempIndex - 1].stOffset.fX := UINT_TO_LREAL(un_TempIndex - 1) * 60;
+	m_DeltaSet.aFingers[un_TempIndex - 1].stOffset.fRz := UINT_TO_LREAL(un_TempIndex - 1) * 30;
+END_FOR
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_XtsGantryPassOnModules" Id="{8b2cc375-d7a4-40a4-b64e-73f2b706713f}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_PassOn hands an XTS gantry's effective track modules on to its Syn_Visu FB, leaves the config version alone<br>
+while they stay, and shortens the visualisation's track when the set has fewer modules.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_XtsGantryPassOnModules
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigXtsGantry;
+	fb_TempVisu							: _FB_VisuXtsGantry;
+	TempVisuManifest					: ST_VisuManifest;
+	TempDefault							: SynConfig.ST_ConfigXtsGantryParam;
+	TempSet								: SynConfig.ST_ConfigXtsGantrySet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	un_TempIndex						: UINT;
+	udn_TempVersion						: UDINT;	// [-] Syn_Visu's config version after the first m_PassOn
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigXtsGantryPassOnModules');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempVisu.m_Register(vio_Manifest := TempVisuManifest, vi_udn_Id := 30, vi_str_Name := 'IDH');
+TempDefault.nModuleCount := 4;
+FOR un_TempIndex := 0 TO 3 DO
+	TempDefault.aModules[un_TempIndex].eKind := E_VisuModuleKind.STRAIGHT;
+	TempDefault.aModules[un_TempIndex].fLength := 250;
+END_FOR
+fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
+AssertTrue(Condition := fb_TempParam.m_PassOn(vio_Visu := fb_TempVisu), Message := 'passed on');
+AssertEquals_UINT(Expected := 4, Actual := fb_TempVisu.vo_Visu.stConfig.nModuleCount, Message := 'four modules');
+AssertEquals_LREAL(Expected := 250, Actual := fb_TempVisu.vo_Visu.stConfig.aModules[3].fLength, Delta := 0.001,
+	Message := 'module 4 length');
+
+udn_TempVersion := TempVisuManifest.nConfigVersion;
+fb_TempParam.m_PassOn(vio_Visu := fb_TempVisu);
+AssertEquals_UDINT(Expected := udn_TempVersion, Actual := TempVisuManifest.nConfigVersion,
+	Message := 'same modules again: config version unchanged');
+
+TempDefault.nModuleCount := 2;
+fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
+fb_TempParam.m_PassOn(vio_Visu := fb_TempVisu);
+AssertEquals_UINT(Expected := 2, Actual := fb_TempVisu.vo_Visu.stConfig.nModuleCount, Message := 'track shortened to two modules');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_XtsTracksRejectInvalidModules" Id="{aff96036-3f2e-41fe-ab70-f2caa9aa5348}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+An XTS gantry or loop set is rejected with the reason for a track without modules, a module without a length or<br>
+more modules than the list holds; modules are checked before zones. A valid loop set is then taken over.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_XtsTracksRejectInvalidModules
+VAR_INST
+	fb_TempGantryParam					: SynConfig._FB_ConfigXtsGantry;
+	fb_TempLoopParam					: SynConfig._FB_ConfigXtsLoop;
+	TempGantryDefault					: SynConfig.ST_ConfigXtsGantryParam;
+	TempGantrySet						: SynConfig.ST_ConfigXtsGantrySet;
+	TempLoopDefault						: SynConfig.ST_ConfigXtsLoopParam;
+	TempLoopSet							: SynConfig.ST_ConfigXtsLoopSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	TempGantryStaged					: SynConfig.ST_ConfigXtsGantryParam;
+	TempLoopStaged						: SynConfig.ST_ConfigXtsLoopParam;
+	p_TempGantryStaged					: POINTER TO SynConfig.ST_ConfigXtsGantryParam;
+	p_TempLoopStaged					: POINTER TO SynConfig.ST_ConfigXtsLoopParam;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigXtsTracksRejectInvalidModules');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+p_TempGantryStaged := ADR(fb_TempGantryParam.vo_Config.stStaged);
+p_TempLoopStaged := ADR(fb_TempLoopParam.vo_Config.stStaged);
+
+(* Gantry: a track without modules, also with a zone on no conveyor: the track is named. *)
+TempGantryStaged.nModuleCount := 0;
+TempGantryStaged.nZoneCount := 1;
+TempGantryStaged.aZones[0].nConveyorId := 0;
+p_TempGantryStaged^ := TempGantryStaged;
+_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempGantryParam.vo_Config.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 1,
+	vi_b_Reset := FALSE);
+AssertFalse(Condition := fb_TempGantryParam.m_Cycle(vio_Default := TempGantryDefault, vio_Set := TempGantrySet,
+	vi_b_ApplyAllowed := TRUE), Message := 'gantry without modules: not taken over');
+AssertEquals_STRING(Expected := 'A track without modules', Actual := fb_TempGantryParam.vo_Config.stStatus.sMessage,
+	Message := 'reason: no modules, checked first');
+
+(* Gantry: more modules than the list holds. *)
+TempGantryStaged.nModuleCount := VISU_GlobalConst_Param.VISU_un_MAX_MODULES + 1;
+p_TempGantryStaged^ := TempGantryStaged;
+_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempGantryParam.vo_Config.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 2,
+	vi_b_Reset := FALSE);
+fb_TempGantryParam.m_Cycle(vio_Default := TempGantryDefault, vio_Set := TempGantrySet, vi_b_ApplyAllowed := TRUE);
+AssertEquals_STRING(Expected := CONCAT('More than ', CONCAT(UINT_TO_STRING(VISU_GlobalConst_Param.VISU_un_MAX_MODULES),
+	' track modules')), Actual := fb_TempGantryParam.vo_Config.stStatus.sMessage, Message := 'reason: too many modules');
+
+(* Loop: module 2 without a length. *)
+TempLoopStaged.nModuleCount := 3;
+TempLoopStaged.aModules[0].eKind := E_VisuModuleKind.STRAIGHT;
+TempLoopStaged.aModules[0].fLength := 250;
+TempLoopStaged.aModules[1].eKind := E_VisuModuleKind.CURVE_LEFT;
+TempLoopStaged.aModules[1].fLength := 0;
+TempLoopStaged.aModules[2].eKind := E_VisuModuleKind.STRAIGHT;
+TempLoopStaged.aModules[2].fLength := 250;
+p_TempLoopStaged^ := TempLoopStaged;
+_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempLoopParam.vo_Config.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 1,
+	vi_b_Reset := FALSE);
+AssertFalse(Condition := fb_TempLoopParam.m_Cycle(vio_Default := TempLoopDefault, vio_Set := TempLoopSet,
+	vi_b_ApplyAllowed := TRUE), Message := 'loop with a module without a length: not taken over');
+AssertEquals_STRING(Expected := 'Track module 2 has no length', Actual := fb_TempLoopParam.vo_Config.stStatus.sMessage,
+	Message := 'reason: module without a length');
+
+(* Loop: a valid track. *)
+TempLoopStaged.aModules[1].fLength := 250;
+p_TempLoopStaged^ := TempLoopStaged;
+_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempLoopParam.vo_Config.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 2,
+	vi_b_Reset := FALSE);
+AssertTrue(Condition := fb_TempLoopParam.m_Cycle(vio_Default := TempLoopDefault, vio_Set := TempLoopSet,
+	vi_b_ApplyAllowed := TRUE), Message := 'valid loop taken over');
+AssertEquals_UINT(Expected := 3, Actual := fb_TempLoopParam.vo_Config.stActive.nModuleCount, Message := 'its modules effective');
+AssertTrue(Condition := fb_TempLoopParam.vo_Config.stActive.aModules[1].eKind = E_VisuModuleKind.CURVE_LEFT,
+	Message := 'module kind kept');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

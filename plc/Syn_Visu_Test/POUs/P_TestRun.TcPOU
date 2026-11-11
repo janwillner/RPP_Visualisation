@@ -7,9 +7,10 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Runs the TcUnit unit tests of the Syn_Visu library (the installed SynVisu, newest version) once after the<br>
-start: every suite in POUs/Tests. TcUnit writes the results to the error list (ADS log) and, through<br>
-TcUnit-Runner, to an xUnit file. Tests use only the library's public methods and its contract structures.<br>
+Runs the TcUnit unit tests of the libraries Syn_Visu and Syn_Config (the installed SynVisu and SynConfig, newest<br>
+versions) once after the start: every suite in POUs/Tests (_FB_TestConfig... for Syn_Config). TcUnit writes the<br>
+results to the error list (ADS log) and, through TcUnit-Runner, to an xUnit file. Tests use only the libraries'<br>
+public methods and their contract structures, written as the gateway writes them.<br>
 ****************************************************************************************************)
 PROGRAM P_TestRun
 VAR
@@ -19,6 +20,10 @@ VAR
 	fb_TestRobot						: _FB_TestRobot;
 	fb_TestXtsTrack						: _FB_TestXtsTrack;
 	fb_TestBodyComponent				: _FB_TestBodyComponent;
+	fb_TestConfigComponent				: _FB_TestConfigComponent;
+	fb_TestConfigStaging				: _FB_TestConfigStaging;
+	fb_TestConfigRobot					: _FB_TestConfigRobot;
+	fb_TestConfigBodyComponent			: _FB_TestConfigBodyComponent;
 END_VAR
 ]]></Declaration>
     <Implementation>
