@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { StateMessage } from "@rpp/protocol";
-import type { SceneFeed } from "./connection";
+import type { SceneFeed } from "./viewer";
 import type { SourceInfo } from "./sources";
 import { eventTime, playFrom, seek, step, tick, type PlaybackClock, type PlaybackView, type Recording } from "./recording";
 import type { SceneSource } from "./scene/scene-model";

@@ -1,6 +1,7 @@
 import type { GatewayMessage, Product } from "@rpp/protocol";
 import type { SourceInfo } from "./sources";
-import { componentName, isMissed } from "./machine-facts";
+import { isMissed } from "./machine-facts";
+import { componentName } from "./naming";
 
 /** What happened to a product: its register state, or that it was missed or left the register. */
 export type ProductStepKind = Product["state"] | "missed" | "gone";
@@ -97,7 +98,7 @@ export class ProductHistory {
         state,
       });
     const components = source?.config?.components ?? [];
-    const nameOf = (id: number) => componentName(source, id, `client #${id}`);
+    const nameOf = (id: number) => componentName(source?.config, id, `client #${id}`);
     for (const c of message.components) {
       if (c.type !== "conveyor") continue;
       const conveyor = components.find((x) => x.id === c.id);

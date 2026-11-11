@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { COMPONENT_SCHEMAS, TrackModuleKindSchema, type ComponentConfig, type ConveyorConfig, type Draft, type TrackModuleKind } from "@rpp/protocol";
-import { defaultGatewayUrl, GatewayStore, useGateway, type SceneFeed } from "../connection";
+import { defaultGatewayUrl, GatewayConnection, useStore } from "../gateway-connection";
+import { GatewayLive } from "./gateway-live";
 import { componentKey, type MachineScene } from "../scene/scene-model";
 import { SceneView, type CameraPreset, type Layers, type Selection } from "../scene/SceneView";
-import type { SourceInfo } from "../sources";
 import { download } from "../download";
 import { APP_VERSION } from "../version";
 import { ViewControls } from "../ViewControls";
@@ -58,10 +58,10 @@ function saveDraft(configurator: Configurator): void {
 /** The configurator page (ADR 0016): palette and components on the left, the draft in 3D, its properties on the right. */
 export function ConfiguratorApp() {
   // The gateway that served the page: its PLCs are imported from and shown live over the draft (read-only).
-  const store = useMemo(() => new GatewayStore(defaultGatewayUrl()), []);
-  const gateway = useGateway(store);
+  const store = useMemo(() => new GatewayConnection(defaultGatewayUrl()), []);
+  const gateway = useStore(store);
   const configurator = useMemo(
-    () => new Configurator(() => window.confirm("Discard the changes that were not saved?"), store),
+    () => new Configurator(() => window.confirm("Discard the changes that were not saved?"), new GatewayLive(store)),
     [store],
   );
   useEffect(() => {
@@ -83,29 +83,6 @@ export function ConfiguratorApp() {
   /** The source whose write is being confirmed. */
   const [writing, setWriting] = useState<string | undefined>(undefined);
 
-  // The 3D view reads the draft like a live machine: its configuration, the PLCs' live states over it, the ghosts.
-  const feed = useMemo<SceneFeed>(
-    () => ({
-      frame: (now) => configurator.frame(now),
-      latestState: () => undefined,
-      productHistory: () => ({ steps: [], now: 0 }),
-      productEvents: () => ({ events: [], now: 0, since: 0 }),
-    }),
-    [configurator],
-  );
-  const sources = useMemo<SourceInfo[]>(
-    () =>
-      configurator.drawnSources().map((s) => ({
-        sourceId: s.sourceId,
-        name: s.sourceId,
-        // A ghost is the PLC's version, never live.
-        status: { plcConnected: s.online },
-        config: s.config,
-      })),
-    // A new draft or reconciliation is a new set of sources (ghosts come and go).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [configurator, draft, matches],
-  );
   const selected = draft.components.find((c) => keyOf(c) === selection);
   const sceneSelection: Selection = selected && { kind: "component", id: selected.id, sourceId: selected.sourceId };
 
@@ -294,8 +271,7 @@ export function ConfiguratorApp() {
         }}
       >
         <SceneView
-          feed={feed}
-          sources={sources}
+          frame={(now) => configurator.frame(now)}
           layers={LAYERS}
           selection={sceneSelection}
           onSelect={(s) => {

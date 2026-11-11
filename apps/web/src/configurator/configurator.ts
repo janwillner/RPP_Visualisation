@@ -71,7 +71,7 @@ export interface ConfiguratorSnapshot {
 
 /**
  * The gateway as the configurator reads it (ADR 0016): the PLC sources with their configuration and their live state.
- * `GatewayStore` in the app, a fake in tests.
+ * `GatewayLive` in the app, a fake in tests.
  */
 export interface ConfiguratorLive {
   /** The sources, and per source its parameter sets (ADR 0017) when its PLC has Syn_Config. */
@@ -511,14 +511,6 @@ export class Configurator {
       return { ...source, snapshots, renderTime: theirs.renderTime };
     });
     return [...withLive, ...ghosts];
-  }
-
-  /**
-   * The sources the 3D view draws, without their live states: the draft's and the ghosts. For the page's list of
-   * sources; the same arrays while the draft and the reconciliation stay.
-   */
-  drawnSources(): SceneSource[] {
-    return [...this.draftSources(), ...this.ghostSources()];
   }
 
   /** A live state with only the states of components the draft has as the PLC does (same id and type). */

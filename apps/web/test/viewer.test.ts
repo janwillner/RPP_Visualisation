@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PROTOCOL_VERSION, type GatewayMessage } from "@rpp/protocol";
-import type { MessageListener } from "../src/connection";
+import type { MessageListener } from "../src/gateway-connection";
 import { MAX_RECORDING_MS } from "../src/recording";
 import { Sources, type SourceInfo } from "../src/sources";
 import { LIMIT_NOTICE, Viewer, type LiveFeed, type ViewerSnapshot } from "../src/viewer";
@@ -16,11 +16,12 @@ class FakeLive implements LiveFeed {
 
   send(message: GatewayMessage): void {
     const arrival = performance.now();
-    for (const l of this.messageListeners) l(message, JSON.stringify(message), arrival);
-    this.sources.apply(arrival, message);
-    if (this.snapshot.sources === this.sources.all) return;
-    this.snapshot = { sources: this.sources.all };
-    for (const l of this.listeners) l();
+    const source = this.sources.apply(arrival, message);
+    if (this.snapshot.sources !== this.sources.all) {
+      this.snapshot = { sources: this.sources.all };
+      for (const l of this.listeners) l();
+    }
+    for (const l of this.messageListeners) l(message, JSON.stringify(message), arrival, source);
   }
 
   /** A connected source with one config, then a state every 20 ms for `ms`. */

@@ -1,6 +1,5 @@
 import { COMPONENT_SCHEMAS, type ComponentConfig } from "@rpp/protocol";
-import { singular } from "../machine-facts";
-import { fieldLabel } from "../state-rows";
+import { fieldLabel, singular } from "../naming";
 
 /**
  * The values of a component the property panel edits, read from its type's config schema without knowing the type:

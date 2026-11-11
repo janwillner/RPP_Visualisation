@@ -13,7 +13,6 @@ import {
   type XtsGantryConfig,
   type Zone,
 } from "@rpp/protocol";
-import type { SourceInfo } from "./sources";
 import {
   apply,
   boxInside,
@@ -80,17 +79,6 @@ export function productBeltX(c: ConveyorConfig, state: ConveyorState, p: Product
  */
 export function isMissed(c: ConveyorConfig, state: ConveyorState, p: Product): boolean {
   return p.state !== "picked" && p.state !== "placed" && p.state !== "rejected" && productBeltX(c, state, p) > c.length;
-}
-
-/** A component's name from its source's config; `fallback` (default `#id`) when the config does not list it. */
-export function componentName(source: SourceInfo | undefined, id: number, fallback = `#${id}`): string {
-  return source?.config?.components.find((c) => c.id === id)?.name ?? fallback;
-}
-
-/** One entry of a list in a state, by the list's name: "movers" → "mover", "modules" → "module". */
-export function singular(list: string): string {
-  if (list.endsWith("ies")) return `${list.slice(0, -3)}y`;
-  return list.endsWith("s") ? list.slice(0, -1) : list;
 }
 
 /** A robot's TCP limit area where its TCP (an XTS gantry: one mover's gripper flange) is now. */

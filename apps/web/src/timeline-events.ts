@@ -1,6 +1,7 @@
 import type { Fault, GatewayMessage } from "@rpp/protocol";
 import type { SourceInfo } from "./sources";
-import { componentName, faultText, isMissed, limitViolations, singular } from "./machine-facts";
+import { faultText, isMissed, limitViolations } from "./machine-facts";
+import { componentName, singular } from "./naming";
 
 /**
  * Moments worth finding again in a recording, marked on its timeline: a fault appears, a source goes offline or
@@ -59,7 +60,7 @@ export class EventTracker {
     if (message.kind !== "state") return;
 
     const components = source.config?.components ?? [];
-    const nameOf = (id: number) => componentName(source, id);
+    const nameOf = (id: number) => componentName(source?.config, id);
     const faults = new Set<string>();
     const missed = new Set<string>();
     const wasFaulted = this.faults.get(message.sourceId);

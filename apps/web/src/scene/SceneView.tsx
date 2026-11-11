@@ -13,9 +13,6 @@ import {
 } from "react";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { AXES, OVERLAY, SOLID, STAGE } from "../palette";
-import type { CameraPose } from "../view-settings";
-import type { SceneFeed } from "../connection";
-import type { SourceInfo } from "../sources";
 import {
   availableSnapPoints,
   buildMachineScene,
@@ -29,6 +26,7 @@ import {
   type SceneFinger,
   type SceneModel,
   type SceneOrigin,
+  type SceneSource,
   type SceneZone,
   type SnapPoint,
   type SourcedFaults,
@@ -82,6 +80,12 @@ export type Selection = (NonNullable<LocalSelection> & { sourceId: string }) | u
 
 export type CameraPreset = "top" | "front" | "side" | "iso";
 
+/** A camera pose in renderer coordinates (m, Y up): where it is and the point it orbits around. */
+export interface CameraPose {
+  position: Vec3;
+  target: Vec3;
+}
+
 /** A measuring point: a snap point frozen at the moment it was clicked. */
 export interface MeasurePoint {
   id: number;
@@ -94,10 +98,11 @@ export interface MeasurePoint {
 }
 
 export interface SceneViewProps {
-  /** The live gateway or a recording being played back. */
-  feed: SceneFeed;
-  /** The PLC sources, each drawn on its own. */
-  sources: readonly SourceInfo[];
+  /**
+   * Every source as the machine scene takes it, at `now` (performance.now()), each drawn on its own; called once per
+   * drawn frame. The live gateway, a recording being played back or a draft.
+   */
+  frame: (now?: number) => SceneSource[];
   layers: Layers;
   selection: Selection;
   onSelect: (selection: Selection) => void;
@@ -184,17 +189,34 @@ function FaultLabel({ label, frame }: { label: SceneFaultLabel; frame: SourceFra
 
 const EMPTY_MACHINE: MachineScene = { sources: [], snapPoints: [], origins: [], faults: [] };
 
+/** A source as the view draws it: its group exists while it does, rebuilt for every new config. */
+interface DrawnSource {
+  sourceId: string;
+  config: ConfigMessage | undefined;
+}
+
+const sameSources = (drawn: readonly DrawnSource[], now: readonly SceneSource[]) =>
+  drawn.length === now.length && drawn.every((d, i) => d.sourceId === now[i]!.sourceId && d.config === now[i]!.config);
+
 function SceneContent(props: SceneViewProps) {
-  const { feed, sources, layers, selection, modelRef, measureMode, onMeasure, measurePoints, hidden, onFaults } = props;
+  const { frame, layers, selection, modelRef, measureMode, onMeasure, measurePoints, hidden, onFaults } = props;
   // In measure mode a click measures; selecting works only through the component tree.
   const onSelect = measureMode ? () => {} : props.onSelect;
   const machine = useMemo(() => new MachineFrame(), []);
   const [structure, setStructure] = useState<MachineScene>(EMPTY_MACHINE);
+  // The sources drawn and their configs: re-rendered only when one comes, goes or gets a new config.
+  const [sources, setSources] = useState<readonly DrawnSource[]>([]);
+  const drawn = useRef(sources);
 
   // Priority −1: runs before the sources' frame callbacks, which read the scene built here.
   useFrame(() => {
+    const now = frame();
+    if (!sameSources(drawn.current, now)) {
+      drawn.current = now.map(({ sourceId, config }) => ({ sourceId, config }));
+      setSources(drawn.current);
+    }
     // Products get snap points only while measuring: with thousands of products they cost most of the frame.
-    const model = buildMachineScene(feed.frame(), hidden, { measureSnapPoints: measureMode });
+    const model = buildMachineScene(now, hidden, { measureSnapPoints: measureMode });
     modelRef.current = model;
     const changes = machine.next(model);
     if (changes.structure) setStructure(model);

@@ -1,7 +1,7 @@
 import type { ComponentConfig, Draft } from "@rpp/protocol";
 import type { ComponentKey } from "../scene/scene-model";
 import type { SourceInfo } from "../sources";
-import { fieldLabel } from "../state-rows";
+import { fieldLabel } from "../naming";
 import { HARDWARE_FIELDS } from "./component-defaults";
 import { keyOf } from "./edits";
 import type { Issue } from "./validation";

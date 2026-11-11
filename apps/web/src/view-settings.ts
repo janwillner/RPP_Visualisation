@@ -1,12 +1,6 @@
-import type { Layers } from "./scene/SceneView";
+import type { CameraPose, Layers } from "./scene/SceneView";
 
 type Vec3 = [number, number, number];
-
-/** A camera pose in renderer coordinates (m, Y up): where it is and the point it orbits around. */
-export interface CameraPose {
-  position: Vec3;
-  target: Vec3;
-}
 
 /** How someone left the 3D view on this device: layers, hidden components and sources, camera. */
 export interface ViewSettings {

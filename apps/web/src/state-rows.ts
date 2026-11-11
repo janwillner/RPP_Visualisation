@@ -1,5 +1,6 @@
 import type { ComponentState } from "@rpp/protocol";
-import { faultText, singular } from "./machine-facts";
+import { faultText } from "./machine-facts";
+import { fieldLabel, singular } from "./naming";
 
 /**
  * A component's live values for the inspector, read from its state without knowing its type: every value the PLC
@@ -27,20 +28,6 @@ const SHOWN_ELSEWHERE = new Set(["type", "id", "timestamp", "fault", "products"]
 
 /** All lengths of the protocol are mm, all angles degrees. */
 const unitOf = (key: string) => (key === "rx" || key === "ry" || key === "rz" ? "°" : "mm");
-
-/** Abbreviations a field name holds, written as the domain writes them. */
-const ABBREVIATIONS: Record<string, string> = { tcp: "TCP", ccs: "CCS" };
-
-/** `gripperActive` → "Gripper active", `x` → "X", `tcpLimitArea` → "TCP limit area". */
-export function fieldLabel(key: string): string {
-  const words = key
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .toLowerCase()
-    .split(" ")
-    .map((w) => ABBREVIATIONS[w] ?? w)
-    .join(" ");
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
 
 type Fields = Record<string, unknown>;
 

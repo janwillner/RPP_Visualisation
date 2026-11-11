@@ -1,13 +1,13 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { ComponentConfig, ComponentState } from "@rpp/protocol";
 import {
-  GatewayStore,
+  GatewayConnection,
   STALE_AFTER_MS,
   defaultGatewayUrl,
-  useGateway,
-  type GatewaySnapshot,
-  type SceneFeed,
-} from "./connection";
+  useStore,
+  type ConnectionSnapshot,
+} from "./gateway-connection";
+import { LiveMachine } from "./live-machine";
 import { isOnline, type SourceInfo } from "./sources";
 import {
   PlayerBar,
@@ -17,7 +17,7 @@ import {
   usePlaybackKeys,
   useRecordingControls,
 } from "./RecordingControls";
-import { Viewer } from "./viewer";
+import { Viewer, type SceneFeed } from "./viewer";
 import {
   componentKey,
   formatPointCopy,
@@ -31,12 +31,13 @@ import {
 } from "./scene/scene-model";
 import { CLIENT_ACTIONS, METRICS_WINDOW_MS, metrics, type ClientMetrics, type MachineMetrics } from "./metrics";
 import { stateRows } from "./state-rows";
-import { loadViewSettings, saveViewSettings, type CameraPose, type ViewSettings } from "./view-settings";
+import { loadViewSettings, saveViewSettings, type ViewSettings } from "./view-settings";
 import { PRODUCT, STATUS } from "./palette";
 import { APP_VERSION } from "./version";
 import { ViewControls } from "./ViewControls";
 import {
   SceneView,
+  type CameraPose,
   type CameraPreset,
   type Layers,
   type MeasurePoint,
@@ -188,10 +189,10 @@ function useTick(intervalMs: number): number {
 }
 
 export function App() {
-  const store = useMemo(() => new GatewayStore(defaultGatewayUrl()), []);
+  const store = useMemo(() => new GatewayConnection(defaultGatewayUrl()), []);
   // Live or a recording; it keeps the replay buffer from now on (ADR 0011).
   const viewer = useMemo(
-    () => new Viewer(store, () => window.confirm("Discard the current recording? It has not been saved.")),
+    () => new Viewer(new LiveMachine(store), () => window.confirm("Discard the current recording? It has not been saved.")),
     [store],
   );
   useEffect(() => {
@@ -202,7 +203,7 @@ export function App() {
       viewer.stop();
     };
   }, [store, viewer]);
-  const gateway = useGateway(store);
+  const gateway = useStore(store);
   // Layers, hidden components and camera come back as they were left on this device.
   const initialView = useMemo(loadViewSettings, []);
   const view = useRef<ViewSettings>(initialView);
@@ -313,8 +314,7 @@ export function App() {
         onContextMenu={(e) => e.preventDefault()}
       >
         <SceneView
-          feed={viewer}
-          sources={recording.sources}
+          frame={(now) => viewer.frame(now)}
           layers={layers}
           selection={selection}
           onSelect={setSelection}
@@ -375,12 +375,12 @@ export function App() {
 }
 
 /** Sources the gateway cannot read right now (all of them while the gateway connection is down). */
-function offlineSources(gateway: GatewaySnapshot): readonly SourceInfo[] {
+function offlineSources(gateway: ConnectionSnapshot): readonly SourceInfo[] {
   return gateway.sources.filter((s) => !isOnline(s));
 }
 
 /** Embedded there is no status bar: a red note in the 3D view tells that (part of) the machine is not live. */
-function OfflineNotice({ gateway }: { gateway: GatewaySnapshot }) {
+function OfflineNotice({ gateway }: { gateway: ConnectionSnapshot }) {
   const offline = offlineSources(gateway);
   if (gateway.socket === "open" && offline.length === 0) return null;
   const text =
@@ -881,7 +881,7 @@ function Json({ value }: { value: unknown }) {
 }
 
 /** Milliseconds since the newest data of the stalest connected source; undefined before any data. */
-function dataAge(store: GatewayStore, gateway: GatewaySnapshot): number | undefined {
+function dataAge(store: GatewayConnection, gateway: ConnectionSnapshot): number | undefined {
   const ages = gateway.sources
     .filter(isOnline)
     .map((s) => store.dataAge(s.sourceId))
@@ -890,8 +890,8 @@ function dataAge(store: GatewayStore, gateway: GatewaySnapshot): number | undefi
 }
 
 function StatusBar(props: {
-  store: GatewayStore;
-  gateway: GatewaySnapshot;
+  store: GatewayConnection;
+  gateway: ConnectionSnapshot;
   modelRef: React.RefObject<MachineScene | undefined>;
 }) {
   const { store, gateway, modelRef } = props;
