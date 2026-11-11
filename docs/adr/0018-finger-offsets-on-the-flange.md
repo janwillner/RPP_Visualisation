@@ -9,18 +9,21 @@ configuration.
 So every finger has an **offset** on the gripper flange (`offset` / `stOffset`: position in the flange frame and
 rotation about its Z; protocol version 20), and every finger state says whether the application reported its pose
 (`poseReported` / `bPoseReported`). While it did not, **the web** places the finger by its offset on the flange frame
-it already computes for every kinematics: a Delta's at the TCP with the MCS axes, a Cartesian robot's with the
-robot's axes, an XTS mover's turned with the mover (also around the loop's curves). In every one of them the flange
-frame's −Z points to the product.
+it already computes for every kinematics: a Delta's at the TCP with the robot's axes (the gripper is bolted to the
+effector, which stays turned with the base; a product carried at the flange itself still hangs along the MCS axes), a
+Cartesian robot's with the robot's axes, an XTS mover's turned with the mover (also around the loop's curves). In
+every one of them the flange frame's −Z points to the product.
 
 - **Syn_Visu** stores the offset (`_FB_VisuRobot.m_SetFingerOffset`; `m_SetFinger` keeps it) and sets
   `bPoseReported`: `m_SetFingerState` of a Delta or a Cartesian robot marks its finger as reported, so an application
   that never calls it gets its fingers placed by their offsets without a change; an XTS track's `m_SetMover` marks
-  every finger as reported, unless the application declared `m_SetFingersOnFlange(TRUE)`. Every existing call stays as
-  it is (TwinCAT 4024 needs every input of a method call, so no input was added).
-- **The configurator** draws a draft robot with fingers at rest (`rest-states.ts`: a Delta's TCP in the middle of its
-  working area, a Cartesian robot in the middle of its strokes, one mover per XTS track), its finger states empty, so
-  the scene places every finger by its offset.
+  every finger as reported, unless the application declared `m_SetFingersOnFlange(TRUE)`. A finger once reported stays
+  reported until the PLC restarts: an application reports its poses or it does not. Every existing call stays as it is
+  (TwinCAT 4024 needs every input of a method call, so no input was added).
+- **The configurator** opens a draft saved before protocol 20 with its fingers on the flange centre, and draws a draft
+  robot with fingers at rest (`rest-states.ts`: a Delta's TCP in the middle of its working area, a Cartesian robot in
+  the middle of its strokes, one mover per XTS track), its finger states empty, so the scene places every finger by its
+  offset.
 - **Syn_Config 2.0.0** holds the fingers with their offsets in the robots' parameter sets (config protocol 2) and
   passes them on with `m_SetFinger` and `m_SetFingerOffset`.
 

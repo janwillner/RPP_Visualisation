@@ -7,8 +7,9 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Parameter set of one Cartesian robot (ADR 0017): its pose, origin shift, zones, limit area and TCP limit area,<br>
-written by the configurator, taken over when the application allows it. Typical cycle:<br>
+Parameter set of one Cartesian robot (ADR 0017): its pose, origin shift, zones, gripper fingers, limit area and<br>
+TCP limit area, written by the configurator, taken over when the application allows it.<br>
+Typical cycle:<br>
   fb_CartParam.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Cart.m_Id());<br>
   fb_CartParam.m_Cycle(vio_Default := CartDefault, vio_Set := CartSet, vi_b_ApplyAllowed := b_Stopped);<br>
   fb_Cart.m_Configure(vi_Pose := fb_CartParam.m_Pose(), vi_lr_XMin := 0, ...);<br>
@@ -20,6 +21,7 @@ vo_Config is the contract structure the gateway reads and writes at the path in 
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ New<br>
+Syn_Config 2.0.0 ¦ 2026-11-11 ¦ J.Willner ¦ Gripper fingers with their offsets, m_Invalid (ADR 0018)<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_ConfigCartesian EXTENDS _FB_ConfigComponent
 VAR_OUTPUT
@@ -92,11 +94,7 @@ CASE m_Staging(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stSta
 		m_Handled(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_str_Rejection := '');
 		m_Cycle := TRUE;
 	E_ConfigAction.TAKE_OVER:
-		str_TempRejection := m_InvalidZones(vio_aZones := vo_Config.stStaged.aZones, vi_un_Count := vo_Config.stStaged.nZoneCount);
-		IF str_TempRejection = '' THEN
-			str_TempRejection := m_InvalidFingers(vio_aFingers := vo_Config.stStaged.aFingers,
-				vi_un_Count := vo_Config.stStaged.nFingerCount);
-		END_IF
+		str_TempRejection := m_Invalid(vio_Param := vo_Config.stStaged);
 		IF str_TempRejection = '' THEN
 			vio_Set.nLastVersion := vio_Set.nLastVersion + 1;
 			vio_Set.nVersion := vio_Set.nLastVersion;
@@ -117,6 +115,27 @@ IF vio_Set.bValid THEN
 ELSE
 	vo_Config.stActive := vio_Default;
 	vo_Config.stStatus.nActiveVersion := 0;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Invalid" Id="{5411f499-6eea-486b-8377-32da42d28ab8}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Why a staged set cannot be taken over; '' when it can: more zones or fingers than the lists hold, a zone on no<br>
+conveyor (id 0), or a finger without a diameter or height.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Invalid : STRING(80)
+VAR_IN_OUT CONSTANT
+	vio_Param							: ST_ConfigCartesianParam;	// the staged set
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Invalid := m_InvalidZones(vio_aZones := vio_Param.aZones, vi_un_Count := vio_Param.nZoneCount);
+IF m_Invalid = '' THEN
+	m_Invalid := m_InvalidFingers(vio_aFingers := vio_Param.aFingers, vi_un_Count := vio_Param.nFingerCount);
 END_IF]]></ST>
       </Implementation>
     </Method>

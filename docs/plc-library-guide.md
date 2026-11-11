@@ -345,7 +345,7 @@ always drawn as a cylinder: a suction cup, a jaw, a pin. Picked products hang fr
   1-based, up to 8. For XTS kinematics this defines the fingers of every mover's gripper.
 - **Place** each finger on the gripper flange: `m_SetFingerOffset(vi_un_Finger, vi_lr_X, vi_lr_Y, vi_lr_Z, vi_lr_Rz)`,
   its position in the flange frame and its rotation about the flange's Z (ADR 0018). The flange frame's −Z points to
-  the product: a Delta's lies at the TCP with the MCS axes, a Cartesian robot's has the robot's axes, an XTS
+  the product: a Delta's lies at the TCP with the robot's axes, a Cartesian robot's has the robot's axes, an XTS
   mover's turns with the mover. The configurator lays the fingers out in a top view of the flange.
 - **Report** each finger every cycle, **absolute in the MCS**: the pose of the finger's frame and whether it grips.
   - Delta and Cartesian: `m_SetFingerState(vi_un_Finger, vi_Pose, vi_b_Active)`.

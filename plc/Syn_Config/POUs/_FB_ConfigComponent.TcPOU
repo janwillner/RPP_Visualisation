@@ -8,8 +8,8 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 Base of every parameter FB (_FB_ConfigConveyor, _FB_ConfigDelta, _FB_ConfigXtsGantry, ...): the config<br>
-manifest entry, what is done with a staging (ADR 0017) and the helpers for zones, limit areas and track modules<br>
-the derived FBs share. Not used directly.<br>
+manifest entry, what is done with a staging (ADR 0017) and the helpers for zones, fingers, limit areas and<br>
+track modules the derived FBs share. Not used directly.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 1.0.0 ¦ 2026-11-10 ¦ J.Willner ¦ First version: conveyor and Delta<br>

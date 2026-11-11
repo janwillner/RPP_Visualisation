@@ -397,16 +397,23 @@ describe("scene model: gripper fingers", () => {
 
   // ADR 0018: a finger whose pose the application does not report hangs at its offset on the flange.
   const offsetCup = { ...cup, offset: { x: 70, y: 0, z: -10, rz: 90 } };
+  const robotWith = (rz: number) => deltaConfig({ fingers: [offsetCup], pose: { x: 1500, y: 0, z: 1800, rx: 0, ry: 0, rz } });
 
-  it("places a finger whose pose is not reported by its offset on a Delta's flange, along the MCS axes", () => {
-    const turned = deltaConfig({ fingers: [offsetCup], pose: { x: 1500, y: 0, z: 1800, rx: 0, ry: 0, rz: 30 } });
-    const [finger] = buildScene(config(turned), [snapshot(0, [deltaState(flange, flange, 20, [unreported(true)])])], 0).fingers;
-
-    // TCP (1500, 0, 1000) + (70, 0, −10), whatever way the robot is turned.
+  it("places a finger whose pose is not reported by its offset on a Delta's flange: at the TCP, along the robot's axes", () => {
+    const [finger] = buildScene(config(robotWith(0)), [snapshot(0, [deltaState(flange, flange, 20, [unreported(true)])])], 0).fingers;
+    // TCP (1500, 0, 1000) + (70, 0, −10).
     closeTo(finger!.transform.position, [1.57, 0.99, 0]);
     // Turned by 90° about the flange's Z: its local +X along MCS +Y (renderer −Z).
     closeTo(rotate(finger!.transform.quaternion, [1, 0, 0]), [0, 0, -1]);
     expect(finger!.active).toBe(true);
+  });
+
+  it("turns a Delta's finger layout with the robot: the gripper is bolted to its effector", () => {
+    const [finger] = buildScene(config(robotWith(90)), [snapshot(0, [deltaState(flange, flange, 20, [unreported()])])], 0).fingers;
+    // Turned by 90°: the offset (70, 0) along the robot's X points along MCS +Y, renderer −Z.
+    closeTo(finger!.transform.position, [1.5, 0.99, -0.07]);
+    // The finger's rz of 90° adds to the robot's: its local +X along MCS −X.
+    closeTo(rotate(finger!.transform.quaternion, [1, 0, 0]), [-1, 0, 0]);
   });
 
   it("places every finger by its offset when the state has no finger states at all, e.g. a draft's rest state", () => {

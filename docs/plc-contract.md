@@ -154,7 +154,7 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
 - Gripper: every kinematics may define fingers (`nFingerCount`, `aFingers`, at most `VISU_GlobalConst_Param.VISU_un_MAX_FINGERS`),
   always drawn as cylinders (`fDiameter`, `fHeight`), each with its place on the gripper flange (`stOffset`,
   `ST_VisuPlanarPose`: position in the flange frame and rotation about its Z; ADR 0018). The flange frame's −Z points
-  to the product: a Delta's lies at the TCP with the MCS axes, a Cartesian robot's has the robot's axes, an XTS
+  to the product: a Delta's lies at the TCP with the robot's axes, a Cartesian robot's has the robot's axes, an XTS
   mover's turns with the mover. The PLC reports each finger's pose every cycle, **absolute in the MCS**
   (`aFingerStates[i].stPose`, per mover for XTS kinematics), and whether it grips (`bActive`); `bPoseReported` says
   whether the application reported the pose. While it is FALSE, clients place the finger by its offset on the flange

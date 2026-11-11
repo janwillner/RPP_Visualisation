@@ -67,7 +67,8 @@ export const FingerSchema = z
     offset: PlanarPoseSchema.describe(
       "Where the finger's frame lies on the gripper flange: its position in the flange frame, mm, and its rotation " +
         "about the flange's Z, degrees. The flange frame's −Z points to the product: a Delta's lies at the TCP with " +
-        "the MCS axes, a Cartesian robot's has the robot's axes, an XTS mover's turns with the mover. Clients place " +
+        "the robot's axes (its effector stays turned with the base), a Cartesian robot's has the robot's axes, an XTS " +
+        "mover's turns with the mover. Clients place " +
         "the finger by it while its state reports no pose (`poseReported` false).",
     ),
   })

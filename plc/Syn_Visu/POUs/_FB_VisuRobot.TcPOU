@@ -7,10 +7,10 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Base of every robot (Delta, XTS gantry, XTS loop, Cartesian): zones plus the gripper fingers,<br>
-m_SetFinger and m_ClearFingers, the limit area, m_SetLimitArea and m_ClearLimitArea, and the TCP limit area,<br>
-m_SetTcpLimitArea and m_ClearTcpLimitArea. A derived FB tells where its fingers and its boxes lie through<br>
-m_Fingers and m_LimitArea; an XTS loop has neither box.<br>
+Base of every robot (Delta, XTS gantry, XTS loop, Cartesian): zones plus the gripper fingers, m_SetFinger,<br>
+m_SetFingerOffset (a finger's place on the flange) and m_ClearFingers, the limit area, m_SetLimitArea and<br>
+m_ClearLimitArea, and the TCP limit area, m_SetTcpLimitArea and m_ClearTcpLimitArea. A derived FB tells where<br>
+its fingers and its boxes lie through m_Fingers and m_LimitArea; an XTS loop has neither box.<br>
 Not used directly.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
@@ -219,7 +219,7 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 Places finger vi_un_Finger (1-based, defined with m_SetFinger) on the gripper flange (ADR 0018): the position<br>
 of its frame in the flange frame and its rotation about the flange's Z. The flange frame's -Z points to the<br>
-product: a Delta's lies at the TCP with the MCS axes, a Cartesian robot's has the robot's axes, an XTS mover's<br>
+product: a Delta's lies at the TCP with the robot's axes, a Cartesian robot's has the robot's axes, an XTS mover's<br>
 turns with the mover. While the application reports no pose for the finger (m_SetFingerState, or an XTS track<br>
 with m_SetFingersOnFlange), the visualisation draws it there. The config version only changes when a value does.<br>
 *****************************************************************************************************<br>
@@ -242,7 +242,10 @@ END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[m_SetFingerOffset := FALSE;
 m_Fingers(vo_p_Count => p_TempCount, vo_p_Fingers => p_TempFingers);
-IF p_TempCount = 0 OR p_TempFingers = 0 OR vi_un_Finger = 0 OR vi_un_Finger > p_TempCount^ THEN
+IF p_TempCount = 0 OR p_TempFingers = 0 THEN
+	RETURN;
+END_IF
+IF vi_un_Finger = 0 OR vi_un_Finger > p_TempCount^ THEN
 	RETURN;
 END_IF
 TempOffset.fX := vi_lr_X;

@@ -1260,3 +1260,9 @@ table.metrics td + td {
 .configurator .finger-layout .finger:active {
   cursor: grabbing;
 }
+
+.configurator .finger-layout .finger .heading {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}

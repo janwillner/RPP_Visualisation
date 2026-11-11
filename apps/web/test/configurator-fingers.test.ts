@@ -82,3 +82,21 @@ describe("Configurator: gripper layout (#25, ADR 0018)", () => {
     }
   });
 });
+
+describe("Configurator: drafts saved before finger offsets (protocol 19)", () => {
+  it("opens them with every finger on the flange centre", () => {
+    const { c, key } = placed("delta");
+    c.addFinger(key);
+    const saved = JSON.parse(c.save().text);
+    // As protocol 19 saved it: fingers without an offset.
+    saved.protocolVersion = 19;
+    for (const component of saved.components) for (const f of component.fingers) delete f.offset;
+
+    const opened = new Configurator();
+    opened.open(JSON.stringify(saved));
+    expect(opened.getSnapshot().notice).toBeUndefined();
+    expect(opened.getSnapshot().draft.components[0]).toMatchObject({
+      fingers: [{ diameter: 40, height: 50, offset: { x: 0, y: 0, z: 0, rz: 0 } }],
+    });
+  });
+});

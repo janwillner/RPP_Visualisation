@@ -7,8 +7,8 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Parameter set of one XTS loop (ADR 0017): its pose, origin shift, track modules and zones, written by the<br>
-configurator, taken over when the application allows it. Typical cycle:<br>
+Parameter set of one XTS loop (ADR 0017): its pose, origin shift, track modules, zones and gripper fingers,<br>
+written by the configurator, taken over when the application allows it. Typical cycle:<br>
   fb_FxxParam.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Fxx.m_Id());<br>
   fb_FxxParam.m_Cycle(vio_Default := FxxDefault, vio_Set := FxxSet, vi_b_ApplyAllowed := b_Stopped);<br>
   fb_Fxx.m_Configure(vi_Pose := fb_FxxParam.m_Pose(), vi_lr_ToolOffset := 120, ...);<br>
@@ -20,6 +20,7 @@ vo_Config is the contract structure the gateway reads and writes at the path in 
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ New<br>
+Syn_Config 2.0.0 ¦ 2026-11-11 ¦ J.Willner ¦ Gripper fingers with their offsets (ADR 0018)<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_ConfigXtsLoop EXTENDS _FB_ConfigComponent
 VAR_OUTPUT
@@ -123,8 +124,9 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Why a staged set cannot be taken over; '' when it can: a track without modules, more modules or zones than the<br>
-lists hold, a module without a length, or a zone on no conveyor (id 0).<br>
+Why a staged set cannot be taken over; '' when it can: a track without modules, more modules, zones or fingers<br>
+than the lists hold, a module without a length, a zone on no conveyor (id 0), or a finger without a diameter or<br>
+height.<br>
 ****************************************************************************************************)
 METHOD PRIVATE m_Invalid : STRING(80)
 VAR_IN_OUT CONSTANT
