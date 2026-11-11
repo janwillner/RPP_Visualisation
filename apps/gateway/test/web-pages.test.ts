@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,29 +7,55 @@ import { combineGateways, createGateway } from "../src/gateway";
 import { startServer } from "../src/server";
 import { createSimulator } from "../src/simulator";
 
-describe("web app pages", () => {
-  it("serves the visualisation at / and the configurator at /configurator (ADR 0016)", async () => {
-    const web = mkdtempSync(join(tmpdir(), "rpp-web-"));
-    writeFileSync(join(web, "index.html"), "<!doctype html><title>visualisation</title>");
-    writeFileSync(join(web, "configurator.html"), "<!doctype html><title>configurator</title>");
-    const sim = createSimulator({ seed: 1 });
-    const gateway = createGateway({ plc: sim.plc, sourceId: "sim", sourceName: "Simulator" });
-    const server = await startServer({ gateway: combineGateways([gateway]), port: 0, host: "127.0.0.1", staticDir: web });
-    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const page = async (path: string) => {
-      const res = await fetch(`${base}${path}`);
-      expect(res.headers.get("content-type")).toContain("text/html");
-      return res.text();
-    };
+/** A built app: its page and one asset. */
+function builtApp(title: string): string {
+  const dir = mkdtempSync(join(tmpdir(), `rpp-${title}-`));
+  writeFileSync(join(dir, "index.html"), `<!doctype html><title>${title}</title>`);
+  mkdirSync(join(dir, "assets"));
+  writeFileSync(join(dir, "assets", "app.js"), `// ${title}`);
+  return dir;
+}
+
+async function serve(dirs: { staticDir?: string; configuratorDir?: string }) {
+  const sim = createSimulator({ seed: 1 });
+  const gateway = createGateway({ plc: sim.plc, sourceId: "sim", sourceName: "Simulator" });
+  const server = await startServer({ gateway: combineGateways([gateway]), port: 0, host: "127.0.0.1", ...dirs });
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const get = async (path: string) => {
+    const res = await fetch(`${base}${path}`);
+    return { status: res.status, type: res.headers.get("content-type"), text: await res.text() };
+  };
+  return { get, close: () => server.close() };
+}
+
+describe("web apps (ADR 0019)", () => {
+  it("serves the visualisation at / and the configurator from its own build at /configurator/", async () => {
+    const { get, close } = await serve({ staticDir: builtApp("visualisation"), configuratorDir: builtApp("configurator") });
     try {
-      expect(await page("/")).toContain("visualisation");
-      expect(await page("/configurator")).toContain("configurator");
-      expect(await page("/configurator/")).toContain("configurator");
-      expect(await page("/configurator.html")).toContain("configurator");
-      // Any other unknown path still falls back to the visualisation.
-      expect(await page("/somewhere")).toContain("visualisation");
+      expect((await get("/")).text).toContain("visualisation");
+      for (const path of ["/configurator", "/configurator/", "/configurator/somewhere"]) {
+        const page = await get(path);
+        expect(page.type, path).toContain("text/html");
+        expect(page.text, path).toContain("configurator");
+      }
+      expect((await get("/configurator/assets/app.js")).text).toBe("// configurator");
+      expect((await get("/assets/app.js")).text).toBe("// visualisation");
+      // Any other unknown path falls back to the visualisation.
+      expect((await get("/somewhere")).text).toContain("visualisation");
+      // Not a configurator path, only a similar name.
+      expect((await get("/configurators")).text).toContain("visualisation");
     } finally {
-      server.close();
+      close();
+    }
+  }, 30_000);
+
+  it("answers 404 for the configurator when none is built", async () => {
+    const { get, close } = await serve({ staticDir: builtApp("visualisation") });
+    try {
+      expect((await get("/configurator")).status).toBe(404);
+      expect((await get("/")).text).toContain("visualisation");
+    } finally {
+      close();
     }
   }, 30_000);
 });

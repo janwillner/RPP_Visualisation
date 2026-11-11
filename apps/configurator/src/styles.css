@@ -1,0 +1,230 @@
+/* The configurator's own look, after the shared stylesheet of @rpp/machine-view. */
+
+/* The configurator (ADR 0016): palette, component list and problems on the left, properties on the right. */
+.configurator .panel h3 {
+  margin: 12px 0 6px;
+  font-size: 13px;
+}
+
+.configurator .palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.configurator .palette button {
+  cursor: grab;
+}
+
+.configurator .issues {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.configurator .issues .bad {
+  color: var(--bad-text);
+}
+
+.configurator .properties fieldset {
+  margin: 10px 0 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.configurator .property {
+  display: grid;
+  grid-template-columns: 1fr 110px;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 0;
+}
+
+.configurator .property input[type="text"],
+.configurator .property select {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.configurator .property input[type="checkbox"] {
+  justify-self: start;
+}
+
+.configurator .toolbar input[type="text"] {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.configurator .property-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
+.configurator .property-list-head h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.configurator .property-list-head select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.configurator legend .link-button {
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.configurator .tree .match {
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.configurator .tree .match.matched {
+  color: var(--ok);
+}
+
+.configurator .tree .match.changed {
+  color: var(--select);
+}
+
+.configurator .tree .match.draftOnly,
+.configurator .tree .match.typeMismatch {
+  color: var(--bad-text);
+}
+
+.configurator .tree.plcs li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+
+.configurator .tree .ok {
+  color: var(--ok);
+}
+
+.configurator .tree .write {
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  color: var(--accent);
+}
+
+.configurator .tree .write.applied {
+  color: var(--ok);
+}
+
+.configurator .tree .write.rejected,
+.configurator .tree .write.failed {
+  color: var(--bad-text);
+}
+
+.configurator .dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.configurator .dialog {
+  max-width: min(640px, 90vw);
+  max-height: 80vh;
+  overflow: auto;
+  padding: 12px 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.configurator .dialog h4 {
+  margin: 10px 0 4px;
+}
+
+.configurator .dialog .changes td {
+  padding: 1px 8px 1px 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Gripper fingers in a top view of the flange (ADR 0018). */
+.configurator .finger-layout {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  margin-top: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  touch-action: none;
+}
+
+.configurator .finger-layout .flange {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 4 3;
+}
+
+.configurator .finger-layout .axis {
+  stroke: var(--muted);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.configurator .finger-layout text {
+  fill: var(--text);
+  font-size: 12px;
+  user-select: none;
+}
+
+.configurator .finger-layout .axis-label {
+  fill: var(--muted);
+}
+
+.configurator .finger-layout .finger {
+  cursor: grab;
+}
+
+.configurator .finger-layout .finger circle {
+  fill: var(--panel);
+  stroke: var(--accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.configurator .finger-layout .finger:active {
+  cursor: grabbing;
+}
+
+.configurator .finger-layout .finger .heading {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}

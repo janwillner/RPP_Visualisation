@@ -14,6 +14,8 @@ import { APP_VERSION } from "./version";
 export const WS_PATH = "/ws";
 /** Health of every source as JSON; 200 while all are connected, else 503. */
 export const HEALTH_PATH = "/health";
+/** Where the configurator is served (ADR 0016, 0019); everything else of the web is the visualisation. */
+export const CONFIGURATOR_PATH = "/configurator";
 export { DOCS_PATH, DOCS_SCHEMA_PATH } from "./docs-page";
 
 /** The answer to a command from a page of another origin. */
@@ -61,15 +63,18 @@ export interface ServerOptions {
   gateway: MessageSource;
   port: number;
   host?: string;
-  /** Directory with the built web app; omit to serve the WebSocket only (development with Vite). */
+  /** Directory with the built visualisation, served at `/`; omit to serve the WebSocket only (development with Vite). */
   staticDir?: string;
+  /** Directory with the built configurator, served at `/configurator/` (ADR 0019). */
+  configuratorDir?: string;
   /** Release version reported at /health; defaults to this build's. */
   version?: string;
 }
 
 /** One HTTP port serving the built web app plus the WebSocket fan-out, which takes commands on parameter sets only. */
-export function startServer({ gateway, port, host, staticDir, version = APP_VERSION }: ServerOptions): Promise<Server> {
+export function startServer({ gateway, port, host, staticDir, configuratorDir, version = APP_VERSION }: ServerOptions): Promise<Server> {
   const root = staticDir ? resolve(staticDir) : undefined;
+  const configuratorRoot = configuratorDir ? resolve(configuratorDir) : undefined;
   const health = watchHealth(gateway, version);
   const docs = createDocsPage(version);
 
@@ -107,10 +112,6 @@ export function startServer({ gateway, port, host, staticDir, version = APP_VERS
   });
 
   async function serveStatic(url: string, res: import("node:http").ServerResponse): Promise<void> {
-    if (!root) {
-      res.writeHead(404).end("No static directory configured");
-      return;
-    }
     let urlPath: string;
     try {
       urlPath = decodeURIComponent(new URL(url, "http://localhost").pathname);
@@ -118,18 +119,23 @@ export function startServer({ gateway, port, host, staticDir, version = APP_VERS
       res.writeHead(400).end();
       return;
     }
-    let file = normalize(join(root, urlPath));
-    if (file !== root && !file.startsWith(root + sep)) {
+    // Two apps (ADR 0019): the configurator below its path, the visualisation everywhere else.
+    const configurator = urlPath === CONFIGURATOR_PATH || urlPath.startsWith(`${CONFIGURATOR_PATH}/`);
+    const appRoot = configurator ? configuratorRoot : root;
+    if (!appRoot) {
+      res.writeHead(404).end(configurator ? "No configurator directory configured" : "No static directory configured");
+      return;
+    }
+    let file = normalize(join(appRoot, configurator ? urlPath.slice(CONFIGURATOR_PATH.length) : urlPath));
+    if (file !== appRoot && !file.startsWith(appRoot + sep)) {
       res.writeHead(403).end();
       return;
     }
     try {
       if ((await stat(file)).isDirectory()) file = join(file, "index.html");
     } catch {
-      // A page of the web app by its name, e.g. /configurator (ADR 0016); any other unknown path falls back to the
-      // visualisation.
-      const page = `${file.replace(/[\\/]+$/, "")}.html`;
-      file = (await isFile(page)) ? page : join(root, "index.html");
+      // Any other path is the app's own page, which finds its way itself.
+      file = join(appRoot, "index.html");
     }
     try {
       await stat(file);
@@ -230,12 +236,4 @@ export function startServer({ gateway, port, host, staticDir, version = APP_VERS
     server.once("error", fail);
     server.listen(port, host, () => done(server));
   });
-}
-
-async function isFile(path: string): Promise<boolean> {
-  try {
-    return (await stat(path)).isFile();
-  } catch {
-    return false;
-  }
 }

@@ -75,32 +75,40 @@ describe("resolveGatewayOptions", () => {
     expect(() => resolveGatewayOptions(["--config", "/data/config.json"], env(files))).toThrow(message);
   });
 
-  it("uses the bridge exe and web app next to the bundled gateway when packaged", () => {
-    const options = resolveGatewayOptions([], env({}, ["/install/AdsBridge.exe", "/install/web"]));
+  it("uses the bridge exe and both web apps next to the bundled gateway when packaged", () => {
+    const options = resolveGatewayOptions([], env({}, ["/install/AdsBridge.exe", "/install/web", "/install/web/configurator"]));
 
     expect(options.adsBridge).toBe(join(here, "AdsBridge.exe"));
     expect(options.staticDir).toBe(join(here, "web"));
+    expect(options.configuratorDir).toBe(join(here, "web", "configurator"));
   });
 
   it("uses the repo build output when running from source", () => {
     const src = resolve("/repo/apps/gateway/src");
-    const options = resolveGatewayOptions([], { ...env({}, ["/repo/apps/web/dist"]), here: src });
+    const options = resolveGatewayOptions([], {
+      ...env({}, ["/repo/apps/visualisation/dist", "/repo/apps/configurator/dist"]),
+      here: src,
+    });
 
     expect(options.adsBridge).toBe(resolve("/repo/apps/ads-bridge/bin/Release/net9.0/AdsBridge.dll"));
-    expect(options.staticDir).toBe(resolve("/repo/apps/web/dist"));
+    expect(options.staticDir).toBe(resolve("/repo/apps/visualisation/dist"));
+    expect(options.configuratorDir).toBe(resolve("/repo/apps/configurator/dist"));
   });
 
   it("serves no web app when none is built", () => {
-    expect(resolveGatewayOptions([], env()).staticDir).toBeUndefined();
+    const options = resolveGatewayOptions([], env());
+    expect(options.staticDir).toBeUndefined();
+    expect(options.configuratorDir).toBeUndefined();
   });
 
   it("resolves relative paths in the config file against the file's folder", () => {
     const options = resolveGatewayOptions(
       ["--config", "/data/config.json"],
-      env({ "/data/config.json": JSON.stringify({ staticDir: "custom-web", adsBridge: "bin/AdsBridge.exe" }) }),
+      env({ "/data/config.json": JSON.stringify({ staticDir: "custom-web", configuratorDir: "custom-configurator", adsBridge: "bin/AdsBridge.exe" }) }),
     );
 
     expect(options.staticDir).toBe(resolve("/data/custom-web"));
+    expect(options.configuratorDir).toBe(resolve("/data/custom-configurator"));
     expect(options.adsBridge).toBe(resolve("/data/bin/AdsBridge.exe"));
   });
 

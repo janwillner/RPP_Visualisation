@@ -8,7 +8,7 @@ The register limit is `VISU_un_MAX_PRODUCTS` = 4800 per conveyor (library 7.1.0)
 
 ## Benchmarks: `pnpm bench`
 
-`pnpm bench` runs the benchmarks in `apps/gateway/bench/` and `apps/web/bench/` (Vitest bench) with 500, 2000 and 4800
+`pnpm bench` runs the benchmarks in `apps/gateway/bench/` and `apps/visualisation/bench/` (Vitest bench) with 500, 2000 and 4800
 products on one conveyor:
 
 | Benchmark | What it measures |

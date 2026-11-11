@@ -28,5 +28,5 @@ apps/ads-bridge/obj/
 .cache/
 
 # Playwright output
-apps/web/test-results/
-apps/web/playwright-report/
+apps/*/test-results/
+apps/*/playwright-report/
