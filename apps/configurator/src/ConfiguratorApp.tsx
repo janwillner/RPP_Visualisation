@@ -12,6 +12,9 @@ import {
   type MachineScene,
   SceneView,
   type Selection,
+  SidePanelControls,
+  sidePanelsLayout,
+  useSidePanel,
   useStore,
   ViewControls,
 } from "@rpp/machine-view";
@@ -100,6 +103,10 @@ export function ConfiguratorApp() {
   /** The source whose write is being confirmed. */
   const [writing, setWriting] = useState<string | undefined>(undefined);
   const [layers, setLayers] = useState<Layers>(LAYERS);
+  // Both start open, as the visualisation's; open state and width are remembered on this device.
+  const left = useSidePanel("rpp.configurator.panel.left", "Palette and components", () => true);
+  const right = useSidePanel("rpp.configurator.panel.right", "Properties", () => true);
+  const panels = sidePanelsLayout(left, right);
 
   const selected = draft.components.find((c) => keyOf(c) === selection);
   const sceneSelection: Selection = selected && { kind: "component", id: selected.id, sourceId: selected.sourceId };
@@ -144,7 +151,7 @@ export function ConfiguratorApp() {
   }, [snapshot.saved]);
 
   return (
-    <div className="app configurator">
+    <div className={["app configurator", panels.className].filter(Boolean).join(" ")} style={panels.style}>
       <header className="toolbar">
         <strong className="title">RPP Configurator</strong>
         <div className="group">
@@ -181,7 +188,7 @@ export function ConfiguratorApp() {
         <LayerToggles layers={layers} onToggle={(key) => setLayers((l) => ({ ...l, [key]: !l[key] }))} />
       </header>
 
-      <aside className="panel left">
+      <aside className="panel left" hidden={!left.open}>
         <h3>Palette</h3>
         <p className="muted">Drag onto the floor, or click to place in the middle of the view.</p>
         <div className="palette">
@@ -315,6 +322,7 @@ export function ConfiguratorApp() {
             pressedRef={handlePressed}
           />
         </SceneView>
+        <SidePanelControls left={left} right={right} />
         <ViewControls onCamera={(action) => setCameraRequest((r) => ({ action, seq: r.seq + 1 }))} />
         {snapshot.notice && (
           <div className="recording-notice" role="alert">
@@ -323,7 +331,7 @@ export function ConfiguratorApp() {
         )}
       </main>
 
-      <aside className="panel right">
+      <aside className="panel right" hidden={!right.open}>
         {selected ? (
           // Keyed by the component: what a panel holds for one component (a conveyor chosen for a new zone) never
           // carries over to the next.

@@ -45,6 +45,7 @@ export {
 } from "./scene/SceneView";
 export { ViewControls } from "./ViewControls";
 export { LayerToggles } from "./LayerToggles";
+export { SidePanelControls, sidePanelsLayout, useSidePanel, type SidePanel } from "./SidePanels";
 export { pickOnScreen, type Projection } from "./scene/picking";
 // The per-frame structure of the scene, for benchmarks of the view's frame cost.
 export { MachineFrame, SourceFrame } from "./scene/scene-frame";

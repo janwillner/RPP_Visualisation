@@ -393,3 +393,96 @@ a.link {
       padding: 3px 8px;
     }
 }
+
+/* Side panels (SidePanels.tsx): closed, resized by dragging the 3D view's edge, opened and closed by a tab. */
+.app.left-closed {
+  --left: 0px;
+}
+
+.app.right-closed {
+  --right: 0px;
+}
+
+/* Side panel handles: tabs on the 3D view's left and right edge, so they always sit next to their panel. */
+/* The 3D view's edge next to an open side panel: drag to resize it. */
+.panel-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.panel-edge.left {
+  left: 0;
+}
+
+.panel-edge.right {
+  right: 0;
+}
+
+.panel-edge:hover,
+.panel-edge:active {
+  background: rgba(79, 195, 247, 0.35);
+}
+
+.panel-handle {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 64px;
+  min-width: 0;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+  background: rgba(42, 49, 59, 0.9);
+}
+
+.panel-handle:hover {
+  color: var(--text);
+}
+
+.panel-handle.left {
+  left: 0;
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+}
+
+.panel-handle.right {
+  right: 0;
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+}
+
+@media (max-width: 900px) {
+  /* The panels sit below the 3D view here: no width to drag. */
+  .panel-edge {
+      display: none;
+    }
+
+  /* A collapsed right panel leaves no empty row: the 3D view takes its place. */
+  .app.right-closed {
+      grid-template-rows: auto 1fr 0 auto auto;
+    }
+}
+
+@media (pointer: coarse) {
+  .panel-handle {
+      width: 32px;
+      min-width: 0;
+      height: 96px;
+      font-size: 24px;
+    }
+
+  .panel-edge {
+      width: 16px;
+    }
+}

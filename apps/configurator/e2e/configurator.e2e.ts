@@ -217,3 +217,28 @@ test("configurator: loads in parts below its own path, none over 800 KB", async 
     expect(bytes, script).toBeLessThan(800 * 1024);
   }
 });
+
+test("configurator: closes and resizes its side panels, and keeps them across a reload", async ({ page }) => {
+  await page.goto("/configurator");
+  const left = page.locator("aside.panel.left");
+  const right = page.locator("aside.panel.right");
+  await expect(left).toBeVisible();
+  await expect(right).toBeVisible();
+
+  await page.getByRole("button", { name: "Hide palette and components" }).click();
+  await expect(left).toBeHidden();
+  const before = (await right.boundingBox())!.width;
+  const edge = (await page.getByLabel("Resize properties").boundingBox())!;
+  await page.mouse.move(edge.x + edge.width / 2, edge.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(edge.x - 100, edge.y + 200, { steps: 5 });
+  await page.mouse.up();
+  const widened = (await right.boundingBox())!.width;
+  expect(widened).toBeGreaterThan(before + 50);
+
+  await page.reload();
+  await expect(left).toBeHidden();
+  expect(Math.abs((await right.boundingBox())!.width - widened)).toBeLessThan(2);
+  await page.getByRole("button", { name: "Show palette and components" }).click();
+  await expect(left).toBeVisible();
+});

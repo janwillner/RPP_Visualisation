@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentConfig, ComponentState } from "@rpp/protocol";
 import {
   APP_VERSION,
@@ -18,6 +18,8 @@ import {
   pointsCsv,
   PRODUCT,
   type SceneModel,
+  SidePanelControls,
+  sidePanelsLayout,
   SceneView,
   type Selection,
   type SnapPoint,
@@ -25,6 +27,7 @@ import {
   type SourceInfo,
   STALE_AFTER_MS,
   STATUS,
+  useSidePanel,
   useStore,
   type Vec3,
   ViewControls,
@@ -49,55 +52,6 @@ const EMBEDDED = new URLSearchParams(window.location.search).has("embedded");
 const CAN_COPY = window.isSecureContext && navigator.clipboard !== undefined;
 /** From this window width the components panel starts open; below, the 3D view gets the room. */
 const WIDE_SCREEN_PX = 1600;
-
-/** Whether a side panel is open: remembered per device, else `initial`. */
-function usePanelOpen(storageKey: string, initial: () => boolean): [boolean, () => void] {
-  const [open, setOpen] = useState(() => {
-    try {
-      const stored = localStorage.getItem(storageKey);
-      if (stored !== null) return stored === "1";
-    } catch {
-      // Storage may be blocked (private window, embedded frame): fall back to the width.
-    }
-    return initial();
-  });
-  const toggle = () =>
-    setOpen((o) => {
-      try {
-        localStorage.setItem(storageKey, o ? "0" : "1");
-      } catch {
-        // Not remembered then; the panel still toggles.
-      }
-      return !o;
-    });
-  return [open, toggle];
-}
-
-/** Side panel width limits while dragging its edge, px. */
-const PANEL_MIN_PX = 180;
-const PANEL_MAX_SHARE = 0.45;
-
-/** A side panel's width set by dragging, remembered per device; undefined keeps the stylesheet's width. */
-function usePanelWidth(storageKey: string): [number | undefined, (px: number) => void] {
-  const [width, setWidth] = useState<number | undefined>(() => {
-    try {
-      const stored = Number(localStorage.getItem(storageKey));
-      return stored > 0 ? stored : undefined;
-    } catch {
-      return undefined;
-    }
-  });
-  const set = (px: number) => {
-    const clamped = Math.round(Math.min(Math.max(px, PANEL_MIN_PX), window.innerWidth * PANEL_MAX_SHARE));
-    setWidth(clamped);
-    try {
-      localStorage.setItem(storageKey, String(clamped));
-    } catch {
-      // Not remembered then; the width still applies.
-    }
-  };
-  return [width, set];
-}
 
 function machineMetrics(feed: SceneFeed, sources: readonly SourceInfo[]): MachineMetrics {
   const { events, now, since } = feed.productEvents(METRICS_WINDOW_MS);
@@ -226,11 +180,10 @@ export function App() {
       return next;
     });
   const [cameraRequest, setCameraRequest] = useState<{ action: CameraPreset; seq: number }>({ action: "iso", seq: 0 });
-  const [leftOpen, toggleLeft] = usePanelOpen("rpp.panel.components", () => window.innerWidth >= WIDE_SCREEN_PX);
+  const left = useSidePanel("rpp.panel.components", "Components", () => window.innerWidth >= WIDE_SCREEN_PX);
   // The inspector starts closed: the 3D view gets the room until someone wants the details.
-  const [rightOpen, toggleRight] = usePanelOpen("rpp.panel.inspector", () => false);
-  const [leftWidth, setLeftWidth] = usePanelWidth("rpp.panel.components.width");
-  const [rightWidth, setRightWidth] = usePanelWidth("rpp.panel.inspector.width");
+  const right = useSidePanel("rpp.panel.inspector", "Inspector", () => false);
+  const panels = sidePanelsLayout(left, right);
   const modelRef = useRef<MachineScene | undefined>(undefined);
   const [measureMode, setMeasureMode] = useState(false);
   const [measurePoints, setMeasurePoints] = useState<MeasurePoint[]>([]);
@@ -266,20 +219,13 @@ export function App() {
 
   const camera = (action: CameraPreset) => setCameraRequest((r) => ({ action, seq: r.seq + 1 }));
   const toggle = (key: keyof Layers) => setLayers((l) => ({ ...l, [key]: !l[key] }));
-  const appClass = ["app", EMBEDDED && "embedded", !leftOpen && "left-closed", !rightOpen && "right-closed"]
-    .filter(Boolean)
-    .join(" ");
+  const appClass = ["app", EMBEDDED && "embedded", panels.className].filter(Boolean).join(" ");
 
   return (
     // A long press on a touch screen opens no context menu: the app has no secondary actions.
     <div
       className={appClass}
-      style={
-        {
-          ...(leftOpen && leftWidth && { "--left": `${leftWidth}px` }),
-          ...(rightOpen && rightWidth && { "--right": `${rightWidth}px` }),
-        } as CSSProperties
-      }
+      style={panels.style}
       onContextMenu={(e) => {
         if ((e.nativeEvent as PointerEvent).pointerType === "touch") e.preventDefault();
       }}
@@ -288,7 +234,7 @@ export function App() {
         {!EMBEDDED && <strong className="title">RPP Visualisation</strong>}
         <LayerToggles layers={layers} onToggle={toggle} />
       </header>
-      <aside className="panel left" hidden={!leftOpen}>
+      <aside className="panel left" hidden={!left.open}>
         <ComponentTree
           sources={recording.sources}
           selection={selection}
@@ -320,10 +266,7 @@ export function App() {
           hidden={hidden}
           onFaults={setFaults}
         />
-        {leftOpen && <PanelEdge side="left" onResize={setLeftWidth} />}
-        {rightOpen && <PanelEdge side="right" onResize={setRightWidth} />}
-        <PanelHandle side="left" label="Components" open={leftOpen} onClick={toggleLeft} />
-        <PanelHandle side="right" label="Inspector" open={rightOpen} onClick={toggleRight} />
+        <SidePanelControls left={left} right={right} />
         <ViewControls onCamera={camera} />
         <MeasureButton on={measureMode} onClick={() => setMeasureMode((m) => !m)} />
         <ReplayButton controls={recording} />
@@ -352,7 +295,7 @@ export function App() {
           <ProductLegend selection={selection} modelRef={modelRef} onClose={() => setSelection(undefined)} />
         )}
       </main>
-      <aside className="panel right" hidden={!rightOpen}>
+      <aside className="panel right" hidden={!right.open}>
         <Inspector
           feed={viewer}
           sources={recording.sources}
@@ -485,50 +428,6 @@ function MeasureList(props: { measureMode: boolean; points: MeasurePoint[]; onCl
         </>
       )}
     </div>
-  );
-}
-
-/** The 3D view's edge next to an open side panel: dragging it sets the panel's width. */
-function PanelEdge({ side, onResize }: { side: "left" | "right"; onResize: (px: number) => void }) {
-  const drag = useRef<{ x: number; width: number }>(undefined);
-  return (
-    <div
-      className={`panel-edge ${side}`}
-      role="separator"
-      aria-orientation="vertical"
-      aria-label={side === "left" ? "Resize the components panel" : "Resize the inspector"}
-      onPointerDown={(e) => {
-        const panel = document.querySelector(`.panel.${side}`);
-        if (!panel) return;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        drag.current = { x: e.clientX, width: panel.getBoundingClientRect().width };
-      }}
-      onPointerMove={(e) => {
-        if (!drag.current) return;
-        const dx = e.clientX - drag.current.x;
-        onResize(drag.current.width + (side === "left" ? dx : -dx));
-      }}
-      onPointerUp={() => (drag.current = undefined)}
-      onPointerCancel={() => (drag.current = undefined)}
-    />
-  );
-}
-
-/** A tab on the 3D view's edge that opens or closes the side panel next to it. */
-function PanelHandle(props: { side: "left" | "right"; label: string; open: boolean; onClick: () => void }) {
-  const { side, label, open, onClick } = props;
-  // The chevron points where the panel goes: into the edge to close, out of it to open.
-  const pointsLeft = (side === "left") === open;
-  return (
-    <button
-      className={`panel-handle ${side}`}
-      title={`${open ? "Hide" : "Show"} ${label.toLowerCase()}`}
-      aria-label={`${open ? "Hide" : "Show"} ${label.toLowerCase()}`}
-      aria-expanded={open}
-      onClick={onClick}
-    >
-      <span aria-hidden>{pointsLeft ? "‹" : "›"}</span>
-    </button>
   );
 }
 

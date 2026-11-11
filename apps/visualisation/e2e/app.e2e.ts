@@ -39,7 +39,7 @@ test("opens, resizes and closes the side panels, and keeps them across a reload"
   const before = (await panel.boundingBox())!.width;
 
   // Grabbed near the top: the middle of the edge is the panel handle.
-  const edge = (await page.getByLabel("Resize the components panel").boundingBox())!;
+  const edge = (await page.getByLabel("Resize components").boundingBox())!;
   const grab = { x: edge.x + edge.width / 2, y: edge.y + 60 };
   await page.mouse.move(grab.x, grab.y);
   await page.mouse.down();
