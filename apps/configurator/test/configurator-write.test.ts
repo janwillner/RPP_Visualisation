@@ -181,4 +181,25 @@ describe("Configurator writing to a PLC (ADR 0017)", () => {
     expect(c.writePlan(A)).toMatchObject({ changes: [], unwritable: ["Delta 2"] });
   });
 
+  it("writes a robot added alone from its PLC: its zones lie on conveyors the PLC has, though the draft has not", () => {
+    const live = new FakeLive();
+    const robot = { ...delta(2), zones: [ZONE] } as ComponentConfig;
+    live.plc(A, [conveyor(1), robot]);
+    live.send(parameters([conveyor(1), robot]));
+    const c = connected(live);
+    c.importComponent(`${A}#2`);
+    expect(c.getSnapshot().draft.components.map((x) => x.id)).toEqual([2]);
+    expect(c.getSnapshot().issues.filter((i) => i.severity === "error")).toEqual([]);
+
+    c.set(`${A}#2`, ["pose", "x"], 1800);
+    expect(c.writePlan(A)).toEqual({
+      changes: [{ key: `${A}#2`, name: "Delta 2", fields: [{ path: "pose.x", from: "1000", to: "1800" }] }],
+    });
+
+    // A conveyor neither the draft nor the PLC has is still an error.
+    c.set(`${A}#2`, ["zones", "0", "conveyorId"], 9);
+    expect(c.writePlan(A).blocked).toBe(
+      `Fix the errors of this PLC's components first: Delta 2: zone 1 lies on conveyor 9, which source ${A} does not have`,
+    );
+  });
 });

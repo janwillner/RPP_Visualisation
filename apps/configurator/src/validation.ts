@@ -1,4 +1,4 @@
-import { moduleStarts, type ConveyorConfig, type Draft, type TrackModule } from "@rpp/protocol";
+import { moduleStarts, type ComponentConfig, type ConveyorConfig, type Draft, type TrackModule } from "@rpp/protocol";
 import { componentKey, type ComponentKey, zoneWarnings } from "@rpp/machine-view";
 import { keyOf } from "./edits";
 
@@ -15,12 +15,17 @@ export interface Issue {
   hardware?: true;
 }
 
-export function validateDraft(draft: Draft): Issue[] {
+/**
+ * The draft's problems. `plc` holds the connected PLCs' components by key: a zone may lie on a conveyor its PLC has
+ * although the draft has not (a robot added alone from its PLC); the draft's own conveyor counts first.
+ */
+export function validateDraft(draft: Draft, plc: ReadonlyMap<ComponentKey, ComponentConfig> = new Map()): Issue[] {
   const issues: Issue[] = [];
   const used = new Map<ComponentKey, number>();
   for (const c of draft.components) used.set(keyOf(c), (used.get(keyOf(c)) ?? 0) + 1);
   const conveyors = new Map<ComponentKey, ConveyorConfig>();
   for (const c of draft.components) if (c.type === "conveyor" && !conveyors.has(keyOf(c))) conveyors.set(keyOf(c), c);
+  for (const [key, c] of plc) if (c.type === "conveyor" && !conveyors.has(key)) conveyors.set(key, c);
   for (const c of draft.components) {
     const key = keyOf(c);
     const error = (message: string) => issues.push({ severity: "error", key, message: `${c.name}: ${message}` });
@@ -47,7 +52,7 @@ export function validateDraft(draft: Draft): Issue[] {
         if (!(f.diameter > 0 && f.height > 0)) error(`finger ${i + 1} has no diameter or height`);
       });
     }
-    // A zone refers to its conveyor by manifest id within the component's source.
+    // A zone refers to its conveyor by manifest id within the component's source: in the draft or on its PLC.
     if ("zones" in c) {
       c.zones.forEach((zone, i) => {
         const belt = conveyors.get(componentKey(c.sourceId, zone.conveyorId));

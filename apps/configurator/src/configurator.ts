@@ -657,8 +657,12 @@ export class Configurator {
     // The draft or the PLCs changed: reconciled again.
     const { draft, plcSources, plcParameters } = this.snapshot;
     if (draft !== before.draft || plcSources !== before.plcSources || plcParameters !== before.plcParameters) {
-      if (draft !== before.draft) this.draftIssues = validateDraft(draft);
-      if (draft !== before.draft || plcSources !== before.plcSources) this.reconciliation = reconcile(draft, plcSources);
+      if (draft !== before.draft || plcSources !== before.plcSources) {
+        this.reconciliation = reconcile(draft, plcSources);
+        // Every PLC component counts, also those the draft does not have (a robot's conveyors not added with it).
+        const { plc, plcOnly } = this.reconciliation;
+        this.draftIssues = validateDraft(draft, new Map([...plc, ...plcOnly.map((p) => [keyOf(p), p] as const)]));
+      }
       this.snapshot = {
         ...this.snapshot,
         matches: this.reconciliation.matches,
