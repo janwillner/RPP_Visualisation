@@ -64,6 +64,8 @@ export interface Layers {
   zones: boolean;
   tcpMarkers: boolean;
   faultLabels: boolean;
+  /** Every component's coordinate system: an axis triad where its origin shift puts it (always shown while measuring). */
+  origins: boolean;
 }
 
 /**
@@ -229,6 +231,7 @@ function SceneContent(props: SceneViewProps) {
     <>
       <McsAxes />
       <MeasurePoints points={measurePoints} />
+      {(layers.origins || measureMode) && <OriginTriads machine={machine} structure={structure} />}
       {measureMode && <MeasureLayer machine={machine} structure={structure} layers={layers} onMeasure={onMeasure} />}
       <Stage bounds={bounds} />
       {sources.map((source) => (
@@ -612,7 +615,34 @@ function MeasurePoints({ points }: { points: MeasurePoint[] }) {
 }
 
 /**
- * Measure mode overlay: component origins, the static snap points as dots, and the snap point nearest to the
+ * Every component's coordinate system as an axis triad. The triads exist per structure (which components there are);
+ * where they stand is read from the scene of every frame, so a triad follows its component while it is dragged.
+ */
+function OriginTriads({ machine, structure }: { machine: MachineFrame; structure: MachineScene }) {
+  const groups = useRef(new Map<string, THREE.Group>());
+  useFrame(() => {
+    for (const o of machine.scene.origins) applyTransform(groups.current.get(originKey(o)) ?? null, o.transform);
+  });
+  return (
+    <>
+      {structure.origins.map((o) => {
+        const key = originKey(o);
+        return (
+          <OriginTriad
+            key={key}
+            origin={o}
+            onGroup={(group) => (group ? groups.current.set(key, group) : groups.current.delete(key))}
+          />
+        );
+      })}
+    </>
+  );
+}
+
+const originKey = (o: SceneOrigin & { sourceId: string }) => `${o.sourceId}:${o.componentId}`;
+
+/**
+ * Measure mode overlay: the static snap points as dots, and the snap point nearest to the
  * pointer (within the pointer type's snap radius on screen, also when occluded) highlighted with its name.
  * - Mouse and pen: the point under the hovering pointer is highlighted; a click without camera drag measures it.
  * - Touch: there is no hover. One finger shows the point under it (its name above the finger), sliding moves the
@@ -706,9 +736,6 @@ function MeasureLayer(props: {
   const dots = availableSnapPoints(structure.snapPoints, layers).filter((p) => !p.moving);
   return (
     <>
-      {structure.origins.map((o) => (
-        <OriginTriad key={`${o.sourceId}:${o.componentId}`} origin={o} />
-      ))}
       {dots.map((p) => (
         <mesh key={p.key} position={p.position} raycast={noRaycast} renderOrder={5}>
           <sphereGeometry args={[0.006, 10, 10]} />
@@ -735,7 +762,7 @@ function MeasureLayer(props: {
 }
 
 /** 300 mm axis triad at a component's origin (X red, Y green, Z blue), labelled with its name. */
-function OriginTriad({ origin }: { origin: SceneOrigin }) {
+function OriginTriad({ origin, onGroup }: { origin: SceneOrigin; onGroup: (group: THREE.Group | null) => void }) {
   const axes = useMemo(
     () =>
       // Local renderer axes: MCS local X -> +X, MCS local Y -> −Z, MCS local Z -> +Y.
@@ -761,7 +788,12 @@ function OriginTriad({ origin }: { origin: SceneOrigin }) {
     [],
   );
   return (
-    <group ref={(o) => applyTransform(o, origin.transform)}>
+    <group
+      ref={(o) => {
+        applyTransform(o, origin.transform);
+        onGroup(o);
+      }}
+    >
       {axes.map((a, i) => (
         <primitive key={i} object={a} />
       ))}

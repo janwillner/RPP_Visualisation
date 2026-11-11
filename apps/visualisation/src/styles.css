@@ -9,11 +9,6 @@
   --right: 0px;
 }
 
-.toggle.on {
-  background: #23455a;
-  border-color: var(--accent);
-}
-
 .product-legend {
   position: absolute;
   top: 8px;

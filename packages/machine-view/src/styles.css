@@ -75,6 +75,12 @@ button {
   cursor: pointer;
 }
 
+/* A switched-on toggle button (layers, coordinate systems). */
+.toggle.on {
+  background: #23455a;
+  border-color: var(--accent);
+}
+
 button:hover {
   border-color: var(--accent);
 }

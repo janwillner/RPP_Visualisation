@@ -292,6 +292,7 @@ export function App() {
           <Toggle label="Zones" on={layers.zones} onClick={() => toggle("zones")} />
           <Toggle label="TCP markers" on={layers.tcpMarkers} onClick={() => toggle("tcpMarkers")} />
           <Toggle label="Fault labels" on={layers.faultLabels} onClick={() => toggle("faultLabels")} />
+          <Toggle label="Coordinate systems" on={layers.origins} onClick={() => toggle("origins")} />
         </div>
       </header>
       <aside className="panel left" hidden={!leftOpen}>

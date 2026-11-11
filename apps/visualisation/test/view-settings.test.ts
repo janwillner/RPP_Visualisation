@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_LAYERS, parseViewSettings, serializeViewSettings } from "../src/view-settings";
 
 describe("view settings", () => {
-  it("start with every layer on, nothing hidden, and the machine framed when nothing is stored", () => {
+  it("start with every layer on but the coordinate systems, nothing hidden, and the machine framed when nothing is stored", () => {
     expect(parseViewSettings(null)).toEqual({ layers: DEFAULT_LAYERS, hidden: [], camera: undefined });
     expect(DEFAULT_LAYERS).toEqual({
       workingAreas: true,
@@ -10,6 +10,7 @@ describe("view settings", () => {
       zones: true,
       tcpMarkers: true,
       faultLabels: true,
+      origins: false,
     });
   });
 

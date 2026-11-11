@@ -25,7 +25,15 @@ import type { WriteState } from "./writing";
 import { properties, type PropertyField, type PropertyGroup } from "./property-fields";
 
 /** Every overlay of the draft is shown: zones, areas and markers are what is being configured. */
-const LAYERS: Layers = { workingAreas: true, limitAreas: true, zones: true, tcpMarkers: true, faultLabels: true };
+/** Every layer on; the coordinate systems can be switched off (an origin shift is set here, so they start shown). */
+const LAYERS: Layers = {
+  workingAreas: true,
+  limitAreas: true,
+  zones: true,
+  tcpMarkers: true,
+  faultLabels: true,
+  origins: true,
+};
 const NO_HIDDEN: ReadonlySet<string> = new Set();
 /** MIME type of a palette entry being dragged onto the 3D view. */
 const PALETTE_DRAG_TYPE = "application/x-rpp-palette";
@@ -90,6 +98,7 @@ export function ConfiguratorApp() {
   const fileInput = useRef<HTMLInputElement>(null);
   /** The source whose write is being confirmed. */
   const [writing, setWriting] = useState<string | undefined>(undefined);
+  const [layers, setLayers] = useState<Layers>(LAYERS);
 
   const selected = draft.components.find((c) => keyOf(c) === selection);
   const sceneSelection: Selection = selected && { kind: "component", id: selected.id, sourceId: selected.sourceId };
@@ -162,6 +171,16 @@ export function ConfiguratorApp() {
           </button>
           <button disabled={!snapshot.canRedo} title="Redo (Ctrl+Y)" onClick={() => configurator.redo()}>
             Redo
+          </button>
+        </div>
+        <div className="group">
+          <button
+            className={layers.origins ? "toggle on" : "toggle"}
+            aria-pressed={layers.origins}
+            title="Every component's coordinate system, where its origin shift puts it"
+            onClick={() => setLayers((l) => ({ ...l, origins: !l.origins }))}
+          >
+            Coordinate systems
           </button>
         </div>
         <label className="group">
@@ -283,7 +302,7 @@ export function ConfiguratorApp() {
       >
         <SceneView
           frame={(now) => configurator.frame(now)}
-          layers={LAYERS}
+          layers={layers}
           selection={sceneSelection}
           onSelect={(s) => {
             // A tap on the move handle is no tap on empty space.
