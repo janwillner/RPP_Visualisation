@@ -10,6 +10,7 @@ import {
   formatPointCopy,
   GatewayConnection,
   isOnline,
+  LayerToggles,
   type Layers,
   type MachineScene,
   measureChain,
@@ -285,15 +286,7 @@ export function App() {
     >
       <header className="toolbar">
         {!EMBEDDED && <strong className="title">RPP Visualisation</strong>}
-        <div className="group">
-          <span className="muted">Layers</span>
-          <Toggle label="Working areas" on={layers.workingAreas} onClick={() => toggle("workingAreas")} />
-          <Toggle label="Limit areas" on={layers.limitAreas} onClick={() => toggle("limitAreas")} />
-          <Toggle label="Zones" on={layers.zones} onClick={() => toggle("zones")} />
-          <Toggle label="TCP markers" on={layers.tcpMarkers} onClick={() => toggle("tcpMarkers")} />
-          <Toggle label="Fault labels" on={layers.faultLabels} onClick={() => toggle("faultLabels")} />
-          <Toggle label="Coordinate systems" on={layers.origins} onClick={() => toggle("origins")} />
-        </div>
+        <LayerToggles layers={layers} onToggle={toggle} />
       </header>
       <aside className="panel left" hidden={!leftOpen}>
         <ComponentTree
@@ -535,14 +528,6 @@ function PanelHandle(props: { side: "left" | "right"; label: string; open: boole
       onClick={onClick}
     >
       <span aria-hidden>{pointsLeft ? "‹" : "›"}</span>
-    </button>
-  );
-}
-
-function Toggle({ label, on, onClick }: { label: string; on: boolean; onClick: () => void }) {
-  return (
-    <button className={on ? "toggle on" : "toggle"} aria-pressed={on} onClick={onClick}>
-      {label}
     </button>
   );
 }

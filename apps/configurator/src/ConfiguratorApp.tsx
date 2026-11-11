@@ -7,6 +7,7 @@ import {
   defaultGatewayUrl,
   download,
   GatewayConnection,
+  LayerToggles,
   type Layers,
   type MachineScene,
   SceneView,
@@ -25,7 +26,7 @@ import type { WriteState } from "./writing";
 import { properties, type PropertyField, type PropertyGroup } from "./property-fields";
 
 /** Every overlay of the draft is shown: zones, areas and markers are what is being configured. */
-/** Every layer on; the coordinate systems can be switched off (an origin shift is set here, so they start shown). */
+/** Every layer on at the start, the coordinate systems too: origin shifts are set here. */
 const LAYERS: Layers = {
   workingAreas: true,
   limitAreas: true,
@@ -173,23 +174,11 @@ export function ConfiguratorApp() {
             Redo
           </button>
         </div>
-        <div className="group">
-          <button
-            className={layers.origins ? "toggle on" : "toggle"}
-            aria-pressed={layers.origins}
-            title="Every component's coordinate system, where its origin shift puts it"
-            onClick={() => setLayers((l) => ({ ...l, origins: !l.origins }))}
-          >
-            Coordinate systems
-          </button>
-        </div>
         <label className="group">
           <span className="muted">Machine</span>
           <TextInput value={draft.name} label="Machine name" onCommit={(name) => configurator.rename(name)} />
         </label>
-        <a className="link" href="/">
-          Visualisation
-        </a>
+        <LayerToggles layers={layers} onToggle={(key) => setLayers((l) => ({ ...l, [key]: !l[key] }))} />
       </header>
 
       <aside className="panel left">

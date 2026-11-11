@@ -62,6 +62,8 @@
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 2px 6px;
+  /* Narrow enough that the layer toggles fit beside it on a 1280 px screen. */
+  width: 120px;
 }
 
 .configurator .property-list-head {
