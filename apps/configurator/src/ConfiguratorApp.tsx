@@ -200,19 +200,22 @@ export function ConfiguratorApp() {
               <li key={s.sourceId}>
                 <span className={s.status?.plcConnected ? "ok" : "warn"} title={s.sourceId}>
                   {s.name}
-                </span>{" "}
-                <button
-                  disabled={!s.config}
-                  title="Take this PLC's configuration into the draft, in place of the draft's components of this PLC"
-                  onClick={() =>
-                    configurator.importSource(s.sourceId, (name) =>
-                      window.confirm(`Replace the changes to the components of ${name} with what the PLC has?`),
-                    )
-                  }
-                >
-                  Import
-                </button>{" "}
-                <WriteButton configurator={configurator} sourceId={s.sourceId} onPlan={() => setWriting(s.sourceId)} />
+                </span>
+                {/* Below the name: a source name (its AmsNetId and port) leaves no room beside it. */}
+                <div className="plc-actions">
+                  <button
+                    disabled={!s.config}
+                    title="Take this PLC's configuration into the draft, in place of the draft's components of this PLC"
+                    onClick={() =>
+                      configurator.importSource(s.sourceId, (name) =>
+                        window.confirm(`Replace the changes to the components of ${name} with what the PLC has?`),
+                      )
+                    }
+                  >
+                    Import
+                  </button>
+                  <WriteButton configurator={configurator} sourceId={s.sourceId} onPlan={() => setWriting(s.sourceId)} />
+                </div>
               </li>
             ))}
           </ul>

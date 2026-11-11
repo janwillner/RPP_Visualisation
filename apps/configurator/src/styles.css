@@ -114,11 +114,27 @@
   color: var(--bad-text);
 }
 
+/* A PLC: its name (AmsNetId and port) on one line, its buttons below. */
 .configurator .tree.plcs li {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+/* A long AmsNetId breaks anywhere rather than widening the panel. */
+.configurator .tree.plcs li > span {
+  overflow-wrap: anywhere;
+}
+
+.configurator .tree.plcs .plc-actions {
+  display: flex;
   gap: 6px;
+}
+
+.configurator .tree.plcs .plc-actions button {
+  flex: 1;
+  white-space: nowrap;
 }
 
 .configurator .tree .ok {
