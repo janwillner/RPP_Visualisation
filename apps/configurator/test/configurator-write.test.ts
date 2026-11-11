@@ -137,4 +137,48 @@ describe("Configurator writing to a PLC (ADR 0017)", () => {
       message: "Delta 2: the visualisation shows other values than the active parameter set (pose); does the application pass them on to Syn_Visu?",
     });
   });
+  it("warns of a changed component its PLC has no parameter set for, and names it when planning the write", () => {
+    const live = new FakeLive();
+    const robot = { ...delta(2), zones: [ZONE] } as ComponentConfig;
+    // Delta 3 is on the PLC, but its application gave it no parameter FB.
+    live.plc(A, [conveyor(1), robot, delta(3)]);
+    live.send(parameters([conveyor(1), robot]));
+    const c = connected(live);
+    c.importSource(A);
+    expect(c.getSnapshot().issues).toEqual([]);
+
+    c.set(`${A}#3`, ["pose", "x"], 1800);
+    expect(c.getSnapshot().issues).toContainEqual({
+      severity: "warning",
+      key: `${A}#3`,
+      message: "Delta 3 has no parameter set on its PLC: its changes cannot be written",
+    });
+    expect(c.writePlan(A)).toEqual({ changes: [], unwritable: ["Delta 3"] });
+
+    // With a change it can write, the write goes ahead and still names the one it cannot.
+    c.set(`${A}#2`, ["pose", "y"], 30);
+    expect(c.writePlan(A)).toEqual({
+      changes: [{ key: `${A}#2`, name: "Delta 2", fields: [{ path: "pose.y", from: "0", to: "30" }] }],
+      unwritable: ["Delta 3"],
+    });
+  });
+
+  it("warns of every changed component of a PLC without Syn_Config; a changed hardware value alone is a hardware hint", () => {
+    const live = new FakeLive();
+    live.plc(A, [conveyor(1), delta(2)]);
+    const c = connected(live);
+    c.importSource(A);
+
+    c.set(`${A}#2`, ["upperArmLength"], 450);
+    expect(c.getSnapshot().issues.filter((i) => !i.hardware)).toEqual([]);
+
+    c.set(`${A}#2`, ["pose", "x"], 1800);
+    expect(c.getSnapshot().issues).toContainEqual({
+      severity: "warning",
+      key: `${A}#2`,
+      message: "Delta 2: its PLC has no Syn_Config, so its changes cannot be written",
+    });
+    expect(c.writePlan(A)).toMatchObject({ changes: [], unwritable: ["Delta 2"] });
+  });
+
 });

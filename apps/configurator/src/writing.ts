@@ -42,6 +42,11 @@ export interface WritePlan {
   blocked?: string;
   /** Every component of the source whose parameter set the write changes. */
   changes: ComponentChange[];
+  /**
+   * The source's components whose parameter values the draft changes but its PLC has no parameter set for (no
+   * parameter FB, or no Syn_Config at all): their changes cannot be written. Absent when there are none.
+   */
+  unwritable?: string[];
 }
 
 /** How a component's last write fares. */
@@ -68,13 +73,55 @@ export function leafChanges(from: unknown, to: unknown, path = ""): FieldChange[
   return sameConfig(from, to) ? [] : [{ path, from: shown(from), to: shown(to) }];
 }
 
-/** What writing `sourceId` would change, or why it cannot be written. */
+/**
+ * The draft's components whose parameter values differ from their PLC's (`plc`, by component key) although the PLC
+ * holds no parameter set for them (`parameters` by source; none for a PLC without Syn_Config).
+ */
+function unwritableComponents(
+  draft: Draft,
+  plc: ReadonlyMap<ComponentKey, ComponentConfig>,
+  parameters: Readonly<Record<string, ParametersMessage>>,
+): ComponentConfig[] {
+  return draft.components.filter((c) => {
+    const theirs = plc.get(keyOf(c));
+    const ours = parameterSetOf(c);
+    if (!theirs || !ours || theirs.type !== c.type) return false;
+    if (parameters[c.sourceId]?.components.some((p) => p.id === c.id && p.set.type === c.type)) return false;
+    return leafChanges(parameterSetOf(theirs)?.parameters, ours.parameters).length > 0;
+  });
+}
+
+/** A warning per changed component that cannot be written (`unwritableComponents`), with why. */
+export function unwritableHints(
+  draft: Draft,
+  plc: ReadonlyMap<ComponentKey, ComponentConfig>,
+  parameters: Readonly<Record<string, ParametersMessage>>,
+): Issue[] {
+  return unwritableComponents(draft, plc, parameters).map((c) => ({
+    severity: "warning",
+    key: keyOf(c),
+    message: parameters[c.sourceId]
+      ? `${c.name} has no parameter set on its PLC: its changes cannot be written`
+      : `${c.name}: its PLC has no Syn_Config, so its changes cannot be written`,
+  }));
+}
+
+/** What writing `sourceId` would change, or why it cannot be written; `plc` holds the PLCs' components by key. */
 export function writePlan(
   draft: Draft,
   issues: readonly Issue[],
-  parameters: ParametersMessage | undefined,
+  parameters: Readonly<Record<string, ParametersMessage>>,
+  plc: ReadonlyMap<ComponentKey, ComponentConfig>,
   sourceId: string,
 ): WritePlan {
+  const unwritable = unwritableComponents(draft, plc, parameters)
+    .filter((c) => c.sourceId === sourceId)
+    .map((c) => c.name);
+  const plan = planWrite(draft, issues, parameters[sourceId], sourceId);
+  return unwritable.length > 0 ? { ...plan, unwritable } : plan;
+}
+
+function planWrite(draft: Draft, issues: readonly Issue[], parameters: ParametersMessage | undefined, sourceId: string): WritePlan {
   const changes: ComponentChange[] = [];
   for (const c of draft.components) {
     if (c.sourceId !== sourceId) continue;

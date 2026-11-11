@@ -623,15 +623,24 @@ function TextInput(props: { value: string; label: string; onCommit: (value: stri
 function WriteButton(props: { configurator: Configurator; sourceId: string; onPlan: () => void }) {
   const plan = props.configurator.writePlan(props.sourceId);
   const nothing = plan.changes.length === 0;
+  const idle = plan.unwritable
+    ? `The draft changes nothing this PLC can take: ${unwritableText(plan.unwritable)}.`
+    : "The draft changes nothing on this PLC.";
   return (
     <button
       disabled={plan.blocked !== undefined || nothing}
-      title={plan.blocked ?? (nothing ? "The draft changes nothing on this PLC." : "Write the draft's changes to this PLC")}
+      title={plan.blocked ?? (nothing ? idle : "Write the draft's changes to this PLC")}
       onClick={props.onPlan}
     >
       Write…
     </button>
   );
+}
+
+/** Names the changed components a PLC has no parameter set for, e.g. "Delta 2 and Delta 3 have no parameter set". */
+function unwritableText(names: readonly string[]): string {
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+  return `${list} ${names.length === 1 ? "has" : "have"} no parameter set on it`;
 }
 
 /** What a write to one PLC changes, old and new value by value; it is sent only after confirming. */
@@ -659,6 +668,7 @@ function WriteDialog(props: { configurator: Configurator; sourceId: string; sour
             </table>
           </section>
         ))}
+        {plan.unwritable && <p className="warn">Not written: {unwritableText(plan.unwritable)}.</p>}
         <p className="muted">
           The PLC takes each set over when its application allows it, e.g. while the machine stands.
         </p>

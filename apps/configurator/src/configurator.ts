@@ -7,7 +7,15 @@ import { applyEdit, keyOf, type Edit } from "./edits";
 import { hardwareHints, reconcile, type Match, type Reconciliation } from "./reconciliation";
 import { validateDraft, type Issue } from "./validation";
 import { restState } from "./rest-states";
-import { followWrites, parameterSetOf, wiringHints, writePlan, type WritePlan, type WriteState } from "./writing";
+import {
+  followWrites,
+  parameterSetOf,
+  unwritableHints,
+  wiringHints,
+  writePlan,
+  type WritePlan,
+  type WriteState,
+} from "./writing";
 
 /**
  * The configurator (ADR 0016): the draft of a machine being edited, the commands that edit it, undo and redo, and the
@@ -149,7 +157,7 @@ export class Configurator {
   /** What writing the draft to `sourceId`'s PLC would change, or why it cannot be written. */
   writePlan(sourceId: string): WritePlan {
     const { draft, issues, plcParameters } = this.snapshot;
-    return writePlan(draft, issues, plcParameters[sourceId], sourceId);
+    return writePlan(draft, issues, plcParameters, this.reconciliation.plc, sourceId);
   }
 
   /**
@@ -659,6 +667,7 @@ export class Configurator {
           ...this.draftIssues,
           ...hardwareHints(draft, this.reconciliation.plc),
           ...wiringHints(plcSources, plcParameters),
+          ...unwritableHints(draft, this.reconciliation.plc, plcParameters),
         ],
       };
     }
