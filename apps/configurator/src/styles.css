@@ -16,12 +16,18 @@
   cursor: grab;
 }
 
-.configurator .issues {
-  margin: 0;
-  padding-left: 16px;
+/* The draft's problems above the status bar: a click selects the component. */
+.configurator .problems {
+  /* Above their count, which sits on the left of the status bar. */
+  right: auto;
+  left: 12px;
 }
 
-.configurator .issues .bad {
+.configurator .problems button.link {
+  text-align: left;
+}
+
+.configurator .problems .bad {
   color: var(--bad-text);
 }
 

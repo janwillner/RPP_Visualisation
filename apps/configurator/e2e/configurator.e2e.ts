@@ -1,5 +1,12 @@
 import { readFile } from "node:fs/promises";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+/** The draft's problems, listed above the status bar once its count is clicked. */
+async function problems(page: Page) {
+  const list = page.locator("ul.problems");
+  if (!(await list.isVisible())) await page.locator("footer").getByRole("button", { name: /problems?$/ }).click();
+  return list;
+}
 
 /** Every uncaught error in the page fails the test that saw it. */
 test.beforeEach(({ page }) => {
@@ -73,7 +80,7 @@ test("configurator: gives a Delta a zone on the conveyor and the conveyor a prod
   const end = zone.getByLabel("End", { exact: true });
   await end.fill("2100");
   await end.press("Enter");
-  await expect(page.locator(".issues")).toContainText("reaches past the belt");
+  await expect(await problems(page)).toContainText("reaches past the belt");
 
   await page.locator("aside.panel.left .components").getByRole("button", { name: /Conveyor 1/ }).click();
   await properties.getByRole("button", { name: "Add product type" }).click();
@@ -143,7 +150,7 @@ test("configurator: edits an XTS loop's modules, a station's bodies and a Cartes
   await properties.getByLabel("Kind of the new module").selectOption("curveRight");
   await properties.getByRole("button", { name: "Add module" }).click();
   await expect(properties.getByRole("group", { name: "Module 13" }).getByLabel("Kind", { exact: true })).toHaveValue("curveRight");
-  await expect(page.locator(".issues")).toContainText("does not end where it starts");
+  await expect(await problems(page)).toContainText("does not end where it starts");
   await properties.getByRole("group", { name: "Module 13" }).getByRole("button", { name: /Remove/ }).click();
   await expect(page.getByText("does not end where it starts")).toHaveCount(0);
 
