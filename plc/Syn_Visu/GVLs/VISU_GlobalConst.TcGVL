@@ -30,11 +30,12 @@ VAR_GLOBAL CONSTANT
 	   16: conveyor bBody, a conveyor may have no body.
 	   17: Cartesian robot eAxes (E_VisuCartesianAxes): X, Y, Z or without the Y or the Z axis.
 	   18: stLimitArea for the XTS gantry and the Cartesian robot too, not only the Delta.
-	   19: stTcpLimitArea, a box around the TCP, for the Delta, the XTS gantry and the Cartesian robot. *)
-	VISU_un_PROTOCOL_VERSION			: UINT := 19;
+	   19: stTcpLimitArea, a box around the TCP, for the Delta, the XTS gantry and the Cartesian robot.
+	   20: finger stOffset on the gripper flange, finger state bPoseReported (ADR 0018). *)
+	VISU_un_PROTOCOL_VERSION			: UINT := 20;
 	(* Version of this library as the visualisation shows it (manifest sLibraryVersion). Bump together with
 	   _FC_GetVersionSynVisu and the project version. *)
-	VISU_str_LIBRARY_VERSION			: STRING(15) := '9.4.1';
+	VISU_str_LIBRARY_VERSION			: STRING(15) := '9.5.0';
 	VISU_lr_DEG_TO_RAD					: LREAL := 0.017453292519943295;	// [rad/deg] pi / 180
 	VISU_lr_XTS_MODULE_LENGTH			: LREAL := 250;	// [mm] length of an XTS motor module along the track, straight or curve
 END_VAR]]></Declaration>

@@ -1,4 +1,4 @@
-# PLC contract (library `Syn_Visu`, protocol version 19)
+# PLC contract (library `Syn_Visu`, protocol version 20)
 
 This is the PLC side of the contract the gateway reads. It is implemented by the TwinCAT library project in
 `plc/Syn_Visu` (solution `plc/RPP_Visu.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
@@ -152,11 +152,17 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   products on the conveyor itself, e.g. `m_SetProductState(..., REJECTED, vi_udn_ClientId := fb_Station.m_Id())`, and
   may latch them like a detector.
 - Gripper: every kinematics may define fingers (`nFingerCount`, `aFingers`, at most `VISU_GlobalConst_Param.VISU_un_MAX_FINGERS`),
-  always drawn as cylinders (`fDiameter`, `fHeight`). The PLC reports each finger's pose every cycle, **absolute in
-  the MCS** (`aFingerStates[i].stPose`, per mover for XTS kinematics), and whether it grips (`bActive`). A finger's
-  frame has its origin at the centre of the finger's top face; the finger extends along its local −Z, and its grip
-  point is the centre of its bottom face. A thin rod connects each finger to its gripper flange. Without fingers the
-  flange is drawn as a plate coloured by `bGripperActive`.
+  always drawn as cylinders (`fDiameter`, `fHeight`), each with its place on the gripper flange (`stOffset`,
+  `ST_VisuPlanarPose`: position in the flange frame and rotation about its Z; ADR 0018). The flange frame's −Z points
+  to the product: a Delta's lies at the TCP with the MCS axes, a Cartesian robot's has the robot's axes, an XTS
+  mover's turns with the mover. The PLC reports each finger's pose every cycle, **absolute in the MCS**
+  (`aFingerStates[i].stPose`, per mover for XTS kinematics), and whether it grips (`bActive`); `bPoseReported` says
+  whether the application reported the pose. While it is FALSE, clients place the finger by its offset on the flange
+  (the library sets it: `m_SetFingerState` marks a finger of a Delta or Cartesian robot as reported, an XTS track's
+  `m_SetMover` marks every finger reported unless `m_SetFingersOnFlange(TRUE)`). A finger's frame has its origin at
+  the centre of the finger's top face; the finger extends along its local −Z, and its grip point is the centre of its
+  bottom face. A thin rod connects each finger to its gripper flange. Without fingers the flange is drawn as a plate
+  coloured by `bGripperActive`.
 - A product in state PICKED hangs from robot `nLastClientId`, mover `nMoverId` (0 for a robot without movers) and finger
   `nFingerId` (1-based): its top touches the finger's grip point and it takes the finger's full orientation. With
   `nFingerId` = 0 (or an unknown finger, which also raises a warning) it hangs at the gripper flange, turned with the
@@ -189,6 +195,8 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
 - Protocol version 18 added `stLimitArea` to the XTS gantry and the Cartesian robot (before only the Delta had one).
 - Protocol version 19 added `stTcpLimitArea`, a box around the TCP, to the Delta, the XTS gantry and the Cartesian
   robot.
+- Protocol version 20 added each finger's `stOffset` on the gripper flange and the finger state's `bPoseReported`
+  (ADR 0018).
 
 ## What the library contains
 

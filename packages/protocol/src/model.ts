@@ -12,7 +12,7 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 19;
+export const PROTOCOL_VERSION = 20;
 
 const mm = (description: string) => z.number().describe(description);
 const deg = (description: string) => z.number().describe(description);
@@ -42,13 +42,34 @@ export const PositionSchema = z
 export type Position = z.infer<typeof PositionSchema>;
 
 /**
+ * Position plus rotation about Z: a product's latch pose (in its conveyor's coordinate system), a finger's offset on
+ * its gripper flange.
+ */
+export const PlanarPoseSchema = z
+  .object({
+    x: mm("X, mm."),
+    y: mm("Y, mm."),
+    z: mm("Z, mm."),
+    rz: deg("Rotation about Z, degrees."),
+  })
+  .describe("Position plus rotation about Z.");
+export type PlanarPose = z.infer<typeof PlanarPoseSchema>;
+
+/**
  * One finger of a gripper: always a cylinder. Its frame's origin is the centre of its top face; it extends along its
- * local −Z, and its grip point (where a carried product's top touches) is the centre of its bottom face.
+ * local −Z, and its grip point (where a carried product's top touches) is the centre of its bottom face. Its offset
+ * places it on the gripper flange (protocol version 20, ADR 0018).
  */
 export const FingerSchema = z
   .object({
     diameter: mm("Diameter of the finger's cylinder, mm."),
     height: mm("Length of the cylinder along the finger's local −Z, mm."),
+    offset: PlanarPoseSchema.describe(
+      "Where the finger's frame lies on the gripper flange: its position in the flange frame, mm, and its rotation " +
+        "about the flange's Z, degrees. The flange frame's −Z points to the product: a Delta's lies at the TCP with " +
+        "the MCS axes, a Cartesian robot's has the robot's axes, an XTS mover's turns with the mover. Clients place " +
+        "the finger by it while its state reports no pose (`poseReported` false).",
+    ),
   })
   .describe(
     "One finger of a gripper: always a cylinder. Its frame's origin is the centre of its top face; it extends along " +
@@ -59,7 +80,15 @@ export type Finger = z.infer<typeof FingerSchema>;
 /** Live pose of a finger's frame, absolute in the MCS, and whether it grips. */
 export const FingerStateSchema = z
   .object({
-    pose: PoseSchema.describe("Pose of the finger's frame (centre of its top face), absolute in the MCS."),
+    pose: PoseSchema.describe(
+      "Pose of the finger's frame (centre of its top face), absolute in the MCS; meaningful only while `poseReported`.",
+    ),
+    poseReported: z
+      .boolean()
+      .describe(
+        "The application reported the finger's pose. False: clients place the finger on the gripper flange by its " +
+          "configured `offset`.",
+      ),
     active: z.boolean().describe("The finger grips (vacuum on, jaws closed)."),
   })
   .describe("Live pose of a finger and whether it grips.");
@@ -72,17 +101,6 @@ export const FaultSchema = z
   })
   .describe("An active fault of a component, an XTS mover or a track module.");
 export type Fault = z.infer<typeof FaultSchema>;
-
-/** Position plus rotation about Z, used for product latch poses (in the conveyor's coordinate system). */
-export const PlanarPoseSchema = z
-  .object({
-    x: mm("X, mm."),
-    y: mm("Y, mm."),
-    z: mm("Z, mm."),
-    rz: deg("Rotation about Z, degrees."),
-  })
-  .describe("Position plus rotation about Z.");
-export type PlanarPose = z.infer<typeof PlanarPoseSchema>;
 
 /** PLC timestamp (DC time, ns) as decimal string: 64-bit values exceed JS number precision. */
 export const TimestampSchema = z

@@ -48,8 +48,8 @@ describe("stateRows", () => {
       timestamp: "1",
       z: 50,
       movers: [
-        { id: 7, position: 400, x: 12, gripperActive: false, fingers: [{ pose, active: true }], fault: null },
-        { id: 8, position: 900, x: 0, gripperActive: true, fingers: [{ pose, active: false }], fault: { message: "" } },
+        { id: 7, position: 400, x: 12, gripperActive: false, fingers: [{ pose, poseReported: true, active: true }], fault: null },
+        { id: 8, position: 900, x: 0, gripperActive: true, fingers: [{ pose, poseReported: true, active: false }], fault: { message: "" } },
       ],
       modules: [],
       fault: null,
@@ -67,10 +67,10 @@ describe("stateRows", () => {
       },
       {
         title: "Fingers",
-        head: ["Finger", "X [mm]", "Y [mm]", "Z [mm]", "Rx [°]", "Ry [°]", "Rz [°]", "Active"],
+        head: ["Finger", "X [mm]", "Y [mm]", "Z [mm]", "Rx [°]", "Ry [°]", "Rz [°]", "Pose reported", "Active"],
         rows: [
-          ["7.1", "1.0", "2.0", "3.0", "0.0", "90.0", "-45.0", "on"],
-          ["8.1", "1.0", "2.0", "3.0", "0.0", "90.0", "-45.0", "off"],
+          ["7.1", "1.0", "2.0", "3.0", "0.0", "90.0", "-45.0", "on", "on"],
+          ["8.1", "1.0", "2.0", "3.0", "0.0", "90.0", "-45.0", "on", "off"],
         ],
       },
     ]);
@@ -84,8 +84,8 @@ describe("stateRows", () => {
       actualTcp: { x: 0, y: 0, z: 0 },
       setpointTcp: { x: 0, y: 0, z: 0 },
       fingers: [
-        { pose, active: true },
-        { pose, active: false },
+        { pose, poseReported: true, active: true },
+        { pose, poseReported: true, active: false },
       ],
       fault: null,
     };

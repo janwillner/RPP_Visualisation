@@ -8,6 +8,7 @@ import { applyEdit, keyOf, type Edit } from "./edits";
 import type { SourceInfo } from "../sources";
 import { hardwareHints, reconcile, type Match, type Reconciliation } from "./reconciliation";
 import { validateDraft, type Issue } from "./validation";
+import { restState } from "./rest-states";
 import { followWrites, parameterSetOf, wiringHints, writePlan, type WritePlan, type WriteState } from "./writing";
 
 /**
@@ -28,6 +29,12 @@ export const GRID_MM = 10;
 
 /** An edge of a zone that can be dragged: along the belt its start, end and CCS, across it its two sides. */
 export type ZoneEdge = "start" | "end" | "ccs" | "left" | "right";
+
+/** Fingers are dragged over the flange's top view on this grid, mm. */
+export const FINGER_GRID_MM = 5;
+
+/** Distance of a new finger from the furthest one along the flange's X, mm. */
+const FINGER_SPACING = 60;
 
 /** Length of a new zone along its belt, mm. */
 const ZONE_LENGTH = 500;
@@ -336,6 +343,26 @@ export class Configurator {
     this.set(key, ["bodies"], [...c.bodies, newBody()]);
   }
 
+  /**
+   * Adds a finger to a robot's gripper (ADR 0018): a 40 mm cup, 50 mm long, on the flange centre for the first one and
+   * each next one FINGER_SPACING further along the flange's X than the furthest so far.
+   */
+  addFinger(key: ComponentKey): void {
+    const c = this.component(key);
+    if (!c || !("fingers" in c)) return;
+    const x = c.fingers.length === 0 ? 0 : Math.max(...c.fingers.map((f) => f.offset.x)) + FINGER_SPACING;
+    this.set(key, ["fingers"], [...c.fingers, { diameter: 40, height: 50, offset: { x, y: 0, z: 0, rz: 0 } }]);
+  }
+
+  /** Moves finger `index` to (x, y) in the flange's top view, mm, on a FINGER_GRID_MM grid; its Z and Rz stay. */
+  moveFinger(key: ComponentKey, index: number, at: { x: number; y: number }): void {
+    const c = this.component(key);
+    const finger = c && "fingers" in c ? c.fingers[index] : undefined;
+    if (!finger) return;
+    const onGrid = (v: number) => Math.round(v / FINGER_GRID_MM) * FINGER_GRID_MM;
+    this.set(key, ["fingers", String(index), "offset"], { ...finger.offset, x: onGrid(at.x), y: onGrid(at.y) });
+  }
+
   /** Gives a robot a limit area or a TCP limit area it does not have yet, starting as `defaultArea`. */
   addArea(key: ComponentKey, field: AreaField): void {
     const c = this.component(key);
@@ -554,8 +581,13 @@ export class Configurator {
       config.components.push(c);
     }
     const sources = [...bySource.values()].map((config) => {
-      // The only state of a draft: a preview product of each type on its conveyor.
-      const previews = config.components.flatMap((c) => (c.type === "conveyor" && c.productTypes.length > 0 ? [previewState(c)] : []));
+      // The only states of a draft: a preview product of each type on its conveyor, and a robot with fingers at rest,
+      // so its gripper shows on the flange (ADR 0018).
+      const previews = config.components.flatMap((c) => {
+        if (c.type === "conveyor") return c.productTypes.length > 0 ? [previewState(c)] : [];
+        const rest = restState(c);
+        return rest ? [rest] : [];
+      });
       const snapshots: StateMessage[] =
         previews.length === 0
           ? []

@@ -15,8 +15,8 @@ VAR
 	fb_IdhInfeed						: _FB_VisuConveyor;
 	fb_IdhTray							: _FB_VisuConveyor;
 	fb_Idh								: _FB_VisuXtsGantry;
-	(* Syn_Config (ADR 0017): the IDH runs with the parameter set the configurator writes (pose, track, zones, limit
-	   areas), else with its program values; taken over at once in the demo. The simulated motion keeps to the
+	(* Syn_Config (ADR 0017): the IDH runs with the parameter set the configurator writes (pose, track, zones,
+	   gripper, limit areas), else with its program values; taken over at once in the demo. The simulated motion keeps to the
 	   program's track. *)
 	fb_IdhParam							: SynConfig._FB_ConfigXtsGantry;
 	IdhDefault							: SynConfig.ST_ConfigXtsGantryParam;	// program values of the IDH
@@ -180,14 +180,17 @@ IdhDefault.aZones[1].nConveyorId := fb_IdhTray.m_Id();
 IdhDefault.aZones[1].fStart := lr_GANTRY_X - lr_TRAY_X;
 IdhDefault.aZones[1].fEnd := lr_GANTRY_X - lr_TRAY_X + UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH;
 IdhDefault.aZones[1].fCcsOffset := lr_GANTRY_X - lr_TRAY_X;
+(* Every mover's suction cup, at the flange centre (ADR 0018); the movers report its live pose, turned by C. It
+   comes with the parameter set: the application no longer calls m_SetFinger itself. *)
+IdhDefault.nFingerCount := 1;
+IdhDefault.aFingers[0].fDiameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER;
+IdhDefault.aFingers[0].fHeight := DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT;
 fb_IdhParam.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Idh.m_Id());
 fb_IdhParam.m_Cycle(vio_Default := IdhDefault, vio_Set := IdhSet, vi_b_ApplyAllowed := TRUE);
 XtsPose := fb_IdhParam.m_Pose();
 fb_Idh.m_Configure(vi_Pose := XtsPose, vi_lr_XMin := 0, vi_lr_XMax := 700, vi_lr_ZMin := lr_GANTRY_Z_DOWN, vi_lr_ZMax := 0,
 	vi_lr_ToolOffsetX := lr_GANTRY_TOOL_X, vi_lr_ToolOffsetZ := lr_GANTRY_TOOL_Z + DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT,
 	vi_lr_MoverLength := lr_GANTRY_MOVER_LENGTH, vi_lr_MoverWidth := 80);
-fb_Idh.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER,
-	vi_lr_Height := DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT);
 fb_IdhParam.m_PassOn(vio_Visu := fb_Idh);
 m_Step();
 

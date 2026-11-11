@@ -9,6 +9,8 @@ STRUCT
 	stOriginShift : SynVisu.ST_VisuPosition; // mm in the base's local frame
 	nZoneCount : UINT;
 	aZones : ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF SynVisu.ST_VisuZone;
+	nFingerCount : UINT; // gripper fingers with their flange offsets (config protocol 2, ADR 0018)
+	aFingers : ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF SynVisu.ST_VisuFinger;
 	stWorkingArea : SynVisu.ST_VisuWorkingArea;
 	stLimitArea : SynVisu.ST_VisuLimitArea; // bActive = FALSE: none
 	stTcpLimitArea : SynVisu.ST_VisuLimitArea; // bActive = FALSE: none

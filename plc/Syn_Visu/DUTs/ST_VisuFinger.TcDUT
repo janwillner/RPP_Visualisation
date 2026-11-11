@@ -7,6 +7,9 @@ STRUCT
 	   along its local -Z. The grip point, where a carried product's top touches, is the centre of its bottom face. *)
 	fDiameter : LREAL; // mm
 	fHeight : LREAL; // mm
+	(* Where the finger's frame lies on the gripper flange (protocol 20, ADR 0018): position in the flange frame and
+	   rotation about its Z. Clients place the finger by it while its state reports no pose (bPoseReported). *)
+	stOffset : ST_VisuPlanarPose; // mm, degrees
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

@@ -43,6 +43,11 @@ export function validateDraft(draft: Draft): Issue[] {
         issues.push({ severity: "warning", key, message: `${c.name}: the track does not end where it starts` });
       }
     }
+    if ("fingers" in c) {
+      c.fingers.forEach((f, i) => {
+        if (!(f.diameter > 0 && f.height > 0)) error(`finger ${i + 1} has no diameter or height`);
+      });
+    }
     // A zone refers to its conveyor by manifest id within the component's source.
     if ("zones" in c) {
       c.zones.forEach((zone, i) => {

@@ -295,11 +295,16 @@ describe("scene model: delta follows the TCP", () => {
 
 /** A finger state at an MCS position, turned about Z by rz. */
 function fingerAt(x: number, y: number, z: number, rz = 0, active = true): FingerState {
-  return { pose: { x, y, z, rx: 0, ry: 0, rz }, active };
+  return { pose: { x, y, z, rx: 0, ry: 0, rz }, poseReported: true, active };
 }
 
+/** A finger state whose pose the application did not report: the finger is placed by its offset. */
+const unreported = (active = false): FingerState => ({ pose: { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 }, poseReported: false, active });
+
+const onFlange = { x: 0, y: 0, z: 0, rz: 0 };
+
 describe("scene model: gripper fingers", () => {
-  const cup = { diameter: 40, height: 50 };
+  const cup = { diameter: 40, height: 50, offset: onFlange };
   const robot = deltaConfig({ fingers: [cup] });
   const flange = { x: 1500, y: 0, z: 1000 };
   const at = (fingers: FingerState[], products: Product[] = [], hidden?: ReadonlySet<number>) =>
@@ -388,6 +393,46 @@ describe("scene model: gripper fingers", () => {
     ]);
     // A mover's flag no longer colours the flange once fingers are configured.
     expect(scene.gantries[0]!.movers[0]!.gripperActive).toBe(false);
+  });
+
+  // ADR 0018: a finger whose pose the application does not report hangs at its offset on the flange.
+  const offsetCup = { ...cup, offset: { x: 70, y: 0, z: -10, rz: 90 } };
+
+  it("places a finger whose pose is not reported by its offset on a Delta's flange, along the MCS axes", () => {
+    const turned = deltaConfig({ fingers: [offsetCup], pose: { x: 1500, y: 0, z: 1800, rx: 0, ry: 0, rz: 30 } });
+    const [finger] = buildScene(config(turned), [snapshot(0, [deltaState(flange, flange, 20, [unreported(true)])])], 0).fingers;
+
+    // TCP (1500, 0, 1000) + (70, 0, −10), whatever way the robot is turned.
+    closeTo(finger!.transform.position, [1.57, 0.99, 0]);
+    // Turned by 90° about the flange's Z: its local +X along MCS +Y (renderer −Z).
+    closeTo(rotate(finger!.transform.quaternion, [1, 0, 0]), [0, 0, -1]);
+    expect(finger!.active).toBe(true);
+  });
+
+  it("places every finger by its offset when the state has no finger states at all, e.g. a draft's rest state", () => {
+    const two = deltaConfig({ fingers: [offsetCup, { ...cup, offset: { x: -70, y: 0, z: 0, rz: 0 } }] });
+    const fingers = buildScene(config(two), [snapshot(0, [deltaState(flange, flange, 20, [])])], 0).fingers;
+    expect(fingers.map((f) => f.active)).toEqual([false, false]);
+    closeTo(fingers[1]!.transform.position, [1.43, 1, 0]);
+  });
+
+  it("hangs a product below a finger placed by its offset", () => {
+    const picked = product({ state: "picked", lastClientId: 20, fingerId: 1 });
+    const scene = buildScene(
+      config(conveyorConfig(), deltaConfig({ fingers: [offsetCup] })),
+      [snapshot(0, [conveyorState(0, [picked]), deltaState(flange, flange, 20, [unreported(true)])])],
+      0,
+    );
+    // Grip point 50 mm below the finger top at (1570, 0, 990); the 40 mm product's centre 20 mm below that.
+    closeTo(scene.products.find((p) => p.display === "atTcp")!.transform.position, [1.57, 0.92, 0]);
+  });
+
+  it("places an XTS mover's fingers by their offset in the mover's frame, turned with the mover", () => {
+    const gantry = gantryConfig({ fingers: [{ ...cup, offset: { x: 20, y: 0, z: 0, rz: 0 } }] });
+    const scene = buildScene(config(gantry), [snapshot(0, [gantryState(-100, [{ ...mover1, fingers: [unreported()] }])])], 0);
+    const [finger] = scene.fingers;
+    // The gantry is turned by 90°: the mover's +X (its X axis) points along MCS +Y, renderer −Z.
+    closeTo(finger!.transform.position, [finger!.flange[0], finger!.flange[1], finger!.flange[2] - 0.02]);
   });
 });
 
@@ -1248,9 +1293,9 @@ describe("scene model: faults", () => {
   });
 
   it("marks a whole faulted component with its fingers and shows 'Fault' for an empty message", () => {
-    const robot = deltaConfig({ fingers: [{ diameter: 40, height: 50 }] });
+    const robot = deltaConfig({ fingers: [{ diameter: 40, height: 50, offset: onFlange }] });
     const tcp = { x: 1500, y: 0, z: 1800 - HORIZONTAL_DEPTH };
-    const state = { ...deltaState(tcp, tcp, 20, [{ pose: { ...tcp, rx: 0, ry: 0, rz: 0 }, active: false }]), fault: { message: "" } };
+    const state = { ...deltaState(tcp, tcp, 20, [{ pose: { ...tcp, rx: 0, ry: 0, rz: 0 }, poseReported: true, active: false }]), fault: { message: "" } };
     const scene = buildScene(config(robot), [snapshot(0, [state])], 0);
 
     expect(scene.deltas[0]!.fault).toBe("Fault");

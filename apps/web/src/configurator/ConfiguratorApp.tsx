@@ -10,6 +10,7 @@ import { ViewControls } from "../ViewControls";
 import { PALETTE_LABELS, PALETTE_TYPES, placementHeight, isAreaField, type PaletteType } from "./component-defaults";
 import { Configurator, DRAFT_FILE_EXTENSION, useConfigurator } from "./configurator";
 import { EditControls, type FloorPicker } from "./EditControls";
+import { FingerLayout } from "./FingerLayout";
 import { keyOf } from "./edits";
 import type { Match } from "./reconciliation";
 import type { WriteState } from "./writing";
@@ -461,6 +462,14 @@ function Properties(props: {
             <h4>{list.title}</h4>
             <AddEntry list={list.name} component={component} conveyors={conveyors} configurator={configurator} />
           </div>
+          {list.name === "fingers" && "fingers" in component && component.fingers.length > 0 && (
+            <FingerLayout
+              fingers={component.fingers}
+              onBegin={() => configurator.beginGesture()}
+              onMove={(index, at) => configurator.moveFinger(key, index, at)}
+              onEnd={() => configurator.endGesture()}
+            />
+          )}
           {groups
             .filter((g) => g.entry?.list === list.name)
             .map((group) => (
@@ -489,7 +498,7 @@ const inSentence = (title: string) => (/^[A-Z][a-z]/.test(title) ? title.charAt(
 
 /**
  * Adds an entry to a list the configurator knows how to start: a zone on a chosen conveyor, a product type, a track
- * module of a chosen kind, a body.
+ * module of a chosen kind, a body, a finger.
  */
 function AddEntry(props: { list: string; component: ComponentConfig; conveyors: ConveyorConfig[]; configurator: Configurator }) {
   const { list, component, conveyors, configurator } = props;
@@ -498,6 +507,7 @@ function AddEntry(props: { list: string; component: ComponentConfig; conveyors: 
   const [moduleKind, setModuleKind] = useState<TrackModuleKind>("straight");
   if (list === "productTypes") return <button onClick={() => configurator.addProductType(key)}>Add product type</button>;
   if (list === "bodies") return <button onClick={() => configurator.addBody(key)}>Add body</button>;
+  if (list === "fingers") return <button onClick={() => configurator.addFinger(key)}>Add finger</button>;
   if (list === "modules") {
     return (
       <span className="group">

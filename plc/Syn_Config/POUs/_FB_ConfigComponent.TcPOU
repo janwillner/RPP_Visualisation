@@ -14,6 +14,7 @@ the derived FBs share. Not used directly.<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 1.0.0 ¦ 2026-11-10 ¦ J.Willner ¦ First version: conveyor and Delta<br>
 Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ Helpers m_PassOn..., m_Invalid... for every type<br>
+Syn_Config 2.0.0 ¦ 2026-11-11 ¦ J.Willner ¦ m_InvalidFingers, m_PassOnFingers (ADR 0018)<br>
 ****************************************************************************************************)
 {attribute 'reflection'}
 FUNCTION_BLOCK ABSTRACT _FB_ConfigComponent
@@ -87,6 +88,43 @@ Id given to m_Register (the Syn_Visu component's id); 0 while not registered.<br
 METHOD m_Id : UDINT]]></Declaration>
       <Implementation>
         <ST><![CDATA[m_Id := udn_ComponentId;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_InvalidFingers" Id="{fbdb2a8f-e475-4ae3-b530-8e8b39ae2895}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Why a staged set's gripper fingers cannot be taken over; '' when they can: more fingers than the list holds, or<br>
+a finger without a diameter or height.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_InvalidFingers : STRING(80)
+VAR_IN_OUT CONSTANT
+	(* staged fingers *)
+	vio_aFingers						: ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF SynVisu.ST_VisuFinger;
+END_VAR
+VAR_INPUT
+	vi_un_Count							: UINT;	// [-] staged fingers in vio_aFingers
+END_VAR
+VAR
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_InvalidFingers := '';
+IF vi_un_Count > SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_FINGERS THEN
+	m_InvalidFingers := CONCAT('More than ', CONCAT(UINT_TO_STRING(SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_FINGERS), ' fingers'));
+	RETURN;
+END_IF
+un_TempIndex := 0;
+WHILE un_TempIndex < vi_un_Count DO
+	IF vio_aFingers[un_TempIndex].fDiameter <= 0 OR vio_aFingers[un_TempIndex].fHeight <= 0 THEN
+		m_InvalidFingers := CONCAT('Finger ', CONCAT(UINT_TO_STRING(un_TempIndex + 1), ' has no diameter or height'));
+		RETURN;
+	END_IF
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_InvalidModules" Id="{006addbe-d0b1-4392-b619-6d3005786e21}">
@@ -163,6 +201,48 @@ WHILE un_TempIndex < vi_un_Count DO
 		m_InvalidZones := CONCAT('Zone ', CONCAT(UINT_TO_STRING(un_TempIndex + 1), ' lies on no conveyor'));
 		RETURN;
 	END_IF
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_PassOnFingers" Id="{b0316e31-dfb7-4b56-b793-82663f721baf}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Passes the effective gripper fingers with their flange offsets on to a robot's Syn_Visu FB (ADR 0018). Syn_Visu's<br>
+finger count only grows: the fingers are cleared first only when the set has fewer than the visualisation, so<br>
+its config version only changes when a value does.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_PassOnFingers : BOOL
+VAR_IN_OUT
+	vio_Visu							: SynVisu._FB_VisuRobot;	// the robot's Syn_Visu FB
+END_VAR
+VAR_IN_OUT CONSTANT
+	(* effective fingers *)
+	vio_aFingers						: ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF SynVisu.ST_VisuFinger;
+END_VAR
+VAR_INPUT
+	vi_un_Count							: UINT;	// [-] effective fingers in vio_aFingers
+	vi_un_VisuCount						: UINT;	// [-] fingers the visualisation has now, its stConfig.nFingerCount
+END_VAR
+VAR
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_PassOnFingers := TRUE;
+IF vi_un_VisuCount > vi_un_Count THEN
+	vio_Visu.m_ClearFingers();
+END_IF
+un_TempIndex := 0;
+WHILE un_TempIndex < vi_un_Count AND un_TempIndex < SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_FINGERS DO
+	vio_Visu.m_SetFinger(vi_un_Finger := un_TempIndex + 1, vi_lr_Diameter := vio_aFingers[un_TempIndex].fDiameter,
+		vi_lr_Height := vio_aFingers[un_TempIndex].fHeight);
+	vio_Visu.m_SetFingerOffset(vi_un_Finger := un_TempIndex + 1, vi_lr_X := vio_aFingers[un_TempIndex].stOffset.fX,
+		vi_lr_Y := vio_aFingers[un_TempIndex].stOffset.fY, vi_lr_Z := vio_aFingers[un_TempIndex].stOffset.fZ,
+		vi_lr_Rz := vio_aFingers[un_TempIndex].stOffset.fRz);
 	un_TempIndex := un_TempIndex + 1;
 END_WHILE]]></ST>
       </Implementation>

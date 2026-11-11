@@ -134,6 +134,9 @@ END_VAR]]></Declaration>
         <ST><![CDATA[m_Invalid := m_InvalidModules(vio_aModules := vio_Param.aModules, vi_un_Count := vio_Param.nModuleCount);
 IF m_Invalid = '' THEN
 	m_Invalid := m_InvalidZones(vio_aZones := vio_Param.aZones, vi_un_Count := vio_Param.nZoneCount);
+END_IF
+IF m_Invalid = '' THEN
+	m_Invalid := m_InvalidFingers(vio_aFingers := vio_Param.aFingers, vi_un_Count := vio_Param.nFingerCount);
 END_IF]]></ST>
       </Implementation>
     </Method>
@@ -144,10 +147,10 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Passes the effective origin shift, track modules and zones on to the loop's Syn_Visu FB, so the visualisation<br>
-shows what the machine uses. The pose goes with the application's own m_Configure call (with the tool offset and<br>
-mover size, hardware): vi_Pose := m_Pose(). Call it after m_Cycle, every cycle; Syn_Visu's config version only<br>
-changes when a value does.<br>
+Passes the effective origin shift, track modules, zones and fingers on to the loop's Syn_Visu FB, so the<br>
+visualisation shows what the machine uses. The pose goes with the application's own m_Configure call (with<br>
+the tool offset and mover size, hardware): vi_Pose := m_Pose(). Call it after m_Cycle, every cycle; Syn_Visu's<br>
+config version only changes when a value does.<br>
 ****************************************************************************************************)
 METHOD m_PassOn : BOOL
 VAR_IN_OUT
@@ -160,7 +163,9 @@ vio_Visu.m_SetOriginShift(vi_lr_X := vo_Config.stActive.stOriginShift.fX, vi_lr_
 m_PassOnModules(vio_Visu := vio_Visu, vio_aModules := vo_Config.stActive.aModules,
 	vi_un_Count := vo_Config.stActive.nModuleCount, vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nModuleCount);
 m_PassOnZones(vio_Visu := vio_Visu, vio_aZones := vo_Config.stActive.aZones, vi_un_Count := vo_Config.stActive.nZoneCount,
-	vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nZoneCount);]]></ST>
+	vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nZoneCount);
+m_PassOnFingers(vio_Visu := vio_Visu, vio_aFingers := vo_Config.stActive.aFingers,
+	vi_un_Count := vo_Config.stActive.nFingerCount, vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nFingerCount);]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_Pose" Id="{eec44d82-e17a-42a6-b9be-483f3ceaf7fe}">

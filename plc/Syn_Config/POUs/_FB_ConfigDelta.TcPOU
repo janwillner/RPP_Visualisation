@@ -124,15 +124,18 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Why a staged set cannot be taken over; '' when it can: more zones than the list holds, or a zone on no<br>
-conveyor (id 0).<br>
+Why a staged set cannot be taken over; '' when it can: more zones or fingers than the lists hold, a zone on no<br>
+conveyor (id 0), or a finger without a diameter or height.<br>
 ****************************************************************************************************)
 METHOD PRIVATE m_Invalid : STRING(80)
 VAR_IN_OUT CONSTANT
 	vio_Param							: ST_ConfigDeltaParam;	// the staged set
 END_VAR]]></Declaration>
       <Implementation>
-        <ST><![CDATA[m_Invalid := m_InvalidZones(vio_aZones := vio_Param.aZones, vi_un_Count := vio_Param.nZoneCount);]]></ST>
+        <ST><![CDATA[m_Invalid := m_InvalidZones(vio_aZones := vio_Param.aZones, vi_un_Count := vio_Param.nZoneCount);
+IF m_Invalid = '' THEN
+	m_Invalid := m_InvalidFingers(vio_aFingers := vio_Param.aFingers, vi_un_Count := vio_Param.nFingerCount);
+END_IF]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_PassOn" Id="{259edc68-b5dc-464d-aec3-df8d64817c9e}">
@@ -142,10 +145,11 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Passes the effective origin shift, working area, limit areas and zones on to the Delta's Syn_Visu FB, so the<br>
-visualisation shows what the machine uses. The pose goes with the application's own m_Configure call (with the<br>
-arm geometry, hardware): vi_Pose := m_Pose(). Call it after m_Cycle, every cycle; Syn_Visu's config version only<br>
-changes when a value does (the zones are cleared only when the set has fewer than the visualisation).<br>
+Passes the effective origin shift, working area, limit areas, zones and fingers on to the Delta's Syn_Visu<br>
+FB, so the visualisation shows what the machine uses. The pose goes with the application's own m_Configure<br>
+call (with the arm geometry, hardware): vi_Pose := m_Pose(). Call it after m_Cycle, every cycle; Syn_Visu's<br>
+config version only changes when a value does (zones and fingers are cleared only when the set has fewer than<br>
+the visualisation).<br>
 ****************************************************************************************************)
 METHOD m_PassOn : BOOL
 VAR_IN_OUT
@@ -162,7 +166,9 @@ vio_Visu.m_SetWorkingArea(vi_lr_Radius := vo_Config.stActive.stWorkingArea.fRadi
 m_PassOnLimitAreas(vio_Visu := vio_Visu, vio_LimitArea := vo_Config.stActive.stLimitArea,
 	vio_TcpLimitArea := vo_Config.stActive.stTcpLimitArea);
 m_PassOnZones(vio_Visu := vio_Visu, vio_aZones := vo_Config.stActive.aZones, vi_un_Count := vo_Config.stActive.nZoneCount,
-	vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nZoneCount);]]></ST>
+	vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nZoneCount);
+m_PassOnFingers(vio_Visu := vio_Visu, vio_aFingers := vo_Config.stActive.aFingers,
+	vi_un_Count := vo_Config.stActive.nFingerCount, vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nFingerCount);]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_Pose" Id="{3bfb4653-d713-4059-847e-4083afeb0e49}">

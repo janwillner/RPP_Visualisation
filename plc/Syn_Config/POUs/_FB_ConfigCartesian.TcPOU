@@ -94,6 +94,10 @@ CASE m_Staging(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stSta
 	E_ConfigAction.TAKE_OVER:
 		str_TempRejection := m_InvalidZones(vio_aZones := vo_Config.stStaged.aZones, vi_un_Count := vo_Config.stStaged.nZoneCount);
 		IF str_TempRejection = '' THEN
+			str_TempRejection := m_InvalidFingers(vio_aFingers := vo_Config.stStaged.aFingers,
+				vi_un_Count := vo_Config.stStaged.nFingerCount);
+		END_IF
+		IF str_TempRejection = '' THEN
 			vio_Set.nLastVersion := vio_Set.nLastVersion + 1;
 			vio_Set.nVersion := vio_Set.nLastVersion;
 			vio_Set.stParam := vo_Config.stStaged;
@@ -123,10 +127,10 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Passes the effective origin shift, limit areas and zones on to the robot's Syn_Visu FB, so the visualisation<br>
-shows what the machine uses. The pose goes with the application's own m_Configure call (with the strokes and<br>
-rail height, hardware): vi_Pose := m_Pose(). Call it after m_Cycle, every cycle; Syn_Visu's config version only<br>
-changes when a value does.<br>
+Passes the effective origin shift, limit areas, zones and fingers on to the robot's Syn_Visu FB, so the<br>
+visualisation shows what the machine uses. The pose goes with the application's own m_Configure call (with<br>
+the strokes and rail height, hardware): vi_Pose := m_Pose(). Call it after m_Cycle, every cycle; Syn_Visu's<br>
+config version only changes when a value does.<br>
 ****************************************************************************************************)
 METHOD m_PassOn : BOOL
 VAR_IN_OUT
@@ -139,7 +143,9 @@ vio_Visu.m_SetOriginShift(vi_lr_X := vo_Config.stActive.stOriginShift.fX, vi_lr_
 m_PassOnLimitAreas(vio_Visu := vio_Visu, vio_LimitArea := vo_Config.stActive.stLimitArea,
 	vio_TcpLimitArea := vo_Config.stActive.stTcpLimitArea);
 m_PassOnZones(vio_Visu := vio_Visu, vio_aZones := vo_Config.stActive.aZones, vi_un_Count := vo_Config.stActive.nZoneCount,
-	vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nZoneCount);]]></ST>
+	vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nZoneCount);
+m_PassOnFingers(vio_Visu := vio_Visu, vio_aFingers := vo_Config.stActive.aFingers,
+	vi_un_Count := vo_Config.stActive.nFingerCount, vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nFingerCount);]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_Pose" Id="{8239bb64-4f45-4120-9dfc-c847d99fd5ea}">

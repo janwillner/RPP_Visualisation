@@ -159,6 +159,10 @@ _Avoid_: tool mount, wrist
 One element of a gripper that grips a product, e.g. a suction cup or a jaw.
 _Avoid_: cup (a cup is one kind of finger), jaw (likewise), gripper element
 
+**Finger offset**:
+Where a finger sits on its gripper flange: its position in the flange frame and its rotation about the flange's Z. The visualisation places a finger by it while the application reports no pose for the finger; the configurator lays the offsets out in a top view of the flange (ADR 0018).
+_Avoid_: finger position (ambiguous with its live pose), tool offset (the distance of an XTS flange from its mover)
+
 **Grip point**:
 The point at the end of a finger where a carried product's top touches.
 _Avoid_: TCP (the TCP is the flange of a Delta)

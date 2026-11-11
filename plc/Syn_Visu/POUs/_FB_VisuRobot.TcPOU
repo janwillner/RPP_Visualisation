@@ -18,6 +18,7 @@ Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New: fingers shared by all robots<
 Syn_Visu 9.3.0  ¦ 2026-11-07 ¦ J.Willner ¦ Limit area shared by Delta, XTS gantry and Cartesian (was Delta only)<br>
 Syn_Visu 9.4.0  ¦ 2026-11-09 ¦ J.Willner ¦ TCP limit area: m_SetTcpLimitArea, m_ClearTcpLimitArea<br>
 Syn_Visu 9.4.1  ¦ 2026-11-09 ¦ J.Willner ¦ Limit area compares ignore padding: no config change from unchanged values<br>
+Syn_Visu 9.5.0  ¦ 2026-11-11 ¦ J.Willner ¦ m_SetFingerOffset: a finger's place on the flange (ADR 0018)<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK ABSTRACT _FB_VisuRobot EXTENDS _FB_VisuZoneComponent
 ]]></Declaration>
@@ -169,6 +170,7 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 Defines gripper finger vi_un_Finger (1-based): a cylinder hanging from the finger's pose along its local -Z.<br>
 For XTS kinematics it is a finger of every mover's gripper. The finger count grows to vi_un_Finger.<br>
+Its place on the gripper flange comes from m_SetFingerOffset and is kept here.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
 FALSE outside 1..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS.<br>
@@ -196,6 +198,8 @@ IF p_TempCount = 0 OR p_TempFingers = 0 THEN
 END_IF
 TempFinger.fDiameter := vi_lr_Diameter;
 TempFinger.fHeight := vi_lr_Height;
+(* The offset stays as m_SetFingerOffset set it. *)
+TempFinger.stOffset := p_TempFingers^[vi_un_Finger - 1].stOffset;
 IF vi_un_Finger > p_TempCount^
 OR Tc2_System.MEMCMP(ADR(TempFinger), ADR(p_TempFingers^[vi_un_Finger - 1]), SIZEOF(TempFinger)) <> 0
 THEN
@@ -204,6 +208,52 @@ THEN
 	m_NotifyConfigChanged();
 END_IF
 m_SetFinger := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetFingerOffset" Id="{fbf85459-e4a9-4ec0-bbc3-bc060bba20c4}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Places finger vi_un_Finger (1-based, defined with m_SetFinger) on the gripper flange (ADR 0018): the position<br>
+of its frame in the flange frame and its rotation about the flange's Z. The flange frame's -Z points to the<br>
+product: a Delta's lies at the TCP with the MCS axes, a Cartesian robot's has the robot's axes, an XTS mover's<br>
+turns with the mover. While the application reports no pose for the finger (m_SetFingerState, or an XTS track<br>
+with m_SetFingersOnFlange), the visualisation draws it there. The config version only changes when a value does.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for a finger outside 1..the finger count.<br>
+****************************************************************************************************)
+METHOD m_SetFingerOffset : BOOL
+VAR_INPUT
+	vi_un_Finger						: UINT;	// [-] 1-based
+	vi_lr_X								: LREAL;	// [mm] along the flange's X
+	vi_lr_Y								: LREAL;	// [mm] along the flange's Y
+	vi_lr_Z								: LREAL;	// [mm] along the flange's Z (towards the product: negative)
+	vi_lr_Rz							: LREAL;	// [deg] about the flange's Z
+END_VAR
+VAR
+	p_TempCount							: POINTER TO UINT;
+	p_TempFingers						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFinger;
+	TempOffset							: ST_VisuPlanarPose;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetFingerOffset := FALSE;
+m_Fingers(vo_p_Count => p_TempCount, vo_p_Fingers => p_TempFingers);
+IF p_TempCount = 0 OR p_TempFingers = 0 OR vi_un_Finger = 0 OR vi_un_Finger > p_TempCount^ THEN
+	RETURN;
+END_IF
+TempOffset.fX := vi_lr_X;
+TempOffset.fY := vi_lr_Y;
+TempOffset.fZ := vi_lr_Z;
+TempOffset.fRz := vi_lr_Rz;
+IF Tc2_System.MEMCMP(ADR(TempOffset), ADR(p_TempFingers^[vi_un_Finger - 1].stOffset), SIZEOF(TempOffset)) <> 0 THEN
+	p_TempFingers^[vi_un_Finger - 1].stOffset := TempOffset;
+	m_NotifyConfigChanged();
+END_IF
+m_SetFingerOffset := TRUE;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_SetLimitArea" Id="{c83e3c90-d747-4568-a7bd-6b20d6038e33}">

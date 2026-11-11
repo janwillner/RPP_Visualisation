@@ -1005,12 +1005,12 @@ describe("gateway state snapshots", () => {
     });
   });
 
-  it("publishes the configured fingers and one live state per configured finger, per mover", async () => {
+  it("publishes the configured fingers with their flange offsets and one live state per configured finger, per mover", async () => {
     const withFingers: MachineComponent = {
       ...gantry,
       value: xtsGantry({
         fingers: [
-          { fDiameter: 40, fHeight: 50 },
+          { fDiameter: 40, fHeight: 50, stOffset: { fX: -30, fY: 15, fZ: -5, fRz: 45 } },
           { fDiameter: 20, fHeight: 120 },
         ],
         movers: [
@@ -1019,7 +1019,8 @@ describe("gateway state snapshots", () => {
             fPosition: 250,
             aFingerStates: fingerStates([
               { stPose: { fX: 1, fY: 2, fZ: 3, fRx: 10, fRy: 0, fRz: 90 }, bActive: true },
-              { stPose: { fX: 4, fY: 5, fZ: 6, fRx: 0, fRy: 0, fRz: 0 }, bActive: false },
+              // Not reported by the application: the client places it by its offset.
+              { stPose: { fX: 4, fY: 5, fZ: 6, fRx: 0, fRy: 0, fRz: 0 }, bPoseReported: false, bActive: false },
               // Beyond nFingerCount: ignored.
               { stPose: { fX: 7, fY: 8, fZ: 9, fRx: 0, fRy: 0, fRz: 0 }, bActive: true },
             ]),
@@ -1032,13 +1033,13 @@ describe("gateway state snapshots", () => {
 
     const config = t.configs()[0]!.components.find((c) => c.type === "xtsGantry");
     expect(config?.fingers).toEqual([
-      { diameter: 40, height: 50 },
-      { diameter: 20, height: 120 },
+      { diameter: 40, height: 50, offset: { x: -30, y: 15, z: -5, rz: 45 } },
+      { diameter: 20, height: 120, offset: { x: 0, y: 0, z: 0, rz: 0 } },
     ]);
     const state = t.states()[0]!.components.find((c) => c.type === "xtsGantry");
     expect(state?.type === "xtsGantry" && state.movers[0]!.fingers).toEqual([
-      { pose: { x: 1, y: 2, z: 3, rx: 10, ry: 0, rz: 90 }, active: true },
-      { pose: { x: 4, y: 5, z: 6, rx: 0, ry: 0, rz: 0 }, active: false },
+      { pose: { x: 1, y: 2, z: 3, rx: 10, ry: 0, rz: 90 }, poseReported: true, active: true },
+      { pose: { x: 4, y: 5, z: 6, rx: 0, ry: 0, rz: 0 }, poseReported: false, active: false },
     ]);
   });
 

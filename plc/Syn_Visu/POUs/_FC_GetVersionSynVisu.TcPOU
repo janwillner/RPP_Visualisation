@@ -30,6 +30,7 @@ Syn_Visu 9.1.0  ¦ 2026-11-07 ¦ J.Willner ¦ Conveyor without a body: _FB_VisuC
 Syn_Visu 9.2.0  ¦ 2026-11-07 ¦ J.Willner ¦ Cartesian robot without Y or Z axis: _FB_VisuCartesian.m_SetKinematics (protocol 17)<br>
 Syn_Visu 9.3.0  ¦ 2026-11-07 ¦ J.Willner ¦ Limit area for XTS gantry and Cartesian: _FB_VisuRobot.m_SetLimitArea (protocol 18)<br>
 Syn_Visu 9.4.0  ¦ 2026-11-09 ¦ J.Willner ¦ TCP limit area: _FB_VisuRobot.m_SetTcpLimitArea (protocol 19)<br>
+Syn_Visu 9.5.0  ¦ 2026-11-11 ¦ J.Willner ¦ Finger offsets: m_SetFingerOffset, bPoseReported (protocol 20)<br>
 ****************************************************************************************************)
 FUNCTION _FC_GetVersionSynVisu : UINT
 VAR_INPUT
@@ -38,8 +39,8 @@ END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[CASE vi_n_VersionElement OF
 	1: _FC_GetVersionSynVisu := 9;
-	2: _FC_GetVersionSynVisu := 4;
-	3: _FC_GetVersionSynVisu := 1;
+	2: _FC_GetVersionSynVisu := 5;
+	3: _FC_GetVersionSynVisu := 0;
 ELSE
 	_FC_GetVersionSynVisu := 16#FFFF;
 END_CASE]]></ST>

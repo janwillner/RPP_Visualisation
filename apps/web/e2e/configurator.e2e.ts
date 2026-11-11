@@ -180,3 +180,29 @@ test("configurator: writes an XTS gantry's track to the simulator", async ({ pag
   await expect(idh).toContainText("PLC");
   await expect(idh).not.toContainText("changed");
 });
+
+test("configurator: lays out a Delta's gripper fingers in the top view of its flange", async ({ page }) => {
+  await page.goto("/configurator");
+  await page.locator(".palette").getByRole("button", { name: "Delta" }).click();
+  const properties = page.locator("aside.panel.right");
+  await properties.getByRole("button", { name: "Add finger" }).click();
+  await properties.getByRole("button", { name: "Add finger" }).click();
+  const second = properties.getByRole("group", { name: "Finger 2" });
+  const offsetX = second.getByLabel("Offset X", { exact: true });
+  await expect(offsetX).toHaveValue("60");
+
+  // Dragged to the right in the top view: further along the flange's X, on the 5 mm grid.
+  const finger = properties.getByRole("button", { name: /^Finger 2 at/ });
+  await finger.scrollIntoViewIfNeeded();
+  const box = (await finger.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2, { steps: 5 });
+  await page.mouse.up();
+  const moved = Number(await offsetX.inputValue());
+  expect(moved).toBeGreaterThan(60);
+  expect(moved % 5).toBe(0);
+
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(offsetX).toHaveValue("60");
+});

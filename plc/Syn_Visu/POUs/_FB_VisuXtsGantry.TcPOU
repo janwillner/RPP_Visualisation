@@ -211,6 +211,7 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 Reports one mover (actual values) at entry vi_un_Index and marks it valid. Call once per cycle per mover.<br>
+The finger poses count as reported unless m_SetFingersOnFlange(TRUE) (ADR 0018).<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
 FALSE if vi_un_Index is outside the mover count set by m_SetMoverCount.<br>
@@ -226,6 +227,9 @@ VAR_INPUT
 	vi_FingerStates						: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;
 	vi_b_Fault							: BOOL;	// TRUE: this mover is in a fault
 	vi_str_FaultMessage					: STRING(80);	// shown to the operator; empty shows 'Fault', '' without a fault
+END_VAR
+VAR
+	un_TempFinger						: UINT;
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[m_SetMover := vi_un_Index < vo_Visu.stState.nMoverCount;
@@ -236,6 +240,9 @@ IF m_SetMover THEN
 	vo_Visu.stState.aMovers[vi_un_Index].fX := vi_lr_X;
 	vo_Visu.stState.aMovers[vi_un_Index].bGripperActive := vi_b_GripperActive;
 	vo_Visu.stState.aMovers[vi_un_Index].aFingerStates := vi_FingerStates;
+	FOR un_TempFinger := 0 TO VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1 DO
+		vo_Visu.stState.aMovers[vi_un_Index].aFingerStates[un_TempFinger].bPoseReported := NOT b_FingersOnFlange;
+	END_FOR
 	vo_Visu.stState.aMovers[vi_un_Index].stFault.bActive := vi_b_Fault;
 	vo_Visu.stState.aMovers[vi_un_Index].stFault.sMessage := vi_str_FaultMessage;
 	vo_Visu.stState.nTimestamp := m_DcTime();

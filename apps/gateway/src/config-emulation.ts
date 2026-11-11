@@ -11,7 +11,7 @@ import {
 } from "./config-contract";
 import type { InMemoryPlc } from "./in-memory-plc";
 import { MAX_MANIFEST_ENTRIES } from "./plc-builders";
-import { MANIFEST_PATH, type ST_VisuManifest, type ST_VisuProductType, type ST_VisuTrackModule, type ST_VisuZone } from "./plc-contract";
+import { MANIFEST_PATH, type ST_VisuFinger, type ST_VisuManifest, type ST_VisuProductType, type ST_VisuTrackModule, type ST_VisuZone } from "./plc-contract";
 import { plcMembers } from "./plc-writing";
 
 /**
@@ -124,7 +124,7 @@ export class ConfigEmulation {
   /**
    * Why a staged set cannot be taken over, as the library's m_Invalid says it: a count past its array, a product type
    * without a number or twice, a track without modules or a module without a length (checked before the zones, as
-   * the XTS parameter FBs do), a zone on no conveyor.
+   * the XTS parameter FBs do), a zone on no conveyor, a finger without a diameter or height.
    */
   private invalid(staged: Param): string | undefined {
     const counted = <T>(list: string, count: string, name: string): T[] | string => {
@@ -147,7 +147,11 @@ export class ConfigEmulation {
     const zones = counted<ST_VisuZone>("aZones", "nZoneCount", "zones");
     if (typeof zones === "string") return zones;
     const zone = zones.findIndex((z) => z.nConveyorId === 0);
-    return zone >= 0 ? `Zone ${zone + 1} lies on no conveyor` : undefined;
+    if (zone >= 0) return `Zone ${zone + 1} lies on no conveyor`;
+    const fingers = counted<ST_VisuFinger>("aFingers", "nFingerCount", "fingers");
+    if (typeof fingers === "string") return fingers;
+    const finger = fingers.findIndex((f) => f.fDiameter <= 0 || f.fHeight <= 0);
+    return finger >= 0 ? `Finger ${finger + 1} has no diameter or height` : undefined;
   }
 
   /** The application passes the effective values on to Syn_Visu, whose config version changes when they do. */
