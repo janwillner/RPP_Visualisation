@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigCartesian" Id="{8759ab0a-8bcb-4e15-93cc-f25ef51d337f}">
+    <Declaration><![CDATA[TYPE ST_ConfigCartesian :
+STRUCT
+	(* vo_Config of _FB_ConfigCartesian: the gateway writes stStaging and stStaged, reads stStatus and stActive. *)
+	stStaging : ST_ConfigStaging;
+	stStaged : ST_ConfigCartesianParam;
+	stStatus : ST_ConfigStatus;
+	stActive : ST_ConfigCartesianParam; // effective values: the active set while one is valid, else the program values
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

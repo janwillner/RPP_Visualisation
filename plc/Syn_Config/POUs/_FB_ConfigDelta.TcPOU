@@ -20,6 +20,7 @@ vo_Config is the contract structure the gateway reads and writes at the path in 
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 1.0.0 ¦ 2026-11-10 ¦ J.Willner ¦ First version<br>
+Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ m_PassOn, m_Invalid through the shared helpers<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_ConfigDelta EXTENDS _FB_ConfigComponent
 VAR_OUTPUT
@@ -129,24 +130,9 @@ conveyor (id 0).<br>
 METHOD PRIVATE m_Invalid : STRING(80)
 VAR_IN_OUT CONSTANT
 	vio_Param							: ST_ConfigDeltaParam;	// the staged set
-END_VAR
-VAR
-	un_TempIndex						: UINT;
 END_VAR]]></Declaration>
       <Implementation>
-        <ST><![CDATA[m_Invalid := '';
-IF vio_Param.nZoneCount > SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES THEN
-	m_Invalid := CONCAT('More than ', CONCAT(UINT_TO_STRING(SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES), ' zones'));
-	RETURN;
-END_IF
-un_TempIndex := 0;
-WHILE un_TempIndex < vio_Param.nZoneCount DO
-	IF vio_Param.aZones[un_TempIndex].nConveyorId = 0 THEN
-		m_Invalid := CONCAT('Zone ', CONCAT(UINT_TO_STRING(un_TempIndex + 1), ' lies on no conveyor'));
-		RETURN;
-	END_IF
-	un_TempIndex := un_TempIndex + 1;
-END_WHILE]]></ST>
+        <ST><![CDATA[m_Invalid := m_InvalidZones(vio_aZones := vio_Param.aZones, vi_un_Count := vio_Param.nZoneCount);]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_PassOn" Id="{259edc68-b5dc-464d-aec3-df8d64817c9e}">
@@ -164,9 +150,6 @@ changes when a value does (the zones are cleared only when the set has fewer tha
 METHOD m_PassOn : BOOL
 VAR_IN_OUT
 	vio_Visu							: SynVisu._FB_VisuDelta;	// the Delta's Syn_Visu FB
-END_VAR
-VAR
-	un_TempIndex						: UINT;
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[m_PassOn := TRUE;
@@ -176,44 +159,10 @@ vio_Visu.m_SetWorkingArea(vi_lr_Radius := vo_Config.stActive.stWorkingArea.fRadi
 	vi_lr_ZMin := vo_Config.stActive.stWorkingArea.fZMin, vi_lr_ZMax := vo_Config.stActive.stWorkingArea.fZMax,
 	vi_lr_ConeHeight := vo_Config.stActive.stWorkingArea.fConeHeight,
 	vi_lr_ConeBottomRadius := vo_Config.stActive.stWorkingArea.fConeBottomRadius);
-
-
-(****************************************************************************************************
-LIMIT AREAS
-****************************************************************************************************)
-IF vo_Config.stActive.stLimitArea.bActive THEN
-	vio_Visu.m_SetLimitArea(vi_lr_XMin := vo_Config.stActive.stLimitArea.fXMin, vi_lr_XMax := vo_Config.stActive.stLimitArea.fXMax,
-		vi_lr_YMin := vo_Config.stActive.stLimitArea.fYMin, vi_lr_YMax := vo_Config.stActive.stLimitArea.fYMax,
-		vi_lr_ZMin := vo_Config.stActive.stLimitArea.fZMin, vi_lr_ZMax := vo_Config.stActive.stLimitArea.fZMax);
-ELSE
-	vio_Visu.m_ClearLimitArea();
-END_IF
-IF vo_Config.stActive.stTcpLimitArea.bActive THEN
-	vio_Visu.m_SetTcpLimitArea(vi_lr_XMin := vo_Config.stActive.stTcpLimitArea.fXMin,
-		vi_lr_XMax := vo_Config.stActive.stTcpLimitArea.fXMax, vi_lr_YMin := vo_Config.stActive.stTcpLimitArea.fYMin,
-		vi_lr_YMax := vo_Config.stActive.stTcpLimitArea.fYMax, vi_lr_ZMin := vo_Config.stActive.stTcpLimitArea.fZMin,
-		vi_lr_ZMax := vo_Config.stActive.stTcpLimitArea.fZMax);
-ELSE
-	vio_Visu.m_ClearTcpLimitArea();
-END_IF
-
-
-(****************************************************************************************************
-ZONES
-****************************************************************************************************)
-(* Syn_Visu's zone count only grows: cleared first when the set has fewer zones. *)
-IF vio_Visu.vo_Visu.stConfig.nZoneCount > vo_Config.stActive.nZoneCount THEN
-	vio_Visu.m_ClearZones();
-END_IF
-un_TempIndex := 0;
-WHILE un_TempIndex < vo_Config.stActive.nZoneCount AND un_TempIndex < SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES DO
-	vio_Visu.m_SetZone(vi_un_Zone := un_TempIndex + 1, vi_udn_ConveyorId := vo_Config.stActive.aZones[un_TempIndex].nConveyorId,
-		vi_lr_Start := vo_Config.stActive.aZones[un_TempIndex].fStart, vi_lr_End := vo_Config.stActive.aZones[un_TempIndex].fEnd,
-		vi_lr_AllocationOffset := vo_Config.stActive.aZones[un_TempIndex].fAllocationOffset,
-		vi_lr_CcsOffset := vo_Config.stActive.aZones[un_TempIndex].fCcsOffset,
-		vi_lr_StartY := vo_Config.stActive.aZones[un_TempIndex].fStartY, vi_lr_EndY := vo_Config.stActive.aZones[un_TempIndex].fEndY);
-	un_TempIndex := un_TempIndex + 1;
-END_WHILE]]></ST>
+m_PassOnLimitAreas(vio_Visu := vio_Visu, vio_LimitArea := vo_Config.stActive.stLimitArea,
+	vio_TcpLimitArea := vo_Config.stActive.stTcpLimitArea);
+m_PassOnZones(vio_Visu := vio_Visu, vio_aZones := vo_Config.stActive.aZones, vi_un_Count := vo_Config.stActive.nZoneCount,
+	vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nZoneCount);]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_Pose" Id="{3bfb4653-d713-4059-847e-4083afeb0e49}">

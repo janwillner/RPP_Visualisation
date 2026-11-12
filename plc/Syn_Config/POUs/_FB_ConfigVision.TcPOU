@@ -1,0 +1,53 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_ConfigVision" Id="{ea5d5f8f-d154-4c16-82e9-cead96e83752}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Parameter set of one vision system (ADR 0017): its pose, origin shift and zones. See _FB_ConfigBodyComponent.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ New<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_ConfigVision EXTENDS _FB_ConfigBodyComponent]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_ComponentType" Id="{1e81cb99-1ba7-4d41-8f16-bc5ec5958adf}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A vision system.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_ComponentType : SynVisu.E_VisuComponentType]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_ComponentType := SynVisu.E_VisuComponentType.VISION;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_PassOn" Id="{6b5f0317-4a8d-45ac-9c92-f3553e675822}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Passes the effective origin shift and zones on to the vision system's Syn_Visu FB. The pose goes with the<br>
+application's own m_Configure call (with the field of view, hardware): vi_Pose := m_Pose(). Call it after<br>
+m_Cycle, every cycle.<br>
+****************************************************************************************************)
+METHOD m_PassOn : BOOL
+VAR_IN_OUT
+	vio_Visu							: SynVisu._FB_VisuVision;	// the vision system's Syn_Visu FB
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_PassOn := m_PassOnBody(vio_Visu := vio_Visu, vi_un_VisuZoneCount := vio_Visu.vo_Visu.stConfig.nZoneCount);]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

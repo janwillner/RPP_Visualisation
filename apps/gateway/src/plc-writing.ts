@@ -20,7 +20,7 @@ export function plcLeaves(schema: z.ZodTypeAny, value: unknown, path: string): S
   if (schema instanceof z.ZodObject) {
     const object = value as Record<string, unknown>;
     return Object.entries(schema.shape as Record<string, z.ZodTypeAny>).flatMap(([key, field]) => {
-      const member = `${prefixOf(field)}${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+      const member = memberOf(key, field);
       const at = `${path}.${member}`;
       if (!(unwrap(field) instanceof z.ZodArray)) return plcLeaves(field, object[key], at);
       const entries = object[key] as unknown[];
@@ -33,6 +33,22 @@ export function plcLeaves(schema: z.ZodTypeAny, value: unknown, path: string): S
   }
   if (schema instanceof z.ZodEnum) return [{ path, value: plcEnumValue(schema, value as string) }];
   return [{ path, value: value as SymbolWrite["value"] }];
+}
+
+/**
+ * The PLC members of a structure for the protocol object `schema`, in its field order, each array followed by its
+ * count member: `{ pose, zones }` → `stPose`, `aZones`, `nZoneCount`.
+ */
+export function plcMembers(schema: z.AnyZodObject): string[] {
+  return Object.entries(schema.shape as Record<string, z.ZodTypeAny>).flatMap(([key, field]) => {
+    const member = memberOf(key, field);
+    return unwrap(field) instanceof z.ZodArray ? [member, countMemberOf(member)] : [member];
+  });
+}
+
+/** The PLC member holding the protocol field `key`: its name with the Hungarian prefix of its value. */
+function memberOf(key: string, field: z.ZodTypeAny): string {
+  return `${prefixOf(field)}${key.charAt(0).toUpperCase()}${key.slice(1)}`;
 }
 
 function unwrap(schema: z.ZodTypeAny): z.ZodTypeAny {

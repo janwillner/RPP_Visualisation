@@ -1,0 +1,19 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigXtsGantryParam" Id="{e645d10f-03ae-482c-bcf0-bcd9e575f456}">
+    <Declaration><![CDATA[TYPE ST_ConfigXtsGantryParam :
+STRUCT
+	(* An XTS gantry's parameter set: what the configurator writes, never its strokes, tool offsets or mover size
+	   (hardware). Members as in SynVisu.ST_VisuXtsGantryConfig. *)
+	stPose : SynVisu.ST_VisuPose; // MCS, track start on top of the movers with Z = 0
+	stOriginShift : SynVisu.ST_VisuPosition; // mm in the track's local frame
+	nModuleCount : UINT;
+	aModules : ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_MODULES - 1] OF SynVisu.ST_VisuTrackModule;
+	nZoneCount : UINT;
+	aZones : ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF SynVisu.ST_VisuZone;
+	stLimitArea : SynVisu.ST_VisuLimitArea; // bActive = FALSE: none
+	stTcpLimitArea : SynVisu.ST_VisuLimitArea; // bActive = FALSE: none
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

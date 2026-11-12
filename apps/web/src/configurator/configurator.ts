@@ -1,9 +1,9 @@
 import { useSyncExternalStore } from "react";
-import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, PROTOCOL_VERSION, emptyDraft, type ClientMessage, type ComponentConfig, type ConfigMessage, type ParametersMessage, type WriteResultMessage, type ConveyorConfig, type ConveyorState, type Draft, type ProductType, type StateMessage, type Zone } from "@rpp/protocol";
+import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, PROTOCOL_VERSION, emptyDraft, type TrackModuleKind, type ClientMessage, type ComponentConfig, type ConfigMessage, type ParametersMessage, type WriteResultMessage, type ConveyorConfig, type ConveyorState, type Draft, type ProductType, type StateMessage, type Zone } from "@rpp/protocol";
 import { componentKey, type ComponentKey, type SceneSource } from "../scene/scene-model";
 import { zoneSides } from "../machine-facts";
 import { beltRange, mcsToBelt } from "./belt-coordinates";
-import { defaultComponent, HARDWARE_FIELDS, PALETTE_LABELS, type PaletteType } from "./component-defaults";
+import { defaultArea, defaultComponent, newBody, HARDWARE_FIELDS, PALETTE_LABELS, XTS_MODULE_LENGTH, type AreaField, type PaletteType } from "./component-defaults";
 import { applyEdit, keyOf, type Edit } from "./edits";
 import type { SourceInfo } from "../sources";
 import { hardwareHints, reconcile, type Match, type Reconciliation } from "./reconciliation";
@@ -320,6 +320,34 @@ export class Configurator {
       : edge === "left" ? { startY: Math.max(y, lane.right + GRID_MM), endY: lane.right }
       : { startY: lane.left, endY: Math.min(y, lane.left - GRID_MM) };
     this.set(ownerKey, ["zones", String(index)], { ...zone, ...changes });
+  }
+
+  /** Adds a 250 mm track module of `kind` at the end of an XTS track. */
+  addModule(key: ComponentKey, kind: TrackModuleKind): void {
+    const track = this.component(key);
+    if (track?.type !== "xtsGantry" && track?.type !== "xtsLoop") return;
+    this.set(key, ["modules"], [...track.modules, { kind, length: XTS_MODULE_LENGTH }]);
+  }
+
+  /** Adds a body to a detector or station: a 100 mm box standing on its origin, to edit from there. */
+  addBody(key: ComponentKey): void {
+    const c = this.component(key);
+    if (!c || !("bodies" in c)) return;
+    this.set(key, ["bodies"], [...c.bodies, newBody()]);
+  }
+
+  /** Gives a robot a limit area or a TCP limit area it does not have yet, starting as `defaultArea`. */
+  addArea(key: ComponentKey, field: AreaField): void {
+    const c = this.component(key);
+    if (!c || !("limitArea" in c) || c[field] !== null) return;
+    this.set(key, [field], defaultArea(c, field));
+  }
+
+  /** Removes a robot's limit area or TCP limit area. */
+  removeArea(key: ComponentKey, field: AreaField): void {
+    const c = this.component(key);
+    if (!c || !("limitArea" in c)) return;
+    this.set(key, [field], null);
   }
 
   /** Removes the entry at `index` of one of a component's lists, e.g. a zone or a product type. */

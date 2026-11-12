@@ -15,6 +15,11 @@ VAR
 	fb_IdhInfeed						: _FB_VisuConveyor;
 	fb_IdhTray							: _FB_VisuConveyor;
 	fb_Idh								: _FB_VisuXtsGantry;
+	(* Syn_Config (ADR 0017): the IDH runs with the parameter set the configurator writes (pose, track, zones, limit
+	   areas), else with its program values; taken over at once in the demo. The simulated motion keeps to the
+	   program's track. *)
+	fb_IdhParam							: SynConfig._FB_ConfigXtsGantry;
+	IdhDefault							: SynConfig.ST_ConfigXtsGantryParam;	// program values of the IDH
 
 	(* Conveyors *)
 	lr_Dt								: LREAL;	// [s] cycle time
@@ -38,6 +43,9 @@ VAR
 	udn_GantryProduct					: ARRAY[0..3] OF UDINT;	// [-] product id on the IDH infeed
 	MoverFingers						: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;	// the mover's cup
 	un_Module							: UINT;	// [-] track module being set
+END_VAR
+VAR PERSISTENT
+	IdhSet								: SynConfig.ST_ConfigXtsGantrySet;	// active parameter set of the IDH, kept over a restart
 END_VAR
 VAR CONSTANT
 	(* Gantry turned by -90 deg: track along MCS +X, X axes towards MCS -Y (IDH infeed under X = 200, tray belt
@@ -135,33 +143,52 @@ END_IF
 (****************************************************************************************************)
 (* XTS GANTRY                                                                                       *)
 (****************************************************************************************************)
-XtsPose.fX := lr_GANTRY_X;
-XtsPose.fY := lr_GANTRY_Y;
-XtsPose.fZ := lr_GANTRY_Z;
-XtsPose.fRz := -90;
+(* The IDH's program values; its parameter set (Syn_Config) replaces them once the configurator wrote one. Strokes,
+   tool offsets and mover size are hardware and stay the program's. *)
+IdhDefault.stPose.fX := lr_GANTRY_X;
+IdhDefault.stPose.fY := lr_GANTRY_Y;
+IdhDefault.stPose.fZ := lr_GANTRY_Z;
+IdhDefault.stPose.fRz := -90;
+IdhDefault.nModuleCount := un_GANTRY_MODULES;
 FOR un_Module := 1 TO un_GANTRY_MODULES DO
-	fb_Idh.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := E_VisuModuleKind.STRAIGHT, vi_lr_Length := lr_GANTRY_MODULE_LENGTH);
+	IdhDefault.aModules[un_Module - 1].eKind := E_VisuModuleKind.STRAIGHT;
+	IdhDefault.aModules[un_Module - 1].fLength := lr_GANTRY_MODULE_LENGTH;
 END_FOR
+(* Limit area in the gantry frame (flange coordinates): around the flanges' travel, from over the infeed to over
+   the tray belt, along the whole track. *)
+IdhDefault.stLimitArea.fXMin := 250;
+IdhDefault.stLimitArea.fXMax := 850;
+IdhDefault.stLimitArea.fYMin := -50;
+IdhDefault.stLimitArea.fYMax := 1550;
+IdhDefault.stLimitArea.fZMin := -600;
+IdhDefault.stLimitArea.fZMax := -300;
+IdhDefault.stLimitArea.bActive := TRUE;
+(* Around every mover's flange, cup and product; narrower along the track than the movers' least distance. *)
+IdhDefault.stTcpLimitArea.fXMin := -60;
+IdhDefault.stTcpLimitArea.fXMax := 60;
+IdhDefault.stTcpLimitArea.fYMin := -85;
+IdhDefault.stTcpLimitArea.fYMax := 85;
+IdhDefault.stTcpLimitArea.fZMin := -100;
+IdhDefault.stTcpLimitArea.fZMax := 20;
+IdhDefault.stTcpLimitArea.bActive := TRUE;
+IdhDefault.nZoneCount := 2;
+IdhDefault.aZones[0].nConveyorId := fb_IdhInfeed.m_Id();
+IdhDefault.aZones[0].fStart := lr_GANTRY_X;
+IdhDefault.aZones[0].fEnd := lr_GANTRY_X + UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH;
+IdhDefault.aZones[0].fCcsOffset := lr_GANTRY_X;
+IdhDefault.aZones[1].nConveyorId := fb_IdhTray.m_Id();
+IdhDefault.aZones[1].fStart := lr_GANTRY_X - lr_TRAY_X;
+IdhDefault.aZones[1].fEnd := lr_GANTRY_X - lr_TRAY_X + UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH;
+IdhDefault.aZones[1].fCcsOffset := lr_GANTRY_X - lr_TRAY_X;
+fb_IdhParam.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Idh.m_Id());
+fb_IdhParam.m_Cycle(vio_Default := IdhDefault, vio_Set := IdhSet, vi_b_ApplyAllowed := TRUE);
+XtsPose := fb_IdhParam.m_Pose();
 fb_Idh.m_Configure(vi_Pose := XtsPose, vi_lr_XMin := 0, vi_lr_XMax := 700, vi_lr_ZMin := lr_GANTRY_Z_DOWN, vi_lr_ZMax := 0,
 	vi_lr_ToolOffsetX := lr_GANTRY_TOOL_X, vi_lr_ToolOffsetZ := lr_GANTRY_TOOL_Z + DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT,
 	vi_lr_MoverLength := lr_GANTRY_MOVER_LENGTH, vi_lr_MoverWidth := 80);
 fb_Idh.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER,
 	vi_lr_Height := DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT);
-(* Limit area in the gantry frame (flange coordinates): around the flanges' travel, from over the infeed to over
-   the tray belt, along the whole track. *)
-fb_Idh.m_SetLimitArea(vi_lr_XMin := 250, vi_lr_XMax := 850, vi_lr_YMin := -50, vi_lr_YMax := 1550,
-	vi_lr_ZMin := -600, vi_lr_ZMax := -300);
-(* Around every mover's flange, cup and product; narrower along the track than the movers' least distance. *)
-fb_Idh.m_SetTcpLimitArea(vi_lr_XMin := -60, vi_lr_XMax := 60, vi_lr_YMin := -85, vi_lr_YMax := 85,
-	vi_lr_ZMin := -100, vi_lr_ZMax := 20);
-fb_Idh.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_IdhInfeed.m_Id(), vi_lr_Start := lr_GANTRY_X,
-	vi_lr_End := lr_GANTRY_X + UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH, vi_lr_AllocationOffset := 0,
-	vi_lr_CcsOffset := lr_GANTRY_X, vi_lr_StartY := 0, vi_lr_EndY := 0);
-fb_Idh.m_SetZone(vi_un_Zone := 2, vi_udn_ConveyorId := fb_IdhTray.m_Id(),
-	vi_lr_Start := lr_GANTRY_X - lr_TRAY_X,
-	vi_lr_End := lr_GANTRY_X - lr_TRAY_X + UINT_TO_LREAL(un_GANTRY_MODULES) * lr_GANTRY_MODULE_LENGTH,
-	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_GANTRY_X - lr_TRAY_X,
-	vi_lr_StartY := 0, vi_lr_EndY := 0);
+fb_IdhParam.m_PassOn(vio_Visu := fb_Idh);
 m_Step();
 
 

@@ -78,8 +78,8 @@ export async function discoverParameters(
   const errors: DiscoveryError[] = [];
   for (const e of manifest.aEntries.slice(0, manifest.nCount)) {
     const type = componentKind(enumValue(e.eType));
-    if (type !== "conveyor" && type !== "delta") {
-      errors.push({ componentId: e.nId, path: e.sPath, message: `Syn_Config has no parameter set for this type yet` });
+    if (type === undefined) {
+      errors.push({ componentId: e.nId, path: e.sPath, message: `Unknown component type ${enumValue(e.eType)} in the config manifest` });
       continue;
     }
     const actual = await plc.typeOf(e.sPath);

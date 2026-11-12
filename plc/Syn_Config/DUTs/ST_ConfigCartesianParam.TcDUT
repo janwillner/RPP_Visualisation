@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigCartesianParam" Id="{896d083f-a869-4d3b-85b5-d7b6e5ce58a7}">
+    <Declaration><![CDATA[TYPE ST_ConfigCartesianParam :
+STRUCT
+	(* A Cartesian robot's parameter set: what the configurator writes, never its axes, strokes or rail height
+	   (hardware). Members as in SynVisu.ST_VisuCartesianConfig. *)
+	stPose : SynVisu.ST_VisuPose; // MCS, axis origin X = Y = 0 with Z up
+	stOriginShift : SynVisu.ST_VisuPosition; // mm in the robot's local frame
+	nZoneCount : UINT;
+	aZones : ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF SynVisu.ST_VisuZone;
+	stLimitArea : SynVisu.ST_VisuLimitArea; // bActive = FALSE: none
+	stTcpLimitArea : SynVisu.ST_VisuLimitArea; // bActive = FALSE: none
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

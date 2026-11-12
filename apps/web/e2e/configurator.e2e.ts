@@ -131,3 +131,52 @@ test("configurator: writes a changed zone to the simulator, which takes it over 
   await expect(delta).toContainText("PLC");
   await expect(delta).not.toContainText("changed");
 });
+
+test("configurator: edits an XTS loop's modules, a station's bodies and a Cartesian robot's limit area", async ({ page }) => {
+  await page.goto("/configurator");
+  const palette = page.locator(".palette");
+  const properties = page.locator("aside.panel.right");
+
+  await palette.getByRole("button", { name: "XTS loop" }).click();
+  await expect(properties.locator("h3")).toHaveText("XTS loop 1");
+  await expect(properties.getByRole("group", { name: "Module 12" })).toBeVisible();
+  await properties.getByLabel("Kind of the new module").selectOption("curveRight");
+  await properties.getByRole("button", { name: "Add module" }).click();
+  await expect(properties.getByRole("group", { name: "Module 13" }).getByLabel("Kind", { exact: true })).toHaveValue("curveRight");
+  await expect(page.locator(".issues")).toContainText("does not end where it starts");
+  await properties.getByRole("group", { name: "Module 13" }).getByRole("button", { name: /Remove/ }).click();
+  await expect(page.getByText("does not end where it starts")).toHaveCount(0);
+
+  await palette.getByRole("button", { name: "Station" }).click();
+  await properties.getByRole("button", { name: "Add body" }).click();
+  const body = properties.getByRole("group", { name: "Body 3" });
+  await expect(body.getByLabel("Height", { exact: true })).toHaveValue("100");
+
+  await palette.getByRole("button", { name: "Cartesian" }).click();
+  await properties.getByRole("button", { name: "Add limit area" }).click();
+  const area = properties.getByRole("group", { name: "Limit area" });
+  await expect(area.getByLabel("X max", { exact: true })).toHaveValue("1200");
+  await area.getByRole("button", { name: /Remove/ }).click();
+  await expect(properties.getByRole("button", { name: "Add limit area" })).toBeVisible();
+});
+
+test("configurator: writes an XTS gantry's track to the simulator", async ({ page }) => {
+  await page.goto("/configurator");
+  await page.locator("aside.panel.left .plcs").getByRole("button", { name: "Import" }).first().click();
+  const idh = page.locator("aside.panel.left .components").getByRole("button", { name: /^IDH #30/ });
+  await idh.click();
+
+  const properties = page.locator("aside.panel.right");
+  await properties.getByRole("button", { name: "Add module" }).click();
+  await expect(idh).toContainText("changed");
+
+  await page.locator("aside.panel.left .plcs").getByRole("button", { name: "Write…" }).first().click();
+  const dialog = page.getByRole("dialog", { name: /Write to/ });
+  await expect(dialog).toContainText("IDH");
+  await expect(dialog).toContainText("modules.7");
+  await dialog.getByRole("button", { name: "Write", exact: true }).click();
+
+  await expect(idh).toContainText("written");
+  await expect(idh).toContainText("PLC");
+  await expect(idh).not.toContainText("changed");
+});

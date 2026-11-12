@@ -788,6 +788,8 @@ interface OrbitControlsLike {
 interface MachineBounds {
   conveyors: SceneConveyor[];
   deltas: SceneDelta[];
+  /** Every component's origin, so a machine of other kinds than conveyors and Deltas is framed too. */
+  origins: SceneOrigin[];
 }
 
 /** The parts of a machine scene that give the machine its extent. */
@@ -795,6 +797,7 @@ function boundsOf(machine: MachineScene): MachineBounds {
   return {
     conveyors: machine.sources.flatMap((s) => s.scene.conveyors),
     deltas: machine.sources.flatMap((s) => s.scene.deltas),
+    origins: machine.sources.flatMap((s) => s.scene.origins),
   };
 }
 
@@ -807,13 +810,14 @@ function machineBox(structure: MachineBounds): THREE.Box3 {
     box.expandByPoint(new THREE.Vector3(...c.transform.position).add(end));
   }
   for (const d of structure.deltas) box.expandByPoint(new THREE.Vector3(...d.base.position));
+  for (const o of structure.origins) box.expandByPoint(new THREE.Vector3(...o.transform.position));
   if (box.isEmpty()) box.set(new THREE.Vector3(-1, 0, -1), new THREE.Vector3(1, 1, 1));
   return box;
 }
 /** Quiet time after the last camera movement before it is reported as the camera's new place. */
 const CAMERA_SETTLE_MS = 400;
 
-/** Frames the conveyors and Delta bases of all sources. */
+/** Frames the conveyors, Delta bases and component origins of all sources. */
 function CameraRig(props: {
   request: { action: CameraPreset; seq: number };
   structure: MachineBounds;

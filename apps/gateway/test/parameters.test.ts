@@ -10,7 +10,8 @@ import { ConfigEmulation } from "../src/config-emulation";
 import { createGateway, type GatewayCommandResult } from "../src/gateway";
 import { NOT_ALLOWED } from "../src/parameter-access";
 import { InMemoryPlc } from "../src/in-memory-plc";
-import { conveyor, defineMachine, delta } from "../src/plc-builders";
+import { cartesian, conveyor, defineMachine, delta, detector, station, xtsGantry, xtsLoop } from "../src/plc-builders";
+import type { MachineComponent } from "../src/plc-builders";
 
 const ZONE = { nConveyorId: 1, fStart: 1100, fEnd: 1900, fAllocationOffset: 0, fCcsOffset: 1100, fStartY: 0, fEndY: 0 };
 
@@ -196,5 +197,109 @@ describe("parameter sets (Syn_Config, ADR 0017)", () => {
     expect(
       await without.gateway.command({ kind: "writeParameters", requestId: 1, sourceId: "plc1", componentId: 1, baseVersion: 0, set }),
     ).toMatchObject({ ok: false, error: expect.stringMatching(/no Syn_Config/) });
+  });
+  // Every other component type (#24): one parameter FB each, the same staging, its own parameter structure.
+  const zone = { nConveyorId: 1, fStart: 500, fEnd: 900 };
+  const others: [MachineComponent["kind"], MachineComponent["value"]][] = [
+    ["xtsGantry", xtsGantry({ zones: [zone] })],
+    ["xtsLoop", xtsLoop({ zones: [zone] })],
+    ["cartesian", cartesian({ zones: [zone] })],
+    ["vision", detector({ zones: [zone] })],
+    ["sensor", detector({ zones: [zone] })],
+    ["station", station({ zones: [zone] })],
+  ];
+  it.each(others)("writes the parameter set of a %s, which the application passes on", async (kind, value) => {
+    const plc = new InMemoryPlc();
+    defineMachine(plc, [
+      { id: 1, name: "Infeed", path: "MAIN.stInfeed", kind: "conveyor", value: conveyor({ length: 3000 }) },
+      { id: 20, name: "It", path: "MAIN.stIt", kind, value } as MachineComponent,
+    ]);
+    const emulation = new ConfigEmulation(plc, [{ id: 20, kind, path: "MAIN.fbItParam.vo_Config", visuPath: "MAIN.stIt" }]);
+    const gateway = createGateway({ plc, sourceId: "plc1", allowWrite: true, now: () => 0 });
+    const messages: ServerMessage[] = [];
+    gateway.subscribe((m) => messages.push(ServerMessageSchema.parse(JSON.parse(JSON.stringify(m)))));
+    const lastOf = (k: "parameters" | "config") => messages.filter((m) => m.kind === k).at(-1);
+    const cycle = async () => {
+      emulation.step();
+      await gateway.cycle();
+    };
+    await cycle();
+    const before = component(lastOf("parameters") as ParametersMessage, 20)!;
+    expect(before).toMatchObject({ activeVersion: 0, set: { type: kind, parameters: { zones: [{ conveyorId: 1, start: 500, end: 900 }] } } });
+
+    const set = structuredClone(before.set);
+    const p = set.parameters as Record<string, unknown> & { pose: { x: number }; zones: { end: number }[] };
+    p.pose.x += 250;
+    p.zones[0]!.end = 1200;
+    p.originShift = { x: 10, y: 20, z: 30 };
+    if ("modules" in p) p.modules = [...(p.modules as unknown[]), { kind: "curveLeft", length: 250 }];
+    if ("tcpLimitArea" in p) p.tcpLimitArea = { xMin: -60, xMax: 60, yMin: -60, yMax: 60, zMin: -100, zMax: 20 };
+    if ("limitArea" in p) p.limitArea = { xMin: 0, xMax: 600, yMin: -100, yMax: 1500, zMin: -500, zMax: -100 };
+    const result = await gateway.command({ kind: "writeParameters", requestId: 1, sourceId: "plc1", componentId: 20, baseVersion: 0, set });
+    expect(result).toMatchObject({ ok: true });
+
+    await cycle();
+    expect(component(lastOf("parameters") as ParametersMessage, 20)).toMatchObject({ activeVersion: 1, result: "applied", set });
+    const shown = (lastOf("config") as ConfigMessage).components.find((c) => c.id === 20);
+    expect(shown).toMatchObject(set.parameters);
+  });
+
+  it("removes a robot's limit area and TCP limit area: the visualisation shows none", async () => {
+    const plc = new InMemoryPlc();
+    const box = { fXMin: 0, fXMax: 1000, fYMin: 0, fYMax: 800, fZMin: -600, fZMax: -100 };
+    defineMachine(plc, [{ id: 40, name: "Cartesian", path: "MAIN.stCart", kind: "cartesian", value: cartesian({ limitArea: box, tcpLimitArea: box }) }]);
+    const emulation = new ConfigEmulation(plc, [{ id: 40, kind: "cartesian", path: "MAIN.fbCartParam.vo_Config", visuPath: "MAIN.stCart" }]);
+    const gateway = createGateway({ plc, sourceId: "plc1", allowWrite: true, now: () => 0 });
+    let parameters: ParametersMessage | undefined;
+    let config: ConfigMessage | undefined;
+    gateway.subscribe((m) => {
+      if (m.kind === "parameters") parameters = m;
+      if (m.kind === "config") config = m;
+    });
+    emulation.step();
+    await gateway.cycle();
+    expect(config?.components[0]).toMatchObject({ limitArea: { xMax: 1000 }, tcpLimitArea: { yMax: 800 } });
+
+    const set = structuredClone(component(parameters, 40)!.set);
+    if (set.type !== "cartesian") throw new Error("not a Cartesian robot");
+    set.parameters.limitArea = null;
+    set.parameters.tcpLimitArea = null;
+    await gateway.command({ kind: "writeParameters", requestId: 1, sourceId: "plc1", componentId: 40, baseVersion: 0, set });
+    emulation.step();
+    await gateway.cycle();
+
+    expect(component(parameters, 40)).toMatchObject({ activeVersion: 1, result: "applied", set });
+    expect(config?.components[0]).toMatchObject({ limitArea: null, tcpLimitArea: null });
+  });
+
+  it("rejects an XTS track without modules or with a module without a length", async () => {
+    const plc = new InMemoryPlc();
+    defineMachine(plc, [{ id: 20, name: "Fxx", path: "MAIN.stFxx", kind: "xtsLoop", value: xtsLoop() }]);
+    const emulation = new ConfigEmulation(plc, [{ id: 20, kind: "xtsLoop", path: "MAIN.fbFxxParam.vo_Config", visuPath: "MAIN.stFxx" }]);
+    const gateway = createGateway({ plc, sourceId: "plc1", allowWrite: true, now: () => 0 });
+    let parameters: ParametersMessage | undefined;
+    gateway.subscribe((m) => {
+      if (m.kind === "parameters") parameters = m;
+    });
+    const cycle = async () => {
+      emulation.step();
+      await gateway.cycle();
+    };
+    await cycle();
+    const write = async (change: (modules: { kind: string; length: number }[]) => unknown[]) => {
+      const set = structuredClone(component(parameters, 20)!.set);
+      if (set.type !== "xtsLoop") throw new Error("not an XTS loop");
+      set.parameters.modules = change(set.parameters.modules) as typeof set.parameters.modules;
+      await gateway.command({ kind: "writeParameters", requestId: 1, sourceId: "plc1", componentId: 20, baseVersion: 0, set });
+      await cycle();
+      return component(parameters, 20);
+    };
+
+    expect(await write((m) => m.map((x, i) => (i === 1 ? { ...x, length: 0 } : x)))).toMatchObject({
+      activeVersion: 0,
+      result: "rejected",
+      message: "Track module 2 has no length",
+    });
+    expect(await write(() => [])).toMatchObject({ result: "rejected", message: "A track without modules" });
   });
 });

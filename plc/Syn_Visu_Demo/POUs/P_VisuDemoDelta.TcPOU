@@ -34,11 +34,14 @@ VAR
 	fb_Barrier2							: _FB_VisuSensor;	// light barrier on infeed 2
 	fb_RejectUnit						: _FB_VisuStation;	// at the outfeed
 
-	(* Syn_Config (ADR 0017): Infeed 1 and Delta 1 run with the parameter sets the configurator writes, else with
-	   their program values. The demo allows taking a set over at once; a machine would wait until it stands. *)
+	(* Syn_Config (ADR 0017): Infeed 1, Delta 1 and Vision 1 run with the parameter sets the configurator writes,
+	   else with their program values. The demo allows taking a set over at once; a machine would wait until it
+	   stands. *)
 	fb_Infeed1Param						: SynConfig._FB_ConfigConveyor;
 	fb_Delta1Param						: SynConfig._FB_ConfigDelta;
+	fb_Vision1Param						: SynConfig._FB_ConfigVision;
 	Infeed1Default						: SynConfig.ST_ConfigConveyorParam;	// program values of Infeed 1
+	Vision1Default						: SynConfig.ST_ConfigBodyComponentParam;	// program values of Vision 1
 	RobotDefault						: SynConfig.ST_ConfigDeltaParam;	// program values of the Delta being configured
 	Zone								: ST_VisuZone;	// Delta 1's pick zone on infeed 1, from its parameter set
 	lr_AllocStart						: LREAL;	// [mm] MCS X where the current robot's allocation area on the current infeed starts
@@ -105,6 +108,7 @@ END_VAR
 VAR PERSISTENT
 	Infeed1Set							: SynConfig.ST_ConfigConveyorSet;	// active parameter set of Infeed 1, kept over a restart
 	Delta1Set							: SynConfig.ST_ConfigDeltaSet;	// active parameter set of Delta 1
+	Vision1Set							: SynConfig.ST_ConfigBodyComponentSet;	// active parameter set of Vision 1
 END_VAR
 VAR CONSTANT
 	lr_BELT_LENGTH						: LREAL := 5000;	// [mm]
@@ -249,14 +253,21 @@ fb_Outfeed.m_SetBeltPosition(lr_BeltPosition[2]);
 (****************************************************************************************************)
 (* DETECTORS (configuration idempotent, every cycle)                                                *)
 (****************************************************************************************************)
-DetectorPose.fX := lr_VISION_X;
-DetectorPose.fY := lr_INFEED1_Y;
-DetectorPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_VISION_DISTANCE;
-fb_Vision1.m_Configure(vi_Pose := DetectorPose, vi_lr_FieldLength := lr_VISION_FIELD,
+(* Vision 1's program values; its parameter set (Syn_Config) replaces them once the configurator wrote one. The
+   field of view is hardware and stays the program's. *)
+Vision1Default.stPose.fX := lr_VISION_X;
+Vision1Default.stPose.fY := lr_INFEED1_Y;
+Vision1Default.stPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + lr_VISION_DISTANCE;
+Vision1Default.nZoneCount := 1;
+Vision1Default.aZones[0].nConveyorId := fb_Infeed1.m_Id();
+Vision1Default.aZones[0].fStart := lr_VISION_X - lr_VISION_FIELD / 2;
+Vision1Default.aZones[0].fEnd := lr_VISION_X + lr_VISION_FIELD / 2;
+Vision1Default.aZones[0].fCcsOffset := lr_VISION_X;
+fb_Vision1Param.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Vision1.m_Id());
+fb_Vision1Param.m_Cycle(vio_Default := Vision1Default, vio_Set := Vision1Set, vi_b_ApplyAllowed := TRUE);
+fb_Vision1.m_Configure(vi_Pose := fb_Vision1Param.m_Pose(), vi_lr_FieldLength := lr_VISION_FIELD,
 	vi_lr_FieldWidth := lr_VISION_FIELD, vi_lr_WorkingDistance := lr_VISION_DISTANCE);
-fb_Vision1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed1.m_Id(), vi_lr_Start := lr_VISION_X - lr_VISION_FIELD / 2,
-	vi_lr_End := lr_VISION_X + lr_VISION_FIELD / 2, vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_VISION_X,
-	vi_lr_StartY := 0, vi_lr_EndY := 0);
+fb_Vision1Param.m_PassOn(vio_Visu := fb_Vision1);
 (* The head at the right belt edge, its beam across the belt towards +Y. Infeed 2 counts from its end. *)
 DetectorPose.fX := lr_BARRIER_X;
 DetectorPose.fY := lr_INFEED2_Y - lr_BARRIER_BEAM / 2;
@@ -288,7 +299,7 @@ FOR n_Belt := 0 TO 1 DO
 		udn_Type := (udn_Seed / 1000000) MOD udn_TYPE_COUNT + 1;
 		(* Where its detector sees it: the vision system in the middle of its field, the light barrier at its front edge. *)
 		IF n_Belt = 0 THEN
-			LatchPose.fX := lr_VISION_X;
+			LatchPose.fX := fb_Vision1Param.vo_Config.stActive.stPose.fX;
 		ELSE
 			LatchPose.fX := lr_BARRIER_X - lr_TYPE_LENGTH[udn_Type] / 2;
 		END_IF

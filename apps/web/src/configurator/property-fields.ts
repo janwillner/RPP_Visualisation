@@ -5,7 +5,8 @@ import { fieldLabel } from "../state-rows";
 /**
  * The values of a component the property panel edits, read from its type's config schema without knowing the type:
  * every number, text, switch and choice, grouped by the objects they sit in (pose, origin shift, working area), and
- * every entry of its lists (zones, product types, fingers) as a group of its own. Optional areas come later.
+ * every entry of its lists (zones, product types, track modules, bodies, fingers) as a group of its own, and its optional
+ * areas (limit area, TCP limit area): a group while present, else only named, to be added.
  */
 
 export type PropertyField =
@@ -20,6 +21,16 @@ export interface PropertyGroup {
   fields: PropertyField[];
   /** For an entry of a list: the list's field name and the entry's index, so it can be removed. */
   entry?: { list: string; index: number };
+  /** For a present optional value (a limit area): its field name, so it can be removed. */
+  optional?: string;
+}
+
+/** An optional value of the component, e.g. its limit area, which it may have or not. */
+export interface PropertyOptional {
+  name: string;
+  title: string;
+  hint: string;
+  present: boolean;
 }
 
 /** A list of the component, e.g. its zones, under which its entries are shown. */
@@ -33,6 +44,7 @@ export interface PropertyList {
 export interface Properties {
   groups: PropertyGroup[];
   lists: PropertyList[];
+  optionals: PropertyOptional[];
 }
 
 /** Shown elsewhere: the type in the panel's head. */
@@ -47,6 +59,7 @@ interface SchemaLike {
     values?: string[];
     shape?: () => Record<string, SchemaLike>;
     type?: SchemaLike;
+    innerType?: SchemaLike;
   };
 }
 
@@ -57,6 +70,7 @@ export function properties(component: ComponentConfig): Properties {
   const schema = COMPONENT_SCHEMAS[component.type].config as unknown as SchemaLike;
   const groups: PropertyGroup[] = [{ title: "", fields: [] }];
   const lists: PropertyList[] = [];
+  const optionals: PropertyOptional[] = [];
   const entries: PropertyGroup[] = [];
   /** `prefix`: put before the labels of an object inside a list entry, whose fields stay in the entry's group. */
   const walk = (
@@ -110,10 +124,21 @@ export function properties(component: ComponentConfig): Properties {
           });
           break;
         }
-        // Optional values (limit areas) come with their own editor.
+        case "ZodNullable": {
+          // An optional object of the component itself (a limit area): a group of its own while it is there.
+          const inner = field._def.innerType;
+          if (path.length > 0 || inner?._def.typeName !== "ZodObject") break;
+          const title = fieldLabel(key);
+          optionals.push({ name: key, title, hint: field.description ?? "", present: value !== null });
+          if (value === null) break;
+          const area: PropertyGroup = { title, fields: [], optional: key };
+          groups.push(area);
+          walk(inner._def.shape!(), value as Record<string, unknown>, at, area);
+          break;
+        }
       }
     }
   };
   walk(schema._def.shape!(), component as unknown as Record<string, unknown>, [], groups[0]!);
-  return { groups: [...groups, ...entries].filter((g) => g.fields.length > 0), lists };
+  return { groups: [...groups, ...entries].filter((g) => g.fields.length > 0), lists, optionals };
 }

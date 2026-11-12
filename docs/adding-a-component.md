@@ -75,6 +75,30 @@ Example: the Cartesian robot.
 6. **Tests**: the gateway test for config and state, `buildScene` tests for what it draws.
 7. **Docs**: as above.
 
+## Configurator and parameter sets
+
+Every type also needs its place in the configurator (ADR 0016) and a parameter set in Syn_Config (ADR 0017). The
+compiler asks for most of these entries (`satisfies` over every `ComponentType`), and a test checks that the
+palette offers every type of `COMPONENT_SCHEMAS`.
+
+1. **Protocol** (`packages/protocol/src/parameters.ts`): its fields in `PARAMETER_FIELDS` (pose, origin shift and what
+   the application sets up per machine: zones, product types, track modules, areas; never hardware), its schema in
+   `PARAMETER_SCHEMAS` and `typed("<type>")` in `TypedParametersSchema`.
+2. **Syn_Config** (`plc/Syn_Config`, through the TwinCAT MCP tools): `ST_Config<Type>Param` with exactly those members
+   (named as in its Syn_Visu config), `ST_Config<Type>Set`, `ST_Config<Type>` (`vo_Config`), and
+   `_FB_Config<Type> EXTENDS _FB_ConfigComponent` with `m_ComponentType`, `m_Cycle` (as the other FBs),
+   `m_Invalid`, `m_PassOn`, `m_Pose` and `m_Active`; zones, limit areas and track modules go through the base's
+   helpers (`m_InvalidZones`, `m_PassOnZones`, ...). A component drawn from bodies derives from
+   `_FB_ConfigBodyComponent` and only adds `m_ComponentType` and `m_PassOn`. Bump the library's minor version and
+   export it; `docs/config-contract.md` lists the structures.
+3. **Gateway**: the structure's mirror and its `PLC_CONFIG_TYPES` entry in `config-contract.ts`; discovery, writing
+   and the emulation follow the naming convention without code.
+4. **Web**: its `PALETTE_TYPES` and `PALETTE_LABELS` entry, its `defaultComponent` with assumed hardware and its
+   `HARDWARE_FIELDS` (`configurator/component-defaults.ts`); a new kind of list needs its `AddEntry` and a command
+   that starts an entry (like `addModule`, `addBody`), an optional area its `defaultArea`.
+5. **Tests**: its gateway write test (`parameters.test.ts`, the `it.each` over the types) and a configurator test per
+   new editor (`configurator-types.test.ts`).
+
 ## Releasing
 
 A change to the contract is a protocol change: bump `PROTOCOL_VERSION` and `VISU_un_PROTOCOL_VERSION` together, and

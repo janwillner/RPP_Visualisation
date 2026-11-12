@@ -30,6 +30,15 @@ bound; Syn_Config's arrays start at 0 anyway).
 | --- | --- | --- |
 | Conveyor (`_FB_ConfigConveyor`) | `stPose`, `stOriginShift`, `nProductTypeCount`, `aProductTypes` | length, width, body |
 | Delta (`_FB_ConfigDelta`) | `stPose`, `stOriginShift`, `nZoneCount`, `aZones`, `stWorkingArea`, `stLimitArea`, `stTcpLimitArea` | radii, arm lengths, fingers (#25) |
+| XTS gantry (`_FB_ConfigXtsGantry`) | `stPose`, `stOriginShift`, `nModuleCount`, `aModules`, `nZoneCount`, `aZones`, `stLimitArea`, `stTcpLimitArea` | strokes, tool offsets, mover size, fingers |
+| XTS loop (`_FB_ConfigXtsLoop`) | `stPose`, `stOriginShift`, `nModuleCount`, `aModules`, `nZoneCount`, `aZones` | tool offset, mover size, fingers |
+| Cartesian (`_FB_ConfigCartesian`) | `stPose`, `stOriginShift`, `nZoneCount`, `aZones`, `stLimitArea`, `stTcpLimitArea` | axes, strokes, rail height, fingers |
+| Vision system, product sensor, station (`_FB_ConfigVision`, `_FB_ConfigSensor`, `_FB_ConfigStation`; one structure `ST_ConfigBodyComponentParam`, `vo_Config : ST_ConfigBodyComponent`) | `stPose`, `stOriginShift`, `nZoneCount`, `aZones` | bodies |
+
+An XTS track's module chain is a parameter, not hardware: it is set up per machine (ADR 0016). Since library 1.1.0
+the base `_FB_ConfigComponent` has the shared helpers every parameter FB uses (`m_InvalidZones`, `m_InvalidModules`,
+`m_PassOnZones`, `m_PassOnModules`, `m_PassOnLimitAreas`); version 1.1.0 only adds parameter FBs, so the config
+protocol version stays 1.
 
 ## How a parameter FB handles a staging
 
@@ -38,8 +47,8 @@ Every cycle the application calls `m_Cycle(vio_Default, vio_Set, vi_b_ApplyAllow
 1. `bReset`: the active set becomes invalid (`vio_Set.bValid := FALSE`), result APPLIED.
 2. `bStaged` while `vi_b_ApplyAllowed` is FALSE: result PENDING, the set waits.
 3. `bStaged` on another active version than `nBaseVersion`: REJECTED ("Based on version …").
-4. `bStaged` with an invalid set (a count beyond its array; a product type without a number or twice; a zone on
-   no conveyor): REJECTED with the reason.
+4. `bStaged` with an invalid set (a count beyond its array; a product type without a number or twice; an XTS track
+   without modules or a module without a length; a zone on no conveyor): REJECTED with the reason.
 5. Otherwise the set becomes active under the next version (`vio_Set.nLastVersion + 1`; versions never repeat).
 
 In every handled case `nHandledStageId := nStageId` and the flags are cleared. Then `stActive` is the active set
@@ -70,5 +79,7 @@ fb_InfeedParam.m_PassOn(vio_Visu := fb_Infeed);	// origin shift and product type
 - Syn_Visu cannot remove a product type: one a set no longer has stays in the visualisation until the application
   restarts.
 
-The demo (`plc/Syn_Visu_Demo`, `P_VisuDemoDelta`) does this for Infeed 1 and Delta 1, taking a set over at once; the
-simulator emulates the same (`apps/gateway/src/config-emulation.ts`).
+The demo (`plc/Syn_Visu_Demo`) does this for Infeed 1, Delta 1 and Vision 1 (`P_VisuDemoDelta`; the vision system
+latches its products under its effective lens position) and the IDH XTS gantry (`P_VisuDemoIdh`; its simulated motion
+keeps to the program's track), taking a set over at once; the simulator emulates the same for one component of every
+type (`apps/gateway/src/config-emulation.ts`).

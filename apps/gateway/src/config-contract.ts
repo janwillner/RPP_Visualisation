@@ -1,4 +1,14 @@
-import type { PlcEnum, ST_VisuLimitArea, ST_VisuPose, ST_VisuPosition, ST_VisuProductType, ST_VisuWorkingArea, ST_VisuZone } from "./plc-contract";
+import type { ParameterType } from "@rpp/protocol";
+import type {
+  PlcEnum,
+  ST_VisuLimitArea,
+  ST_VisuPose,
+  ST_VisuPosition,
+  ST_VisuProductType,
+  ST_VisuTrackModule,
+  ST_VisuWorkingArea,
+  ST_VisuZone,
+} from "./plc-contract";
 
 /**
  * Shapes of the PLC-side structures of the library Syn_Config (ADR 0017), as a symbol reader returns them. The
@@ -73,6 +83,43 @@ export interface ST_ConfigDeltaParam {
   stTcpLimitArea: ST_VisuLimitArea;
 }
 
+export interface ST_ConfigXtsGantryParam {
+  stPose: ST_VisuPose;
+  stOriginShift: ST_VisuPosition;
+  nModuleCount: number;
+  aModules: ST_VisuTrackModule[];
+  nZoneCount: number;
+  aZones: ST_VisuZone[];
+  stLimitArea: ST_VisuLimitArea;
+  stTcpLimitArea: ST_VisuLimitArea;
+}
+
+export interface ST_ConfigXtsLoopParam {
+  stPose: ST_VisuPose;
+  stOriginShift: ST_VisuPosition;
+  nModuleCount: number;
+  aModules: ST_VisuTrackModule[];
+  nZoneCount: number;
+  aZones: ST_VisuZone[];
+}
+
+export interface ST_ConfigCartesianParam {
+  stPose: ST_VisuPose;
+  stOriginShift: ST_VisuPosition;
+  nZoneCount: number;
+  aZones: ST_VisuZone[];
+  stLimitArea: ST_VisuLimitArea;
+  stTcpLimitArea: ST_VisuLimitArea;
+}
+
+/** Vision system, product sensor and station share it: their bodies are hardware, so only these remain. */
+export interface ST_ConfigBodyComponentParam {
+  stPose: ST_VisuPose;
+  stOriginShift: ST_VisuPosition;
+  nZoneCount: number;
+  aZones: ST_VisuZone[];
+}
+
 /** `vo_Config` of a parameter FB: what the gateway writes (staging) and reads (status, active values). */
 export interface ST_ConfigComponent<P> {
   stStaging: ST_ConfigStaging;
@@ -86,4 +133,13 @@ export type ST_ConfigConveyor = ST_ConfigComponent<ST_ConfigConveyorParam>;
 export type ST_ConfigDelta = ST_ConfigComponent<ST_ConfigDeltaParam>;
 
 /** The PLC type of each parameter FB's `vo_Config`, by protocol component type. */
-export const PLC_CONFIG_TYPES = { conveyor: "ST_ConfigConveyor", delta: "ST_ConfigDelta" } as const;
+export const PLC_CONFIG_TYPES = {
+  conveyor: "ST_ConfigConveyor",
+  delta: "ST_ConfigDelta",
+  xtsGantry: "ST_ConfigXtsGantry",
+  xtsLoop: "ST_ConfigXtsLoop",
+  cartesian: "ST_ConfigCartesian",
+  vision: "ST_ConfigBodyComponent",
+  sensor: "ST_ConfigBodyComponent",
+  station: "ST_ConfigBodyComponent",
+} as const satisfies Record<ParameterType, string>;

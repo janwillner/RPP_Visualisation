@@ -11,6 +11,7 @@ Runtime-readable version of the Syn_Config library.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 1.0.0 ¦ 2026-11-10 ¦ J.Willner ¦ Parameter sets of conveyors and Deltas (ADR 0017, protocol 1)<br>
+Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ Every other component type (#24)<br>
 ****************************************************************************************************)
 FUNCTION _FC_GetVersionSynConfig : UINT
 VAR_INPUT
@@ -19,7 +20,7 @@ END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[CASE vi_n_VersionElement OF
 	1: _FC_GetVersionSynConfig := 1;
-	2: _FC_GetVersionSynConfig := 0;
+	2: _FC_GetVersionSynConfig := 1;
 	3: _FC_GetVersionSynConfig := 0;
 ELSE
 	_FC_GetVersionSynConfig := 16#FFFF;

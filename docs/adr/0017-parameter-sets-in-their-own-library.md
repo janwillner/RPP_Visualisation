@@ -48,5 +48,7 @@ for the shared types (pose, zone, product type, areas); Syn_Visu does not know i
 - An application that wants the configurator adds Syn_Config, one parameter FB, one persistent variable and one
   `m_Cycle` call per component, and passes the effective values on; without it nothing changes.
 - First version (#23): conveyor (pose, origin shift, product types) and Delta (pose, origin shift, zones, working,
-  limit and TCP limit area). Hardware (lengths, arm geometry) is never written (ADR 0016).
+  limit and TCP limit area). Library 1.1.0 (#24) adds the XTS gantry and loop (also their track modules), the
+  Cartesian robot, and vision system, product sensor and station (one parameter structure for the three). Hardware
+  (lengths, arm geometry, strokes, bodies) is never written (ADR 0016).
 - Two libraries with their own versions; Syn_Config names the Syn_Visu version it needs.
