@@ -251,6 +251,14 @@ _Avoid_: editor, designer, RPP_Configurator (the product name, not a term)
 A machine as the configurator edits it: every component's configuration with its source and manifest id, saved as a JSON file. It is made offline, without a PLC.
 _Avoid_: project, layout, model, recipe
 
+**Reconciliation**:
+Matching a draft's components with the PLCs' manifests by source, manifest id and type, telling which the PLC has as the draft does, which differ, and which exist on one side only.
+_Avoid_: sync, diff, comparison
+
+**Ghost**:
+The PLC's version of a component the draft has changed, drawn faded beside the draft's, so the change shows in 3D.
+_Avoid_: shadow, preview, overlay
+
 **Palette**:
 The component types the configurator offers to place, by dragging onto the floor or by a click.
 _Avoid_: toolbox, library (the PLC library is something else)

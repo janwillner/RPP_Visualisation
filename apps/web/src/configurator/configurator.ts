@@ -1,10 +1,12 @@
 import { useSyncExternalStore } from "react";
-import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, PROTOCOL_VERSION, emptyDraft, type ConfigMessage, type ConveyorConfig, type ConveyorState, type Draft, type ProductType, type StateMessage, type Zone } from "@rpp/protocol";
+import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, PROTOCOL_VERSION, emptyDraft, type ComponentConfig, type ConfigMessage, type ConveyorConfig, type ConveyorState, type Draft, type ProductType, type StateMessage, type Zone } from "@rpp/protocol";
 import { componentKey, type ComponentKey, type SceneSource } from "../scene/scene-model";
 import { zoneSides } from "../machine-facts";
 import { beltRange, mcsToBelt } from "./belt-coordinates";
-import { defaultComponent, PALETTE_LABELS, type PaletteType } from "./component-defaults";
+import { defaultComponent, HARDWARE_FIELDS, PALETTE_LABELS, type PaletteType } from "./component-defaults";
 import { applyEdit, keyOf, type Edit } from "./edits";
+import type { SourceInfo } from "../sources";
+import { hardwareHints, reconcile, type Match, type Reconciliation } from "./reconciliation";
 import { validateDraft, type Issue } from "./validation";
 
 /**
@@ -14,6 +16,9 @@ import { validateDraft, type Issue } from "./validation";
 
 /** The source of components placed offline, until they are given the source of a PLC. */
 export const DRAFT_SOURCE = "draft";
+
+/** The source a PLC's version of changed components is drawn in, faded, beside the draft (ADR 0016). */
+export const ghostSourceId = (sourceId: string) => `${sourceId} (PLC)`;
 
 /** Positions are placed on this grid, mm. */
 export const GRID_MM = 10;
@@ -41,6 +46,23 @@ export interface ConfiguratorSnapshot {
   issues: Issue[];
   /** Set when something could not be done, e.g. a file could not be opened. */
   notice: string | undefined;
+  /** The PLC sources the gateway reads, with their configuration; empty without a gateway. */
+  plcSources: readonly SourceInfo[];
+  /** How each of the draft's components stands against its PLC, by component key. */
+  matches: Record<ComponentKey, Match>;
+  /** The PLCs' components the draft does not have. */
+  plcOnly: ComponentConfig[];
+}
+
+/**
+ * The gateway as the configurator reads it (ADR 0016): the PLC sources with their configuration and their live state.
+ * `GatewayStore` in the app, a fake in tests.
+ */
+export interface ConfiguratorLive {
+  getSnapshot(): { sources: readonly SourceInfo[] };
+  subscribe(listener: () => void): () => void;
+  /** Every source as the machine scene takes it, at `now` (performance.now()). */
+  frame(now?: number): SceneSource[];
 }
 
 /** A draft as a file to save. */
@@ -71,11 +93,82 @@ export class Configurator {
   private savedDraft: Draft;
   private readonly listeners = new Set<() => void>();
   private framed: { draft: Draft; sources: SceneSource[] } | undefined;
+  private stopLive: (() => void) | undefined;
+  private reconciliation: Reconciliation = { matches: {}, plcOnly: [], plc: new Map() };
+  /** The problems of the draft itself, found again only when it changes. */
+  private draftIssues: Issue[] = [];
+  private ghosts: { reconciliation: Reconciliation; sources: SceneSource[] } | undefined;
+  /** Live states cut to the components shown, per reconciliation (its matches) and state message. */
+  private readonly liveStates = new WeakMap<Record<ComponentKey, Match>, WeakMap<StateMessage, StateMessage>>();
 
-  /** `confirmDiscard` asks whether unsaved changes may be discarded for a new or opened draft. */
-  constructor(private readonly confirmDiscard: () => boolean = () => true) {
+  /**
+   * `confirmDiscard` asks whether unsaved changes may be discarded for a new or opened draft; `live` is the gateway,
+   * none for a configurator that works offline only.
+   */
+  constructor(
+    private readonly confirmDiscard: () => boolean = () => true,
+    private readonly live?: ConfiguratorLive,
+  ) {
     this.savedDraft = emptyDraft();
-    this.snapshot = { draft: this.savedDraft, selection: undefined, canUndo: false, canRedo: false, saved: true, issues: [], notice: undefined };
+    this.snapshot = {
+      draft: this.savedDraft,
+      selection: undefined,
+      canUndo: false,
+      canRedo: false,
+      saved: true,
+      issues: [],
+      notice: undefined,
+      plcSources: [],
+      matches: {},
+      plcOnly: [],
+    };
+  }
+
+  /** Takes a matched component's hardware (`HARDWARE_FIELDS`) from its PLC: one step for undo. */
+  adoptPlcHardware(key: ComponentKey): void {
+    const theirs = this.reconciliation.plc.get(key) as Record<string, unknown> | undefined;
+    const ours = this.component(key);
+    if (!theirs || !ours) return;
+    this.beginGesture();
+    for (const field of HARDWARE_FIELDS[ours.type] as readonly string[]) this.set(key, [field], theirs[field]);
+    this.endGesture();
+  }
+
+  /** Takes one component the PLC has and the draft has not into the draft. */
+  importComponent(key: ComponentKey): void {
+    const component = this.snapshot.plcOnly.find((c) => keyOf(c) === key);
+    if (component) this.edit({ kind: "add", component });
+  }
+
+  /** Starts following the gateway's sources. */
+  start(): void {
+    if (!this.live || this.stopLive) return;
+    const follow = () => {
+      const { sources } = this.live!.getSnapshot();
+      // The gateway also tells of its socket; only a change of the sources concerns the configurator.
+      if (sources !== this.snapshot.plcSources) this.set_({ plcSources: sources });
+    };
+    this.stopLive = this.live.subscribe(follow);
+    follow();
+  }
+
+  stop(): void {
+    this.stopLive?.();
+    this.stopLive = undefined;
+  }
+
+  /**
+   * Takes a PLC source's configuration into the draft, in place of the draft's components of that source: one step
+   * for undo.
+   */
+  importSource(sourceId: string, confirm: (sourceName: string) => boolean = () => true): void {
+    const source = this.snapshot.plcSources.find((s) => s.sourceId === sourceId);
+    if (!source?.config) return;
+    // The draft's own changes to that PLC's components are lost by the import: asked first.
+    const { draft, matches } = this.snapshot;
+    const changed = draft.components.some((c) => c.sourceId === sourceId && matches[keyOf(c)] !== "matched");
+    if (changed && !confirm(source.name)) return;
+    this.edit({ kind: "replaceSource", sourceId, components: source.config.components });
   }
 
   subscribe = (listener: () => void) => {
@@ -232,7 +325,8 @@ export class Configurator {
 
   /** Selects a component for the property panel; undefined selects none. */
   select(selection: ComponentKey | undefined): void {
-    if (selection === this.snapshot.selection) return;
+    // Only the draft's components: not a ghost of the PLC's version.
+    if (selection === this.snapshot.selection || (selection !== undefined && !this.component(selection))) return;
     this.set_({ selection });
   }
 
@@ -278,7 +372,80 @@ export class Configurator {
   // The 3D view.
 
   /** Every source of the draft as the machine scene takes it: its configuration, no state. Same array per draft. */
-  frame(): SceneSource[] {
+  frame(now = performance.now()): SceneSource[] {
+    const own = this.draftSources();
+    const ghosts = this.ghostSources();
+    if (!this.live || this.snapshot.plcSources.length === 0) return ghosts.length === 0 ? own : [...own, ...ghosts];
+    // Over the draft, the live states of the components its PLC has (ADR 0016): set zones against real products.
+    const live = new Map(this.live.frame(now).map((s) => [s.sourceId, s]));
+    const { matches } = this.snapshot;
+    const withLive = own.map((source) => {
+      const theirs = live.get(source.sourceId);
+      // While the PLC is offline its last states are no longer live: the draft is shown on its own.
+      if (!theirs?.online || theirs.snapshots.length === 0) return source;
+      const snapshots = theirs.snapshots.map((s) => this.liveState(s, matches));
+      return { ...source, snapshots, renderTime: theirs.renderTime };
+    });
+    return [...withLive, ...ghosts];
+  }
+
+  /**
+   * The sources the 3D view draws, without their live states: the draft's and the ghosts. For the page's list of
+   * sources; the same arrays while the draft and the reconciliation stay.
+   */
+  drawnSources(): SceneSource[] {
+    return [...this.draftSources(), ...this.ghostSources()];
+  }
+
+  /** A live state with only the states of components the draft has as the PLC does (same id and type). */
+  private liveState(state: StateMessage, matches: Record<ComponentKey, Match>): StateMessage {
+    let cache = this.liveStates.get(matches);
+    if (!cache) this.liveStates.set(matches, (cache = new WeakMap()));
+    let kept = cache.get(state);
+    if (!kept) {
+      const shown = (id: number) => {
+        const match = matches[componentKey(state.sourceId, id)];
+        return match === "matched" || match === "changed";
+      };
+      kept = { ...state, components: state.components.filter((c) => shown(c.id)) };
+      cache.set(state, kept);
+    }
+    return kept;
+  }
+
+  /**
+   * The PLC's version of every component the draft changed, as a source of its own the 3D view draws faded (it is
+   * never online), so the change shows next to what the PLC has now.
+   */
+  private ghostSources(): SceneSource[] {
+    const reconciliation = this.reconciliation;
+    if (this.ghosts?.reconciliation === reconciliation) return this.ghosts.sources;
+    const bySource = new Map<string, ComponentConfig[]>();
+    for (const [key, match] of Object.entries(reconciliation.matches)) {
+      const theirs = reconciliation.plc.get(key);
+      if (match !== "changed" || !theirs) continue;
+      bySource.set(theirs.sourceId, [...(bySource.get(theirs.sourceId) ?? []), theirs]);
+    }
+    // The PLC's conveyors the ghosts' zones lie on, without a body: only their zones show, not a second belt.
+    const plcConfigs = new Map(this.snapshot.plcSources.map((src) => [src.sourceId, src.config]));
+    for (const [sourceId, components] of bySource) {
+      const ids = new Set(components.map((c) => c.id));
+      const needed = new Set(components.flatMap((c) => ("zones" in c ? c.zones.map((z) => z.conveyorId) : [])));
+      for (const c of plcConfigs.get(sourceId)?.components ?? []) {
+        if (c.type === "conveyor" && needed.has(c.id) && !ids.has(c.id)) components.push({ ...c, body: false });
+      }
+    }
+    const sources = [...bySource.entries()].map(([sourceId, components]) => {
+      const id = ghostSourceId(sourceId);
+      const config: ConfigMessage = { kind: "config", sourceId: id, protocolVersion: PROTOCOL_VERSION, configVersion: 1, components, errors: [] };
+      return { sourceId: id, config, snapshots: [], renderTime: 0, online: false };
+    });
+    this.ghosts = { reconciliation, sources };
+    return sources;
+  }
+
+  /** The draft's sources with their configuration and the preview products; the same array per draft. */
+  private draftSources(): SceneSource[] {
     const { draft } = this.snapshot;
     if (this.framed?.draft === draft) return this.framed.sources;
     const bySource = new Map<string, ConfigMessage>();
@@ -354,12 +521,24 @@ export class Configurator {
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0,
       saved: draft === this.savedDraft,
-      issues: draft === this.snapshot.draft ? this.snapshot.issues : validateDraft(draft),
     });
   }
 
   private set_(changes: Partial<ConfiguratorSnapshot>): void {
-    this.snapshot = { ...this.snapshot, ...changes };
+    const before = this.snapshot;
+    this.snapshot = { ...before, ...changes };
+    // The draft or the PLCs changed: reconciled again.
+    if (this.snapshot.draft !== before.draft || this.snapshot.plcSources !== before.plcSources) {
+      const { draft } = this.snapshot;
+      if (draft !== before.draft) this.draftIssues = validateDraft(draft);
+      this.reconciliation = reconcile(draft, this.snapshot.plcSources);
+      this.snapshot = {
+        ...this.snapshot,
+        matches: this.reconciliation.matches,
+        plcOnly: this.reconciliation.plcOnly,
+        issues: [...this.draftIssues, ...hardwareHints(draft, this.reconciliation.plc)],
+      };
+    }
     for (const l of this.listeners) l();
   }
 }

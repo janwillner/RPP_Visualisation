@@ -39,6 +39,14 @@ the draft, the selection, undo and redo (a drag in the 3D view is one step), the
   ordinary product of a state the draft makes up, so the kits draw it.
 - Zone warnings follow one rule in `machine-facts.ts` (`zoneWarnings`) for the visualisation's scene and the
   configurator's problems.
+- Connected to the gateway that serves it, the configurator reads the PLCs (still read-only): a source is imported into
+  the draft in place of the draft's components of that source; every component is reconciled with its PLC by source,
+  manifest id and type (matched, changed, only in the draft, other type, no PLC; components only in the PLC are listed
+  to add). The PLCs' live states are drawn over the draft for its matched components, and the PLC's version of a
+  changed component is drawn faded beside it, as a source of its own that is never online, so the visualisation's
+  fading shows it without new drawing code.
+- Hardware (a Delta's arm lengths, a belt's length, axis limits; `HARDWARE_FIELDS`) is never written. A draft made
+  offline assumes it; once matched, a difference is a hint, and the PLC's hardware is taken over with one command.
 - Writing a draft to a PLC needs a writable parameter set in Syn_Visu that the application takes over itself; that
   decision gets its own ADR.
 - Unknown paths still fall back to the visualisation; a path naming a page of the built app (`/configurator`) is

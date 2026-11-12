@@ -1,4 +1,4 @@
-import type { ComponentConfig, ConveyorConfig, DeltaConfig } from "@rpp/protocol";
+import type { ComponentConfig, ComponentType, ConveyorConfig, DeltaConfig } from "@rpp/protocol";
 
 /**
  * What the configurator's palette offers, with the configuration a new component starts from. Its hardware geometry
@@ -60,3 +60,18 @@ export function defaultComponent(
 export function placementHeight(type: PaletteType): number {
   return defaultComponent(type, { id: 0, sourceId: "", name: "" }, { x: 0, y: 0 }).pose.z;
 }
+
+/**
+ * The hardware of each component type: what the configurator does not write but takes from the PLC, as the machine
+ * is built (ADR 0016). A draft made offline assumes it; once matched with its PLC, a difference is a hint.
+ */
+export const HARDWARE_FIELDS: { [T in ComponentType]: readonly (keyof Extract<ComponentConfig, { type: T }>)[] } = {
+  conveyor: ["length", "width"],
+  delta: ["baseRadius", "effectorRadius", "upperArmLength", "lowerArmLength"],
+  xtsGantry: ["xMin", "xMax", "zMin", "zMax", "toolOffsetX", "toolOffsetZ", "moverLength", "moverWidth"],
+  xtsLoop: ["toolOffset", "moverLength", "moverWidth"],
+  cartesian: ["axes", "xMin", "xMax", "yMin", "yMax", "zMin", "zMax", "railHeight"],
+  vision: ["bodies"],
+  sensor: ["bodies"],
+  station: ["bodies"],
+};

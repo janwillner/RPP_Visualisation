@@ -9,6 +9,8 @@ export type Edit =
   | { kind: "add"; component: ComponentConfig }
   | { kind: "remove"; key: ComponentKey }
   | { kind: "rename"; name: string }
+  /** The components of one source replaced by these, e.g. imported from its PLC; they go after the others. */
+  | { kind: "replaceSource"; sourceId: string; components: readonly ComponentConfig[] }
   /** Sets one value of a component, found by its path of field names, e.g. `["pose", "rz"]`. */
   | { kind: "set"; key: ComponentKey; path: readonly string[]; value: unknown };
 
@@ -24,6 +26,11 @@ export function applyEdit(draft: Draft, edit: Edit): Draft {
       return { ...draft, components: [...draft.components, edit.component] };
     case "rename":
       return { ...draft, name: edit.name };
+    case "replaceSource":
+      return {
+        ...draft,
+        components: [...draft.components.filter((c) => c.sourceId !== edit.sourceId), ...edit.components],
+      };
     case "remove":
     case "set": {
       const i = draft.components.findIndex((c) => keyOf(c) === edit.key);
