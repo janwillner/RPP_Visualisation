@@ -302,15 +302,24 @@ test("shows the machine's metrics in the inspector while nothing is selected", a
   });
 });
 
-test("loads the app in parts, none over 800 KB", async ({ request }) => {
-  const html = await (await request.get("/")).text();
-  const scripts = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+\.js)"/g)].map((m) => m[1]!);
-  // The entry plus the chunks it preloads: the app is split, so a new version reloads only what changed.
-  expect(scripts.length).toBeGreaterThan(1);
-  for (const script of scripts) {
-    const bytes = (await (await request.get(script)).body()).length;
-    expect(bytes, script).toBeLessThan(800 * 1024);
+test("loads both pages in parts, none over 800 KB, and neither loads the other's entry", async ({ request }) => {
+  const scriptsOf = async (page: string) => {
+    const html = await (await request.get(page)).text();
+    return [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+\.js)"/g)].map((m) => m[1]!);
+  };
+  const pages = { "/": await scriptsOf("/"), "/configurator": await scriptsOf("/configurator") };
+  for (const [page, scripts] of Object.entries(pages)) {
+    // The entry plus the chunks it preloads: the app is split, so a new version reloads only what changed.
+    expect(scripts.length, page).toBeGreaterThan(1);
+    for (const script of scripts) {
+      const bytes = (await (await request.get(script)).body()).length;
+      expect(bytes, script).toBeLessThan(800 * 1024);
+    }
   }
+  // The pages share their libraries, but the visualisation's panel PCs never load the configurator (ADR 0016).
+  expect(pages["/"].some((s) => pages["/configurator"].includes(s))).toBe(true);
+  expect(pages["/"].some((s) => s.includes("/configurator-"))).toBe(false);
+  expect(pages["/configurator"].some((s) => s.includes("/main-"))).toBe(false);
 });
 
 test("opens the PLC library guide from the status bar", async ({ page, context }) => {

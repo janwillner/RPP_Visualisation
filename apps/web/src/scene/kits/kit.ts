@@ -210,12 +210,6 @@ export function lerpFingers(a: FingerState[], b: FingerState[], f: number): Fing
   });
 }
 
-/** Whether a belt coordinate (mm from the conveyor's shifted origin) lies between the belt start and end. */
-export function onBelt(belt: ConveyorConfig, beltCoordinate: number): boolean {
-  const fromStart = belt.originShift.x + beltCoordinate;
-  return fromStart >= 0 && fromStart <= belt.length;
-}
-
 /**
  * Where a picked product hangs, as a key of the build context's carriers: a robot's gripper flange (mover 0 for a
  * robot without movers) or, with `finger`, one finger's grip point.

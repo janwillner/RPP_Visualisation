@@ -23,7 +23,7 @@ import {
   type Transform,
   type Vec3,
 } from "./frames";
-import { limitBoxKey, limitViolations, tcpLimitBoxes } from "../machine-facts";
+import { limitBoxKey, limitViolations, tcpLimitBoxes, zoneSides, zoneWarnings } from "../machine-facts";
 import { isGrouped } from "./product-groups";
 import {
   boxCorners,
@@ -36,7 +36,6 @@ import {
   LABEL_LIFT,
   lifted,
   MM,
-  onBelt,
   originFrame,
   snapOwner,
 } from "./kits/kit";
@@ -644,15 +643,8 @@ export function buildScene(
         const zoneCentre = (win.start + win.end) / 2;
         const name = `${c.name} zone on ${belt.name}`;
         const lane = zoneLane(win, belt);
-        const beltRange = `${-belt.originShift.x} to ${belt.length - belt.originShift.x} mm`;
-        if (!onBelt(belt, win.start) || !onBelt(belt, win.end)) {
-          warnings.push(`${c.name}: zone on ${belt.name} (${win.start} to ${win.end} mm) reaches past the belt (${beltRange})`);
-        }
+        warnings.push(...zoneWarnings(c.name, win, belt));
         const laneCentre = (lane.left + lane.right) / 2;
-        // The CCS may lie outside its zone, but not past the belt.
-        if (!onBelt(belt, win.ccsOffset)) {
-          warnings.push(`${c.name}: CCS of the zone on ${belt.name} (${win.ccsOffset} mm) lies outside the belt (${beltRange})`);
-        }
         zones.push({
           componentId: c.id,
           conveyorId: belt.id,
@@ -844,12 +836,8 @@ function allocationLimit(zone: Zone): number | undefined {
  * reach past the belt's sides.
  */
 function zoneLane(zone: Zone, belt: ConveyorConfig): { left: number; right: number } {
-  const edge = belt.width / 2;
-  if (zone.startY === zone.endY) return { left: edge, right: -edge };
-  return {
-    left: belt.originShift.y + Math.max(zone.startY, zone.endY),
-    right: belt.originShift.y + Math.min(zone.startY, zone.endY),
-  };
+  const { left, right } = zoneSides(zone, belt);
+  return { left: belt.originShift.y + left, right: belt.originShift.y + right };
 }
 
 /** Snap points whose layer is currently shown. */

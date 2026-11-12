@@ -118,6 +118,8 @@ export interface SceneViewProps {
   hidden: ReadonlySet<string>;
   /** Called whenever the set of active faults changes (hidden components included). */
   onFaults: (faults: SourcedFaults[]) => void;
+  /** Drawn inside the 3D view, e.g. the configurator's handles; they may use the canvas, camera and controls. */
+  children?: ReactNode;
 }
 
 const EMPTY: SceneModel = emptyScene();
@@ -199,13 +201,7 @@ function SceneContent(props: SceneViewProps) {
     if (changes.faults) onFaults(model.faults);
   }, -1);
 
-  const bounds = useMemo(
-    () => ({
-      conveyors: structure.sources.flatMap((s) => s.scene.conveyors),
-      deltas: structure.sources.flatMap((s) => s.scene.deltas),
-    }),
-    [structure],
-  );
+  const bounds = useMemo(() => boundsOf(structure), [structure]);
 
   return (
     <>
@@ -229,6 +225,8 @@ function SceneContent(props: SceneViewProps) {
       <CameraRig
         request={props.cameraRequest}
         structure={bounds}
+        // Where the parts are now: a pose may change without changing the structure (the configurator moves them).
+        current={() => modelRef.current && boundsOf(modelRef.current)}
         initial={props.initialCamera}
         onChange={props.onCameraChange}
       />
@@ -792,6 +790,14 @@ interface MachineBounds {
   deltas: SceneDelta[];
 }
 
+/** The parts of a machine scene that give the machine its extent. */
+function boundsOf(machine: MachineScene): MachineBounds {
+  return {
+    conveyors: machine.sources.flatMap((s) => s.scene.conveyors),
+    deltas: machine.sources.flatMap((s) => s.scene.deltas),
+  };
+}
+
 /** The box around the machine in renderer coordinates; a 2 m cube at the origin while nothing is known. */
 function machineBox(structure: MachineBounds): THREE.Box3 {
   const box = new THREE.Box3();
@@ -811,6 +817,8 @@ const CAMERA_SETTLE_MS = 400;
 function CameraRig(props: {
   request: { action: CameraPreset; seq: number };
   structure: MachineBounds;
+  /** The parts as they are in the latest frame, framed by a camera request; `structure` until the first frame. */
+  current?: () => MachineBounds | undefined;
   initial: CameraPose | undefined;
   onChange: ((pose: CameraPose) => void) | undefined;
 }) {
@@ -844,7 +852,7 @@ function CameraRig(props: {
   }, [controls]);
 
   const frame = (preset: CameraPreset) => {
-    const box = machineBox(structure);
+    const box = machineBox(props.current?.() ?? structure);
     const centre = box.getCenter(new THREE.Vector3());
     const size = Math.max(box.getSize(new THREE.Vector3()).length(), 1);
     const offsets: Record<CameraPreset, THREE.Vector3> = {
@@ -1021,6 +1029,7 @@ export function SceneView(props: SceneViewProps) {
       onPointerDown={(e) => presses.pointerDown(clientSample(e.nativeEvent))}
     >
       <SceneContent {...props} onSelect={onSelect} />
+      {props.children}
       {/* One finger orbits, two pinch and pan; in measure mode one finger picks a point instead. */}
       <OrbitControls
         makeDefault

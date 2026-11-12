@@ -1036,3 +1036,96 @@ table.metrics td + td {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* The configurator (ADR 0016): palette, component list and problems on the left, properties on the right. */
+
+.configurator .panel h3 {
+  margin: 12px 0 6px;
+  font-size: 13px;
+}
+
+.configurator .palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.configurator .palette button {
+  cursor: grab;
+}
+
+.configurator .issues {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.configurator .issues .bad {
+  color: var(--bad-text);
+}
+
+.configurator .properties fieldset {
+  margin: 10px 0 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.configurator .property {
+  display: grid;
+  grid-template-columns: 1fr 110px;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 0;
+}
+
+.configurator .property input[type="text"],
+.configurator .property select {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.configurator .property input[type="checkbox"] {
+  justify-self: start;
+}
+
+.configurator .toolbar input[type="text"] {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.configurator .property-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 14px;
+}
+
+.configurator .property-list-head h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.configurator .property-list-head select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.configurator legend .link-button {
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
