@@ -61,6 +61,11 @@
   justify-self: start;
 }
 
+/* Tighter than the visualisation's, so the layer toggles fit beside the file and edit buttons on a 1280 px screen. */
+.configurator .toolbar {
+  gap: 8px;
+}
+
 .configurator .toolbar input[type="text"] {
   font: inherit;
   color: var(--text);
@@ -69,7 +74,7 @@
   border-radius: 4px;
   padding: 2px 6px;
   /* Narrow enough that the layer toggles fit beside it on a 1280 px screen. */
-  width: 120px;
+  width: 110px;
 }
 
 .configurator .property-list-head {

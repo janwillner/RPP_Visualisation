@@ -1,5 +1,7 @@
 import {
+  MAX_MARKS,
   trackPoints,
+  type ProductMark,
   type CartesianConfig,
   type CartesianState,
   type ComponentConfig,
@@ -79,6 +81,20 @@ export function productBeltX(c: ConveyorConfig, state: ConveyorState, p: Product
  */
 export function isMissed(c: ConveyorConfig, state: ConveyorState, p: Product): boolean {
   return p.state !== "picked" && p.state !== "placed" && p.state !== "rejected" && productBeltX(c, state, p) > c.length;
+}
+
+/**
+ * The product mark a product shows: 1 to `MAX_MARKS`; 0 for none, a number out of range (a PLC error, the product is
+ * drawn unmarked) and a product from a recording older than marks.
+ */
+export function productMark(p: Product): number {
+  const mark = (p as Partial<Product>).mark;
+  return mark !== undefined && Number.isInteger(mark) && mark >= 1 && mark <= MAX_MARKS ? mark : 0;
+}
+
+/** What a product mark is called: its name from the PLC's manifest, else "Mark n". */
+export function markName(marks: readonly ProductMark[] | undefined, mark: number): string {
+  return marks?.find((m) => m.id === mark)?.name || `Mark ${mark}`;
 }
 
 /** A robot's TCP limit area where its TCP (an XTS gantry: one mover's gripper flange) is now. */

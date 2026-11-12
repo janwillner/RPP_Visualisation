@@ -11,7 +11,14 @@ describe("view settings", () => {
       tcpMarkers: true,
       faultLabels: true,
       origins: false,
+      marks: true,
     });
+  });
+
+  it("show product marks to someone whose settings were saved before marks existed", () => {
+    const before = JSON.stringify({ layers: { zones: false, origins: true }, hidden: [] });
+    expect(parseViewSettings(before).layers).toEqual({ ...DEFAULT_LAYERS, zones: false, origins: true, marks: true });
+    expect(parseViewSettings(JSON.stringify({ layers: { marks: false } })).layers.marks).toBe(false);
   });
 
   it("come back as they were saved", () => {

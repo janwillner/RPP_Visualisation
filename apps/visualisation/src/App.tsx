@@ -1,7 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import type { ComponentConfig, ComponentState } from "@rpp/protocol";
+import type { ComponentConfig, ComponentState, ProductMark } from "@rpp/protocol";
 import {
   APP_VERSION,
+  MARK,
+  markName,
   type CameraPose,
   type CameraPreset,
   componentKey,
@@ -292,7 +294,13 @@ export function App() {
           />
         )}
         {!measureMode && selection?.kind === "product" && (
-          <ProductLegend selection={selection} modelRef={modelRef} onClose={() => setSelection(undefined)} />
+          <ProductLegend
+            selection={selection}
+            modelRef={modelRef}
+            marks={recording.sources.find((s) => s.sourceId === selection.sourceId)?.config?.marks}
+            marksShown={layers.marks}
+            onClose={() => setSelection(undefined)}
+          />
         )}
       </main>
       <aside className="panel right" hidden={!right.open}>
@@ -443,9 +451,13 @@ function sourceScene(modelRef: React.RefObject<MachineScene | undefined>, source
 function ProductLegend(props: {
   selection: { kind: "product"; sourceId: string; conveyorId: number; productId: number };
   modelRef: React.RefObject<MachineScene | undefined>;
+  /** The selected product's source's named marks. */
+  marks: readonly ProductMark[] | undefined;
+  /** Layer "Product marks": a marked product shows its mark. */
+  marksShown: boolean;
   onClose: () => void;
 }) {
-  const { selection, modelRef, onClose } = props;
+  const { selection, modelRef, marks, marksShown, onClose } = props;
   useTick(200);
   const matches =
     sourceScene(modelRef, selection.sourceId)?.products.filter(
@@ -458,6 +470,10 @@ function ProductLegend(props: {
     ...Object.entries(PRODUCT).map(([state, color]) => ({ key: state, color, active: state === current })),
     { key: "missed", color: STATUS.missed, active: current === "missed" },
     { key: "placeholder", outline: true, active: hasPlaceholder },
+    // Its mark, which it shows instead of its state colour while marks are shown.
+    ...(product && product.mark > 0
+      ? [{ key: `mark: ${markName(marks, product.mark)}`, color: MARK[product.mark - 1], active: marksShown }]
+      : []),
   ];
   return (
     <div className="product-legend" role="dialog" aria-label="Product colours">
@@ -630,9 +646,8 @@ function Inspector(props: {
         (p) => p.conveyorId === selection.conveyorId && p.productId === selection.productId,
       ) ?? [];
     const product = matches.find((p) => p.display !== "placeholder") ?? matches[0];
-    const conveyor = sources
-      .find((s) => s.sourceId === selection.sourceId)
-      ?.config?.components.find((c) => c.id === selection.conveyorId);
+    const source = sources.find((s) => s.sourceId === selection.sourceId);
+    const conveyor = source?.config?.components.find((c) => c.id === selection.conveyorId);
     const history = feed.productHistory(selection.sourceId, selection.conveyorId, selection.productId);
     return (
       <>
@@ -643,6 +658,12 @@ function Inspector(props: {
           </p>
         ) : (
           <p className="muted">Product is no longer in the register.</p>
+        )}
+        {product && product.mark > 0 && (
+          <p className="product-mark">
+            Mark: <i style={{ background: MARK[product.mark - 1] }} />{" "}
+            <strong>{markName(source?.config?.marks, product.mark)}</strong>
+          </p>
         )}
         {history.steps.length > 0 && (
           <>

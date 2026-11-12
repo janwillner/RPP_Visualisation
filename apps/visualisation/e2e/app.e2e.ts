@@ -291,6 +291,73 @@ test("shows what happened to a selected product in the inspector", async ({ page
   await expect(history.last()).toContainText(/\d+\.\d s ago/);
 });
 
+test("shows a product the PLC marked by its mark's name and colour, until marks are switched off", async ({ page }) => {
+  await openApp(page);
+  // Only the Delta line, framed from above, without the overlays above its belts.
+  await page.getByRole("button", { name: "Show components" }).click();
+  const others = ["Cartesian", "Cartesian X-Y", "Cartesian X-Z", "Cartesian infeed", "Cartesian outfeed", "Light barrier"];
+  others.push("IDH", "IDH infeed", "Tray belt", "Fxx", "Fxx infeed", "Fxx outfeed", "Fxx spacing");
+  for (const name of others) {
+    const hide = page.getByRole("button", { name: `Hide ${name}`, exact: true });
+    if (await hide.count()) await hide.click();
+  }
+  await page.getByRole("button", { name: "Hide components" }).click();
+  for (const layer of ["Working areas", "Limit areas", "Zones", "TCP markers", "Fault labels"]) {
+    await page.getByRole("button", { name: layer, exact: true }).click();
+  }
+  await page.getByRole("button", { name: "Show inspector" }).click();
+  await page.getByRole("button", { name: "View from above" }).click();
+  // The simulator marks every tenth product on the Delta infeed as a sample, one every 7 s.
+  await page.waitForTimeout(10_000);
+  // Held still in the replay of the last moments, so a product stays where it was seen.
+  await page.getByRole("button", { name: "Replay the last minute" }).click();
+  const slider = page.getByRole("toolbar", { name: "Playback" }).getByLabel("Playback position");
+  await slider.fill(String(Math.round(Number(await slider.getAttribute("max")) - 100)));
+  await page.waitForTimeout(500);
+
+  // A sample shows mark 1's magenta, the only colour of its hue in the scene: click where the view shows it.
+  const canvas = page.locator("main.viewport canvas");
+  const png = (await canvas.screenshot()).toString("base64");
+  const candidates = await page.evaluate(async (data) => {
+    const image = new Image();
+    image.src = `data:image/png;base64,${data}`;
+    await image.decode();
+    const context = new OffscreenCanvas(image.width, image.height).getContext("2d")!;
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, image.width, image.height).data;
+    // Magenta pixels by 8 px cell: the cells with the most first, each clicked at its pixels' centre.
+    const cells = new Map<string, { x: number; y: number; n: number }>();
+    for (let y = 0; y < image.height; y++) {
+      for (let x = 0; x < image.width; x++) {
+        const i = (y * image.width + x) * 4;
+        const [r, g, b] = [pixels[i]!, pixels[i + 1]!, pixels[i + 2]!];
+        if (r < 140 || b < 150 || g > 100) continue;
+        const key = `${Math.floor(x / 8)},${Math.floor(y / 8)}`;
+        const cell = cells.get(key) ?? { x: 0, y: 0, n: 0 };
+        cells.set(key, { x: cell.x + x, y: cell.y + y, n: cell.n + 1 });
+      }
+    }
+    return [...cells.values()].sort((a, b) => b.n - a.n).map((c) => ({ x: c.x / c.n, y: c.y / c.n, n: c.n }));
+  }, png);
+  const box = (await canvas.boundingBox())!;
+  const mark = page.locator("aside.panel.right .product-mark");
+  for (const { x, y } of candidates.slice(0, 20)) {
+    await page.mouse.click(box.x + x, box.y + y);
+    if (await mark.isVisible()) break;
+  }
+  await expect(mark).toContainText("Sample");
+  await expect(page.locator("aside.panel.right .product-history li", { hasText: "Marked as Sample" })).toHaveCount(1);
+  const legendEntry = page.getByRole("dialog", { name: "Product colours" }).locator("li", { hasText: "mark: Sample" });
+  await expect(legendEntry).toHaveClass("active");
+
+  // Switched off, every product shows its state colour again.
+  const toggle = page.getByRole("button", { name: "Product marks" });
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await expect(legendEntry).not.toHaveClass("active");
+});
+
 test("shows the machine's metrics in the inspector while nothing is selected", async ({ page }) => {
   await openApp(page);
   await page.getByRole("button", { name: "Show inspector" }).click();

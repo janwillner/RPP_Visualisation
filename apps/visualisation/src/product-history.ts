@@ -1,8 +1,8 @@
 import type { GatewayMessage, Product } from "@rpp/protocol";
-import { componentName, isMissed, type SourceInfo } from "@rpp/machine-view";
+import { componentName, isMissed, markName, productMark, type SourceInfo } from "@rpp/machine-view";
 
-/** What happened to a product: its register state, or that it was missed or left the register. */
-export type ProductStepKind = Product["state"] | "missed" | "gone";
+/** What happened to a product: its register state, that its mark changed, or that it was missed or left the register. */
+export type ProductStepKind = Product["state"] | "marked" | "missed" | "gone";
 
 export interface ProductStep {
   /** On the clock of whoever feeds the history: arrival time live, recording time in playback. */
@@ -45,6 +45,8 @@ interface Followed {
   signature: string;
   /** Register state of the previous state: a change into picked, placed or rejected is an event. */
   state: Product["state"];
+  /** Product mark of the previous state (0 = none): a change is a step. */
+  mark: number;
   missed: boolean;
   gone: boolean;
   /** An earlier product with the same id, which left the register before this one entered. */
@@ -97,6 +99,10 @@ export class ProductHistory {
       });
     const components = source?.config?.components ?? [];
     const nameOf = (id: number) => componentName(source?.config, id, `client #${id}`);
+    const markStep = (followed: Followed, mark: number) => {
+      followed.mark = mark;
+      followed.steps.push({ at, kind: "marked", text: mark > 0 ? `Marked as ${markName(source?.config?.marks, mark)}` : "Unmarked" });
+    };
     for (const c of message.components) {
       if (c.type !== "conveyor") continue;
       const conveyor = components.find((x) => x.id === c.id);
@@ -126,12 +132,18 @@ export class ProductHistory {
           // A product id seen again after it left starts a new history. A recording (no product limit) keeps the
           // earlier one for earlier moments; live, only the newest is ever asked for.
           const earlier = this.maxProducts === Infinity ? followed : undefined;
-          followed = { steps: [], signature, state: p.state, missed: false, gone: false, earlier };
+          followed = { steps: [], signature, state: p.state, mark: 0, missed: false, gone: false, earlier };
           this.products.delete(key);
           this.products.set(key, followed);
           followed.steps.push({ at, kind: p.state, text: `Entered the register (${stateText(p, nameOf, true)})` });
           log(c.id, p, "entered");
-        } else if (followed.signature !== signature) {
+          if (productMark(p) > 0) markStep(followed, productMark(p));
+          present.set(p.id, { product: p, key, followed });
+          checkMissed(followed, c.id, p);
+          continue;
+        }
+        if (productMark(p) !== followed.mark) markStep(followed, productMark(p));
+        if (followed.signature !== signature) {
           followed.signature = signature;
           followed.steps.push({ at, kind: p.state, text: stateText(p, nameOf, false) });
           if (p.state !== followed.state && (p.state === "picked" || p.state === "placed" || p.state === "rejected")) {

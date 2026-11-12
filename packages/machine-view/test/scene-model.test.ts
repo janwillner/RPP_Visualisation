@@ -138,6 +138,21 @@ describe("scene model: product tracking", () => {
     expect(shown!.size).toEqual({ length: 0.1, width: 0.08, height: 0.04 });
   });
 
+  it("gives every product its mark: 1 to 4, else unmarked, also one from a recording older than marks", () => {
+    const belt = conveyorConfig();
+    const { mark: _, ...old } = product({ id: 4 });
+    const products = [product({ id: 1, mark: 2 }), product({ id: 2, mark: 9 }), product({ id: 3 }), old as Product];
+
+    const scene = buildScene(config(belt), [snapshot(0, [conveyorState(0, products)])], 0);
+
+    expect(scene.products.map((p) => [p.productId, p.mark])).toEqual([
+      [1, 2],
+      [2, 0],
+      [3, 0],
+      [4, 0],
+    ]);
+  });
+
   it("gives products snap points only when asked, as the 3D view does while measuring", () => {
     const belt = conveyorConfig();
     const snapshots = [snapshot(0, [conveyorState(540, [product()])])];

@@ -19,6 +19,7 @@ export const DEFAULT_LAYERS: Layers = {
   faultLabels: true,
   // Off: the panel PCs show the machine, not its coordinate systems (they show while measuring anyway).
   origins: false,
+  marks: true,
 };
 
 const STORAGE_KEY = "rpp.view";

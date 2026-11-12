@@ -102,6 +102,32 @@ describe("product history", () => {
     expect(history.of(A, 1, 99)).toEqual([]);
   });
 
+  it("lists when the PLC marked a product, marked it otherwise and unmarked it, by the marks' names", () => {
+    const named: SourceInfo = { ...source, config: { ...config, marks: [{ id: 1, name: "Sample" }] } };
+    const marked = (id: number, mark: number, state: Product["state"] = "detected") => ({ ...product(id, state), mark });
+    const history = new ProductHistory();
+    const timeline: [number, Product[]][] = [
+      [0, [product(5, "detected"), marked(6, 1)]],
+      [100, [marked(5, 1), marked(6, 1)]],
+      [200, [marked(5, 3), marked(6, 1, "assigned")]],
+      [300, [marked(5, 0), marked(6, 1, "assigned")]],
+    ];
+    for (const [at, products] of timeline) history.add(at, register(0, products), named);
+
+    expect(history.of(A, 1, 5)).toEqual([
+      { at: 0, kind: "detected", text: "Entered the register (detected)" },
+      { at: 100, kind: "marked", text: "Marked as Sample" },
+      { at: 200, kind: "marked", text: "Marked as Mark 3" },
+      { at: 300, kind: "marked", text: "Unmarked" },
+    ]);
+    // A product that enters marked; a state change keeps the mark and adds no mark step.
+    expect(history.of(A, 1, 6)).toEqual([
+      { at: 0, kind: "detected", text: "Entered the register (detected)" },
+      { at: 0, kind: "marked", text: "Marked as Sample" },
+      { at: 200, kind: "assigned", text: "Assigned" },
+    ]);
+  });
+
   it("names the client that changed a product: a station that rejected it, a robot that released it", () => {
     const withClients: SourceInfo = {
       ...source,

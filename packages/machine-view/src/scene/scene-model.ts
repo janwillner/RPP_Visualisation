@@ -95,6 +95,8 @@ export interface SceneProduct {
   conveyorId: number;
   display: ProductDisplay;
   state: ProductState;
+  /** The product mark the PLC gave it, 1 to `MAX_MARKS`; 0 = none, also for a number out of range. */
+  mark: number;
   /** Centre of the product. Local +X along the product length, local +Y up. */
   transform: Transform;
   /** MCS frame (mm) at the product's bottom centre; local +X along its length, local +Z up through the product. */
@@ -440,7 +442,7 @@ export const SCENE_PARTS: { [K in keyof SceneModel]: PartKind<SceneModel[K][numb
   },
   // Products on the belt are drawn in groups: only a new or larger group counts (see `ProductGroups`). The few drawn
   // one by one (placeholders, carried products) count each.
-  products: { owner: (p) => p.conveyorId, structure: (p) => (isGrouped(p) ? undefined : `${p.key}:${p.state}`) },
+  products: { owner: (p) => p.conveyorId, structure: (p) => (isGrouped(p) ? undefined : `${p.key}:${p.state}:${p.mark}`) },
   deltas: { owner: (d) => d.id, key: (d) => d.id, structure: (d) => `${d.id}:${d.baseRadius}:${d.effectorRadius}` },
   gantries: {
     owner: (g) => g.id,

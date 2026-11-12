@@ -39,6 +39,7 @@ const LAYERS: Layers = {
   tcpMarkers: true,
   faultLabels: true,
   origins: true,
+  marks: true,
 };
 const NO_HIDDEN: ReadonlySet<string> = new Set();
 /** MIME type of a palette entry being dragged onto the 3D view. */

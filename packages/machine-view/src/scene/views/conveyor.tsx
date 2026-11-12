@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { Line } from "@react-three/drei";
 import { type ThreeEvent, useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
-import { OVERLAY, PRODUCT, SOLID, STATUS } from "../../palette";
+import { MARK, OVERLAY, PRODUCT, SOLID, STATUS } from "../../palette";
 import type { ProductDisplay, SceneConveyor, SceneProduct } from "../scene-model";
 import type { SourceFrame } from "../scene-frame";
 import type { ProductGroup } from "../product-groups";
@@ -71,6 +71,18 @@ export function ConveyorAxis(props: { conveyor: SceneConveyor; selected: boolean
 const PRODUCT_COLORS: Record<ProductState, string> = PRODUCT;
 const MISSED_COLOR = STATUS.missed;
 
+/** A product's colour: selected, else its mark while marks are shown, else missed, else its state. */
+function productColor<C>(
+  p: SceneProduct,
+  selected: boolean,
+  marks: boolean,
+  colors: { select: C; missed: C; mark: readonly C[]; state: Record<ProductState, C> },
+): C {
+  if (selected) return colors.select;
+  if (marks && p.mark > 0) return colors.mark[p.mark - 1]!;
+  return p.display === "missed" ? colors.missed : colors.state[p.state];
+}
+
 /**
  * A product's solid, centred, with local +X along its length, +Y up and +Z across (metres): a box, an (oval)
  * cylinder whose length and width are its diameters, or a box with rounded vertical edges.
@@ -104,8 +116,13 @@ const ONE = new THREE.Vector3(1, 1, 1);
 const PRODUCT_COLOR_OBJECTS = Object.fromEntries(
   Object.entries(PRODUCT_COLORS).map(([state, color]) => [state, new THREE.Color(color)]),
 ) as Record<ProductState, THREE.Color>;
-const SELECT_COLOR_OBJECT = new THREE.Color(SELECT_COLOR);
-const MISSED_COLOR_OBJECT = new THREE.Color(MISSED_COLOR);
+const COLOR_OBJECTS = {
+  select: new THREE.Color(SELECT_COLOR),
+  missed: new THREE.Color(MISSED_COLOR),
+  mark: MARK.map((color) => new THREE.Color(color)),
+  state: PRODUCT_COLOR_OBJECTS,
+};
+const COLORS = { select: SELECT_COLOR, missed: MISSED_COLOR, mark: MARK, state: PRODUCT_COLORS };
 
 /**
  * One group of products as one instanced mesh, with their edge lines as one instanced line set sharing its instance
@@ -116,9 +133,13 @@ export function ProductInstances(props: {
   group: ProductGroup;
   frame: SourceFrame;
   selected: { conveyorId: number; productId: number } | undefined;
+  /** Layer "Product marks": marked products show their mark's colour. */
+  marks: boolean;
   onSelect: (s: LocalSelection) => void;
 }) {
-  const { group, frame, selected, onSelect } = props;
+  const { group, frame, selected, marks, onSelect } = props;
+  // A group of marked products shows their marks rather than the missed glow.
+  const glows = group.sample.display === "missed" && !(marks && group.sample.mark > 0);
   const { sample, capacity } = group;
   const mesh = useRef<THREE.InstancedMesh>(null);
   /** The products drawn this frame, by instance index, for picking. */
@@ -163,10 +184,7 @@ export function ProductInstances(props: {
       quaternion.set(...p.transform.quaternion);
       m.setMatrixAt(i, matrix.compose(position, quaternion, ONE));
       const isSelected = selected?.conveyorId === p.conveyorId && selected.productId === p.productId;
-      m.setColorAt(
-        i,
-        isSelected ? SELECT_COLOR_OBJECT : p.display === "missed" ? MISSED_COLOR_OBJECT : PRODUCT_COLOR_OBJECTS[p.state],
-      );
+      m.setColorAt(i, productColor(p, isSelected, marks, COLOR_OBJECTS));
     }
     m.count = n;
     edges.instanceCount = n;
@@ -198,7 +216,7 @@ export function ProductInstances(props: {
       >
         <meshStandardMaterial
           color="#fff"
-          emissive={sample.display === "missed" ? MISSED_COLOR : "#000"}
+          emissive={glows ? MISSED_COLOR : "#000"}
           emissiveIntensity={0.4}
           roughness={0.6}
         />
@@ -211,14 +229,17 @@ export function ProductInstances(props: {
 export function ProductMesh(props: {
   product: SceneProduct;
   selected: boolean;
+  /** Layer "Product marks": a marked product shows its mark's colour. */
+  marks: boolean;
   lookup: (key: string) => SceneProduct | undefined;
   onSelect: (s: LocalSelection) => void;
 }) {
-  const { product, selected, lookup, onSelect } = props;
+  const { product, selected, marks, lookup, onSelect } = props;
   const ref = useRef<THREE.Mesh>(null);
   useFrame(() => applyTransform(ref.current, lookup(product.key)?.transform));
   const display: ProductDisplay = product.display;
-  const color = selected ? SELECT_COLOR : display === "missed" ? MISSED_COLOR : PRODUCT_COLORS[product.state];
+  const color = productColor(product, selected, marks, COLORS);
+  const glows = display === "missed" && !(marks && product.mark > 0);
   const { shape, cornerRadius, size } = product;
   const geometry = useMemo(
     () => productGeometry(product),
@@ -250,7 +271,7 @@ export function ProductMesh(props: {
         <>
           <meshStandardMaterial
             color={color}
-            emissive={display === "missed" ? MISSED_COLOR : "#000"}
+            emissive={glows ? MISSED_COLOR : "#000"}
             emissiveIntensity={0.4}
             roughness={0.6}
           />
