@@ -88,6 +88,7 @@ export function isMissed(c: ConveyorConfig, state: ConveyorState, p: Product): b
  * drawn unmarked) and a product from a recording older than marks.
  */
 export function productMark(p: Product): number {
+  // Recordings are not checked against the schema: one from before protocol 21 has products without a mark.
   const mark = (p as Partial<Product>).mark;
   return mark !== undefined && Number.isInteger(mark) && mark >= 1 && mark <= MAX_MARKS ? mark : 0;
 }

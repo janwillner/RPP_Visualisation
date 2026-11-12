@@ -414,6 +414,12 @@ function buildView(
   };
 }
 
+/**
+ * Protocol versions whose recordings this version plays: its own, and 20, which differs only by having no product
+ * marks (a product without a mark plays unmarked, `productMark`; a config without marks names none).
+ */
+const PLAYABLE_PROTOCOL_VERSIONS: ReadonlySet<number> = new Set([20, PROTOCOL_VERSION]);
+
 function checkedHeader(line: string): [SourceInfo[], string] {
   let header: Partial<FileHeader>;
   try {
@@ -429,7 +435,7 @@ function checkedHeader(line: string): [SourceInfo[], string] {
       `The recording has file format ${header.formatVersion}, this version reads ${RECORDING_FILE_FORMAT_VERSION}`,
     );
   }
-  if (header.protocolVersion !== PROTOCOL_VERSION) {
+  if (!PLAYABLE_PROTOCOL_VERSIONS.has(header.protocolVersion ?? 0)) {
     throw new RecordingFileError(
       `The recording has protocol version ${header.protocolVersion}, this version plays ${PROTOCOL_VERSION}`,
     );

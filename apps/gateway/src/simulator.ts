@@ -801,9 +801,9 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
         break;
       case "release": {
         remove(infeedProducts, target!);
+        const placed = latch(outfeedProducts, outfeed, tcp[0], tcp[1], tcpRz, E_VisuProductState.PLACED, target!.nProductType, ROBOT.id);
         // The product keeps its mark on the outfeed.
-        latch(outfeedProducts, outfeed, tcp[0], tcp[1], tcpRz, E_VisuProductState.PLACED, target!.nProductType, ROBOT.id).nMark =
-          target!.nMark;
+        placed.nMark = target!.nMark;
         target = undefined;
         phase = "idle";
         break;

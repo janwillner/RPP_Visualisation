@@ -7,6 +7,7 @@
  * differ in lightness (fault: medium red; pick and gripping: light green; missed: pink, apart from fault red by its
  * blue part).
  */
+import type { MAX_MARKS } from "@rpp/protocol";
 
 /** States and events: the same meaning everywhere in the app. */
 export const STATUS = {
@@ -43,7 +44,7 @@ export const PRODUCT = {
  * blindness: magenta (the first and most striking, the only one of its hue in the scene), white (lightest), brown,
  * deep blue (darkest).
  */
-export const MARK = ["#e040fb", "#ffffff", "#a1663a", "#2962ff"] as const;
+export const MARK = ["#e040fb", "#ffffff", "#a1663a", "#2962ff"] as const satisfies { length: typeof MAX_MARKS };
 
 /**
  * Overlays: areas, zones and markers that explain the machine rather than show it. They are drawn unlit and

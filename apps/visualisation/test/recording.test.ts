@@ -13,7 +13,7 @@ import {
   tick,
   type PlaybackClock,
 } from "../src/recording";
-import { GATEWAY_LOST, Sources } from "@rpp/machine-view";
+import { GATEWAY_LOST, productMark, Sources } from "@rpp/machine-view";
 
 const A = "ads:5.1.2.3.1.1:851";
 const B = "ads:5.1.2.4.1.1:851";
@@ -449,12 +449,34 @@ describe("recording: limits and files", () => {
   it("refuses a file of another protocol version, naming both versions", async () => {
     const recording = await threeSeconds();
     const text = new TextDecoder().decode(await gunzip(await recording.toFile()));
-    const other = text.replace(`"protocolVersion":${PROTOCOL_VERSION}`, `"protocolVersion":${PROTOCOL_VERSION - 1}`);
+    const other = text.replace(`"protocolVersion":${PROTOCOL_VERSION}`, '"protocolVersion":19');
 
     await expect(Recording.fromFile(await gzip(other))).rejects.toThrow(RecordingFileError);
     await expect(Recording.fromFile(await gzip(other))).rejects.toThrow(
-      `protocol version ${PROTOCOL_VERSION - 1}, this version plays ${PROTOCOL_VERSION}`,
+      `protocol version 19, this version plays ${PROTOCOL_VERSION}`,
     );
+  });
+
+  it("opens a recording of protocol 20, from before product marks, with every product unmarked", async () => {
+    const product = { id: 1, latchPose: { x: 100, y: 0, z: 0, rz: 0 }, latchBeltPosition: 0, mark: 0 };
+    const p = { ...product, state: "detected" as const, previousState: "detected" as const, lastClientId: 0, moverId: 0, fingerId: 0, productType: 1 };
+    const recorder = new Recorder([{ sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: config(A) }]);
+    for (const at of [0, 500]) {
+      recorder.add(at, { ...state(A, at), components: [{ type: "conveyor", id: 1, timestamp: "0", beltPosition: at, products: [p], fault: null }] });
+    }
+    // As 0.6.0 wrote it: protocol 20, no marks in the config, no mark on a product.
+    const text = new TextDecoder().decode(await gunzip(await (await recorder.stop()).toFile()));
+    const lines = text.split("\n");
+    const header = JSON.parse(lines[0]!) as { protocolVersion: number; sources: { config: Partial<ConfigMessage> }[] };
+    header.protocolVersion = 20;
+    for (const s of header.sources) delete s.config.marks;
+    const old = [JSON.stringify(header), ...lines.slice(1)].join("\n").replaceAll('"mark":0,', "");
+    expect(old).toContain('"protocolVersion":20');
+    expect(old).not.toContain('"mark');
+
+    const opened = await Recording.fromFile(await gzip(old));
+    const latest = (await opened.viewAt(500)).latestState(A)!.components[0]!;
+    expect(latest.type === "conveyor" && latest.products.map(productMark)).toEqual([0]);
   });
 
   it("refuses a file that is no recording", async () => {

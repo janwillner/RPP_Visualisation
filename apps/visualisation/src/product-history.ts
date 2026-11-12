@@ -127,6 +127,7 @@ export class ProductHistory {
         }
         const key = seen?.key ?? productKey(message.sourceId, c.id, p.id);
         const signature = `${p.state}:${p.lastClientId}:${p.moverId}:${p.fingerId}`;
+        const mark = productMark(p);
         let followed = this.products.get(key);
         if (!followed || followed.gone) {
           // A product id seen again after it left starts a new history. A recording (no product limit) keeps the
@@ -137,21 +138,19 @@ export class ProductHistory {
           this.products.set(key, followed);
           followed.steps.push({ at, kind: p.state, text: `Entered the register (${stateText(p, nameOf, true)})` });
           log(c.id, p, "entered");
-          if (productMark(p) > 0) markStep(followed, productMark(p));
-          present.set(p.id, { product: p, key, followed });
-          checkMissed(followed, c.id, p);
-          continue;
-        }
-        if (productMark(p) !== followed.mark) markStep(followed, productMark(p));
-        if (followed.signature !== signature) {
-          followed.signature = signature;
-          followed.steps.push({ at, kind: p.state, text: stateText(p, nameOf, false) });
-          if (p.state !== followed.state && (p.state === "picked" || p.state === "placed" || p.state === "rejected")) {
-            // Picked and placed between two states: the pick still counts.
-            if (p.state === "placed" && followed.state !== "picked") log(c.id, p, "picked", "picked");
-            log(c.id, p, p.state);
+          if (mark > 0) markStep(followed, mark);
+        } else {
+          if (mark !== followed.mark) markStep(followed, mark);
+          if (followed.signature !== signature) {
+            followed.signature = signature;
+            followed.steps.push({ at, kind: p.state, text: stateText(p, nameOf, false) });
+            if (p.state !== followed.state && (p.state === "picked" || p.state === "placed" || p.state === "rejected")) {
+              // Picked and placed between two states: the pick still counts.
+              if (p.state === "placed" && followed.state !== "picked") log(c.id, p, "picked", "picked");
+              log(c.id, p, p.state);
+            }
+            followed.state = p.state;
           }
-          followed.state = p.state;
         }
         present.set(p.id, { product: p, key, followed });
         checkMissed(followed, c.id, p);

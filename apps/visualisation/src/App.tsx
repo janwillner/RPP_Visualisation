@@ -298,7 +298,7 @@ export function App() {
             selection={selection}
             modelRef={modelRef}
             marks={recording.sources.find((s) => s.sourceId === selection.sourceId)?.config?.marks}
-            marksShown={layers.marks}
+            showMarks={layers.marks}
             onClose={() => setSelection(undefined)}
           />
         )}
@@ -454,10 +454,10 @@ function ProductLegend(props: {
   /** The selected product's source's named marks. */
   marks: readonly ProductMark[] | undefined;
   /** Layer "Product marks": a marked product shows its mark. */
-  marksShown: boolean;
+  showMarks: boolean;
   onClose: () => void;
 }) {
-  const { selection, modelRef, marks, marksShown, onClose } = props;
+  const { selection, modelRef, marks, showMarks, onClose } = props;
   useTick(200);
   const matches =
     sourceScene(modelRef, selection.sourceId)?.products.filter(
@@ -472,7 +472,7 @@ function ProductLegend(props: {
     { key: "placeholder", outline: true, active: hasPlaceholder },
     // Its mark, which it shows instead of its state colour while marks are shown.
     ...(product && product.mark > 0
-      ? [{ key: `mark: ${markName(marks, product.mark)}`, color: MARK[product.mark - 1], active: marksShown }]
+      ? [{ key: `mark: ${markName(marks, product.mark)}`, color: MARK[product.mark - 1], active: showMarks }]
       : []),
   ];
   return (
@@ -663,6 +663,12 @@ function Inspector(props: {
           <p className="product-mark">
             Mark: <i style={{ background: MARK[product.mark - 1] }} />{" "}
             <strong>{markName(source?.config?.marks, product.mark)}</strong>
+          </p>
+        )}
+        {product && product.mark === 0 && (product.raw.mark ?? 0) !== 0 && (
+          // A number the PLC should not report: drawn unmarked, named here so the fault can be found.
+          <p className="product-mark">
+            Mark: <strong>{product.raw.mark}</strong> <span className="muted">(no such mark, drawn unmarked)</span>
           </p>
         )}
         {history.steps.length > 0 && (

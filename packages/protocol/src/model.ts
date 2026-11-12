@@ -541,7 +541,7 @@ export const ProductSchema = z
     productType: int("`id` of one of the conveyor's `productTypes`."),
     mark: int(
       "Product mark the PLC gave the product to single it out: 1 to 4, named in the config's `marks`; 0 = none. A " +
-        "marked product is drawn in its mark's colour. Missing in recordings older than protocol 21: unmarked.",
+        "marked product is drawn in its mark's colour.",
     ),
   })
   .describe("A product in a conveyor's register.");
@@ -740,8 +740,7 @@ export const ConfigMessageSchema = z
     marks: z
       .array(ProductMarkSchema)
       .describe(
-        "The product marks the PLC named, by number; a mark without a name is left out. Missing in recordings older " +
-          "than protocol 21: none.",
+        "The product marks the PLC named, by number; a mark without a name is left out.",
       ),
     errors: z.array(DiscoveryErrorSchema).describe("Problems found during discovery; empty when there were none."),
   })

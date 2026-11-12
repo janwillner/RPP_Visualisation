@@ -310,7 +310,7 @@ const PART_VIEWS: { [K in keyof SceneModel]: ((v: PartViewContext) => ReactNode)
           group={g}
           frame={frame}
           selected={selection?.kind === "product" ? selection : undefined}
-          marks={layers.marks}
+          showMarks={layers.marks}
           onSelect={onSelect}
         />
       ))}
@@ -321,7 +321,7 @@ const PART_VIEWS: { [K in keyof SceneModel]: ((v: PartViewContext) => ReactNode)
             key={p.key}
             product={p}
             selected={selection?.kind === "product" && selection.conveyorId === p.conveyorId && selection.productId === p.productId}
-            marks={layers.marks}
+            showMarks={layers.marks}
             lookup={(key) => frame.single.get(key)}
             onSelect={onSelect}
           />

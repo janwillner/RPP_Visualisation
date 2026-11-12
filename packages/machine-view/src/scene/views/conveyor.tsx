@@ -75,12 +75,17 @@ const MISSED_COLOR = STATUS.missed;
 function productColor<C>(
   p: SceneProduct,
   selected: boolean,
-  marks: boolean,
+  showMarks: boolean,
   colors: { select: C; missed: C; mark: readonly C[]; state: Record<ProductState, C> },
 ): C {
   if (selected) return colors.select;
-  if (marks && p.mark > 0) return colors.mark[p.mark - 1]!;
+  if (showMarks && p.mark > 0) return colors.mark[p.mark - 1]!;
   return p.display === "missed" ? colors.missed : colors.state[p.state];
+}
+
+/** A missed product glows in the missed colour, unless it shows its mark instead. */
+function glowsMissed(p: SceneProduct, showMarks: boolean): boolean {
+  return p.display === "missed" && !(showMarks && p.mark > 0);
 }
 
 /**
@@ -134,12 +139,12 @@ export function ProductInstances(props: {
   frame: SourceFrame;
   selected: { conveyorId: number; productId: number } | undefined;
   /** Layer "Product marks": marked products show their mark's colour. */
-  marks: boolean;
+  showMarks: boolean;
   onSelect: (s: LocalSelection) => void;
 }) {
-  const { group, frame, selected, marks, onSelect } = props;
-  // A group of marked products shows their marks rather than the missed glow.
-  const glows = group.sample.display === "missed" && !(marks && group.sample.mark > 0);
+  const { group, frame, selected, showMarks, onSelect } = props;
+  // A group's products are all marked or all unmarked (`groupKey`): its sample decides for the whole mesh.
+  const glows = glowsMissed(group.sample, showMarks);
   const { sample, capacity } = group;
   const mesh = useRef<THREE.InstancedMesh>(null);
   /** The products drawn this frame, by instance index, for picking. */
@@ -184,7 +189,7 @@ export function ProductInstances(props: {
       quaternion.set(...p.transform.quaternion);
       m.setMatrixAt(i, matrix.compose(position, quaternion, ONE));
       const isSelected = selected?.conveyorId === p.conveyorId && selected.productId === p.productId;
-      m.setColorAt(i, productColor(p, isSelected, marks, COLOR_OBJECTS));
+      m.setColorAt(i, productColor(p, isSelected, showMarks, COLOR_OBJECTS));
     }
     m.count = n;
     edges.instanceCount = n;
@@ -230,16 +235,16 @@ export function ProductMesh(props: {
   product: SceneProduct;
   selected: boolean;
   /** Layer "Product marks": a marked product shows its mark's colour. */
-  marks: boolean;
+  showMarks: boolean;
   lookup: (key: string) => SceneProduct | undefined;
   onSelect: (s: LocalSelection) => void;
 }) {
-  const { product, selected, marks, lookup, onSelect } = props;
+  const { product, selected, showMarks, lookup, onSelect } = props;
   const ref = useRef<THREE.Mesh>(null);
   useFrame(() => applyTransform(ref.current, lookup(product.key)?.transform));
   const display: ProductDisplay = product.display;
-  const color = productColor(product, selected, marks, COLORS);
-  const glows = display === "missed" && !(marks && product.mark > 0);
+  const color = productColor(product, selected, showMarks, COLORS);
+  const glows = glowsMissed(product, showMarks);
   const { shape, cornerRadius, size } = product;
   const geometry = useMemo(
     () => productGeometry(product),
