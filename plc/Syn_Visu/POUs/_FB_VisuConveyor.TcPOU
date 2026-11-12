@@ -304,7 +304,7 @@ or pass the belt position at the latch moment in vi_lr_LatchBeltPosition.<br>
 A product arriving on the conveyor enters as DETECTED (default), naming the client that latched it (vision<br>
 system, sensor, station). A product a robot puts down onto it (outfeed, tray, back onto the same belt)<br>
 enters as PLACED with that robot as client: the visualisation shows a DETECTED or ASSIGNED product passing<br>
-the belt end as missed. Its previous state is the state it enters in.<br>
+the belt end as missed. Its previous state is the state it enters in. It enters unmarked (m_SetProductMark).<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
 FALSE for vi_udn_Id = 0, an id already in the register, or a full register.<br>
@@ -342,6 +342,7 @@ vo_Visu.stState.aProducts[un_TempIndex].nLastClientId := vi_udn_ClientId;
 vo_Visu.stState.aProducts[un_TempIndex].nMoverId := 0;
 vo_Visu.stState.aProducts[un_TempIndex].nFingerId := 0;
 vo_Visu.stState.aProducts[un_TempIndex].nProductType := vi_udn_ProductType;
+vo_Visu.stState.aProducts[un_TempIndex].nMark := 0;
 vo_Visu.stState.nProductCount := un_TempIndex + 1;
 (* m_FindProduct above brought the index up to the register; the new entry joins it. *)
 IF b_IndexValid AND un_IndexedCount = un_TempIndex THEN
@@ -364,7 +365,7 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 Puts a product of the register at a new pose (conveyor coordinate system) at the current belt position, e.g. while a mover pushes it<br>
-along the belt faster than the belt runs. Call m_SetBeltPosition first in the cycle. Keeps its state.<br>
+along the belt faster than the belt runs. Call m_SetBeltPosition first in the cycle. Keeps its state and mark.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
 FALSE if the product is not in the register.<br>
@@ -658,6 +659,45 @@ TempNew.stOriginShift.fZ := vi_lr_Z;
 m_SetOriginShift := m_ApplyConfig(TempNew);]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_SetProductMark" Id="{30e3ac80-9193-4e05-84cb-a4b99dca557f}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Marks a product of the register to single it out, e.g. as a sample: the visualisation draws it in the mark's<br>
+colour instead of its state colour. 0 removes the mark. The mark stays through m_SetProductState and<br>
+m_MoveProduct; a product latched again (e.g. put down on another conveyor) enters unmarked, so mark it there<br>
+again. Name the marks once with _FC_VisuSetMarkName.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE if the product is not in the register or vi_un_Mark is above VISU_un_MAX_MARKS.<br>
+****************************************************************************************************)
+METHOD m_SetProductMark : BOOL
+VAR_INPUT
+	vi_udn_Id							: UDINT;	// [-] product id
+	vi_un_Mark							: UINT;	// [-] product mark 1..VISU_un_MAX_MARKS, 0 = none
+END_VAR
+VAR
+	n_TempIndex							: INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetProductMark := FALSE;
+IF vi_un_Mark > VISU_GlobalConst.VISU_un_MAX_MARKS THEN
+	RETURN;
+END_IF
+n_TempIndex := m_FindProduct(vi_udn_Id);
+IF n_TempIndex < 0 THEN
+	RETURN;
+END_IF
+IF vo_Visu.stState.aProducts[n_TempIndex].nMark <> vi_un_Mark THEN
+	vo_Visu.stState.aProducts[n_TempIndex].nMark := vi_un_Mark;
+	vo_Visu.stState.nTimestamp := m_DcTime();
+END_IF
+m_SetProductMark := TRUE;]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_SetProductState" Id="{d750e750-04ba-4690-b114-957e9051074a}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -667,7 +707,8 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 Changes a product's state and names the client that changed it: the robot that is assigned to, picks,<br>
 places or releases it, the station that rejects it. The state before is kept as ePreviousState when the<br>
-state changes; calling it again with the same state keeps it. FALSE if the product is not in the register.<br>
+state changes; calling it again with the same state keeps it. The product keeps its mark.<br>
+FALSE if the product is not in the register.<br>
 ****************************************************************************************************)
 METHOD m_SetProductState : BOOL
 VAR_INPUT

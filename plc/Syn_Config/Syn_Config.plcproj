@@ -18,14 +18,11 @@
     <LibraryReferences>{4aaf00a1-38c8-4cd5-b616-5f1157d1ccbb}</LibraryReferences>
     <Company>Syntegon Group</Company>
     <Title>SynConfig</Title>
-    <ProjectVersion>2.0.0.0</ProjectVersion>
+    <ProjectVersion>2.0.1.0</ProjectVersion>
     <DefaultNamespace>SynConfig</DefaultNamespace>
     <Description>Parameter sets the RPP configurator writes and the application takes over (ADR 0017).</Description>
   </PropertyGroup>
   <ItemGroup>
-    <LibraryReference Include="SynVisu,9.5.0.0,Syntegon Group">
-      <Namespace>SynVisu</Namespace>
-    </LibraryReference>
     <LibraryReference Include="Tc2_Standard,newest,Beckhoff Automation GmbH">
       <Namespace>Tc2_Standard</Namespace>
     </LibraryReference>
@@ -152,6 +149,17 @@
     <None Include="Syn_Config.tmc">
       <SubType>Content</SubType>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <PlaceholderReference Include="SynVisu">
+      <DefaultResolution>SynVisu, * (Syntegon Group)</DefaultResolution>
+      <Namespace>SynVisu</Namespace>
+    </PlaceholderReference>
+  </ItemGroup>
+  <ItemGroup>
+    <PlaceholderResolution Include="SynVisu">
+      <Resolution>SynVisu, * (Syntegon Group)</Resolution>
+    </PlaceholderResolution>
   </ItemGroup>
   <ProjectExtensions>
     <PlcProjectOptions>

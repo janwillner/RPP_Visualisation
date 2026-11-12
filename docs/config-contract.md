@@ -44,6 +44,7 @@ parameter FB uses (`m_InvalidZones`, `m_InvalidModules`, `m_InvalidFingers`, `m_
 
 | Library | Config protocol | Change |
 | --- | --- | --- |
+| 2.0.1 | 2 | References `SynVisu` through a placeholder (default: the newest installed) instead of a fixed version, so an application uses one SynVisu for both libraries; redirect the placeholder in the application's library manager when it pins SynVisu. No change to the structures |
 | 2.0.0 | 2 | Gripper fingers (`nFingerCount`, `aFingers` with their `stOffset`) in the robots' sets; references Syn_Visu 9.5.0. The robots' structures changed: gateway and library are updated together |
 | 1.1.0 | 1 | Parameter FBs for the XTS gantry and loop, the Cartesian robot, vision system, sensor and station |
 | 1.0.0 | 1 | Conveyor and Delta |

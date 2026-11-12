@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="_FC_VisuSetMarkName" Id="{56c9d30d-15ad-46a3-a2d0-8c1fe033d9f4}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Names a product mark for the whole PLC in the manifest, e.g. 1 = 'Sample': the visualisation shows the name<br>
+with a marked product (_FB_VisuConveyor.m_SetProductMark). An empty name leaves the mark unnamed. Increments<br>
+nConfigVersion only when the name changes, so it may be called every cycle.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+TRUE if the name changed. FALSE for an unchanged name, vi_un_Mark = 0 or one above VISU_un_MAX_MARKS.<br>
+****************************************************************************************************)
+FUNCTION _FC_VisuSetMarkName : BOOL
+VAR_IN_OUT
+	vio_Manifest						: ST_VisuManifest;	// GVL_Visu.stManifest of the application
+END_VAR
+VAR_INPUT
+	vi_un_Mark							: UINT;	// [-] product mark 1..VISU_un_MAX_MARKS
+	vi_str_Name							: STRING(31);	// what the mark means, '' = unnamed
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[_FC_VisuSetMarkName := FALSE;
+IF vi_un_Mark = 0 OR vi_un_Mark > VISU_GlobalConst.VISU_un_MAX_MARKS THEN
+	RETURN;
+END_IF
+IF vio_Manifest.aMarkNames[vi_un_Mark] <> vi_str_Name THEN
+	vio_Manifest.aMarkNames[vi_un_Mark] := vi_str_Name;
+	vio_Manifest.nConfigVersion := vio_Manifest.nConfigVersion + 1;
+	_FC_VisuSetMarkName := TRUE;
+END_IF]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

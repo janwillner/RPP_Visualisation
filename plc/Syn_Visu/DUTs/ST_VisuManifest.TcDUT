@@ -13,6 +13,9 @@ STRUCT
 	(* Version of the Syn_Visu library actually running, e.g. '5.1.0', shown by the visualisation. Since 5.1.0;
 	   last, so the members before it keep their place. *)
 	sLibraryVersion : STRING(15);
+	(* What each product mark means for the whole PLC, e.g. 'Sample'; empty = unnamed. Set with _FC_VisuSetMarkName,
+	   which bumps nConfigVersion on a change. Since protocol 21. *)
+	aMarkNames : ARRAY[1..VISU_GlobalConst.VISU_un_MAX_MARKS] OF STRING(31);
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

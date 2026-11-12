@@ -70,6 +70,7 @@ says so in its status.
 
 | Library `SynVisu` | Protocol version | Gateway |
 | --- | --- | --- |
+| 9.6.x | 21 | releases from protocol 21 on; `m_SetProductMark` and `_FC_VisuSetMarkName` mark products to single them out (section 5.5); no change to existing calls. With `SynConfig`, use 2.0.1 or newer: it takes `SynVisu` through a placeholder, so both use the same version |
 | 9.5.x | 20 | releases from protocol 20 on; `m_SetFingerOffset` places a finger on the gripper flange, drawn there while its pose is not reported (section 7); no change to existing calls |
 | 9.4.x | 19 | releases from protocol 19 on; `m_SetTcpLimitArea` for a box around the TCP (section 8); no change to existing calls |
 | 9.3.x | 18 | releases from protocol 18 on; `m_SetLimitArea` also for the XTS gantry and the Cartesian robot (section 9); no change to existing calls |
@@ -301,6 +302,32 @@ IF b_ProductLatched THEN
 		vi_e_State := SynVisu.E_VisuProductState.DETECTED, vi_udn_ClientId := fb_Vision1.m_Id());
 END_IF
 fb_Infeed.m_RemoveProductsBeyond(3000 + 300);
+```
+
+### 5.5 Product marks
+
+Mark single products to single them out, e.g. samples taken for a quality check or a product under tracking. The
+visualisation draws a marked product in its mark's colour instead of its state colour (layer "Product marks"), and
+its inspector names the mark.
+
+- **Name the marks once for the whole PLC:** `SynVisu._FC_VisuSetMarkName(vio_Manifest := GVL_Visu.stManifest,
+  vi_un_Mark := 1, vi_str_Name := 'Sample')`. Up to `VISU_un_MAX_MARKS` (4) marks; a mark means the same on every
+  conveyor. Call it every cycle like the configuration methods: it bumps the config version only when the name changes.
+- **Mark a product:** `fb_Infeed.m_SetProductMark(vi_udn_Id := udn_ProductId, vi_un_Mark := 1)`, `vi_un_Mark := 0`
+  removes the mark. FALSE for a product not in the register or a mark above 4.
+- **The mark stays** through `m_SetProductState` and `m_MoveProduct`. `m_LatchProduct` starts a product unmarked: a
+  product a robot puts down on another conveyor is a new register entry there, so mark it again after latching it
+  (read its mark before with `m_GetProduct`).
+
+```st
+(* Every tenth product the vision system latches is a sample. *)
+SynVisu._FC_VisuSetMarkName(vio_Manifest := GVL_Visu.stManifest, vi_un_Mark := 1, vi_str_Name := 'Sample');
+IF fb_Infeed.m_LatchProduct(...) THEN
+	un_Latched := un_Latched + 1;
+	IF un_Latched MOD 10 = 0 THEN
+		fb_Infeed.m_SetProductMark(vi_udn_Id := udn_ProductId, vi_un_Mark := 1);
+	END_IF
+END_IF
 ```
 
 ## 6. Zones
@@ -811,9 +838,10 @@ Use the component FBs. The structures underneath are what the gateway reads; the
 | `ST_VisuPosition` | Position: `fX`, `fY`, `fZ` |
 | `ST_VisuFingerState` | One finger's MCS pose and grip state, for the `vi_FingerStates` of an XTS mover |
 | `ST_VisuProduct` | A product of the register, as `m_GetProduct` returns it |
-| `VISU_GlobalConst` | `VISU_un_PROTOCOL_VERSION`, `VISU_str_LIBRARY_VERSION`, `VISU_lr_DEG_TO_RAD`, `VISU_lr_XTS_MODULE_LENGTH` (250 mm) |
+| `VISU_GlobalConst` | `VISU_un_PROTOCOL_VERSION`, `VISU_str_LIBRARY_VERSION`, `VISU_lr_DEG_TO_RAD`, `VISU_lr_XTS_MODULE_LENGTH` (250 mm), `VISU_un_MAX_MARKS` (4 product marks) |
 | `VISU_GlobalConst_Param` | The array sizes ([section 16](#16-limits)) and `VISU_un_INSTANCE_PATH_SKIP` |
 | `_FC_GetVersionSynVisu` | The library version at runtime |
+| `_FC_VisuSetMarkName(vio_Manifest, vi_un_Mark, vi_str_Name)` | Names a product mark for the whole PLC; TRUE when the name changed ([section 5.5](#55-product-marks)) |
 
 ### 19.2 Methods
 
@@ -877,7 +905,8 @@ Detectors and stations (`_FB_VisuBodyComponent`):
 | `m_SetModuloBeltPosition(vi_lr_ModuloPosition, vi_lr_ModuloPeriod, vi_b_Reset)` | The same for a modulo axis; unwrapped to a continuous position |
 | `m_LatchProduct(vi_udn_Id, vi_LatchPose, vi_udn_ProductType, vi_lr_LatchBeltPosition, vi_b_UseLatchBeltPosition, vi_e_State, vi_udn_ClientId)` | Adds a product at the current belt position (or at `vi_lr_LatchBeltPosition`), with the client that latched it |
 | `m_SetProductState(vi_udn_Id, vi_e_State, vi_udn_ClientId, vi_udn_MoverId, vi_udn_FingerId)` | Changes a product's state and names the client, mover and finger |
-| `m_MoveProduct(vi_udn_Id, vi_Pose)` | Puts a product at a new pose in the conveyor's coordinate system at the current belt position, keeping its state |
+| `m_MoveProduct(vi_udn_Id, vi_Pose)` | Puts a product at a new pose in the conveyor's coordinate system at the current belt position, keeping its state and mark |
+| `m_SetProductMark(vi_udn_Id, vi_un_Mark)` | Marks a product (1 to 4) to single it out, 0 removes the mark ([section 5.5](#55-product-marks)) |
 | `m_RemoveProduct(vi_udn_Id)` | Removes one product |
 | `m_RemoveProductsBeyond(vi_lr_BeltX)` | Drops products beyond `vi_lr_BeltX` mm along the belt; keeps `ASSIGNED` and `PICKED` |
 | `m_ProductCount()`, `m_GetProduct(vi_un_Index, vo_Product =>, vo_Pose =>)`, `m_FindProduct(vi_udn_Id)` | Read the register; `vo_Pose` is the product's current pose in the conveyor's coordinate system |
