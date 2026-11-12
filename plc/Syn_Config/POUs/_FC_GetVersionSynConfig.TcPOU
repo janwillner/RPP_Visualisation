@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FC_GetVersionSynConfig" Id="{a7634710-508e-4100-adcb-bec076f572e5}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Runtime-readable version of the Syn_Config library.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 1.0.0 ¦ 2026-11-10 ¦ J.Willner ¦ Parameter sets of conveyors and Deltas (ADR 0017, protocol 1)<br>
+****************************************************************************************************)
+FUNCTION _FC_GetVersionSynConfig : UINT
+VAR_INPUT
+	vi_n_VersionElement					: INT;	// [-] 1 = major, 2 = minor, 3 = revision
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[CASE vi_n_VersionElement OF
+	1: _FC_GetVersionSynConfig := 1;
+	2: _FC_GetVersionSynConfig := 0;
+	3: _FC_GetVersionSynConfig := 0;
+ELSE
+	_FC_GetVersionSynConfig := 16#FFFF;
+END_CASE]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

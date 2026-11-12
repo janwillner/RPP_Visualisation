@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigStaging" Id="{741b03c3-2e15-4c0e-8c82-27b2263d475d}">
+    <Declaration><![CDATA[TYPE ST_ConfigStaging :
+STRUCT
+	(* Written by the gateway in one ADS sum-write, bStaged or bReset last, so a set is never seen staged half
+	   written (ADR 0017). The parameter FB clears bStaged and bReset once it handled them. *)
+	nBaseVersion : UDINT; // active version the staged set is based on; another active version rejects it
+	nStageId : UDINT; // chosen by the gateway; ST_ConfigStatus.nHandledStageId names it once handled
+	bReset : BOOL; // TRUE: make the active set invalid, the program values apply again
+	bStaged : BOOL; // TRUE: stStaged is complete and waits to be taken over
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

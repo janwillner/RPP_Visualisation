@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigDeltaParam" Id="{85f5d844-a4ee-40b7-b53d-54c52131f823}">
+    <Declaration><![CDATA[TYPE ST_ConfigDeltaParam :
+STRUCT
+	(* A Delta robot's parameter set: what the configurator writes, never its arm geometry (hardware).
+	   Members as in SynVisu.ST_VisuDeltaConfig. *)
+	stPose : SynVisu.ST_VisuPose; // MCS, base centre
+	stOriginShift : SynVisu.ST_VisuPosition; // mm in the base's local frame
+	nZoneCount : UINT;
+	aZones : ARRAY[0..SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_ZONES - 1] OF SynVisu.ST_VisuZone;
+	stWorkingArea : SynVisu.ST_VisuWorkingArea;
+	stLimitArea : SynVisu.ST_VisuLimitArea; // bActive = FALSE: none
+	stTcpLimitArea : SynVisu.ST_VisuLimitArea; // bActive = FALSE: none
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

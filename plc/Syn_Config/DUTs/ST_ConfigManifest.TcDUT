@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigManifest" Id="{a9e54f5f-0778-417e-a4ec-b47d5de5cec2}">
+    <Declaration><![CDATA[TYPE ST_ConfigManifest :
+STRUCT
+	(* Where the gateway finds the parameter FBs (ADR 0017). The application declares one instance at the symbol
+	   GVL_Config.stManifest; every parameter FB registers itself with m_Register. *)
+	nProtocolVersion : UINT := CONFIG_GlobalConst.CONFIG_un_PROTOCOL_VERSION;
+	sLibraryVersion : STRING(15); // version of the Syn_Config library actually running, e.g. '1.0.0'
+	nCount : UINT; // entries [0..nCount-1] are evaluated
+	aEntries : ARRAY[0..CONFIG_GlobalConst_Param.CONFIG_un_MAX_MANIFEST_ENTRIES - 1] OF ST_ConfigManifestEntry;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

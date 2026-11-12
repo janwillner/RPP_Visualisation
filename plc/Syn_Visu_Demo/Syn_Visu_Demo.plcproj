@@ -20,6 +20,9 @@
     <Compile Include="DEMO_GlobalVar.TcGVL">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="GVL_Config.TcGVL">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="GVL_Visu.TcGVL">
       <SubType>Code</SubType>
     </Compile>
@@ -69,6 +72,9 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <LibraryReference Include="SynConfig,1.0.0.0,Syntegon Group">
+      <Namespace>SynConfig</Namespace>
+    </LibraryReference>
     <LibraryReference Include="SynVisu,9.4.1.0,Syntegon Group">
       <Namespace>SynVisu</Namespace>
     </LibraryReference>

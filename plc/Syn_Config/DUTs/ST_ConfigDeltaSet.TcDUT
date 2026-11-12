@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigDeltaSet" Id="{289e6ffe-8e7f-417b-a176-32a2dc1cfbff}">
+    <Declaration><![CDATA[TYPE ST_ConfigDeltaSet :
+STRUCT
+	(* A Delta robot's active parameter set as the application keeps it, in a VAR PERSISTENT variable passed to
+	   _FB_ConfigDelta.m_Cycle. *)
+	bValid : BOOL; // FALSE: no set active, the program values apply
+	nVersion : UDINT; // version of stParam
+	nLastVersion : UDINT; // last version handed out; versions never repeat, also after a reset
+	stParam : ST_ConfigDeltaParam;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

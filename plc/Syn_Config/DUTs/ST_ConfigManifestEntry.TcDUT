@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigManifestEntry" Id="{e657158c-a023-4ad7-99ab-208d84cc060c}">
+    <Declaration><![CDATA[TYPE ST_ConfigManifestEntry :
+STRUCT
+	nId : UDINT; // manifest id of the Syn_Visu component the parameter FB is for
+	eType : SynVisu.E_VisuComponentType; // type of that component
+	sPath : STRING(255); // symbol path of the parameter FB's vo_Config, e.g. 'P_Line.fb_InfeedParam.vo_Config'
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

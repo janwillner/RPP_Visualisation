@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigConveyorSet" Id="{d09ed7be-452d-4400-b65d-e086e8bd63e3}">
+    <Declaration><![CDATA[TYPE ST_ConfigConveyorSet :
+STRUCT
+	(* A conveyor's active parameter set as the application keeps it, in a VAR PERSISTENT variable passed to
+	   _FB_ConfigConveyor.m_Cycle. *)
+	bValid : BOOL; // FALSE: no set active, the program values apply
+	nVersion : UDINT; // version of stParam
+	nLastVersion : UDINT; // last version handed out; versions never repeat, also after a reset
+	stParam : ST_ConfigConveyorParam;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

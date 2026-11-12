@@ -5,3 +5,4 @@ export * from "./registers";
 export * from "./delta-kinematics";
 export * from "./xts-track";
 export * from "./draft";
+export * from "./parameters";

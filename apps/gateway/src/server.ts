@@ -4,7 +4,7 @@ import { createServer, type Server } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
-import { RegisterEncoder, withRegisters } from "@rpp/protocol";
+import { ClientMessageSchema, RegisterEncoder, withRegisters, type WriteResultMessage } from "@rpp/protocol";
 import type { MessageSource } from "./gateway";
 import { createDocsPage, DOCS_PATH, DOCS_SCHEMA_PATH } from "./docs-page";
 import { watchHealth } from "./health";
@@ -15,6 +15,23 @@ export const WS_PATH = "/ws";
 /** Health of every source as JSON; 200 while all are connected, else 503. */
 export const HEALTH_PATH = "/health";
 export { DOCS_PATH, DOCS_SCHEMA_PATH } from "./docs-page";
+
+/** The answer to a command from a page of another origin. */
+export const FOREIGN_ORIGIN = "Commands are taken only from the gateway's own pages.";
+
+/**
+ * Whether a WebSocket was opened by one of the gateway's own pages: a browser sends the page's origin, which must
+ * name the host the socket was opened on. A client without an Origin header is no browser page (a tool, a script).
+ */
+function isOwnOrigin(request: IncomingMessage): boolean {
+  const origin = request.headers.origin;
+  if (origin === undefined) return true;
+  try {
+    return new URL(origin).host === request.headers.host;
+  } catch {
+    return false;
+  }
+}
 
 /** Above this many queued bytes, state snapshots to that client are dropped until it catches up. */
 const MAX_BUFFERED_BYTES = 1_000_000;
@@ -50,7 +67,7 @@ export interface ServerOptions {
   version?: string;
 }
 
-/** One HTTP port serving the built web app plus the read-only WebSocket fan-out. */
+/** One HTTP port serving the built web app plus the WebSocket fan-out, which takes commands on parameter sets only. */
 export function startServer({ gateway, port, host, staticDir, version = APP_VERSION }: ServerOptions): Promise<Server> {
   const root = staticDir ? resolve(staticDir) : undefined;
   const health = watchHealth(gateway, version);
@@ -169,12 +186,40 @@ export function startServer({ gateway, port, host, staticDir, version = APP_VERS
   });
   wss.on("connection", (socket: WebSocket, request: IncomingMessage) => {
     const changes = new URL(request.url ?? "/", "http://localhost").searchParams.get("changes") === "1";
+    // A browser always names the page that opened the socket; one of another origin may only read (ADR 0017).
+    const commandsAllowed = isOwnOrigin(request);
     // Subscribing hands over the current status and config at once; later messages come through the shared listener.
     gateway.subscribe((message) => send(socket, JSON.stringify(message)))();
     const client: Client = { socket, changes, synced: new Set() };
     clients.add(client);
     socket.on("close", () => clients.delete(client));
-    // Read-only: anything the browser sends is ignored.
+    // The only thing a browser may send is a command on parameter sets (ADR 0017); anything else is ignored. The
+    // answer goes to this client only; whether writing is allowed at all, the gateway decides.
+    socket.on("message", (data) => {
+      let json: unknown;
+      try {
+        json = JSON.parse(String(data));
+      } catch {
+        return;
+      }
+      const parsed = ClientMessageSchema.safeParse(json);
+      if (!parsed.success) return;
+      const command = parsed.data;
+      const answer = (result: { ok: true; stageId: number } | { ok: false; error: string }) => {
+        const message: WriteResultMessage = result.ok
+          ? { kind: "writeResult", requestId: command.requestId, ok: true, stageId: result.stageId }
+          : { kind: "writeResult", requestId: command.requestId, ok: false, error: result.error };
+        send(socket, JSON.stringify(message));
+      };
+      if (!commandsAllowed) {
+        answer({ ok: false, error: FOREIGN_ORIGIN });
+        return;
+      }
+      gateway
+        .command(command)
+        .then(answer)
+        .catch((error: unknown) => answer({ ok: false, error: `The command failed: ${error instanceof Error ? error.message : String(error)}` }));
+    });
   });
 
   function send(socket: WebSocket, json: string): void {

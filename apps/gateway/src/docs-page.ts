@@ -2,8 +2,12 @@ import { Marked, type Tokens } from "marked";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { ZodTypeAny } from "zod";
 import {
+  ClientMessageSchema,
   ConfigMessageSchema,
   GatewayMessageSchema,
+  ParametersMessageSchema,
+  ServerMessageSchema,
+  WriteResultMessageSchema,
   HealthReportSchema,
   PROTOCOL_VERSION,
   RecordingEntrySchema,
@@ -34,10 +38,14 @@ function jsonSchemaOf(schema: ZodTypeAny): JsonSchema {
 
 /** The schemas `/docs/schema.json` covers, by definition name. */
 const DEFINITIONS = {
+  ServerMessage: ServerMessageSchema,
   GatewayMessage: GatewayMessageSchema,
   StatusMessage: StatusMessageSchema,
   ConfigMessage: ConfigMessageSchema,
   StateMessage: StateMessageSchema,
+  ParametersMessage: ParametersMessageSchema,
+  WriteResultMessage: WriteResultMessageSchema,
+  ClientMessage: ClientMessageSchema,
   HealthReport: HealthReportSchema,
   RecordingFileHeader: RecordingFileHeaderSchema,
   RecordingEntry: RecordingEntrySchema,
@@ -57,9 +65,10 @@ export function protocolJsonSchema(): JsonSchema {
     $id: `urn:rpp-visualisation:protocol:${PROTOCOL_VERSION}`,
     title: `RPP visualisation protocol, version ${PROTOCOL_VERSION}`,
     description:
-      "The root validates one message of the WebSocket /ws. definitions: each message alone, the /health report " +
-      "(HealthReport) and the lines of a recording file (RecordingFileHeader, then RecordingEntry).",
-    $ref: "#/definitions/GatewayMessage",
+      "The root validates one message the gateway sends on the WebSocket /ws. definitions: each message alone " +
+      "(GatewayMessage: the ones a recording holds), the commands a client may send (ClientMessage, ADR 0017), the " +
+      "/health report (HealthReport) and the lines of a recording file (RecordingFileHeader, then RecordingEntry).",
+    $ref: "#/definitions/ServerMessage",
     definitions,
   };
 }

@@ -75,6 +75,11 @@ export class AdsSymbolAccess implements SymbolAccess {
     );
   }
 
+  /** Writing needs the array bounds and leaf types of the symbols, which only the ADS bridge resolves (ADR 0017). */
+  async sumWrite(): Promise<void> {
+    throw new Error("Writing parameter sets needs the ADS bridge driver (--driver ads).");
+  }
+
   async close(): Promise<void> {
     if (this.client.connection.connected) await this.client.disconnect();
   }

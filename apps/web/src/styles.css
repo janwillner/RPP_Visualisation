@@ -1162,3 +1162,50 @@ table.metrics td + td {
 .configurator .tree .ok {
   color: var(--ok);
 }
+
+.configurator .tree .write {
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  color: var(--accent);
+}
+
+.configurator .tree .write.applied {
+  color: var(--ok);
+}
+
+.configurator .tree .write.rejected,
+.configurator .tree .write.failed {
+  color: var(--bad-text);
+}
+
+.configurator .dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.configurator .dialog {
+  max-width: min(640px, 90vw);
+  max-height: 80vh;
+  overflow: auto;
+  padding: 12px 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.configurator .dialog h4 {
+  margin: 10px 0 4px;
+}
+
+.configurator .dialog .changes td {
+  padding: 1px 8px 1px 0;
+  font-variant-numeric: tabular-nums;
+}

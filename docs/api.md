@@ -49,7 +49,8 @@ every reconnect.
 
 ## The WebSocket
 
-Connect to `ws://<host>:<port>/ws` (`wss` is not offered). The server sends; it ignores whatever the client sends.
+Connect to `ws://<host>:<port>/ws` (`wss` is not offered). The server sends; the only thing it takes from a client are
+the commands on parameter sets (see "Parameter sets" below), and it ignores anything else.
 
 Right after you connect, you get for every source:
 
@@ -95,6 +96,25 @@ there and from the previous state otherwise. The first `state` of each source af
 so does the next `state` after the server dropped one for a slow client, so a client never has to ask again. Without
 `?changes=1` every `state` is whole, as described above. The web app connects with `?changes=1`; ADR 0013 explains the
 choice.
+
+## Parameter sets
+
+A PLC whose application uses the library Syn_Config (ADR 0017) lets the configurator write parameter sets: the part of
+a component's configuration its application runs with (a conveyor's pose and product types, a Delta's zones and areas).
+
+- **`parameters`** (server → client): per source with Syn_Config, sent after discovery, whenever a status or an active
+  set changes, and right after connecting. Per parameter FB: the component `id`, `activeVersion` (0 while the
+  application's program values apply), the `handledStageId` and `result` of the last write (`pending` while the
+  application does not allow taking it over), a rejection's `message` and the effective values in `set`. `writable`
+  is false (with a `reason`) unless the gateway was started with `--allow-write`.
+- **`writeParameters`** and **`resetParameters`** (client → server): stage a set on one component, or return it to its
+  program values. A browser page of another origin than the gateway's is answered with an error: only the gateway's
+  own pages (and clients without an Origin header, such as scripts) may write. `baseVersion` must be the component's `activeVersion`, else the command is refused (someone else
+  wrote in between). `requestId` is the client's own.
+- **`writeResult`** (server → that client only): `ok` with the `stageId` of the write, or `error`. Whether the PLC
+  took the set over follows in `parameters`, once its `handledStageId` is that stage id.
+
+A client that only shows the machine can ignore all three.
 
 ## Compatibility
 

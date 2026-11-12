@@ -1,55 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { PROTOCOL_VERSION, type ComponentConfig, type ComponentState, type GatewayMessage } from "@rpp/protocol";
-import { defaultComponent } from "../src/configurator/component-defaults";
-import { Configurator, ghostSourceId, type ConfiguratorLive } from "../src/configurator/configurator";
-import { Sources } from "../src/sources";
-
-const A = "ads:5.1.2.3.1.1:851";
-
-/** The gateway as the configurator sees it: messages sent here reach it like the live ones. */
-class FakeLive implements ConfiguratorLive {
-  private readonly sources = new Sources();
-  private readonly listeners = new Set<() => void>();
-  private snapshot = { sources: this.sources.all };
-  now = 0;
-
-  send(message: GatewayMessage): void {
-    this.sources.apply(this.now, message);
-    if (this.snapshot.sources === this.sources.all) return;
-    this.snapshot = { sources: this.sources.all };
-    for (const l of this.listeners) l();
-  }
-
-  /** A connected source with these components, and one state of theirs. */
-  plc(sourceId: string, components: ComponentConfig[], states: ComponentState[] = []): void {
-    this.send({ kind: "status", sourceId, sourceName: "Line PLC", status: { plcConnected: true } });
-    this.send({ kind: "config", sourceId, protocolVersion: PROTOCOL_VERSION, configVersion: 1, errors: [], components });
-    this.send({ kind: "state", sourceId, configVersion: 1, timestamp: "0", tRel: 100, components: states });
-  }
-
-  subscribe = (listener: () => void) => {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  };
-
-  getSnapshot = () => this.snapshot;
-
-  frame(now = this.now) {
-    return this.sources.sceneSources(now);
-  }
-}
-
-const conveyor = (id: number, sourceId = A, x = 0) =>
-  defaultComponent("conveyor", { id, sourceId, name: `Belt ${id}` }, { x, y: 0 });
-const delta = (id: number, sourceId = A, x = 1000) =>
-  defaultComponent("delta", { id, sourceId, name: `Delta ${id}` }, { x, y: 0 });
-
-/** A configurator following `live`, started. */
-function connected(live: FakeLive): Configurator {
-  const c = new Configurator(() => true, live);
-  c.start();
-  return c;
-}
+import { PROTOCOL_VERSION, type ComponentConfig } from "@rpp/protocol";
+import { ghostSourceId } from "../src/configurator/configurator";
+import { A, connected, conveyor, delta, FakeLive } from "./fake-live";
 
 describe("Configurator with a PLC", () => {
   it("imports a source's configuration into the draft in place of that source's components, as one undo step", () => {

@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<TcSmItem xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.beckhoff.com/schemas/2012/07/TcSmProject" TcSmVersion="1.0" TcVersion="3.1.4026.22" ClassName="CNestedPlcProjDef">
+	<Project GUID="{803D3654-5E19-4C6F-B355-5D64A44BC33D}" Name="Syn_Config" PrjFilePath="..\..\Syn_Config\Syn_Config.plcproj" TmcFilePath="..\..\Syn_Config\Syn_Config.tmc" ReloadTmc="true" AmsPort="854" FileArchiveSettings="#x000e" SymbolicMapping="true">
+		<Instance File="Syn_Config Instance.xti"/>
+	</Project>
+</TcSmItem>

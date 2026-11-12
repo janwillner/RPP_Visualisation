@@ -84,8 +84,8 @@ describe("PLC library guide at /docs", () => {
     const gateway = createGateway({ plc: sim.plc, sourceId: "sim", sourceName: "Simulator" });
     const health = watchHealth(gateway, "1.2.3");
     const last: { status?: StatusMessage; config?: ConfigMessage; state?: StateMessage } = {};
-    gateway.subscribe((m: GatewayMessage) => {
-      last[m.kind] = m as never;
+    gateway.subscribe((m) => {
+      if (m.kind !== "parameters") last[m.kind] = m as never;
     });
     for (let i = 0; i < 300; i++) {
       sim.step(20);

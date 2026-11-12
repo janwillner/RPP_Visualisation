@@ -12,6 +12,7 @@ import { Configurator, DRAFT_FILE_EXTENSION, useConfigurator } from "./configura
 import { EditControls, type FloorPicker } from "./EditControls";
 import { keyOf } from "./edits";
 import type { Match } from "./reconciliation";
+import type { WriteState } from "./writing";
 import { properties, type PropertyField, type PropertyGroup } from "./property-fields";
 
 /** Every overlay of the draft is shown: zones, areas and markers are what is being configured. */
@@ -78,6 +79,8 @@ export function ConfiguratorApp() {
   const viewportRef = useRef<HTMLElement>(null);
   const [cameraRequest, setCameraRequest] = useState<{ action: CameraPreset; seq: number }>({ action: "iso", seq: 0 });
   const fileInput = useRef<HTMLInputElement>(null);
+  /** The source whose write is being confirmed. */
+  const [writing, setWriting] = useState<string | undefined>(undefined);
 
   // The 3D view reads the draft like a live machine: its configuration, the PLCs' live states over it, the ghosts.
   const feed = useMemo<SceneFeed>(
@@ -222,7 +225,8 @@ export function ConfiguratorApp() {
                   }
                 >
                   Import
-                </button>
+                </button>{" "}
+                <WriteButton configurator={configurator} sourceId={s.sourceId} onPlan={() => setWriting(s.sourceId)} />
               </li>
             ))}
           </ul>
@@ -235,6 +239,7 @@ export function ConfiguratorApp() {
               <button className={keyOf(c) === selection ? "selected" : ""} onClick={() => configurator.select(keyOf(c))}>
                 {c.name} <span className="muted">#{c.id}</span>
                 <MatchBadge match={matches[keyOf(c)] ?? "noPlc"} />
+                <WriteBadge write={snapshot.writes[keyOf(c)]} />
               </button>
             </li>
           ))}
@@ -332,11 +337,23 @@ export function ConfiguratorApp() {
             draft={draft}
             configurator={configurator}
             hardwareDiffers={issues.some((i) => i.hardware && i.key === keyOf(selected))}
+            activeVersion={
+              snapshot.plcParameters[selected.sourceId]?.components.find((p) => p.id === selected.id)?.activeVersion
+            }
           />
         ) : (
           <p className="muted">Select a component to edit its values.</p>
         )}
       </aside>
+
+      {writing && (
+        <WriteDialog
+          configurator={configurator}
+          sourceId={writing}
+          sourceName={plcSources.find((s) => s.sourceId === writing)?.name ?? writing}
+          onClose={() => setWriting(undefined)}
+        />
+      )}
 
       <footer className="statusbar">
         <span>
@@ -350,7 +367,14 @@ export function ConfiguratorApp() {
 }
 
 /** The selected component's values, from its type's schema; every change is one step for undo. */
-function Properties(props: { component: ComponentConfig; draft: Draft; configurator: Configurator; hardwareDiffers: boolean }) {
+function Properties(props: {
+  component: ComponentConfig;
+  draft: Draft;
+  configurator: Configurator;
+  hardwareDiffers: boolean;
+  /** Version of the component's active parameter set in its PLC; undefined without Syn_Config. */
+  activeVersion: number | undefined;
+}) {
   const { component, configurator } = props;
   const key = keyOf(component);
   const description = (COMPONENT_SCHEMAS[component.type].config as { description?: string }).description;
@@ -367,6 +391,20 @@ function Properties(props: { component: ComponentConfig; draft: Draft; configura
   return (
     <div className="properties">
       <h3 title={description}>{component.name}</h3>
+      {props.activeVersion !== undefined && (
+        <p className="muted">
+          {props.activeVersion > 0 ? `Parameter set v${props.activeVersion} active in the PLC.` : "The PLC runs its program values."}{" "}
+          {props.activeVersion > 0 && (
+            <button
+              onClick={() => {
+                if (window.confirm(`Return ${component.name} to its program values in the PLC?`)) void configurator.resetParameters(key);
+              }}
+            >
+              Reset to program values
+            </button>
+          )}
+        </p>
+      )}
       {props.hardwareDiffers && (
         <p className="warn">
           The PLC has other hardware for this component.{" "}
@@ -521,4 +559,82 @@ function NumberInput(props: { value: number; integer: boolean; label: string; on
 function TextInput(props: { value: string; label: string; onCommit: (value: string) => void }) {
   const input = useDraftText(props.value, props.onCommit);
   return <input type="text" aria-label={props.label} {...input} />;
+}
+
+/** Opens the confirmation of a write to one PLC; disabled with the reason while it cannot be written. */
+function WriteButton(props: { configurator: Configurator; sourceId: string; onPlan: () => void }) {
+  const plan = props.configurator.writePlan(props.sourceId);
+  const nothing = plan.changes.length === 0;
+  return (
+    <button
+      disabled={plan.blocked !== undefined || nothing}
+      title={plan.blocked ?? (nothing ? "The draft changes nothing on this PLC." : "Write the draft's changes to this PLC")}
+      onClick={props.onPlan}
+    >
+      Write…
+    </button>
+  );
+}
+
+/** What a write to one PLC changes, old and new value by value; it is sent only after confirming. */
+function WriteDialog(props: { configurator: Configurator; sourceId: string; sourceName: string; onClose: () => void }) {
+  const plan = props.configurator.writePlan(props.sourceId);
+  return (
+    <div className="dialog-backdrop" role="presentation" onClick={props.onClose}>
+      <div className="dialog" role="dialog" aria-label={`Write to ${props.sourceName}`} onClick={(e) => e.stopPropagation()}>
+        <h3>Write to {props.sourceName}</h3>
+        {plan.blocked && <p className="bad">{plan.blocked}</p>}
+        {plan.changes.map((change) => (
+          <section key={change.key}>
+            <h4>{change.name}</h4>
+            <table className="changes">
+              <tbody>
+                {change.fields.map((f) => (
+                  <tr key={f.path}>
+                    <td>{f.path}</td>
+                    <td className="muted">{f.from}</td>
+                    <td>→</td>
+                    <td>{f.to}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        ))}
+        <p className="muted">
+          The PLC takes each set over when its application allows it, e.g. while the machine stands.
+        </p>
+        <div className="group">
+          <button
+            disabled={plan.blocked !== undefined || plan.changes.length === 0}
+            onClick={() => {
+              void props.configurator.write(props.sourceId);
+              props.onClose();
+            }}
+          >
+            Write
+          </button>
+          <button onClick={props.onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const WRITE_LABELS: Record<WriteState["state"], string> = {
+  staged: "sent",
+  waiting: "waiting for PLC",
+  applied: "written",
+  rejected: "rejected",
+  failed: "not sent",
+};
+
+function WriteBadge({ write }: { write: WriteState | undefined }) {
+  if (!write) return null;
+  const message = "message" in write ? write.message : undefined;
+  return (
+    <span className={`write ${write.state}`} title={message}>
+      {WRITE_LABELS[write.state]}
+    </span>
+  );
 }

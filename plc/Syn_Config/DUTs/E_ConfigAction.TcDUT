@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="E_ConfigAction" Id="{485f267d-553c-473c-a68e-f1e4f46b9283}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_ConfigAction :
+(
+	(* What a parameter FB does with its staging this cycle (internal). *)
+	NONE := 0,
+	TAKE_OVER := 1,	// check the staged set and take it over
+	RESET := 2		// make the active set invalid: the program values apply again
+) UINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

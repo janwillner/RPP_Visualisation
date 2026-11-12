@@ -1,9 +1,31 @@
 import { useSyncExternalStore } from "react";
-import { GatewayMessageSchema, RegisterDecoder, RegisterGapError, type GatewayMessage, type StateMessage } from "@rpp/protocol";
+import {
+  RegisterDecoder,
+  RegisterGapError,
+  ServerMessageSchema,
+  type ClientMessage,
+  type GatewayMessage,
+  type ParametersMessage,
+  type StateMessage,
+  type WriteResultMessage,
+} from "@rpp/protocol";
 import { METRICS_WINDOW_MS } from "./metrics";
 import { ProductHistory, type ProductEvent, type ProductStep } from "./product-history";
 import type { SceneSource } from "./scene/scene-model";
 import { Sources, type SourceInfo } from "./sources";
+
+/** A command not answered within this time counts as failed. */
+const COMMAND_TIMEOUT_MS = 10_000;
+
+/**
+ * The parameter sets without a source's: after its new config they come again, or never when its PLC has no
+ * Syn_Config any more (ADR 0017).
+ */
+function withoutSource(parameters: Readonly<Record<string, ParametersMessage>>, sourceId: string) {
+  if (!(sourceId in parameters)) return parameters;
+  const { [sourceId]: _dropped, ...rest } = parameters;
+  return rest;
+}
 
 /** Data older than this is flagged as stale in the UI. */
 export const STALE_AFTER_MS = 500;
@@ -14,6 +36,8 @@ export interface GatewaySnapshot {
   socket: SocketState;
   /** In the order the gateway first reported them. */
   sources: readonly SourceInfo[];
+  /** Per source its PLC's parameter sets (ADR 0017), when it has Syn_Config; only the configurator uses them. */
+  parameters: Readonly<Record<string, ParametersMessage>>;
   protocolError: string | undefined;
 }
 
@@ -49,7 +73,13 @@ export class GatewayStore implements SceneFeed {
   private retryMs = 500;
   private stopped = true;
   private listeners = new Set<() => void>();
-  private snapshot: GatewaySnapshot = { socket: "connecting", sources: [], protocolError: undefined };
+  private snapshot: GatewaySnapshot = { socket: "connecting", sources: [], parameters: {}, protocolError: undefined };
+  /**
+   * Commands sent and waiting for their `writeResult`, by the request id this store gave them (unique on this
+   * connection, whoever sent the command), with the caller's own id to answer with.
+   */
+  private readonly commands = new Map<number, { requestId: number; answer: (answer: WriteResultMessage) => void }>();
+  private nextRequest = 1;
   /** States arrive in register form, only the changed products listed (ADR 0013); this restores them whole. */
   private readonly registers = new RegisterDecoder();
 
@@ -110,6 +140,32 @@ export class GatewayStore implements SceneFeed {
     return { events: this.products.events(now - windowMs, now), now, since: this.firstStateAt ?? now };
   }
 
+  /**
+   * Sends a command on parameter sets (ADR 0017) and gives the gateway's answer; a lost connection answers that the
+   * command may not have arrived.
+   */
+  command(command: ClientMessage): Promise<WriteResultMessage> {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return Promise.resolve({ kind: "writeResult", requestId: command.requestId, ok: false, error: "Not connected to the gateway." });
+    }
+    const id = this.nextRequest++;
+    return new Promise((resolve) => {
+      const finish = (answer: WriteResultMessage) => {
+        clearTimeout(timer);
+        this.commands.delete(id);
+        resolve({ ...answer, requestId: command.requestId });
+      };
+      // A gateway that ignores the command (too old, or it found the command invalid) never answers.
+      const timer = setTimeout(
+        () => finish({ kind: "writeResult", requestId: id, ok: false, error: "The gateway did not answer the command." }),
+        COMMAND_TIMEOUT_MS,
+      );
+      this.commands.set(id, { requestId: command.requestId, answer: finish });
+      socket.send(JSON.stringify({ ...command, requestId: id }));
+    });
+  }
+
   /** Every source with its config, snapshots and render time, as the machine scene takes them. */
   frame(now = performance.now()): SceneSource[] {
     return this.sources.sceneSources(now);
@@ -137,6 +193,12 @@ export class GatewayStore implements SceneFeed {
       this.socket = undefined;
       // Recorded like the gateway's own status, so recordings show the outage too.
       for (const message of this.sources.gatewayLost()) this.dispatch(message, JSON.stringify(message));
+      // Commands still waiting will not be answered on this connection.
+      for (const [requestId, { answer }] of [...this.commands]) {
+        answer({ kind: "writeResult", requestId, ok: false, error: "The connection to the gateway was lost; the command may not have arrived." });
+      }
+      // The parameter sets come again with the next connection, from whatever PLCs the gateway then reads.
+      this.update({ parameters: {} });
       this.update({ socket: "closed" });
       if (this.stopped) return;
       this.retryTimer = setTimeout(() => this.connect(), this.retryMs);
@@ -155,12 +217,21 @@ export class GatewayStore implements SceneFeed {
       this.update({ protocolError: "Gateway sent invalid JSON" });
       return;
     }
-    const parsed = GatewayMessageSchema.safeParse(json);
+    const parsed = ServerMessageSchema.safeParse(json);
     if (!parsed.success) {
       this.update({ protocolError: parsed.error.issues[0]?.message ?? "Invalid message from gateway" });
       return;
     }
-    let message = parsed.data;
+    // Parameter sets and command answers concern the configurator only: never recorded, not part of the sources.
+    if (parsed.data.kind === "parameters") {
+      this.update({ parameters: { ...this.snapshot.parameters, [parsed.data.sourceId]: parsed.data } });
+      return;
+    }
+    if (parsed.data.kind === "writeResult") {
+      this.commands.get(parsed.data.requestId)?.answer(parsed.data);
+      return;
+    }
+    let message: GatewayMessage = parsed.data;
     if (message.kind === "state") {
       try {
         message = this.registers.decode(message);
@@ -187,7 +258,7 @@ export class GatewayStore implements SceneFeed {
     }
     this.update({
       sources: this.sources.all,
-      ...(message.kind === "config" ? { protocolError: undefined } : {}),
+      ...(message.kind === "config" ? { protocolError: undefined, parameters: withoutSource(this.snapshot.parameters, message.sourceId) } : {}),
     });
   }
 }

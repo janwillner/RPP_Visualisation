@@ -1,5 +1,5 @@
 import { countMemberOf } from "./plc-mapping";
-import { SymbolNotFoundError, type ChangedEntries, type SumReadOptions, type SymbolAccess } from "./symbol-access";
+import { SymbolNotFoundError, type ChangedEntries, type SumReadOptions, type SymbolAccess, type SymbolWrite } from "./symbol-access";
 
 interface Entry {
   type: string;
@@ -55,6 +55,19 @@ export class InMemoryPlc implements SymbolAccess {
     if (this.changes?.session !== changes) this.changes = { session: changes, previous: new Map() };
     const previous = this.changes.previous;
     return values.map((v, i) => withChangedEntries(v, paths[i]!, previous));
+  }
+
+  async sumWrite(writes: readonly SymbolWrite[]): Promise<void> {
+    this.ensureOnline();
+    // Every path is checked first, so a missing one writes nothing, as the PLC refuses the whole request.
+    const targets = writes.map(({ path, value }) => {
+      const cut = Math.max(path.lastIndexOf("."), path.lastIndexOf("["));
+      const parent = this.resolve(path.slice(0, cut)) as Record<string | number, unknown>;
+      const key = path[cut] === "[" ? Number(path.slice(cut + 1, -1)) : path.slice(cut + 1);
+      if (parent === null || typeof parent !== "object" || !(key in parent)) throw new SymbolNotFoundError(path);
+      return { parent, key, value };
+    });
+    for (const { parent, key, value } of targets) parent[key] = value;
   }
 
   private ensureOnline(): void {
