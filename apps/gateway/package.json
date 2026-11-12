@@ -8,6 +8,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@rpp/machine-view": "workspace:*",
     "@rpp/protocol": "workspace:*",
     "ads-client": "^2.1.0",
     "marked": "^18.1.3",

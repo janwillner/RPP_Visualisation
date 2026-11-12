@@ -19,7 +19,8 @@ One HTTP port (8080 by default) serves:
 | `GET /health`           | Health of every PLC as JSON, for monitoring: 200 while all are connected, else 503.             |
 | `GET /docs`             | The guide to the PLC library `Syn_Visu`, for PLC programmers.                                   |
 | `GET /docs/schema.json` | JSON Schema of the messages, the health report and the recording file lines.                   |
-| `GET /`                 | The web app.                                                                                    |
+| `GET /`                 | The visualisation.                                                                              |
+| `GET /configurator/`    | The configurator.                                                                               |
 
 There is no authentication. Anyone who can reach the port can read the data, so keep the port inside the machine
 network.

@@ -37,8 +37,10 @@ export interface GatewayOptions {
   host?: string;
   /** AdsBridge.exe (packaged) or AdsBridge.dll (run through `dotnet`). */
   adsBridge: string;
-  /** Built web app to serve; undefined when none is found. */
+  /** Built visualisation to serve at `/`; undefined when none is found. */
   staticDir?: string;
+  /** Built configurator to serve at `/configurator/` (ADR 0019); undefined when none is found. */
+  configuratorDir?: string;
   help: boolean;
 }
 
@@ -125,7 +127,14 @@ export const OPTION_HELP: readonly OptionHelp[] = [
   { flag: "--host <addr>", text: ["Bind address (default: all interfaces)"] },
   {
     flag: "--static-dir <dir>",
-    text: ["Built web app to serve (default: web/ next to the packaged gateway, else apps/web/dist)"],
+    text: ["Built visualisation to serve at / (default: web/ next to the packaged gateway, else", "apps/visualisation/dist)"],
+  },
+  {
+    flag: "--configurator-dir <dir>",
+    text: [
+      "Built configurator to serve at /configurator/ (default: web/configurator/ next to the",
+      "packaged gateway, else apps/configurator/dist)",
+    ],
   },
 ];
 
@@ -142,7 +151,7 @@ const stringKeys = ["driver", "amsNetId", "routerAddress", "localAmsNetId", "hos
 /** Switches: a flag without a value on the command line, true or false in the config file. */
 const booleanKeys = ["allowWrite"] as const;
 /** String settings holding paths; relative ones resolve against the config file's folder or the working directory. */
-const pathKeys = ["adsBridge", "staticDir"] as const;
+const pathKeys = ["adsBridge", "staticDir", "configuratorDir"] as const;
 const numberKeys = ["adsPort", "routerPort", "cycleMs", "configRecheckMs", "simProducts", "port"] as const;
 
 type StringKey = (typeof stringKeys)[number] | (typeof pathKeys)[number];
@@ -191,6 +200,7 @@ export function resolveGatewayOptions(argv: readonly string[], env: OptionsEnvir
   const driver = settings.driver ?? "sim";
   if (!isOneOf(drivers, driver)) throw new OptionsError(`driver must be one of ${drivers.join(", ")}, got "${driver}"`);
   const staticDir = settings.staticDir ?? defaultStaticDir(env);
+  const configuratorDir = settings.configuratorDir ?? defaultConfiguratorDir(env);
   const sources = resolveSources(settings, driver as Driver);
   const simProducts = settings.simProducts ?? 0;
   if (simProducts !== 0 && driver !== "sim") throw new OptionsError(`simProducts is for the simulator only; driver is "${driver}"`);
@@ -214,6 +224,7 @@ export function resolveGatewayOptions(argv: readonly string[], env: OptionsEnvir
     ...(settings.host !== undefined ? { host: settings.host } : {}),
     adsBridge: settings.adsBridge ?? defaultBridge(env),
     ...(staticDir !== undefined ? { staticDir } : {}),
+    ...(configuratorDir !== undefined ? { configuratorDir } : {}),
     help: values.help === true,
   };
 }
@@ -281,9 +292,14 @@ function defaultBridge({ here, exists }: OptionsEnvironment): string {
   return exists(packaged) ? packaged : resolve(here, "../../ads-bridge/bin/Release/net9.0/AdsBridge.dll");
 }
 
-/** Packaged: web/ next to the bundle. From source: apps/web/dist. */
+/** Packaged: web/ next to the bundle. From source: apps/visualisation/dist. */
 function defaultStaticDir({ here, exists }: OptionsEnvironment): string | undefined {
-  return [join(here, "web"), resolve(here, "../../web/dist")].find((dir) => exists(dir));
+  return [join(here, "web"), resolve(here, "../../visualisation/dist")].find((dir) => exists(dir));
+}
+
+/** Packaged: web/configurator/ next to the bundle (the package puts it there). From source: apps/configurator/dist. */
+function defaultConfiguratorDir({ here, exists }: OptionsEnvironment): string | undefined {
+  return [join(here, "web", "configurator"), resolve(here, "../../configurator/dist")].find((dir) => exists(dir));
 }
 
 function readConfigFile(path: string, env: OptionsEnvironment): Settings {

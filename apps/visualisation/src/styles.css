@@ -1,0 +1,568 @@
+/* The visualisation's own look, after the shared stylesheet of @rpp/machine-view: legend, recording and playback,
+   measuring, the inspector. */
+
+.product-legend {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  min-width: 180px;
+  padding: 6px 10px 8px;
+  background: rgba(23, 27, 33, 0.92);
+  border: 1px solid var(--select);
+  border-radius: 4px;
+}
+
+.product-legend-head {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.product-legend-head button {
+  margin-left: auto;
+  font-size: 15px;
+  text-decoration: none;
+}
+
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 4px;
+  color: var(--muted);
+  border-radius: 3px;
+}
+
+.legend li.active {
+  color: var(--text);
+  background: #2a313b;
+  font-weight: 600;
+}
+
+.legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.legend i.outline {
+  border: 1px dashed var(--text);
+}
+
+/* Measure mode toggle, bottom right in the 3D view. */
+.measure-toggle {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+}
+
+.measure-toggle:not(.on) {
+  background: rgba(42, 49, 59, 0.9);
+}
+
+/* Replay the last minute, left of the measure button. */
+.replay-toggle {
+  position: absolute;
+  right: 56px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: rgba(42, 49, 59, 0.9);
+}
+
+/* Record / stop, left of the replay button. */
+.record-toggle {
+  position: absolute;
+  right: 104px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 40px;
+  height: 40px;
+  padding: 0 10px;
+  background: rgba(42, 49, 59, 0.9);
+}
+
+.record-icon {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #e53935;
+}
+
+.record-toggle.recording {
+  border-color: #e53935;
+}
+
+.stop-icon {
+  width: 12px;
+  height: 12px;
+  background: #e53935;
+  animation: recording-blink 1s steps(2, start) infinite;
+}
+
+@keyframes recording-blink {
+  to {
+    opacity: 0.3;
+  }
+}
+
+.record-time {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Playback controls along the bottom of the 3D view, clear of the record and measure buttons. */
+/* Left of the record button: slides the recording bar out. */
+.player-bar-toggle {
+  position: absolute;
+  right: 152px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 40px;
+  min-width: 0;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+  background: rgba(42, 49, 59, 0.9);
+}
+
+.player-bar-toggle:hover {
+  color: var(--text);
+}
+
+.player-bar {
+  position: absolute;
+  left: 8px;
+  right: 180px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(23, 27, 33, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.player-bar.playing {
+  border-color: var(--accent);
+}
+
+.player-bar .timeline-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 80px;
+}
+
+.player-bar .timeline {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Event marks above the slider track; the inset keeps them aligned with the thumb's centre at both ends. */
+.timeline-markers {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: -6px;
+  height: 8px;
+  pointer-events: none;
+}
+
+.timeline-marker {
+  position: absolute;
+  left: calc(var(--at) * 100%);
+  width: 4px;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  margin-left: -2px;
+  border: none;
+  border-radius: 1px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.timeline-marker.fault {
+  background: var(--bad);
+}
+
+.timeline-marker.offline {
+  background: var(--offline);
+}
+
+.timeline-marker.online {
+  background: var(--ok);
+}
+
+.timeline-marker.missed {
+  background: var(--missed);
+}
+
+/* A limit violation: fault red, but dashed, apart from a fault the PLC reports. */
+.timeline-marker.limit {
+  background: repeating-linear-gradient(0deg, var(--bad) 0 3px, var(--limit-label) 3px 6px);
+}
+
+.player-bar .player-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.player-bar .play {
+  min-width: 40px;
+}
+
+/* Playback: a coloured frame and a label make clear that this is not live. */
+.viewport.playback {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+
+.playback-banner {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 10px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #10141a;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+/* The measure list sits above the player bar. */
+.viewport.has-player .measure {
+  bottom: 60px;
+  max-height: calc(100% - 68px);
+}
+
+.tree .fault-lines {
+  flex-basis: 100%;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 30px;
+  color: var(--bad-text);
+  font-size: 0.92em;
+}
+
+.tree button.visibility {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+}
+
+.tree li.hidden button:not(.visibility) {
+  opacity: 0.45;
+}
+
+.tree li.hidden button.visibility {
+  color: var(--muted);
+}
+
+.source-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.source-head button.visibility {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  background: transparent;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: currentColor;
+}
+
+/* Embedded (no status bar): a PLC that is not live. */
+.offline-notice {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: rgba(229, 57, 53, 0.9);
+  color: #fff;
+  pointer-events: none;
+}
+
+/* The release version sits at the far right of the status bar. */
+/* The API link and the version sit at the right end. */
+.statusbar .statusbar-api {
+  margin-left: auto;
+}
+
+.statusbar .sources-list {
+  left: 12px;
+  right: auto;
+  list-style: none;
+  padding-left: 8px;
+}
+
+.badge {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #34404e;
+  text-transform: uppercase;
+}
+
+.badge.delta {
+  background: #4b3d5e;
+}
+
+.json {
+  margin: 0;
+  padding: 6px;
+  font-size: 11px;
+  background: #171b21;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.measure {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  /* Leaves room for the measure button on the right. */
+  max-width: min(440px, calc(100% - 72px));
+  max-height: calc(100% - 16px);
+  overflow: auto;
+  padding: 6px 8px;
+  background: rgba(23, 27, 33, 0.9);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.measure-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.measure-points {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.measure-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  margin-bottom: 4px;
+  text-align: left;
+  background: transparent;
+}
+
+.measure-delta {
+  color: var(--accent);
+}
+
+.measure-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.movers {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.movers th,
+.movers td {
+  padding: 1px 6px;
+  text-align: right;
+}
+
+.movers th {
+  color: var(--muted);
+  font-weight: normal;
+}
+
+.tree .fault-lines li.limit,
+.limit-violation {
+  color: var(--bad-text);
+  font-style: italic;
+}
+
+.tree li.faulted > button:not(.visibility) {
+  color: var(--bad-text);
+}
+
+.tree .fault-icon {
+  color: var(--bad-text);
+  margin-right: 4px;
+}
+
+.fault {
+  color: var(--bad-text);
+  margin: 4px 0;
+}
+
+/* Touch panels (HMI): larger type and finger-sized controls. The desktop layout above stays unchanged. */
+@media (pointer: coarse) {
+  .tree button.visibility,
+    .source-head button.visibility {
+      width: 44px;
+    }
+
+  .measure-toggle {
+      width: 52px;
+      height: 52px;
+    }
+
+  .replay-toggle {
+      right: 68px;
+      width: 52px;
+      height: 52px;
+    }
+
+  .record-toggle {
+      right: 128px;
+      min-width: 52px;
+      height: 52px;
+    }
+
+  .player-bar-toggle {
+      right: 188px;
+      width: 32px;
+      min-width: 0;
+      height: 52px;
+      font-size: 24px;
+    }
+
+  .player-bar {
+      right: 228px;
+      flex-wrap: wrap;
+    }
+
+  .player-bar .timeline,
+    .player-bar select {
+      min-height: 44px;
+    }
+
+  /* Finger-sized event marks. */
+  .timeline-markers {
+      top: -10px;
+      height: 16px;
+    }
+
+  .timeline-marker {
+      width: 10px;
+      margin-left: -5px;
+    }
+
+  .viewport.has-player .measure {
+      bottom: 120px;
+    }
+
+  .dot {
+      width: 12px;
+      height: 12px;
+    }
+
+  .badge {
+      font-size: 12px;
+    }
+
+  .json {
+      font-size: 13px;
+    }
+
+  .measure {
+      max-width: min(520px, calc(100% - 80px));
+    }
+
+  .measure-row {
+      padding: 4px 0;
+    }
+
+  .movers th,
+    .movers td {
+      padding: 4px 8px;
+    }
+}
+
+/* Playback controls without a recording: visible, but clearly out of use. */
+.player-bar :disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* A product's history in the inspector, newest first. */
+.product-history {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.product-history li {
+  padding: 2px 0;
+}
+
+.product-history li.missed {
+  color: var(--bad);
+}
+
+/* The machine's figures in the inspector. */
+table.metrics {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table.metrics td {
+  padding: 2px 0;
+  vertical-align: top;
+}
+
+table.metrics td + td {
+  padding-left: 8px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

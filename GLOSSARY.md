@@ -248,8 +248,12 @@ _Avoid_: shape (a product type has a shape), part
 ## Configurator
 
 **Configurator**:
-The second page of the web app (`/configurator`): the machine's components are placed in 3D and given their configuration, to be written to the PLC later. The visualisation's counterpart.
+The second web app (`/configurator`, `apps/configurator`): the machine's components are placed in 3D and given their configuration, to be written to the PLC later. The visualisation's counterpart.
 _Avoid_: editor, designer, RPP_Configurator (the product name, not a term)
+
+**Machine view**:
+What the visualisation and the configurator share (`@rpp/machine-view`, ADR 0019): the gateway connection with its sources, the machine scene and its 3D view, the rules about the machine both apply, and the shared look. Neither app's own parts are in it.
+_Avoid_: shared code, common library
 
 **Draft**:
 A machine as the configurator edits it: every component's configuration with its source and manifest id, saved as a JSON file. It is made offline, without a PLC.

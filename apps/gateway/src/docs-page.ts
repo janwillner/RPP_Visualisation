@@ -16,7 +16,7 @@ import {
   StatusMessageSchema,
   type HealthReport,
 } from "@rpp/protocol";
-import { STATUS } from "../../web/src/palette";
+import { STATUS } from "@rpp/machine-view/palette";
 import { docImage, guideText, IMAGES_DIR } from "./docs-texts";
 
 /**

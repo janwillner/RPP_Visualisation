@@ -31,7 +31,8 @@ station, which has its own structure with the same members.
 3. **Gateway**: the `E_VisuComponentType` value in `plc-contract.ts`, one entry in `COMPONENTS` (`components.ts`) with
    that value and the contract structure, and for tests its structure in `PlcStructures` (`plc-builders.ts`). The
    compiler asks for both entries.
-4. **Web**: one line in `KITS` (`scene-model.ts`): `<type>: bodyKit()` (`scene/kits/bodies.ts`).
+4. **Machine view** (`packages/machine-view`): one line in `KITS` (`scene-model.ts`): `<type>: bodyKit()`
+   (`scene/kits/bodies.ts`).
 5. **Tests**: a gateway test that the config and state arrive (`gateway.test.ts`).
 6. **Docs**: `docs/plc-contract.md`, the guide's sections and reference (`docs/plc-library-guide.md`), `GLOSSARY.md`
    for the new term, and `CLAUDE.md` when the architecture summary changes.
@@ -54,7 +55,7 @@ Example: the Cartesian robot.
    one entry in `COMPONENTS`, a builder and its `PlcStructures` entry in `plc-builders.ts`. If a value needs more than
    the naming rules (an enum that does not count from 0, a member named differently), register it in `plc-mapping.ts`
    (`registerEnumTable`, `ALIASES`) rather than writing a mapper.
-4. **Web**:
+4. **Machine view** (`packages/machine-view`, drawn the same in both apps):
    - a kit in its own module in `scene/kits/` (e.g. `cartesian.ts`; the XTS gantry and loop share the track layout in
      `xts-track.ts`), registered in `KITS` (`scene-model.ts`); the shared kit vocabulary is in `kits/kit.ts`. `build`
      adds its parts through the build context (`addZones`, `addGripper`, `addFault`, carriers for products it carries
@@ -93,10 +94,10 @@ palette offers every type of `COMPONENT_SCHEMAS`.
    export it; `docs/config-contract.md` lists the structures.
 3. **Gateway**: the structure's mirror and its `PLC_CONFIG_TYPES` entry in `config-contract.ts`; discovery, writing
    and the emulation follow the naming convention without code.
-4. **Web**: its `PALETTE_TYPES` and `PALETTE_LABELS` entry, its `defaultComponent` with assumed hardware and its
-   `HARDWARE_FIELDS` (`configurator/component-defaults.ts`); a new kind of list needs its `AddEntry` and a command
-   that starts an entry (like `addModule`, `addBody`, `addFinger`), an optional area its `defaultArea`. A robot with
-   fingers needs its rest state in `configurator/rest-states.ts` (where the draft draws its flange, ADR 0018); its kit
+4. **Configurator** (`apps/configurator`): its `PALETTE_TYPES` and `PALETTE_LABELS` entry, its `defaultComponent`
+   with assumed hardware and its `HARDWARE_FIELDS` (`component-defaults.ts`); a new kind of list needs its `AddEntry`
+   and a command that starts an entry (like `addModule`, `addBody`, `addFinger`), an optional area its `defaultArea`. A
+   robot with fingers needs its rest state in `rest-states.ts` (where the draft draws its flange, ADR 0018); its kit
    passes the flange frame its fingers' offsets count from to `addGripper`.
 5. **Tests**: its gateway write test (`parameters.test.ts`, the `it.each` over the types) and a configurator test per
    new editor (`configurator-types.test.ts`).

@@ -194,9 +194,9 @@ standard XTS module is `vi_lr_Length := SynVisu.VISU_GlobalConst.VISU_lr_XTS_MOD
   pose moved by its origin shift, X along the belt, Y across it, Z up from the belt surface, Rz from the belt's X.
 - **Absolute values:** finger poses and the Delta's TCP are absolute in the MCS.
 - **Origin shift:** `m_SetOriginShift(vi_lr_X, vi_lr_Y, vi_lr_Z)` moves the component's shown coordinate system away
-  from its pose (mm in the component's local frame). The origin triad and the local measuring coordinates in the web
-  app use it. For a **conveyor** the belt coordinates also count from the shifted X; use this when the machine's
-  queue coordinates do not start at the belt start. For robots it only moves the shown origin.
+  from its pose (mm in the component's local frame). The origin triad (layer "Coordinate systems", always shown while
+  measuring) and the local measuring coordinates in the web app use it. For a **conveyor** the belt coordinates also
+  count from the shifted X; use this when the machine's queue coordinates do not start at the belt start. For robots it only moves the shown origin.
 
 ![A conveyor's coordinate system and a product's latch pose](images/conveyor-coordinates.svg "A conveyor from above: its pose, its coordinate system moved by the origin shift, and a product latched in it.")
 

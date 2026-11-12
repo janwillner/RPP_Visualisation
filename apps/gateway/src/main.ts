@@ -82,11 +82,13 @@ const server = await startServer({
   port: options.port,
   ...(options.host ? { host: options.host } : {}),
   ...(options.staticDir ? { staticDir: options.staticDir } : {}),
+  ...(options.configuratorDir ? { configuratorDir: options.configuratorDir } : {}),
 });
 // ASCII only: the service log is read in consoles and editors with other code pages.
 console.log(
   `RPP visualisation ${APP_VERSION}: gateway (${options.driver}) listening on http://${options.host ?? "localhost"}:${options.port}` +
-    ` - WebSocket ${WS_PATH}, health ${HEALTH_PATH}, API docs ${DOCS_PATH}${options.staticDir ? `, serving ${options.staticDir}` : ", no static web app"}`,
+    ` - WebSocket ${WS_PATH}, health ${HEALTH_PATH}, API docs ${DOCS_PATH}${options.staticDir ? `, serving ${options.staticDir}` : ", no static web app"}` +
+    `${options.configuratorDir ? `, configurator ${options.configuratorDir}` : ""}`,
 );
 console.log(`Sources: ${runtimes.map((r) => `${r.name} (${r.gateway.sourceId})`).join(", ")}`);
 

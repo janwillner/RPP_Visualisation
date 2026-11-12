@@ -1,0 +1,488 @@
+/* The look both apps share (ADR 0019): page frame, panels, buttons, the component tree, the status bar, the 3D
+   view's labels and camera views. Each app adds its own stylesheet after this one. */
+
+:root {
+  --bg: #15181d;
+  --panel: #1f242c;
+  --border: #2f3640;
+  --text: #dfe5ec;
+  --muted: #8893a2;
+  /* Status colours (--accent, --ok, --bad, --bad-text, --fault-label, --limit-label, --select, --missed, --offline)
+     and the stage colours come from src/palette.ts, set on the root element at start. */
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 13px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  /* Scrolling only: no page pinch zoom, no double-tap zoom, no pull-to-refresh. The 3D view handles its own
+     pinch (OrbitControls sets touch-action: none on the canvas). */
+  touch-action: pan-x pan-y;
+  overscroll-behavior: none;
+}
+
+.app {
+  --left: 240px;
+  --right: 320px;
+  display: grid;
+  height: 100%;
+  grid-template-columns: var(--left) 1fr var(--right);
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "toolbar toolbar toolbar"
+    "left viewport right"
+    "status status status";
+}
+
+.toolbar {
+  grid-area: toolbar;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.title {
+  font-size: 14px;
+}
+
+.group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: #2a313b;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+/* A switched-on toggle button (layers, coordinate systems). */
+.toggle.on {
+  background: #23455a;
+  border-color: var(--accent);
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+.panel {
+  overflow: auto;
+  padding: 8px 12px;
+  background: var(--panel);
+  min-height: 0;
+}
+
+.panel.left {
+  grid-area: left;
+  border-right: 1px solid var(--border);
+}
+
+.panel.right {
+  grid-area: right;
+  border-left: 1px solid var(--border);
+}
+
+.viewport {
+  grid-area: viewport;
+  /* The stage behind the 3D view: the canvas is transparent, the floor fades into this. */
+  background: linear-gradient(to bottom, var(--stage-top), var(--stage-bottom));
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+  /* A long press must not select labels or open the touch callout. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.view-controls {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.recording-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 60px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 6px 10px;
+  background: rgba(23, 27, 33, 0.95);
+  border: 1px solid var(--select);
+  border-radius: 4px;
+}
+
+.view-controls button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: rgba(42, 49, 59, 0.9);
+}
+
+h2 {
+  font-size: 13px;
+  margin: 4px 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+h3 {
+  font-size: 12px;
+  margin: 12px 0 4px;
+  color: var(--muted);
+}
+
+.tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tree > li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.tree button {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+}
+
+/* Several PLC sources: one group per source. */
+.sources {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sources > li {
+  margin-bottom: 10px;
+}
+
+.sources > li.hidden .tree,
+.sources > li.hidden .source-head strong {
+  opacity: 0.45;
+}
+
+.tree button.selected {
+  border-color: var(--select);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.warn {
+  color: var(--select);
+}
+
+.statusbar {
+  grid-area: status;
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  padding: 4px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.bad {
+  color: var(--bad);
+}
+
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+}
+
+a.link {
+  text-decoration: underline;
+}
+
+.errors {
+  position: absolute;
+  bottom: 100%;
+  right: 12px;
+  max-width: 600px;
+  max-height: 300px;
+  overflow: auto;
+  margin: 0 0 4px;
+  padding: 8px 8px 8px 24px;
+  background: var(--panel);
+  border: 1px solid var(--bad);
+  border-radius: 4px;
+}
+
+.label {
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 0 3px #000;
+}
+
+.axis-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  pointer-events: none;
+}
+
+@media (max-width: 900px) {
+  .app {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 40vh 1fr auto auto;
+      grid-template-areas: "toolbar" "viewport" "right" "left" "status";
+    }
+}
+
+.snap-label,
+.origin-label {
+  font-size: 11px;
+  white-space: nowrap;
+  text-shadow: 0 0 3px #000;
+  transform: translate(10px, -50%);
+}
+
+.snap-label {
+  color: var(--select);
+}
+
+/* Under a finger: centred well above it, so the finger does not cover the name. */
+.snap-label.touch {
+  transform: translate(-50%, -64px);
+  padding: 2px 6px;
+  background: rgba(23, 27, 33, 0.85);
+  border-radius: 3px;
+}
+
+.origin-label {
+  color: var(--muted);
+}
+
+.pin-label {
+  color: var(--select);
+  font-size: 11px;
+  white-space: nowrap;
+  text-shadow: 0 0 3px #000;
+  transform: translate(8px, -50%);
+}
+
+/* Faults */
+.fault-label {
+  background: var(--fault-label);
+  color: #fff;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+/* A limit violation the web found: apart from a fault the PLC reports. */
+.fault-label.limit {
+  background: var(--limit-label);
+  border: 1px solid var(--bad);
+}
+
+/* Touch panels (HMI): larger type and finger-sized controls. The desktop layout above stays unchanged. */
+@media (pointer: coarse) {
+  /* Long presses select no text and open no callout. */
+  .app {
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+  :root {
+      font-size: 15px;
+    }
+
+  .app {
+      --left: 280px;
+      --right: 360px;
+    }
+
+  button {
+      min-height: 44px;
+      min-width: 44px;
+      padding: 6px 12px;
+    }
+
+  button.link {
+      min-height: 44px;
+      padding: 0 4px;
+    }
+
+  a.link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
+      padding: 0 4px;
+    }
+
+  .toolbar {
+      gap: 12px;
+      padding: 6px 10px;
+    }
+
+  .title {
+      font-size: 16px;
+    }
+
+  h2 {
+      font-size: 14px;
+    }
+
+  h3 {
+      font-size: 14px;
+    }
+
+  .label,
+    .axis-label,
+    .snap-label,
+    .origin-label,
+    .pin-label {
+      font-size: 14px;
+    }
+
+  .fault-label {
+      font-size: 15px;
+      padding: 3px 8px;
+    }
+}
+
+/* Side panels (SidePanels.tsx): closed, resized by dragging the 3D view's edge, opened and closed by a tab. */
+.app.left-closed {
+  --left: 0px;
+}
+
+.app.right-closed {
+  --right: 0px;
+}
+
+/* Side panel handles: tabs on the 3D view's left and right edge, so they always sit next to their panel. */
+/* The 3D view's edge next to an open side panel: drag to resize it. */
+.panel-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.panel-edge.left {
+  left: 0;
+}
+
+.panel-edge.right {
+  right: 0;
+}
+
+.panel-edge:hover,
+.panel-edge:active {
+  background: rgba(79, 195, 247, 0.35);
+}
+
+.panel-handle {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 64px;
+  min-width: 0;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--muted);
+  background: rgba(42, 49, 59, 0.9);
+}
+
+.panel-handle:hover {
+  color: var(--text);
+}
+
+.panel-handle.left {
+  left: 0;
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+}
+
+.panel-handle.right {
+  right: 0;
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+}
+
+@media (max-width: 900px) {
+  /* The panels sit below the 3D view here: no width to drag. */
+  .panel-edge {
+      display: none;
+    }
+
+  /* A collapsed right panel leaves no empty row: the 3D view takes its place. */
+  .app.right-closed {
+      grid-template-rows: auto 1fr 0 auto auto;
+    }
+}
+
+@media (pointer: coarse) {
+  .panel-handle {
+      width: 32px;
+      min-width: 0;
+      height: 96px;
+      font-size: 24px;
+    }
+
+  .panel-edge {
+      width: 16px;
+    }
+}

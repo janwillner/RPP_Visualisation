@@ -69,12 +69,15 @@ await build({
   logLevel: "warning",
 });
 
-step("Building the web app");
-// The web app shows the same version as the gateway, even when the tree changes while packaging.
-run(process.execPath, [join(root, "apps/web/node_modules/vite/bin/vite.js"), "build"], join(root, "apps/web"), {
-  RPP_VERSION: version,
-});
-cpSync(join(root, "apps/web/dist"), join(out, "web"), { recursive: true });
+// Both web apps show the same version as the gateway, even when the tree changes while packaging. The configurator goes
+// into web/configurator/, where the gateway finds it (ADR 0019).
+for (const [app, target] of [["visualisation", "web"], ["configurator", "web/configurator"]]) {
+  step(`Building the ${app}`);
+  run(process.execPath, [join(root, `apps/${app}/node_modules/vite/bin/vite.js`), "build"], join(root, `apps/${app}`), {
+    RPP_VERSION: version,
+  });
+  cpSync(join(root, `apps/${app}/dist`), join(out, target), { recursive: true });
+}
 
 step("Publishing the ADS bridge (self-contained, single file)");
 const bridgeOut = join(cache, "bridge");
