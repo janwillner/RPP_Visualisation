@@ -55,7 +55,7 @@ function conveyorConfig(overrides: Partial<ConveyorConfig> = {}): ConveyorConfig
 }
 
 function config(...components: ConfigMessage["components"]): ConfigMessage {
-  return { kind: "config", sourceId: "plc1", protocolVersion: 1, configVersion: 1, components, errors: [] };
+  return { kind: "config", sourceId: "plc1", protocolVersion: 1, configVersion: 1, components, errors: [], marks: [] };
 }
 
 describe("scene model: MCS to renderer frame", () => {
@@ -101,6 +101,7 @@ function product(overrides: Partial<Product> = {}): Product {
     id: 7,
     latchPose: { x: 0, y: 0, z: 0, rz: 0 },
     latchBeltPosition: 0,
+    mark: 0,
     state: "detected",
     previousState: "detected",
     lastClientId: 0,

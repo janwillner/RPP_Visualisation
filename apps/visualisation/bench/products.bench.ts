@@ -36,6 +36,7 @@ const conveyor: ConveyorConfig = {
 
 const config: ConfigMessage = {
   kind: "config",
+  marks: [],
   sourceId: "bench",
   protocolVersion: PROTOCOL_VERSION,
   configVersion: 1,
@@ -56,6 +57,7 @@ function stateAt(products: number, i: number): StateMessage {
       id: k + 1,
       latchPose: { x: 20000 - k * 4, y: ((k % 10) - 4.5) * 100, z: 0, rz: 0 },
       latchBeltPosition: 0,
+      mark: 0,
       state: k % 25 === 0 ? "rejected" : "detected",
       previousState: "detected",
       lastClientId: 50,

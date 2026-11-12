@@ -87,6 +87,8 @@ const SENSOR = { id: 51, path: "MAIN.fbSensor.vo_Visu", x: 300, beam: 500, heigh
 const REJECT = { id: 60, path: "MAIN.fbRejectUnit.vo_Visu", x: 2400, every: 5, pushMs: 300 };
 const PLACE_X = 1500;
 const SPAWN_INTERVAL_MS = 700;
+/** The product mark Vision 1 gives a sample, named "Sample" in the manifest. */
+const SAMPLE_MARK = 1;
 const TCP_SPEED = 2500; // mm/s
 const HOVER = 120; // mm above the product top
 /** Suction cup of the Delta, the IDH and the Fxx movers: it hangs below the flange, products below it. */
@@ -550,7 +552,7 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
         strokes: { fYMax: 800, fZMin: -500 },
       }),
     },
-  ]);
+  ], { markNames: ["Sample"] });
   const infeed = plc.get<ST_VisuConveyor>(INFEED.path);
   const outfeed = plc.get<ST_VisuConveyor>(OUTFEED.path);
   const fxxInfeed = plc.get<ST_VisuConveyor>(FXX_INFEED.path);
@@ -595,6 +597,8 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
   let now = BigInt(Date.UTC(2026, 0, 1) - Date.UTC(2000, 0, 1)) * 1_000_000n;
   let nextId = 1;
   let sinceSpawn = SPAWN_INTERVAL_MS;
+  /** Products Vision 1 latched so far: every tenth is a sample. */
+  let infeedLatches = 0;
   /** Products on the outfeed that reached the reject unit, and the one being pushed off with the time it has left. */
   let passedRejectUnit = 0;
   let pushing: { product: TrackedProduct; leftMs: number } | undefined;
@@ -718,8 +722,8 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
     clientId = 0,
     /** Bottom above the belt surface, e.g. the height of the product it is stacked on. */
     height = 0,
-  ): void {
-    products.push({
+  ): TrackedProduct {
+    const product: TrackedProduct = {
       ...emptyProduct(),
       nId: nextId++,
       bValid: true,
@@ -728,7 +732,9 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
       eState,
       nProductType: productType,
       nLastClientId: clientId,
-    });
+    };
+    products.push(product);
+    return product;
   }
 
   function moveToward(goal: Vec3, dtS: number): boolean {
@@ -795,7 +801,9 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
         break;
       case "release": {
         remove(infeedProducts, target!);
-        latch(outfeedProducts, outfeed, tcp[0], tcp[1], tcpRz, E_VisuProductState.PLACED, target!.nProductType, ROBOT.id);
+        // The product keeps its mark on the outfeed.
+        latch(outfeedProducts, outfeed, tcp[0], tcp[1], tcpRz, E_VisuProductState.PLACED, target!.nProductType, ROBOT.id).nMark =
+          target!.nMark;
         target = undefined;
         phase = "idle";
         break;
@@ -1256,7 +1264,9 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
         // The vision system sees each product in the middle of its field of view.
         const x = INFEED.x + VISION.x;
         const y = INFEED.y + (random() - 0.5) * 240;
-        latch(infeedProducts, infeed, x, y, (random() - 0.5) * 60, E_VisuProductState.DETECTED, type, VISION.id);
+        const product = latch(infeedProducts, infeed, x, y, (random() - 0.5) * 60, E_VisuProductState.DETECTED, type, VISION.id);
+        // Every tenth product is a sample, marked so that it can be followed (mark 1, named in the manifest).
+        if (++infeedLatches % 10 === 0) product.nMark = SAMPLE_MARK;
       }
       // Irregular gaps on the Fxx infeed: the loop evens them out.
       sinceFxxSpawn += dtMs;

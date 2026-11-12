@@ -559,7 +559,7 @@ export class Configurator {
     }
     const sources = [...bySource.entries()].map(([sourceId, components]) => {
       const id = ghostSourceId(sourceId);
-      const config: ConfigMessage = { kind: "config", sourceId: id, protocolVersion: PROTOCOL_VERSION, configVersion: 1, components, errors: [] };
+      const config: ConfigMessage = { kind: "config", sourceId: id, protocolVersion: PROTOCOL_VERSION, configVersion: 1, components, errors: [], marks: [] };
       return { sourceId: id, config, snapshots: [], renderTime: 0, online: false };
     });
     this.ghosts = { reconciliation, sources };
@@ -574,7 +574,7 @@ export class Configurator {
     for (const c of draft.components) {
       let config = bySource.get(c.sourceId);
       if (!config) {
-        config = { kind: "config", sourceId: c.sourceId, protocolVersion: PROTOCOL_VERSION, configVersion: 1, components: [], errors: [] };
+        config = { kind: "config", sourceId: c.sourceId, protocolVersion: PROTOCOL_VERSION, configVersion: 1, components: [], errors: [], marks: [] };
         bySource.set(c.sourceId, config);
       }
       config.components.push(c);
@@ -705,6 +705,7 @@ function previewState(belt: ConveyorConfig): ConveyorState {
       // In the conveyor's coordinate system, whose origin may lie above or below the belt surface.
       latchPose: { x, y: 0 - belt.originShift.y, z: 0 - belt.originShift.z, rz: 0 },
       latchBeltPosition: 0,
+      mark: 0,
       state: "detected" as const,
       previousState: "detected" as const,
       lastClientId: 0,

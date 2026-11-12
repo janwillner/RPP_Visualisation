@@ -15,6 +15,7 @@ const A = "ads:5.1.2.3.1.1:851";
 
 const config: ConfigMessage = {
   kind: "config",
+  marks: [],
   sourceId: A,
   protocolVersion: PROTOCOL_VERSION,
   configVersion: 1,
@@ -47,6 +48,7 @@ function product(
     id,
     latchPose: { x: 100, y: 0, z: 0, rz: 0 },
     latchBeltPosition: 0,
+    mark: 0,
     state,
     previousState,
     lastClientId,

@@ -29,6 +29,7 @@ const sources: SourceInfo[] = [
     status: { plcConnected: true },
     config: {
       kind: "config",
+      marks: [],
       sourceId: A,
       protocolVersion: PROTOCOL_VERSION,
       configVersion: 1,
@@ -119,6 +120,7 @@ describe("product history: countable events", () => {
     id,
     latchPose: { x: 100, y: 0, z: 0, rz: 0 },
     latchBeltPosition: 0,
+    mark: 0,
     state,
     previousState: "detected",
     lastClientId,

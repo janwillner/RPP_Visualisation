@@ -1,4 +1,5 @@
 import {
+  MAX_MARKS,
   PROTOCOL_VERSION,
   type ClientMessage,
   type ComponentConfig,
@@ -8,6 +9,7 @@ import {
   type GatewayMessage,
   type GatewayStatus,
   type ParametersMessage,
+  type ProductMark,
 } from "@rpp/protocol";
 import { AcquisitionStatsRecorder } from "./acquisition-stats";
 import { COMPONENTS, componentKind, mapConfig, mapState as mapComponentState } from "./components";
@@ -153,6 +155,7 @@ export function createGateway({
         ...(libraryVersion ? { libraryVersion } : {}),
         configVersion: manifest.nConfigVersion,
         components: active.map((a) => a.config),
+        marks: productMarks(manifest),
         errors: [...errors, ...params.errors],
       },
       active,
@@ -353,6 +356,14 @@ export function createGateway({
     status = next;
     emit(statusMessage());
   }
+}
+
+/** The marks the manifest names, by number; missing in a manifest older than protocol 21. */
+function productMarks(manifest: ST_VisuManifest): ProductMark[] {
+  return (manifest.aMarkNames ?? [])
+    .slice(0, MAX_MARKS)
+    .map((name, i) => ({ id: i + 1, name: name.trim() }))
+    .filter((mark) => mark.name !== "");
 }
 
 /** Library types may be reported with their namespace, e.g. `SynVisu.ST_VisuDelta`. */
