@@ -64,11 +64,15 @@ export interface ST_VisuPosition {
 export interface ST_VisuFinger {
   fDiameter: number;
   fHeight: number;
+  /** Where the finger's frame lies on the gripper flange (protocol 20, ADR 0018). */
+  stOffset: ST_VisuPlanarPose;
 }
 
 export interface ST_VisuFingerState {
   /** Pose of the finger's frame (centre of its top face), absolute in the MCS. */
   stPose: ST_VisuPose;
+  /** The application reported stPose; FALSE: clients place the finger by its offset on the flange. */
+  bPoseReported: boolean;
   bActive: boolean;
 }
 

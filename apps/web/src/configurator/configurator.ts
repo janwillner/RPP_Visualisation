@@ -3,11 +3,12 @@ import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, PROTOCOL_VERSION, emptyDraft, t
 import { componentKey, type ComponentKey, type SceneSource } from "../scene/scene-model";
 import { zoneSides } from "../machine-facts";
 import { beltRange, mcsToBelt } from "./belt-coordinates";
-import { defaultArea, defaultComponent, newBody, HARDWARE_FIELDS, PALETTE_LABELS, XTS_MODULE_LENGTH, type AreaField, type PaletteType } from "./component-defaults";
+import { defaultArea, defaultComponent, newBody, newFinger, HARDWARE_FIELDS, PALETTE_LABELS, XTS_MODULE_LENGTH, type AreaField, type PaletteType } from "./component-defaults";
 import { applyEdit, keyOf, type Edit } from "./edits";
 import type { SourceInfo } from "../sources";
 import { hardwareHints, reconcile, type Match, type Reconciliation } from "./reconciliation";
 import { validateDraft, type Issue } from "./validation";
+import { restState } from "./rest-states";
 import { followWrites, parameterSetOf, wiringHints, writePlan, type WritePlan, type WriteState } from "./writing";
 
 /**
@@ -29,13 +30,20 @@ export const GRID_MM = 10;
 /** An edge of a zone that can be dragged: along the belt its start, end and CCS, across it its two sides. */
 export type ZoneEdge = "start" | "end" | "ccs" | "left" | "right";
 
+/** Fingers are dragged over the flange's top view on this grid, mm. */
+export const FINGER_GRID_MM = 5;
+
+/** Distance of a new finger from the furthest one along the flange's X, mm. */
+const FINGER_SPACING = 60;
+
 /** Length of a new zone along its belt, mm. */
 const ZONE_LENGTH = 500;
 
 /** Extension of a saved draft file. */
 export const DRAFT_FILE_EXTENSION = ".rpp-draft.json";
 
-const snap = (v: number) => Math.round(v / GRID_MM) * GRID_MM;
+/** `v` on a grid of `grid` mm, by default the placement grid. */
+const snap = (v: number, grid = GRID_MM) => Math.round(v / grid) * grid;
 
 export interface ConfiguratorSnapshot {
   draft: Draft;
@@ -336,6 +344,26 @@ export class Configurator {
     this.set(key, ["bodies"], [...c.bodies, newBody()]);
   }
 
+  /**
+   * Adds a finger to a robot's gripper (ADR 0018): `newFinger`, on the flange centre for the first one and each next
+   * one FINGER_SPACING further along the flange's X than the furthest so far.
+   */
+  addFinger(key: ComponentKey): void {
+    const c = this.component(key);
+    if (!c || !("fingers" in c)) return;
+    const x = c.fingers.length === 0 ? 0 : Math.max(...c.fingers.map((f) => f.offset.x)) + FINGER_SPACING;
+    this.set(key, ["fingers"], [...c.fingers, newFinger(x)]);
+  }
+
+  /** Moves finger `index` to (x, y) in the flange's top view, mm, on a FINGER_GRID_MM grid; its Z and Rz stay. */
+  moveFinger(key: ComponentKey, index: number, at: { x: number; y: number }): void {
+    const c = this.component(key);
+    const finger = c && "fingers" in c ? c.fingers[index] : undefined;
+    if (!finger) return;
+    const offset = { ...finger.offset, x: snap(at.x, FINGER_GRID_MM), y: snap(at.y, FINGER_GRID_MM) };
+    this.set(key, ["fingers", String(index), "offset"], offset);
+  }
+
   /** Gives a robot a limit area or a TCP limit area it does not have yet, starting as `defaultArea`. */
   addArea(key: ComponentKey, field: AreaField): void {
     const c = this.component(key);
@@ -446,7 +474,7 @@ export class Configurator {
   open(text: string): void {
     let draft: Draft;
     try {
-      draft = DraftSchema.parse(JSON.parse(text));
+      draft = DraftSchema.parse(upgradeDraft(JSON.parse(text)));
     } catch {
       this.set_({ notice: "The file is not a draft of this configurator, or it is damaged." });
       return;
@@ -554,8 +582,13 @@ export class Configurator {
       config.components.push(c);
     }
     const sources = [...bySource.values()].map((config) => {
-      // The only state of a draft: a preview product of each type on its conveyor.
-      const previews = config.components.flatMap((c) => (c.type === "conveyor" && c.productTypes.length > 0 ? [previewState(c)] : []));
+      // The only states of a draft: a preview product of each type on its conveyor, and a robot with fingers at rest,
+      // so its gripper shows on the flange (ADR 0018).
+      const previews = config.components.flatMap((c) => {
+        if (c.type === "conveyor") return c.productTypes.length > 0 ? [previewState(c)] : [];
+        const rest = restState(c);
+        return rest ? [rest] : [];
+      });
       const snapshots: StateMessage[] =
         previews.length === 0
           ? []
@@ -678,4 +711,22 @@ function previewState(belt: ConveyorConfig): ConveyorState {
     });
   }
   return { type: "conveyor", id: belt.id, timestamp: "0", beltPosition: 0, products, fault: null };
+}
+
+/** Protocol version that gave every finger its offset on the flange (ADR 0018). */
+const FINGER_OFFSETS_SINCE = 20;
+
+/**
+ * A draft file's content as this protocol reads it: a draft saved before finger offsets has its fingers on the flange
+ * centre. Anything that is not a draft stays as it is, for the schema to refuse.
+ */
+function upgradeDraft(raw: unknown): unknown {
+  const file = raw as { protocolVersion?: unknown; components?: unknown } | null;
+  if (typeof file?.protocolVersion !== "number" || file.protocolVersion >= FINGER_OFFSETS_SINCE) return raw;
+  if (!Array.isArray(file.components)) return raw;
+  const onFlange = { x: 0, y: 0, z: 0, rz: 0 };
+  const components = file.components.map((c: { fingers?: unknown }) =>
+    Array.isArray(c?.fingers) ? { ...c, fingers: c.fingers.map((f: object) => ({ offset: onFlange, ...f })) } : c,
+  );
+  return { ...file, components };
 }

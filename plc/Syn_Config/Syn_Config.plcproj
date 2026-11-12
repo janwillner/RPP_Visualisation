@@ -18,12 +18,12 @@
     <LibraryReferences>{4aaf00a1-38c8-4cd5-b616-5f1157d1ccbb}</LibraryReferences>
     <Company>Syntegon Group</Company>
     <Title>SynConfig</Title>
-    <ProjectVersion>1.1.0.0</ProjectVersion>
+    <ProjectVersion>2.0.0.0</ProjectVersion>
     <DefaultNamespace>SynConfig</DefaultNamespace>
     <Description>Parameter sets the RPP configurator writes and the application takes over (ADR 0017).</Description>
   </PropertyGroup>
   <ItemGroup>
-    <LibraryReference Include="SynVisu,9.4.1.0,Syntegon Group">
+    <LibraryReference Include="SynVisu,9.5.0.0,Syntegon Group">
       <Namespace>SynVisu</Namespace>
     </LibraryReference>
     <LibraryReference Include="Tc2_Standard,newest,Beckhoff Automation GmbH">
@@ -156,8 +156,8 @@
   <ProjectExtensions>
     <PlcProjectOptions>
       <XmlArchive>
-  <Data>
-    <o xml:space="preserve" t="OptionKey">
+        <Data>
+          <o xml:space="preserve" t="OptionKey">
       <v n="Name">"&lt;ProjectRoot&gt;"</v>
       <d n="SubKeys" t="Hashtable" ckt="String" cvt="OptionKey">
         <v>{192FAD59-8248-4824-A8DE-9177C94C195A}</v>
@@ -233,14 +233,14 @@
       </d>
       <d n="Values" t="Hashtable" />
     </o>
-  </Data>
-  <TypeList>
-    <Type n="Boolean">System.Boolean</Type>
-    <Type n="Hashtable">System.Collections.Hashtable</Type>
-    <Type n="OptionKey">{54dd0eac-a6d8-46f2-8c27-2f43c7e49861}</Type>
-    <Type n="String">System.String</Type>
-  </TypeList>
-</XmlArchive>
+        </Data>
+        <TypeList>
+          <Type n="Boolean">System.Boolean</Type>
+          <Type n="Hashtable">System.Collections.Hashtable</Type>
+          <Type n="OptionKey">{54dd0eac-a6d8-46f2-8c27-2f43c7e49861}</Type>
+          <Type n="String">System.String</Type>
+        </TypeList>
+      </XmlArchive>
     </PlcProjectOptions>
   </ProjectExtensions>
 </Project>

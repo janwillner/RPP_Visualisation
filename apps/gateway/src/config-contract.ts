@@ -1,6 +1,7 @@
 import type { ParameterType } from "@rpp/protocol";
 import type {
   PlcEnum,
+  ST_VisuFinger,
   ST_VisuLimitArea,
   ST_VisuPose,
   ST_VisuPosition,
@@ -78,6 +79,8 @@ export interface ST_ConfigDeltaParam {
   stOriginShift: ST_VisuPosition;
   nZoneCount: number;
   aZones: ST_VisuZone[];
+  nFingerCount: number;
+  aFingers: ST_VisuFinger[];
   stWorkingArea: ST_VisuWorkingArea;
   stLimitArea: ST_VisuLimitArea;
   stTcpLimitArea: ST_VisuLimitArea;
@@ -90,6 +93,8 @@ export interface ST_ConfigXtsGantryParam {
   aModules: ST_VisuTrackModule[];
   nZoneCount: number;
   aZones: ST_VisuZone[];
+  nFingerCount: number;
+  aFingers: ST_VisuFinger[];
   stLimitArea: ST_VisuLimitArea;
   stTcpLimitArea: ST_VisuLimitArea;
 }
@@ -101,6 +106,8 @@ export interface ST_ConfigXtsLoopParam {
   aModules: ST_VisuTrackModule[];
   nZoneCount: number;
   aZones: ST_VisuZone[];
+  nFingerCount: number;
+  aFingers: ST_VisuFinger[];
 }
 
 export interface ST_ConfigCartesianParam {
@@ -108,6 +115,8 @@ export interface ST_ConfigCartesianParam {
   stOriginShift: ST_VisuPosition;
   nZoneCount: number;
   aZones: ST_VisuZone[];
+  nFingerCount: number;
+  aFingers: ST_VisuFinger[];
   stLimitArea: ST_VisuLimitArea;
   stTcpLimitArea: ST_VisuLimitArea;
 }

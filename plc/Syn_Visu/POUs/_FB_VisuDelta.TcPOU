@@ -191,7 +191,8 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 Reports finger vi_un_Finger (1-based): the pose of its frame (centre of its top face), absolute in the MCS,<br>
-and whether it grips. Call once per cycle per configured finger.<br>
+and whether it grips. Call once per cycle per configured finger. A finger never reported here is drawn at its<br>
+offset on the flange (m_SetFingerOffset, ADR 0018).<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
 FALSE outside 1..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS.<br>
@@ -207,6 +208,7 @@ END_VAR]]></Declaration>
 IF m_SetFingerState THEN
 	vo_Visu.stState.aFingerStates[vi_un_Finger - 1].stPose := vi_Pose;
 	vo_Visu.stState.aFingerStates[vi_un_Finger - 1].bActive := vi_b_Active;
+	vo_Visu.stState.aFingerStates[vi_un_Finger - 1].bPoseReported := TRUE;
 END_IF]]></ST>
       </Implementation>
     </Method>

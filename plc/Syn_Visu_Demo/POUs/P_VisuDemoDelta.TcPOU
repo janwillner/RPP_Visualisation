@@ -411,10 +411,13 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Selects Delta n_Robot into fb_RefRobot and configures it (idempotent): base, gripper, working area,<br>
-limit area, TCP limit area and zones. Initialises its TCP once.<br>
+Selects Delta n_Robot into fb_RefRobot and configures it (idempotent): base, gripper with the fingers' places<br>
+on the flange, working area, limit area, TCP limit area and zones. Initialises its TCP once.<br>
 ****************************************************************************************************)
-METHOD PRIVATE m_Configure : BOOL]]></Declaration>
+METHOD PRIVATE m_Configure : BOOL
+VAR
+	lr_TempAngle						: LREAL;	// [deg] a ring finger's place around the flange
+END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[CASE n_Robot OF
 	0: fb_RefRobot REF= fb_Delta1;
@@ -481,7 +484,45 @@ RobotDefault.aZones[2].fCcsOffset := lr_BaseX - lr_OUTFEED_ORIGIN_X;
 RobotDefault.aZones[2].fStartY := 0;
 RobotDefault.aZones[2].fEndY := 0;
 
-(* Delta 1 runs with its parameter set (Syn_Config) once the configurator wrote one, also its pick logic. *)
+
+(****************************************************************************************************
+GRIPPER: the fingers and their places on the flange at rest (ADR 0018); the demo reports their live poses
+****************************************************************************************************)
+CASE n_Robot OF
+	0:
+		(* Two suction cups on either side of the flange along its X. *)
+		n_FingerCount := 2;
+		FOR n_Finger := 1 TO 2 DO
+			RobotDefault.aFingers[n_Finger - 1].fDiameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER;
+			RobotDefault.aFingers[n_Finger - 1].fHeight := DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT;
+			RobotDefault.aFingers[n_Finger - 1].stOffset.fX := SEL(n_Finger = 1, -lr_PAIR_OFFSET, lr_PAIR_OFFSET);
+			RobotDefault.aFingers[n_Finger - 1].stOffset.fY := 0;
+			RobotDefault.aFingers[n_Finger - 1].stOffset.fRz := 0;
+		END_FOR
+	1:
+		(* One finger at the flange centre. *)
+		n_FingerCount := 1;
+		RobotDefault.aFingers[0].fDiameter := lr_TILT_DIAMETER;
+		RobotDefault.aFingers[0].fHeight := lr_TILT_HEIGHT;
+		RobotDefault.aFingers[0].stOffset.fX := 0;
+		RobotDefault.aFingers[0].stOffset.fY := 0;
+		RobotDefault.aFingers[0].stOffset.fRz := 0;
+ELSE
+	(* A ring of fingers around the flange, open, each turned to face the centre. *)
+	n_FingerCount := n_RING_FINGERS;
+	FOR n_Finger := 1 TO n_RING_FINGERS DO
+		lr_TempAngle := 360.0 * INT_TO_LREAL(n_Finger - 1) / INT_TO_LREAL(n_RING_FINGERS);
+		RobotDefault.aFingers[n_Finger - 1].fDiameter := lr_RING_DIAMETER;
+		RobotDefault.aFingers[n_Finger - 1].fHeight := lr_RING_HEIGHT;
+		RobotDefault.aFingers[n_Finger - 1].stOffset.fX := lr_SPREAD_OPEN * COS(lr_TempAngle * VISU_GlobalConst.VISU_lr_DEG_TO_RAD);
+		RobotDefault.aFingers[n_Finger - 1].stOffset.fY := lr_SPREAD_OPEN * SIN(lr_TempAngle * VISU_GlobalConst.VISU_lr_DEG_TO_RAD);
+		RobotDefault.aFingers[n_Finger - 1].stOffset.fRz := lr_TempAngle;
+	END_FOR
+END_CASE
+RobotDefault.nFingerCount := INT_TO_UINT(n_FingerCount);
+
+(* Delta 1 runs with its parameter set (Syn_Config) once the configurator wrote one, also its pick logic. The
+   program values are complete only here: RobotDefault serves all three robots. *)
 IF n_Robot = 0 THEN
 	fb_Delta1Param.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Delta1.m_Id());
 	fb_Delta1Param.m_Cycle(vio_Default := RobotDefault, vio_Set := Delta1Set, vi_b_ApplyAllowed := TRUE);
@@ -493,27 +534,16 @@ END_IF
 fb_RefRobot.m_Configure(vi_Pose := BasePose, vi_lr_BaseRadius := 200, vi_lr_EffectorRadius := 50,
 	vi_lr_UpperArmLength := 400, vi_lr_LowerArmLength := 1000);
 
-
-(****************************************************************************************************
-GRIPPER
-****************************************************************************************************)
-CASE n_Robot OF
-	0:
-		n_FingerCount := 2;
-		fb_RefRobot.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER,
-			vi_lr_Height := DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT);
-		fb_RefRobot.m_SetFinger(vi_un_Finger := 2, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER,
-			vi_lr_Height := DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT);
-	1:
-		n_FingerCount := 1;
-		fb_RefRobot.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := lr_TILT_DIAMETER, vi_lr_Height := lr_TILT_HEIGHT);
-ELSE
-	n_FingerCount := n_RING_FINGERS;
-	FOR n_Finger := 1 TO n_RING_FINGERS DO
-		fb_RefRobot.m_SetFinger(vi_un_Finger := INT_TO_UINT(n_Finger), vi_lr_Diameter := lr_RING_DIAMETER,
-			vi_lr_Height := lr_RING_HEIGHT);
+(* Delta 1 gets its fingers with its parameter set (m_PassOn below), the others here. *)
+IF n_Robot <> 0 THEN
+	FOR n_Finger := 1 TO n_FingerCount DO
+		fb_RefRobot.m_SetFinger(vi_un_Finger := INT_TO_UINT(n_Finger), vi_lr_Diameter := RobotDefault.aFingers[n_Finger - 1].fDiameter,
+			vi_lr_Height := RobotDefault.aFingers[n_Finger - 1].fHeight);
+		fb_RefRobot.m_SetFingerOffset(vi_un_Finger := INT_TO_UINT(n_Finger),
+			vi_lr_X := RobotDefault.aFingers[n_Finger - 1].stOffset.fX, vi_lr_Y := RobotDefault.aFingers[n_Finger - 1].stOffset.fY,
+			vi_lr_Z := RobotDefault.aFingers[n_Finger - 1].stOffset.fZ, vi_lr_Rz := RobotDefault.aFingers[n_Finger - 1].stOffset.fRz);
 	END_FOR
-END_CASE
+END_IF
 
 
 (****************************************************************************************************

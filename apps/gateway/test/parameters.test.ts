@@ -137,6 +137,18 @@ describe("parameter sets (Syn_Config, ADR 0017)", () => {
     });
   });
 
+  it("rejects a finger without a diameter or height", async () => {
+    const { last, cycle, gateway } = setup();
+    await cycle();
+    const set = structuredClone(component(last("parameters"), 10)!.set);
+    if (set.type !== "delta") throw new Error("not a delta");
+    set.parameters.fingers = [{ diameter: 40, height: 50, offset: { x: 0, y: 0, z: 0, rz: 0 } }, { diameter: 0, height: 50, offset: { x: 70, y: 0, z: 0, rz: 0 } }];
+    await gateway.command({ kind: "writeParameters", requestId: 1, sourceId: "plc1", componentId: 10, baseVersion: 0, set });
+
+    await cycle();
+    expect(component(last("parameters"), 10)).toMatchObject({ result: "rejected", message: "Finger 2 has no diameter or height" });
+  });
+
   it("waits while the application does not allow taking a set over", async () => {
     const { last, cycle, gateway, emulation } = setup();
     await cycle();
@@ -234,6 +246,7 @@ describe("parameter sets (Syn_Config, ADR 0017)", () => {
     p.originShift = { x: 10, y: 20, z: 30 };
     if ("modules" in p) p.modules = [...(p.modules as unknown[]), { kind: "curveLeft", length: 250 }];
     if ("tcpLimitArea" in p) p.tcpLimitArea = { xMin: -60, xMax: 60, yMin: -60, yMax: 60, zMin: -100, zMax: 20 };
+    if ("fingers" in p) p.fingers = [{ diameter: 30, height: 60, offset: { x: 40, y: -20, z: -5, rz: 15 } }];
     if ("limitArea" in p) p.limitArea = { xMin: 0, xMax: 600, yMin: -100, yMax: 1500, zMin: -500, zMax: -100 };
     const result = await gateway.command({ kind: "writeParameters", requestId: 1, sourceId: "plc1", componentId: 20, baseVersion: 0, set });
     expect(result).toMatchObject({ ok: true });

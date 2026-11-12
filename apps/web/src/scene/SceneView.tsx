@@ -809,7 +809,11 @@ function machineBox(structure: MachineBounds): THREE.Box3 {
     const end = new THREE.Vector3(c.length, 0, 0).applyQuaternion(new THREE.Quaternion(...c.transform.quaternion));
     box.expandByPoint(new THREE.Vector3(...c.transform.position).add(end));
   }
-  for (const d of structure.deltas) box.expandByPoint(new THREE.Vector3(...d.base.position));
+  for (const d of structure.deltas) {
+    box.expandByPoint(new THREE.Vector3(...d.base.position));
+    // Down to its effector, so a gripper at the TCP is in the view too.
+    if (d.effector) box.expandByPoint(new THREE.Vector3(...d.effector.position));
+  }
   for (const o of structure.origins) box.expandByPoint(new THREE.Vector3(...o.transform.position));
   if (box.isEmpty()) box.set(new THREE.Vector3(-1, 0, -1), new THREE.Vector3(1, 1, 1));
   return box;
@@ -817,7 +821,7 @@ function machineBox(structure: MachineBounds): THREE.Box3 {
 /** Quiet time after the last camera movement before it is reported as the camera's new place. */
 const CAMERA_SETTLE_MS = 400;
 
-/** Frames the conveyors, Delta bases and component origins of all sources. */
+/** Frames the conveyors, Delta bases and effectors, and component origins of all sources. */
 function CameraRig(props: {
   request: { action: CameraPreset; seq: number };
   structure: MachineBounds;

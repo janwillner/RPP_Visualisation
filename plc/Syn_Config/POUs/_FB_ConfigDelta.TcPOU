@@ -7,8 +7,9 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Parameter set of one Delta robot (ADR 0017): its pose, origin shift, zones, working area, limit area and TCP<br>
-limit area, written by the configurator, taken over when the application allows it. Typical cycle:<br>
+Parameter set of one Delta robot (ADR 0017): its pose, origin shift, zones, gripper fingers, working area,<br>
+limit area and TCP limit area, written by the configurator, taken over when the application allows it.<br>
+Typical cycle:<br>
   fb_Delta1Param.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Delta1.m_Id());<br>
   fb_Delta1Param.m_Cycle(vio_Default := Delta1Default, vio_Set := Delta1Set, vi_b_ApplyAllowed := b_Stopped);<br>
   fb_Delta1.m_Configure(vi_Pose := fb_Delta1Param.m_Pose(), vi_lr_BaseRadius := 200, ...);<br>
@@ -21,6 +22,7 @@ vo_Config is the contract structure the gateway reads and writes at the path in 
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 1.0.0 ¦ 2026-11-10 ¦ J.Willner ¦ First version<br>
 Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ m_PassOn, m_Invalid through the shared helpers<br>
+Syn_Config 2.0.0 ¦ 2026-11-11 ¦ J.Willner ¦ Gripper fingers with their offsets (ADR 0018)<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_ConfigDelta EXTENDS _FB_ConfigComponent
 VAR_OUTPUT
@@ -124,15 +126,18 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Why a staged set cannot be taken over; '' when it can: more zones than the list holds, or a zone on no<br>
-conveyor (id 0).<br>
+Why a staged set cannot be taken over; '' when it can: more zones or fingers than the lists hold, a zone on no<br>
+conveyor (id 0), or a finger without a diameter or height.<br>
 ****************************************************************************************************)
 METHOD PRIVATE m_Invalid : STRING(80)
 VAR_IN_OUT CONSTANT
 	vio_Param							: ST_ConfigDeltaParam;	// the staged set
 END_VAR]]></Declaration>
       <Implementation>
-        <ST><![CDATA[m_Invalid := m_InvalidZones(vio_aZones := vio_Param.aZones, vi_un_Count := vio_Param.nZoneCount);]]></ST>
+        <ST><![CDATA[m_Invalid := m_InvalidZones(vio_aZones := vio_Param.aZones, vi_un_Count := vio_Param.nZoneCount);
+IF m_Invalid = '' THEN
+	m_Invalid := m_InvalidFingers(vio_aFingers := vio_Param.aFingers, vi_un_Count := vio_Param.nFingerCount);
+END_IF]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_PassOn" Id="{259edc68-b5dc-464d-aec3-df8d64817c9e}">
@@ -142,10 +147,11 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Passes the effective origin shift, working area, limit areas and zones on to the Delta's Syn_Visu FB, so the<br>
-visualisation shows what the machine uses. The pose goes with the application's own m_Configure call (with the<br>
-arm geometry, hardware): vi_Pose := m_Pose(). Call it after m_Cycle, every cycle; Syn_Visu's config version only<br>
-changes when a value does (the zones are cleared only when the set has fewer than the visualisation).<br>
+Passes the effective origin shift, working area, limit areas, zones and fingers on to the Delta's Syn_Visu<br>
+FB, so the visualisation shows what the machine uses. The pose goes with the application's own m_Configure<br>
+call (with the arm geometry, hardware): vi_Pose := m_Pose(). Call it after m_Cycle, every cycle; Syn_Visu's<br>
+config version only changes when a value does (zones and fingers are cleared only when the set has fewer than<br>
+the visualisation).<br>
 ****************************************************************************************************)
 METHOD m_PassOn : BOOL
 VAR_IN_OUT
@@ -162,7 +168,9 @@ vio_Visu.m_SetWorkingArea(vi_lr_Radius := vo_Config.stActive.stWorkingArea.fRadi
 m_PassOnLimitAreas(vio_Visu := vio_Visu, vio_LimitArea := vo_Config.stActive.stLimitArea,
 	vio_TcpLimitArea := vo_Config.stActive.stTcpLimitArea);
 m_PassOnZones(vio_Visu := vio_Visu, vio_aZones := vo_Config.stActive.aZones, vi_un_Count := vo_Config.stActive.nZoneCount,
-	vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nZoneCount);]]></ST>
+	vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nZoneCount);
+m_PassOnFingers(vio_Visu := vio_Visu, vio_aFingers := vo_Config.stActive.aFingers,
+	vi_un_Count := vo_Config.stActive.nFingerCount, vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nFingerCount);]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_Pose" Id="{3bfb4653-d713-4059-847e-4083afeb0e49}">

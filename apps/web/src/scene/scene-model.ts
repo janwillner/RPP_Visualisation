@@ -17,6 +17,7 @@ import {
   type Frame,
   frameFromPose,
   fromRenderer,
+  rotZ,
   toMcs,
   toRenderer,
   toRendererTransform,
@@ -587,9 +588,10 @@ export function buildScene(
       for (const g of grippers) {
         robot.fingers.forEach((f, i) => {
           const state = g.states[i];
-          if (!state) return;
           const index = i + 1;
-          const frame = frameFromPose(state.pose);
+          // A pose the application did not report: the finger hangs at its offset on the flange (ADR 0018).
+          const { x, y, z, rz } = f.offset;
+          const frame = state?.poseReported ? frameFromPose(state.pose) : child(g.flange, [x, y, z], rotZ(rz));
           const grip = child(frame, [0, 0, -f.height]);
           ctx.carriers.set(carrierKey(robot.id, g.moverId, index), grip);
           scene.fingers.push({
@@ -600,7 +602,7 @@ export function buildScene(
             transform: toRendererTransform(frame),
             diameter: f.diameter * MM,
             height: f.height * MM,
-            active: state.active,
+            active: state?.active ?? false,
             faulted: g.faulted,
             flange: toRenderer(g.flange.origin),
           });

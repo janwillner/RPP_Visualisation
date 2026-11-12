@@ -19,6 +19,7 @@ import {
   type ST_VisuDelta,
   type ST_VisuFault,
   type ST_VisuFinger,
+  type ST_VisuPlanarPose,
   type ST_VisuFingerState,
   type ST_VisuManifest,
   type ST_VisuManifestEntry,
@@ -72,21 +73,29 @@ export function noFault(): ST_VisuFault {
 }
 
 export function emptyFingerState(): ST_VisuFingerState {
-  return { stPose: pose(), bActive: false };
+  return { stPose: pose(), bPoseReported: false, bActive: false };
 }
 
-/** A full finger state array from the given states. */
+/** A full finger state array from the given states, their poses reported unless they say otherwise. */
 export function fingerStates(states: Partial<ST_VisuFingerState>[] = []): ST_VisuFingerState[] {
   return padded(
-    states.map((s) => ({ ...emptyFingerState(), ...s })),
+    states.map((s) => ({ ...emptyFingerState(), bPoseReported: true, ...s })),
     MAX_FINGERS,
     emptyFingerState,
   );
 }
 
-function fingerConfig(spec: { fingers?: ST_VisuFinger[] }) {
-  const fingers = spec.fingers ?? [];
-  return { nFingerCount: fingers.length, aFingers: padded(fingers, MAX_FINGERS, () => ({ fDiameter: 0, fHeight: 0 })) };
+/** A finger; on the flange centre unless an offset is given. */
+export type FingerSpec = Omit<ST_VisuFinger, "stOffset"> & { stOffset?: Partial<ST_VisuPlanarPose> };
+
+const planarPose = (p: Partial<ST_VisuPlanarPose> = {}): ST_VisuPlanarPose => ({ fX: 0, fY: 0, fZ: 0, fRz: 0, ...p });
+
+function fingerConfig(spec: { fingers?: FingerSpec[] }) {
+  const fingers = (spec.fingers ?? []).map((f): ST_VisuFinger => ({ ...f, stOffset: planarPose(f.stOffset) }));
+  return {
+    nFingerCount: fingers.length,
+    aFingers: padded(fingers, MAX_FINGERS, () => ({ fDiameter: 0, fHeight: 0, stOffset: planarPose() })),
+  };
 }
 
 export function pose(p: Partial<ST_VisuPose> = {}): ST_VisuPose {
@@ -199,7 +208,7 @@ export interface DeltaSpec extends LimitAreaSpec {
   effectorRadius?: number;
   upperArmLength?: number;
   lowerArmLength?: number;
-  fingers?: ST_VisuFinger[];
+  fingers?: FingerSpec[];
   zones?: ZoneSpec[];
   timestamp?: bigint;
   fault?: ST_VisuFault;
@@ -239,7 +248,7 @@ export interface XtsGantrySpec extends LimitAreaSpec {
   /** Per module, none unless given. */
   moduleFaults?: (ST_VisuFault | undefined)[];
   zones?: ZoneSpec[];
-  fingers?: ST_VisuFinger[];
+  fingers?: FingerSpec[];
   z?: number;
   movers?: Partial<ST_VisuGantryMover>[];
   timestamp?: bigint;
@@ -295,7 +304,7 @@ export interface XtsLoopSpec {
   /** Per module, none unless given. */
   moduleFaults?: (ST_VisuFault | undefined)[];
   zones?: ZoneSpec[];
-  fingers?: ST_VisuFinger[];
+  fingers?: FingerSpec[];
   movers?: Partial<ST_VisuLoopMover>[];
   timestamp?: bigint;
   fault?: ST_VisuFault;
@@ -352,7 +361,7 @@ export interface CartesianSpec extends LimitAreaSpec {
   pose?: Partial<ST_VisuPose>;
   originShift?: Partial<ST_VisuPosition>;
   zones?: ZoneSpec[];
-  fingers?: ST_VisuFinger[];
+  fingers?: FingerSpec[];
   state?: Partial<Omit<ST_VisuCartesianState, "nTimestamp">>;
   timestamp?: bigint;
 }

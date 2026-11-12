@@ -82,7 +82,7 @@ compiler asks for most of these entries (`satisfies` over every `ComponentType`)
 palette offers every type of `COMPONENT_SCHEMAS`.
 
 1. **Protocol** (`packages/protocol/src/parameters.ts`): its fields in `PARAMETER_FIELDS` (pose, origin shift and what
-   the application sets up per machine: zones, product types, track modules, areas; never hardware), its schema in
+   the application sets up per machine: zones, product types, track modules, gripper fingers, areas; never hardware), its schema in
    `PARAMETER_SCHEMAS` and `typed("<type>")` in `TypedParametersSchema`.
 2. **Syn_Config** (`plc/Syn_Config`, through the TwinCAT MCP tools): `ST_Config<Type>Param` with exactly those members
    (named as in its Syn_Visu config), `ST_Config<Type>Set`, `ST_Config<Type>` (`vo_Config`), and
@@ -95,7 +95,9 @@ palette offers every type of `COMPONENT_SCHEMAS`.
    and the emulation follow the naming convention without code.
 4. **Web**: its `PALETTE_TYPES` and `PALETTE_LABELS` entry, its `defaultComponent` with assumed hardware and its
    `HARDWARE_FIELDS` (`configurator/component-defaults.ts`); a new kind of list needs its `AddEntry` and a command
-   that starts an entry (like `addModule`, `addBody`), an optional area its `defaultArea`.
+   that starts an entry (like `addModule`, `addBody`, `addFinger`), an optional area its `defaultArea`. A robot with
+   fingers needs its rest state in `configurator/rest-states.ts` (where the draft draws its flange, ADR 0018); its kit
+   passes the flange frame its fingers' offsets count from to `addGripper`.
 5. **Tests**: its gateway write test (`parameters.test.ts`, the `it.each` over the types) and a configurator test per
    new editor (`configurator-types.test.ts`).
 

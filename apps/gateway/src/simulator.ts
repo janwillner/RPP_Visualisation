@@ -508,7 +508,12 @@ export function createSimulator(options: SimulatorOptions = {}): Simulator {
       kind: "cartesian",
       value: cartesian({
         pose: { fX: CART.x, fY: CART.y, fZ: CART.z, fRz: -90 },
-        fingers: [CART_TOOL.cup, CART_TOOL.jaw, CART_TOOL.jaw],
+        // Their places on the flange, the jaws open (ADR 0018); the simulator reports their live poses itself.
+        fingers: [
+          { ...CART_TOOL.cup, stOffset: { fZ: -(CART_TOOL.length - CART_TOOL.cup.fHeight) } },
+          { ...CART_TOOL.jaw, stOffset: { fX: CART_TOOL.jawOpen, fZ: -CART_TOOL.jawTop } },
+          { ...CART_TOOL.jaw, stOffset: { fX: -CART_TOOL.jawOpen, fZ: -CART_TOOL.jawTop } },
+        ],
         // X only up to the infeed, Z not into the top 100 mm.
         limitArea: { fXMin: 0, fXMax: 1000, fYMin: 0, fYMax: 1000, fZMin: -600, fZMax: -100 },
         tcpLimitArea: { fXMin: -80, fXMax: 80, fYMin: -80, fYMax: 80, fZMin: -50, fZMax: 20 },

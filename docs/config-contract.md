@@ -1,4 +1,4 @@
-# Parameter set contract (library `Syn_Config`, config protocol version 1)
+# Parameter set contract (library `Syn_Config`, config protocol version 2)
 
 The library `Syn_Config` (ADR 0017) holds the parameter sets the configurator writes and the application takes over:
 the part of a component's configuration the machine runs with, never its hardware. It is the PLC project
@@ -29,16 +29,22 @@ bound; Syn_Config's arrays start at 0 anyway).
 | Type | Parameter set (`ST_Config<Type>Param`) | Hardware, never written |
 | --- | --- | --- |
 | Conveyor (`_FB_ConfigConveyor`) | `stPose`, `stOriginShift`, `nProductTypeCount`, `aProductTypes` | length, width, body |
-| Delta (`_FB_ConfigDelta`) | `stPose`, `stOriginShift`, `nZoneCount`, `aZones`, `stWorkingArea`, `stLimitArea`, `stTcpLimitArea` | radii, arm lengths, fingers (#25) |
-| XTS gantry (`_FB_ConfigXtsGantry`) | `stPose`, `stOriginShift`, `nModuleCount`, `aModules`, `nZoneCount`, `aZones`, `stLimitArea`, `stTcpLimitArea` | strokes, tool offsets, mover size, fingers |
-| XTS loop (`_FB_ConfigXtsLoop`) | `stPose`, `stOriginShift`, `nModuleCount`, `aModules`, `nZoneCount`, `aZones` | tool offset, mover size, fingers |
-| Cartesian (`_FB_ConfigCartesian`) | `stPose`, `stOriginShift`, `nZoneCount`, `aZones`, `stLimitArea`, `stTcpLimitArea` | axes, strokes, rail height, fingers |
+| Delta (`_FB_ConfigDelta`) | `stPose`, `stOriginShift`, `nZoneCount`, `aZones`, `nFingerCount`, `aFingers`, `stWorkingArea`, `stLimitArea`, `stTcpLimitArea` | radii, arm lengths |
+| XTS gantry (`_FB_ConfigXtsGantry`) | `stPose`, `stOriginShift`, `nModuleCount`, `aModules`, `nZoneCount`, `aZones`, `nFingerCount`, `aFingers`, `stLimitArea`, `stTcpLimitArea` | strokes, tool offsets, mover size |
+| XTS loop (`_FB_ConfigXtsLoop`) | `stPose`, `stOriginShift`, `nModuleCount`, `aModules`, `nZoneCount`, `aZones`, `nFingerCount`, `aFingers` | tool offset, mover size |
+| Cartesian (`_FB_ConfigCartesian`) | `stPose`, `stOriginShift`, `nZoneCount`, `aZones`, `nFingerCount`, `aFingers`, `stLimitArea`, `stTcpLimitArea` | axes, strokes, rail height |
 | Vision system, product sensor, station (`_FB_ConfigVision`, `_FB_ConfigSensor`, `_FB_ConfigStation`; one structure `ST_ConfigBodyComponentParam`, `vo_Config : ST_ConfigBodyComponent`) | `stPose`, `stOriginShift`, `nZoneCount`, `aZones` | bodies |
 
-An XTS track's module chain is a parameter, not hardware: it is set up per machine (ADR 0016). Since library 1.1.0
-the base `_FB_ConfigComponent` has the shared helpers every parameter FB uses (`m_InvalidZones`, `m_InvalidModules`,
-`m_PassOnZones`, `m_PassOnModules`, `m_PassOnLimitAreas`); version 1.1.0 only adds parameter FBs, so the config
-protocol version stays 1.
+An XTS track's module chain and a gripper's fingers with their places on the flange (ADR 0018) are parameters, not
+hardware: they are set up per machine (ADR 0016). The base `_FB_ConfigComponent` has the shared helpers every
+parameter FB uses (`m_InvalidZones`, `m_InvalidModules`, `m_InvalidFingers`, `m_PassOnZones`, `m_PassOnModules`,
+`m_PassOnFingers`, `m_PassOnLimitAreas`).
+
+| Library | Config protocol | Change |
+| --- | --- | --- |
+| 2.0.0 | 2 | Gripper fingers (`nFingerCount`, `aFingers` with their `stOffset`) in the robots' sets; references Syn_Visu 9.5.0. The robots' structures changed: gateway and library are updated together |
+| 1.1.0 | 1 | Parameter FBs for the XTS gantry and loop, the Cartesian robot, vision system, sensor and station |
+| 1.0.0 | 1 | Conveyor and Delta |
 
 ## How a parameter FB handles a staging
 
@@ -48,7 +54,8 @@ Every cycle the application calls `m_Cycle(vio_Default, vio_Set, vi_b_ApplyAllow
 2. `bStaged` while `vi_b_ApplyAllowed` is FALSE: result PENDING, the set waits.
 3. `bStaged` on another active version than `nBaseVersion`: REJECTED ("Based on version …").
 4. `bStaged` with an invalid set (a count beyond its array; a product type without a number or twice; an XTS track
-   without modules or a module without a length; a zone on no conveyor): REJECTED with the reason.
+   without modules or a module without a length; a zone on no conveyor; a finger without a diameter or height):
+   REJECTED with the reason.
 5. Otherwise the set becomes active under the next version (`vio_Set.nLastVersion + 1`; versions never repeat).
 
 In every handled case `nHandledStageId := nStageId` and the flags are cleared. Then `stActive` is the active set
@@ -76,6 +83,10 @@ fb_InfeedParam.m_PassOn(vio_Visu := fb_Infeed);	// origin shift and product type
   the demo's Delta 1 allocates in the pick zone of its parameter set.
 - `m_PassOn` passes the effective values on to Syn_Visu, so the visualisation shows what the machine uses; the
   configurator warns when they differ ("does the application pass them on?").
+- **Upgrading to 2.0:** a robot's gripper fingers come with its parameter set. Put them into its program values
+  (`nFingerCount`, `aFingers` with their `stOffset`) and remove the robot's own `m_SetFinger` calls: `m_PassOn` would
+  clear the fingers the set does not have every cycle, and the visualisation's config version would change every
+  cycle. The persistent sets of 1.x lose their layout: the PLC restores them only partly after the download.
 - Syn_Visu cannot remove a product type: one a set no longer has stays in the visualisation until the application
   restarts.
 

@@ -8,15 +8,19 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 Base of the XTS kinematics (XTS gantry, XTS loop): a robot whose movers run along a track of XTS motor<br>
-modules, m_SetModule, m_ClearModules, m_SetModuleFault and m_TrackLength. The track is a chain of modules in the order the movers<br>
-run along it, each starting where the one before it ends: STRAIGHT, or a quarter curve CURVE_LEFT or CURVE_RIGHT.<br>
+modules, m_SetModule, m_ClearModules, m_SetModuleFault and m_TrackLength. The track is a chain of modules in<br>
+the order the movers run along it, each starting where the one before it ends: STRAIGHT, or a quarter curve<br>
+CURVE_LEFT or CURVE_RIGHT. m_SetFingersOnFlange: the movers' fingers are drawn at their offsets on the flange.<br>
 A derived FB tells where its modules lie through m_Modules. Not used directly.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 5.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New: XTS tracks of track modules, a fault per module<br>
+Syn_Visu 9.5.0  ¦ 2026-11-11 ¦ J.Willner ¦ m_SetFingersOnFlange (protocol 20, ADR 0018)<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK ABSTRACT _FB_VisuXtsTrack EXTENDS _FB_VisuRobot
-]]></Declaration>
+VAR
+	b_FingersOnFlange					: BOOL;	// the movers' finger poses are not reported: drawn at their offsets
+END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[]]></ST>
     </Implementation>
@@ -73,6 +77,29 @@ END_VAR
 ]]></Declaration>
       <Implementation>
         <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetFingersOnFlange" Id="{5267f263-9819-442c-9cbd-de87175917a2}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+TRUE: the application reports no finger poses with m_SetMover; the visualisation draws every mover's fingers<br>
+at their offsets on its flange (m_SetFingerOffset, ADR 0018), and vi_FingerStates gives only whether each<br>
+finger grips. FALSE (the default): m_SetMover reports the finger poses. May be called every cycle.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+The value set.<br>
+****************************************************************************************************)
+METHOD m_SetFingersOnFlange : BOOL
+VAR_INPUT
+	vi_b_OnFlange						: BOOL;	// TRUE: fingers at their offsets, no poses reported
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[b_FingersOnFlange := vi_b_OnFlange;
+m_SetFingersOnFlange := b_FingersOnFlange;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_SetModule" Id="{4566c4a8-e939-44fa-b47f-20f67add2c91}">

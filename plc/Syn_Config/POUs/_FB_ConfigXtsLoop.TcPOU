@@ -7,8 +7,8 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Parameter set of one XTS loop (ADR 0017): its pose, origin shift, track modules and zones, written by the<br>
-configurator, taken over when the application allows it. Typical cycle:<br>
+Parameter set of one XTS loop (ADR 0017): its pose, origin shift, track modules, zones and gripper fingers,<br>
+written by the configurator, taken over when the application allows it. Typical cycle:<br>
   fb_FxxParam.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Fxx.m_Id());<br>
   fb_FxxParam.m_Cycle(vio_Default := FxxDefault, vio_Set := FxxSet, vi_b_ApplyAllowed := b_Stopped);<br>
   fb_Fxx.m_Configure(vi_Pose := fb_FxxParam.m_Pose(), vi_lr_ToolOffset := 120, ...);<br>
@@ -20,6 +20,7 @@ vo_Config is the contract structure the gateway reads and writes at the path in 
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ New<br>
+Syn_Config 2.0.0 ¦ 2026-11-11 ¦ J.Willner ¦ Gripper fingers with their offsets (ADR 0018)<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_ConfigXtsLoop EXTENDS _FB_ConfigComponent
 VAR_OUTPUT
@@ -123,8 +124,9 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Why a staged set cannot be taken over; '' when it can: a track without modules, more modules or zones than the<br>
-lists hold, a module without a length, or a zone on no conveyor (id 0).<br>
+Why a staged set cannot be taken over; '' when it can: a track without modules, more modules, zones or fingers<br>
+than the lists hold, a module without a length, a zone on no conveyor (id 0), or a finger without a diameter or<br>
+height.<br>
 ****************************************************************************************************)
 METHOD PRIVATE m_Invalid : STRING(80)
 VAR_IN_OUT CONSTANT
@@ -134,6 +136,9 @@ END_VAR]]></Declaration>
         <ST><![CDATA[m_Invalid := m_InvalidModules(vio_aModules := vio_Param.aModules, vi_un_Count := vio_Param.nModuleCount);
 IF m_Invalid = '' THEN
 	m_Invalid := m_InvalidZones(vio_aZones := vio_Param.aZones, vi_un_Count := vio_Param.nZoneCount);
+END_IF
+IF m_Invalid = '' THEN
+	m_Invalid := m_InvalidFingers(vio_aFingers := vio_Param.aFingers, vi_un_Count := vio_Param.nFingerCount);
 END_IF]]></ST>
       </Implementation>
     </Method>
@@ -144,10 +149,10 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Passes the effective origin shift, track modules and zones on to the loop's Syn_Visu FB, so the visualisation<br>
-shows what the machine uses. The pose goes with the application's own m_Configure call (with the tool offset and<br>
-mover size, hardware): vi_Pose := m_Pose(). Call it after m_Cycle, every cycle; Syn_Visu's config version only<br>
-changes when a value does.<br>
+Passes the effective origin shift, track modules, zones and fingers on to the loop's Syn_Visu FB, so the<br>
+visualisation shows what the machine uses. The pose goes with the application's own m_Configure call (with<br>
+the tool offset and mover size, hardware): vi_Pose := m_Pose(). Call it after m_Cycle, every cycle; Syn_Visu's<br>
+config version only changes when a value does.<br>
 ****************************************************************************************************)
 METHOD m_PassOn : BOOL
 VAR_IN_OUT
@@ -160,7 +165,9 @@ vio_Visu.m_SetOriginShift(vi_lr_X := vo_Config.stActive.stOriginShift.fX, vi_lr_
 m_PassOnModules(vio_Visu := vio_Visu, vio_aModules := vo_Config.stActive.aModules,
 	vi_un_Count := vo_Config.stActive.nModuleCount, vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nModuleCount);
 m_PassOnZones(vio_Visu := vio_Visu, vio_aZones := vo_Config.stActive.aZones, vi_un_Count := vo_Config.stActive.nZoneCount,
-	vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nZoneCount);]]></ST>
+	vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nZoneCount);
+m_PassOnFingers(vio_Visu := vio_Visu, vio_aFingers := vo_Config.stActive.aFingers,
+	vi_un_Count := vo_Config.stActive.nFingerCount, vi_un_VisuCount := vio_Visu.vo_Visu.stConfig.nFingerCount);]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_Pose" Id="{eec44d82-e17a-42a6-b9be-483f3ceaf7fe}">

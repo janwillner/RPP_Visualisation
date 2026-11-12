@@ -70,6 +70,7 @@ says so in its status.
 
 | Library `SynVisu` | Protocol version | Gateway |
 | --- | --- | --- |
+| 9.5.x | 20 | releases from protocol 20 on; `m_SetFingerOffset` places a finger on the gripper flange, drawn there while its pose is not reported (section 7); no change to existing calls |
 | 9.4.x | 19 | releases from protocol 19 on; `m_SetTcpLimitArea` for a box around the TCP (section 8); no change to existing calls |
 | 9.3.x | 18 | releases from protocol 18 on; `m_SetLimitArea` also for the XTS gantry and the Cartesian robot (section 9); no change to existing calls |
 | 9.2.x | 17 | releases from protocol 17 on; `m_SetKinematics` for a Cartesian robot without a Y or a Z axis (section 9); no change to existing calls |
@@ -342,9 +343,18 @@ always drawn as a cylinder: a suction cup, a jaw, a pin. Picked products hang fr
 
 - **Define** the fingers once (every cycle is fine): `m_SetFinger(vi_un_Finger, vi_lr_Diameter, vi_lr_Height)`,
   1-based, up to 8. For XTS kinematics this defines the fingers of every mover's gripper.
+- **Place** each finger on the gripper flange: `m_SetFingerOffset(vi_un_Finger, vi_lr_X, vi_lr_Y, vi_lr_Z, vi_lr_Rz)`,
+  its position in the flange frame and its rotation about the flange's Z (ADR 0018). The flange frame's −Z points to
+  the product: a Delta's lies at the TCP with the robot's axes, a Cartesian robot's has the robot's axes, an XTS
+  mover's turns with the mover. The configurator lays the fingers out in a top view of the flange.
 - **Report** each finger every cycle, **absolute in the MCS**: the pose of the finger's frame and whether it grips.
   - Delta and Cartesian: `m_SetFingerState(vi_un_Finger, vi_Pose, vi_b_Active)`.
   - XTS gantry and loop: in the `vi_FingerStates` array of `m_SetMover` (index 0 = finger 1).
+- **Or let the visualisation place them:** a finger whose pose the application does not report is drawn at its
+  offset on the flange, so the gripper geometry is programmed only once. A Delta or Cartesian robot's finger counts
+  as reported once `m_SetFingerState` was called for it; an XTS track reports none after
+  `m_SetFingersOnFlange(vi_b_OnFlange := TRUE)`, and `vi_FingerStates` then only says whether each finger grips. A
+  tool rotation does not show on fingers placed this way.
 - **Finger frame:** origin at the centre of the finger's top face (where it is mounted). The finger extends along its
   local −Z; its grip point is the centre of its bottom face. A picked product's top touches the grip point and takes
   the finger's orientation.
@@ -365,6 +375,11 @@ CupPose.fY := Tcp.fY;
 CupPose.fZ := Tcp.fZ;
 CupPose.fRz := lr_Axis4;
 fb_Delta1.m_SetFingerState(vi_un_Finger := 1, vi_Pose := CupPose, vi_b_Active := b_Vacuum);
+
+(* An XTS loop whose cups the visualisation places: 0 mm from every mover's flange, no poses reported *)
+fb_Fxx.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 50);
+fb_Fxx.m_SetFingerOffset(vi_un_Finger := 1, vi_lr_X := 0, vi_lr_Y := 0, vi_lr_Z := 0, vi_lr_Rz := 0);
+fb_Fxx.m_SetFingersOnFlange(vi_b_OnFlange := TRUE);
 ```
 
 ## 8. Delta robot
@@ -379,7 +394,7 @@ FB: `SynVisu._FB_VisuDelta`. The PLC reports only the TCP; the web app computes 
 | `m_SetWorkingArea(vi_lr_Radius, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ConeHeight, vi_lr_ConeBottomRadius)` | Vertical cylinder in the robot frame (Z negative below the base), optionally with a cone at the bottom |
 | `m_SetLimitArea(vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax)`, `m_ClearLimitArea()` | Optional box in the robot frame that further restricts the working area, e.g. against a neighbouring robot; equal bounds make a flat box. The XTS gantry and the Cartesian robot have it too. |
 | `m_SetTcpLimitArea(vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax)`, `m_ClearTcpLimitArea()` | Optional box around the TCP, bounds relative to the TCP along the robot frame's axes (see below). The XTS gantry (around every mover's gripper flange) and the Cartesian robot (around its flange) have it too. |
-| `m_SetFinger(...)` | See [section 7](#7-grippers-and-fingers) |
+| `m_SetFinger(...)`, `m_SetFingerOffset(...)` | See [section 7](#7-grippers-and-fingers) |
 | `m_SetZone(...)` | See [section 6](#6-zones) |
 | each cycle: `m_SetTcp(vi_ActualTcp, vi_SetpointTcp)` | TCP (effector centre, the gripper flange) as `ST_VisuPosition` in the MCS |
 | each cycle: `m_SetFingerState(...)` | Per finger |
@@ -510,7 +525,7 @@ in the machine.
 | --- | --- |
 | `m_Configure(vi_Pose, vi_lr_XMin, vi_lr_XMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ToolOffsetX, vi_lr_ToolOffsetZ, vi_lr_MoverLength, vi_lr_MoverWidth)` | Strokes of the X axes and the Z axis; the gripper flange relative to the mover at X = 0 (ahead along +X, below the mover top negative); mover size |
 | `m_SetModule(...)` | The track, [section 10](#10-xts-tracks-and-their-motor-modules) |
-| `m_SetFinger(...)`, `m_SetZone(...)` | As for all robots |
+| `m_SetFinger(...)`, `m_SetFingerOffset(...)`, `m_SetZone(...)` | As for all robots ([section 7](#7-grippers-and-fingers)) |
 | `m_SetLimitArea(...)`, `m_ClearLimitArea()` | Optional box in the robot frame (local, from the track start) that further restricts the working area |
 | `m_SetTcpLimitArea(...)`, `m_ClearTcpLimitArea()` | Optional box around every mover's gripper flange, relative to it ([section 8.1](#81-tcp-limit-area)); movers of the same gantry are checked against each other too |
 | each cycle: `m_SetZPosition(vi_lr_Z)` | Common Z axis |
@@ -828,6 +843,7 @@ Robots: Delta, XTS gantry, XTS loop, Cartesian (`_FB_VisuRobot`):
 | Method | Purpose |
 | --- | --- |
 | `m_SetFinger(vi_un_Finger, vi_lr_Diameter, vi_lr_Height)` | Defines finger `vi_un_Finger` (1-based) of the gripper; for XTS kinematics of every mover's gripper |
+| `m_SetFingerOffset(vi_un_Finger, vi_lr_X, vi_lr_Y, vi_lr_Z, vi_lr_Rz)` | Places a defined finger on the gripper flange: position in the flange frame, rotation about its Z; drawn there while its pose is not reported (ADR 0018) |
 | `m_ClearFingers()` | Removes the gripper definition |
 | `m_SetLimitArea(vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax)`, `m_ClearLimitArea()` | Sets and activates, or removes, the limit area (Delta, XTS gantry, Cartesian); an XTS loop has none, there both return FALSE |
 | `m_SetTcpLimitArea(vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax)`, `m_ClearTcpLimitArea()` | Sets and activates, or removes, the TCP limit area: a box around the TCP, relative to it (Delta, XTS gantry, Cartesian); an XTS loop has none, there both return FALSE |
@@ -840,6 +856,7 @@ XTS gantry and XTS loop (`_FB_VisuXtsTrack`):
 | `m_ClearModules()` | Removes all track modules |
 | `m_SetModuleFault(vi_un_Module, vi_b_Fault, vi_str_FaultMessage)` | Reports a module's fault; call every cycle with its current state |
 | `m_TrackLength()` | Length of the track along its modules, mm (on a loop its perimeter) |
+| `m_SetFingersOnFlange(vi_b_OnFlange)` | TRUE: `m_SetMover` reports no finger poses; every mover's fingers are drawn at their offsets on its flange (ADR 0018) |
 
 Detectors and stations (`_FB_VisuBodyComponent`):
 

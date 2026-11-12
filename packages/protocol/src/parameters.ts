@@ -23,18 +23,19 @@ import {
  */
 
 /** Version of the Syn_Config contract. Must match `nProtocolVersion` in the PLC's config manifest. */
-export const CONFIG_PROTOCOL_VERSION = 1;
+export const CONFIG_PROTOCOL_VERSION = 2;
 
 /**
  * The configuration fields of each component type that a parameter set holds; hardware (lengths, arm geometry, strokes,
- * bodies) is never among them. An XTS track's modules are: its chain is set up per machine (ADR 0016).
+ * bodies) is never among them. An XTS track's modules and a gripper's fingers are: they are set up per machine (ADR 0016,
+ * ADR 0018).
  */
 export const PARAMETER_FIELDS = {
   conveyor: ["pose", "originShift", "productTypes"],
-  delta: ["pose", "originShift", "zones", "workingArea", "limitArea", "tcpLimitArea"],
-  xtsGantry: ["pose", "originShift", "modules", "zones", "limitArea", "tcpLimitArea"],
-  xtsLoop: ["pose", "originShift", "modules", "zones"],
-  cartesian: ["pose", "originShift", "zones", "limitArea", "tcpLimitArea"],
+  delta: ["pose", "originShift", "zones", "fingers", "workingArea", "limitArea", "tcpLimitArea"],
+  xtsGantry: ["pose", "originShift", "modules", "zones", "fingers", "limitArea", "tcpLimitArea"],
+  xtsLoop: ["pose", "originShift", "modules", "zones", "fingers"],
+  cartesian: ["pose", "originShift", "zones", "fingers", "limitArea", "tcpLimitArea"],
   vision: ["pose", "originShift", "zones"],
   sensor: ["pose", "originShift", "zones"],
   station: ["pose", "originShift", "zones"],
@@ -42,7 +43,7 @@ export const PARAMETER_FIELDS = {
 export type ParameterType = keyof typeof PARAMETER_FIELDS;
 
 const base = { pose: true, originShift: true } as const;
-const robot = { ...base, zones: true, limitArea: true, tcpLimitArea: true } as const;
+const robot = { ...base, zones: true, fingers: true, limitArea: true, tcpLimitArea: true } as const;
 const areas = "limit area and TCP limit area";
 
 export const ConveyorParametersSchema = ConveyorConfigSchema.pick({ ...base, productTypes: true }).describe(
@@ -51,18 +52,18 @@ export const ConveyorParametersSchema = ConveyorConfigSchema.pick({ ...base, pro
 export type ConveyorParameters = z.infer<typeof ConveyorParametersSchema>;
 
 export const DeltaParametersSchema = DeltaConfigSchema.pick({ ...robot, workingArea: true }).describe(
-  `A Delta robot's parameter set: its pose, origin shift, zones, working area, ${areas}.`,
+  `A Delta robot's parameter set: its pose, origin shift, zones, gripper fingers, working area, ${areas}.`,
 );
 export type DeltaParameters = z.infer<typeof DeltaParametersSchema>;
 
 export const XtsGantryParametersSchema = XtsGantryConfigSchema.pick({ ...robot, modules: true }).describe(
-  `An XTS gantry's parameter set: its pose, origin shift, track modules, zones, ${areas}.`,
+  `An XTS gantry's parameter set: its pose, origin shift, track modules, zones, gripper fingers, ${areas}.`,
 );
-export const XtsLoopParametersSchema = XtsLoopConfigSchema.pick({ ...base, modules: true, zones: true }).describe(
-  "An XTS loop's parameter set: its pose, origin shift, track modules and zones.",
+export const XtsLoopParametersSchema = XtsLoopConfigSchema.pick({ ...base, modules: true, zones: true, fingers: true }).describe(
+  "An XTS loop's parameter set: its pose, origin shift, track modules, zones and gripper fingers.",
 );
 export const CartesianParametersSchema = CartesianConfigSchema.pick(robot).describe(
-  `A Cartesian robot's parameter set: its pose, origin shift, zones, ${areas}.`,
+  `A Cartesian robot's parameter set: its pose, origin shift, zones, gripper fingers, ${areas}.`,
 );
 export const VisionParametersSchema = VisionConfigSchema.pick({ ...base, zones: true }).describe(
   "A vision system's parameter set: its pose, origin shift and zones.",

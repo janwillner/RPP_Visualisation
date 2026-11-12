@@ -34,7 +34,7 @@ VAR
 	lr_LoopS							: ARRAY[0..11] OF LREAL;	// [mm] per mover (n_LOOP_MOVERS)
 	n_LoopMode							: ARRAY[0..11] OF INT;
 	udn_LoopProduct						: ARRAY[0..11] OF UDINT;	// [-] product id on the Fxx infeed
-	MoverFingers						: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;	// the mover's cup
+	MoverFingers						: ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_FINGERS - 1] OF ST_VisuFingerState;	// the mover's cup: grips
 	un_Module							: UINT;	// [-] track module being set
 	e_ModuleKind						: E_VisuModuleKind;
 END_VAR
@@ -47,8 +47,6 @@ VAR CONSTANT
 	lr_FXX_OUTFEED_SPEED				: LREAL := 300;	// [mm/s]
 	lr_LOOP_X							: LREAL := 1000;	// [mm] start of the lower straight above the Fxx infeed
 	un_LOOP_STRAIGHT_MODULES			: UINT := 10;	// [-] straight XTS modules per side, joined at each end by two left curve modules
-	lr_LOOP_STRAIGHT					: LREAL := 2500;	// [mm] un_LOOP_STRAIGHT_MODULES * 250
-	lr_LOOP_RADIUS						: LREAL := 159.15494309189535;	// [mm] two 250 mm quarter curves: 2 * 250 / pi
 	lr_LOOP_TOOL_OFFSET					: LREAL := 120;	// [mm]
 	n_LOOP_MOVERS						: INT := 12;	// [-] size of the lr_LoopS, n_LoopMode and udn_LoopProduct arrays
 	lr_LOOP_SLOT						: LREAL := 130;	// [mm] queue spacing
@@ -153,6 +151,10 @@ fb_Fxx.m_SetModuleFault(vi_un_Module := un_LOOP_STRAIGHT_MODULES + 1,
 	vi_str_FaultMessage := 'Overtemperature');
 fb_Fxx.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := DEMO_GlobalConst.DEMO_lr_CUP_DIAMETER,
 	vi_lr_Height := DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT);
+(* The cup hangs at the flange centre; the movers report no finger poses, the visualisation places the cup by its
+   offset on every mover's flange (ADR 0018). *)
+fb_Fxx.m_SetFingerOffset(vi_un_Finger := 1, vi_lr_X := 0, vi_lr_Y := 0, vi_lr_Z := 0, vi_lr_Rz := 0);
+fb_Fxx.m_SetFingersOnFlange(vi_b_OnFlange := TRUE);
 fb_Fxx.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_FxxInfeed.m_Id(), vi_lr_Start := lr_LOOP_X,
 	vi_lr_End := lr_LOOP_X + lr_LOOP_RELEASE, vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := lr_LOOP_X,
 	vi_lr_StartY := 0, vi_lr_EndY := 0);
@@ -170,61 +172,6 @@ m_Step();
 fb_FxxInfeed.m_RemoveProductsBeyond(lr_FXX_INFEED_LENGTH + DEMO_GlobalConst.DEMO_lr_REMOVE_BEYOND_END);
 fb_FxxOutfeed.m_RemoveProductsBeyond(lr_FXX_OUTFEED_LENGTH + DEMO_GlobalConst.DEMO_lr_REMOVE_BEYOND_END);]]></ST>
     </Implementation>
-    <Method Name="m_Flange" Id="{d3f349a0-69e0-4458-aa49-687fe8075577}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-Pose of the gripper flange of a Fxx mover at track position vi_lr_S, absolute in the MCS: outwards from the<br>
-track by the configured tool offset, turned about the loop's Y axis with the track tangent.<br>
-****************************************************************************************************)
-METHOD PRIVATE m_Flange : ST_VisuPose
-VAR_INPUT
-	vi_lr_S								: LREAL;	// [mm] 0..perimeter
-END_VAR
-VAR
-	lr_TempArc							: LREAL;	// [mm] length of one curve
-	lr_TempA							: LREAL;	// [rad]
-	lr_TempX							: LREAL;	// [mm] local track point
-	lr_TempZ							: LREAL;	// [mm]
-	lr_TempAngle						: LREAL;	// [deg] mover rotation about local Y
-	lr_TempOut							: LREAL;	// [mm] flange distance from the track
-END_VAR]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[lr_TempArc := 3.141592653589793 * lr_LOOP_RADIUS;
-IF vi_lr_S <= lr_LOOP_STRAIGHT THEN
-	lr_TempX := vi_lr_S;
-	lr_TempZ := 0;
-	lr_TempAngle := 0;
-ELSIF vi_lr_S <= lr_LOOP_STRAIGHT + lr_TempArc THEN
-	lr_TempA := (vi_lr_S - lr_LOOP_STRAIGHT) / lr_LOOP_RADIUS;
-	lr_TempX := lr_LOOP_STRAIGHT + lr_LOOP_RADIUS * SIN(lr_TempA);
-	lr_TempZ := lr_LOOP_RADIUS - lr_LOOP_RADIUS * COS(lr_TempA);
-	lr_TempAngle := -lr_TempA / VISU_GlobalConst.VISU_lr_DEG_TO_RAD;
-ELSIF vi_lr_S <= 2 * lr_LOOP_STRAIGHT + lr_TempArc THEN
-	lr_TempX := lr_LOOP_STRAIGHT - (vi_lr_S - lr_LOOP_STRAIGHT - lr_TempArc);
-	lr_TempZ := 2 * lr_LOOP_RADIUS;
-	lr_TempAngle := 180;
-ELSE
-	lr_TempA := (vi_lr_S - 2 * lr_LOOP_STRAIGHT - lr_TempArc) / lr_LOOP_RADIUS;
-	lr_TempX := -lr_LOOP_RADIUS * SIN(lr_TempA);
-	lr_TempZ := lr_LOOP_RADIUS + lr_LOOP_RADIUS * COS(lr_TempA);
-	lr_TempAngle := 180 - lr_TempA / VISU_GlobalConst.VISU_lr_DEG_TO_RAD;
-END_IF
-
-(* The mover's -Z, turned about Y by the angle, points outwards: Ry(angle) * (0, 0, -out). *)
-lr_TempOut := lr_LOOP_TOOL_OFFSET - DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT;
-m_Flange.fX := lr_LOOP_X + lr_TempX - lr_TempOut * SIN(lr_TempAngle * VISU_GlobalConst.VISU_lr_DEG_TO_RAD);
-m_Flange.fY := lr_FXX_Y;
-m_Flange.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT + lr_LOOP_TOOL_OFFSET
-			+ lr_TempZ - lr_TempOut * COS(lr_TempAngle * VISU_GlobalConst.VISU_lr_DEG_TO_RAD);
-m_Flange.fRx := 0;
-m_Flange.fRy := lr_TempAngle;
-m_Flange.fRz := 0;]]></ST>
-      </Implementation>
-    </Method>
     <Method Name="m_Step" Id="{ed9485c3-b537-4790-9a75-538f3bf97795}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -376,12 +323,11 @@ FOR n_TempI := 0 TO n_LOOP_MOVERS - 1 DO
 			END_IF
 	END_CASE
 
-	(* Report the mover with its cup *)
+	(* Report the mover with its cup: whether it grips; its pose follows from its offset on the flange. *)
 	lr_TempS := lr_LoopS[n_TempI];
 	IF lr_TempS >= lr_TempPerimeter THEN
 		lr_TempS := lr_TempS - lr_TempPerimeter;
 	END_IF
-	MoverFingers[0].stPose := m_Flange(lr_TempS);
 	MoverFingers[0].bActive := n_LoopMode[n_TempI] = n_LOOP_DELIVER
 							OR (n_LoopMode[n_TempI] = n_LOOP_TRACK AND lr_LoopS[n_TempI] >= lr_LOOP_GRIP);
 

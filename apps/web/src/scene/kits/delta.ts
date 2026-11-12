@@ -23,9 +23,12 @@ export const deltaKit: ComponentKit<"delta"> = {
     ctx.scene.deltas.push(delta);
     ctx.addFault(c.id, null, delta.fault, lifted(frame.origin, LABEL_LIFT.delta));
     if (state) {
-      // The flange frame lies at the TCP with the MCS axes, whatever way the robot is mounted.
-      const flange: Frame = { rotation: rotZ(0), origin: positionToMcs(state.actualTcp) };
-      ctx.carriers.set(carrierKey(c.id, 0), flange);
+      // A product at the flange hangs along the MCS axes, whatever way the robot is mounted.
+      const tcp = positionToMcs(state.actualTcp);
+      ctx.carriers.set(carrierKey(c.id, 0), { rotation: rotZ(0), origin: tcp });
+      // The gripper is bolted to the effector, which stays turned with the base: its fingers' offsets count along
+      // the robot's axes at the TCP (ADR 0018).
+      const flange: Frame = { rotation: frame.rotation, origin: tcp };
       ctx.addGripper(c, [{ moverId: 0, flange, states: state.fingers, faulted: delta.fault !== null }]);
     }
     ctx.scene.snapPoints.push(...deltaSnapPoints(c, state));

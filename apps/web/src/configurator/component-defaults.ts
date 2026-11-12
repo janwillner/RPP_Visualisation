@@ -6,6 +6,7 @@ import type {
   ComponentType,
   ConveyorConfig,
   DeltaConfig,
+  Finger,
   LimitArea,
   Pose,
   SensorConfig,
@@ -189,6 +190,9 @@ export const HARDWARE_FIELDS: { [T in ComponentType]: readonly (keyof Extract<Co
 
 /** A body added to a detector or station: a 100 mm box standing on its origin, to edit from there. */
 export const newBody = (): Body => box(at(0, 0, 0), 100, 100, 100);
+
+/** A finger added to a robot's gripper: a 40 mm suction cup, 50 mm long, `x` mm along the flange's X (ADR 0018). */
+export const newFinger = (x: number): Finger => ({ diameter: 40, height: 50, offset: { x, y: 0, z: 0, rz: 0 } });
 
 /** The optional areas a robot may have. */
 export const AREA_FIELDS = ["limitArea", "tcpLimitArea"] as const;

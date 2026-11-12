@@ -4,6 +4,9 @@
     <Declaration><![CDATA[TYPE ST_VisuFingerState :
 STRUCT
 	stPose : ST_VisuPose; // MCS, absolute: pose of the finger's frame (centre of its top face)
+	(* The application reported stPose (protocol 20, ADR 0018). FALSE: clients place the finger by its stOffset on
+	   the gripper flange. Set by the library, not by the application. *)
+	bPoseReported : BOOL;
 	bActive : BOOL; // the finger grips
 END_STRUCT
 END_TYPE]]></Declaration>

@@ -1209,3 +1209,60 @@ table.metrics td + td {
   padding: 1px 8px 1px 0;
   font-variant-numeric: tabular-nums;
 }
+
+/* Gripper fingers in a top view of the flange (ADR 0018). */
+.configurator .finger-layout {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  margin-top: 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  touch-action: none;
+}
+
+.configurator .finger-layout .flange {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 4 3;
+}
+
+.configurator .finger-layout .axis {
+  stroke: var(--muted);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.configurator .finger-layout text {
+  fill: var(--text);
+  font-size: 12px;
+  user-select: none;
+}
+
+.configurator .finger-layout .axis-label {
+  fill: var(--muted);
+}
+
+.configurator .finger-layout .finger {
+  cursor: grab;
+}
+
+.configurator .finger-layout .finger circle {
+  fill: var(--panel);
+  stroke: var(--accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.configurator .finger-layout .finger:active {
+  cursor: grabbing;
+}
+
+.configurator .finger-layout .finger .heading {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
