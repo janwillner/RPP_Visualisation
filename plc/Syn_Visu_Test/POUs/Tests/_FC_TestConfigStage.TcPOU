@@ -1,0 +1,41 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FC_TestConfigStage" Id="{5b0f2b44-dd92-4b39-9d1b-1657bfaa7381}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Writes a parameter FB's stStaging as the gateway does over ADS (docs/config-contract.md): the version the set is<br>
+based on, a stage id, and bStaged (a set, written to stStaged before) or bReset last. ST cannot assign to an FB's<br>
+output, so the tests pass the address of vo_Config.stStaging, as ADS writes into the PLC's memory.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for a null pointer.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 2.0.0 ¦ 2026-11-11 ¦ J.Willner ¦ Unit tests<br>
+****************************************************************************************************)
+FUNCTION _FC_TestConfigStage : BOOL
+VAR_INPUT
+	vi_p_Staging						: POINTER TO SynConfig.ST_ConfigStaging;	// ADR(fb_Param.vo_Config.stStaging)
+	vi_udn_BaseVersion					: UDINT;	// [-] active version the set is based on
+	vi_udn_StageId						: UDINT;	// [-] the gateway's id of this staging
+	vi_b_Reset							: BOOL;	// [-] TRUE: a reset instead of a staged set
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[_FC_TestConfigStage := vi_p_Staging <> 0;
+IF NOT _FC_TestConfigStage THEN
+	RETURN;
+END_IF
+vi_p_Staging^.bStaged := FALSE;
+vi_p_Staging^.nBaseVersion := vi_udn_BaseVersion;
+vi_p_Staging^.nStageId := vi_udn_StageId;
+vi_p_Staging^.bReset := vi_b_Reset;
+vi_p_Staging^.bStaged := NOT vi_b_Reset;
+]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

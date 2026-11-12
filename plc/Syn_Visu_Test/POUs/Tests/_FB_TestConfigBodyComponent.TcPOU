@@ -1,0 +1,178 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_TestConfigBodyComponent" Id="{0f7ee6f5-95b2-4e38-9d93-f110b2ca8821}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+TcUnit test suite of the parameter FBs of components drawn from their bodies (SynConfig._FB_ConfigVision,<br>
+_FB_ConfigSensor, _FB_ConfigStation on _FB_ConfigBodyComponent): the component type each registers, a set with<br>
+zones taken over and passed on to the Syn_Visu FB, and a zone on no conveyor rejected.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 2.0.0 ¦ 2026-11-11 ¦ J.Willner ¦ Unit tests<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_TestConfigBodyComponent EXTENDS TcUnit.FB_TestSuite
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[m_RegisterComponentTypes();
+m_VisionZonesTakenOverAndPassedOn();
+m_SensorRejectsZoneOnNoConveyor();
+]]></ST>
+    </Implementation>
+    <Method Name="m_RegisterComponentTypes" Id="{a05ae7c2-4989-4c32-adf7-946ed40d46bf}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Vision system, product sensor and station share one structure, but each registers its own component type, from<br>
+which the gateway knows the component.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterComponentTypes
+VAR_INST
+	fb_TempVisionParam					: SynConfig._FB_ConfigVision;
+	fb_TempSensorParam					: SynConfig._FB_ConfigSensor;
+	fb_TempStationParam					: SynConfig._FB_ConfigStation;
+	TempManifest						: SynConfig.ST_ConfigManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigRegisterComponentTypes');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertTrue(Condition := fb_TempVisionParam.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 60), Message := 'vision registered');
+AssertTrue(Condition := fb_TempSensorParam.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 61), Message := 'sensor registered');
+AssertTrue(Condition := fb_TempStationParam.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 70),
+	Message := 'station registered');
+AssertEquals_UINT(Expected := 3, Actual := TempManifest.nCount, Message := 'three entries');
+AssertTrue(Condition := TempManifest.aEntries[0].eType = E_VisuComponentType.VISION, Message := 'vision type');
+AssertTrue(Condition := TempManifest.aEntries[1].eType = E_VisuComponentType.SENSOR, Message := 'sensor type');
+AssertTrue(Condition := TempManifest.aEntries[2].eType = E_VisuComponentType.STATION, Message := 'station type');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SensorRejectsZoneOnNoConveyor" Id="{5aa06a93-a3cf-4ed1-b026-bafe424b8d67}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A product sensor's set with a zone on no conveyor is rejected with the reason; the program values stay.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SensorRejectsZoneOnNoConveyor
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigSensor;
+	TempDefault							: SynConfig.ST_ConfigBodyComponentParam;
+	TempSet								: SynConfig.ST_ConfigBodyComponentSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	TempStaged							: SynConfig.ST_ConfigBodyComponentParam;
+	p_TempStaged						: POINTER TO SynConfig.ST_ConfigBodyComponentParam;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigSensorRejectsZoneOnNoConveyor');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+TempDefault.stPose.fX := 200;
+TempStaged.stPose.fX := 900;
+TempStaged.nZoneCount := 2;
+TempStaged.aZones[0].nConveyorId := 1;
+TempStaged.aZones[1].nConveyorId := 0;
+p_TempStaged := ADR(fb_TempParam.vo_Config.stStaged);
+p_TempStaged^ := TempStaged;
+_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempParam.vo_Config.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 4,
+	vi_b_Reset := FALSE);
+
+AssertFalse(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE),
+	Message := 'not taken over');
+AssertTrue(Condition := fb_TempParam.vo_Config.stStatus.eResult = SynConfig.E_ConfigResult.REJECTED, Message := 'rejected');
+AssertEquals_STRING(Expected := 'Zone 2 lies on no conveyor', Actual := fb_TempParam.vo_Config.stStatus.sMessage, Message := 'reason');
+AssertEquals_LREAL(Expected := 200, Actual := fb_TempParam.vo_Config.stActive.stPose.fX, Delta := 0.001,
+	Message := 'program values still effective');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_VisionZonesTakenOverAndPassedOn" Id="{f3e223a2-a737-482d-a56d-3b8a3daf4a42}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A vision system's staged set with a pose, an origin shift and two zones is taken over; m_Pose gives the pose and<br>
+m_PassOn hands origin shift and zones on to the Syn_Visu FB.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_VisionZonesTakenOverAndPassedOn
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigVision;
+	fb_TempVisu							: _FB_VisuVision;
+	TempDefault							: SynConfig.ST_ConfigBodyComponentParam;
+	TempSet								: SynConfig.ST_ConfigBodyComponentSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	TempStaged							: SynConfig.ST_ConfigBodyComponentParam;
+	p_TempStaged						: POINTER TO SynConfig.ST_ConfigBodyComponentParam;
+	TempPose							: ST_VisuPose;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigVisionZonesTakenOverAndPassedOn');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+TempStaged.stPose.fX := 1500;
+TempStaged.stPose.fZ := 1600;
+TempStaged.stOriginShift.fZ := -800;
+TempStaged.nZoneCount := 2;
+TempStaged.aZones[0].nConveyorId := 1;
+TempStaged.aZones[0].fStart := 800;
+TempStaged.aZones[0].fEnd := 1200;
+TempStaged.aZones[1].nConveyorId := 2;
+TempStaged.aZones[1].fStart := 300;
+TempStaged.aZones[1].fEnd := 300;
+p_TempStaged := ADR(fb_TempParam.vo_Config.stStaged);
+p_TempStaged^ := TempStaged;
+_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempParam.vo_Config.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 1,
+	vi_b_Reset := FALSE);
+
+AssertTrue(Condition := fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE),
+	Message := 'set taken over');
+AssertTrue(Condition := fb_TempParam.vo_Config.stStatus.eResult = SynConfig.E_ConfigResult.APPLIED, Message := 'applied');
+TempPose := fb_TempParam.m_Pose();
+AssertEquals_LREAL(Expected := 1500, Actual := TempPose.fX, Delta := 0.001, Message := 'staged pose effective');
+
+AssertTrue(Condition := fb_TempParam.m_PassOn(vio_Visu := fb_TempVisu), Message := 'passed on');
+AssertEquals_LREAL(Expected := -800, Actual := fb_TempVisu.vo_Visu.stConfig.stOriginShift.fZ, Delta := 0.001,
+	Message := 'origin shift');
+AssertEquals_UINT(Expected := 2, Actual := fb_TempVisu.vo_Visu.stConfig.nZoneCount, Message := 'two zones');
+AssertEquals_UDINT(Expected := 2, Actual := fb_TempVisu.vo_Visu.stConfig.aZones[1].nConveyorId, Message := 'zone 2 conveyor');
+AssertEquals_LREAL(Expected := 1200, Actual := fb_TempVisu.vo_Visu.stConfig.aZones[0].fEnd, Delta := 0.001,
+	Message := 'zone 1 end');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

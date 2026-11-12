@@ -1,0 +1,282 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_TestConfigComponent" Id="{597bd52b-719e-4b07-9eb9-3d3654861f8c}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+TcUnit test suite of SynConfig._FB_ConfigComponent: registration in the config manifest (m_Register, m_Id), the<br>
+symbol path of vo_Config taken from the instance path, and the protocol and library version reported to the<br>
+gateway.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 2.0.0 ¦ 2026-11-11 ¦ J.Willner ¦ Unit tests<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_TestConfigComponent EXTENDS TcUnit.FB_TestSuite
+VAR
+	fb_PathConveyorParam				: SynConfig._FB_ConfigConveyor;	// declared here so that its instance path is known
+END_VAR
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[m_RegisterAddsEntry();
+m_RegisterIsIdempotent();
+m_RegisterRejectsIdZero();
+m_RegisterRejectsUsedId();
+m_RegisterRejectsFullManifest();
+m_RegisterSymbolPath();
+m_VersionMatchesConstant();
+]]></ST>
+    </Implementation>
+    <Method Name="m_RegisterAddsEntry" Id="{b4a9d18c-2b32-4754-bbda-6ed1315b95ff}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_Register adds an entry with the id and type of the parametrised component, gives the id through m_Id and<br>
+reports the running library's protocol and library version in the manifest.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterAddsEntry
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigDelta;
+	TempManifest						: SynConfig.ST_ConfigManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigRegisterAddsEntry');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertEquals_UDINT(Expected := 0, Actual := fb_TempParam.m_Id(), Message := 'not registered: id 0');
+AssertTrue(Condition := fb_TempParam.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 10), Message := 'registered');
+AssertEquals_UINT(Expected := 1, Actual := TempManifest.nCount, Message := 'one entry');
+AssertEquals_UDINT(Expected := 10, Actual := TempManifest.aEntries[0].nId, Message := 'entry has the component id');
+AssertTrue(Condition := TempManifest.aEntries[0].eType = E_VisuComponentType.DELTA, Message := 'entry has the component type');
+AssertEquals_UDINT(Expected := 10, Actual := fb_TempParam.m_Id(), Message := 'm_Id gives the id');
+AssertEquals_UINT(Expected := SynConfig.CONFIG_GlobalConst.CONFIG_un_PROTOCOL_VERSION, Actual := TempManifest.nProtocolVersion,
+	Message := 'config protocol version reported');
+AssertEquals_STRING(Expected := SynConfig.CONFIG_GlobalConst.CONFIG_str_LIBRARY_VERSION, Actual := TempManifest.sLibraryVersion,
+	Message := 'library version reported');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RegisterIsIdempotent" Id="{a4691693-6445-43d8-8ee8-06eb11f55f09}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_Register is called every cycle: registering again with the same id succeeds without a second entry.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterIsIdempotent
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigConveyor;
+	TempManifest						: SynConfig.ST_ConfigManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigRegisterIsIdempotent');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertTrue(Condition := fb_TempParam.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 1), Message := 'first call');
+AssertTrue(Condition := fb_TempParam.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 1), Message := 'second call');
+AssertEquals_UINT(Expected := 1, Actual := TempManifest.nCount, Message := 'still one entry');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RegisterRejectsFullManifest" Id="{0e1cf6d6-7cfa-4056-a336-8910b7bba457}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The config manifest takes CONFIG_un_MAX_MANIFEST_ENTRIES entries; a new id beyond them is refused.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterRejectsFullManifest
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigConveyor;
+	TempManifest						: SynConfig.ST_ConfigManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	un_TempEntry						: UINT;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigRegisterRejectsFullManifest');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+(* Other parameter FBs have filled the manifest. *)
+FOR un_TempEntry := 0 TO SynConfig.CONFIG_GlobalConst_Param.CONFIG_un_MAX_MANIFEST_ENTRIES - 1 DO
+	TempManifest.aEntries[un_TempEntry].nId := UINT_TO_UDINT(un_TempEntry + 1);
+	TempManifest.aEntries[un_TempEntry].eType := E_VisuComponentType.CONVEYOR;
+	TempManifest.aEntries[un_TempEntry].sPath := 'P_Line.fb_Param.vo_Config';
+END_FOR
+TempManifest.nCount := SynConfig.CONFIG_GlobalConst_Param.CONFIG_un_MAX_MANIFEST_ENTRIES;
+
+AssertFalse(Condition := fb_TempParam.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 999), Message := 'full manifest refuses');
+AssertEquals_UINT(Expected := SynConfig.CONFIG_GlobalConst_Param.CONFIG_un_MAX_MANIFEST_ENTRIES, Actual := TempManifest.nCount,
+	Message := 'entry count at the limit');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RegisterRejectsIdZero" Id="{ba27da01-b050-46a7-b1a2-ab770fc655f4}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Id 0 is no component (an unregistered Syn_Visu FB's m_Id): m_Register refuses it and adds nothing.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterRejectsIdZero
+VAR_INST
+	fb_TempParam						: SynConfig._FB_ConfigConveyor;
+	TempManifest						: SynConfig.ST_ConfigManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigRegisterRejectsIdZero');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertFalse(Condition := fb_TempParam.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 0), Message := 'id 0 refused');
+AssertEquals_UINT(Expected := 0, Actual := TempManifest.nCount, Message := 'no entry');
+AssertEquals_UDINT(Expected := 0, Actual := fb_TempParam.m_Id(), Message := 'still not registered');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RegisterRejectsUsedId" Id="{15982471-a6b7-4fd0-9b87-0fa395936aca}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+One parameter FB per component: an id already registered by another FB is refused, whether that FB has another<br>
+type or the same type at another symbol path.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterRejectsUsedId
+VAR_INST
+	fb_TempConveyorParam				: SynConfig._FB_ConfigConveyor;
+	fb_TempOtherConveyorParam			: SynConfig._FB_ConfigConveyor;
+	fb_TempDeltaParam					: SynConfig._FB_ConfigDelta;
+	TempManifest						: SynConfig.ST_ConfigManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigRegisterRejectsUsedId');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertTrue(Condition := fb_TempConveyorParam.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 3), Message := 'first FB registered');
+AssertFalse(Condition := fb_TempDeltaParam.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 3),
+	Message := 'another type with the same id refused');
+AssertFalse(Condition := fb_TempOtherConveyorParam.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 3),
+	Message := 'the same type at another path refused');
+AssertEquals_UINT(Expected := 1, Actual := TempManifest.nCount, Message := 'still one entry');
+AssertEquals_UDINT(Expected := 0, Actual := fb_TempDeltaParam.m_Id(), Message := 'refused FB not registered');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RegisterSymbolPath" Id="{8531df75-dcd1-4914-a368-4fafaadeb954}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The manifest entry's symbol path is the instance path without TwinCAT project and PLC project, plus<br>
+'.vo_Config': the path the gateway reads and writes over ADS.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterSymbolPath
+VAR_INST
+	TempManifest						: SynConfig.ST_ConfigManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigRegisterSymbolPath');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_PathConveyorParam.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 1);
+AssertEquals_STRING(Expected := 'P_TestRun.fb_TestConfigComponent.fb_PathConveyorParam.vo_Config',
+	Actual := TempManifest.aEntries[0].sPath, Message := 'symbol path of vo_Config without TwinCAT and PLC project');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_VersionMatchesConstant" Id="{f8591579-7a40-4b21-a100-76d94c93fe38}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+_FC_GetVersionSynConfig and CONFIG_str_LIBRARY_VERSION name the same version: both are bumped together.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_VersionMatchesConstant
+VAR_INST
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	str_TempVersion						: STRING(31);	// major.minor.revision from _FC_GetVersionSynConfig
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigVersionMatchesConstant');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+str_TempVersion := CONCAT(UINT_TO_STRING(SynConfig._FC_GetVersionSynConfig(vi_n_VersionElement := 1)), '.');
+str_TempVersion := CONCAT(str_TempVersion, UINT_TO_STRING(SynConfig._FC_GetVersionSynConfig(vi_n_VersionElement := 2)));
+str_TempVersion := CONCAT(str_TempVersion, '.');
+str_TempVersion := CONCAT(str_TempVersion, UINT_TO_STRING(SynConfig._FC_GetVersionSynConfig(vi_n_VersionElement := 3)));
+AssertEquals_STRING(Expected := SynConfig.CONFIG_GlobalConst.CONFIG_str_LIBRARY_VERSION, Actual := str_TempVersion,
+	Message := '_FC_GetVersionSynConfig matches CONFIG_str_LIBRARY_VERSION');
+AssertEquals_UINT(Expected := 16#FFFF, Actual := SynConfig._FC_GetVersionSynConfig(vi_n_VersionElement := 4),
+	Message := 'unknown version element gives 16#FFFF');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>
