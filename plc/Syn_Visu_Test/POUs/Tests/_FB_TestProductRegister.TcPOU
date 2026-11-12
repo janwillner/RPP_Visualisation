@@ -9,10 +9,11 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 TcUnit test suite of _FB_VisuConveyor's product register: latching, the product index by id (also with a<br>
 full register and after removals), product states, poses moved by the belt travel and the housekeeping of<br>
-m_RemoveProductsBeyond.<br>
+m_RemoveProductsBeyond, product marks and their names in the manifest.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 9.4.0  ¦ 2026-11-09 ¦ J.Willner ¦ Unit tests<br>
+Syn_Visu 9.6.0  ¦ 2026-11-12 ¦ J.Willner ¦ Product marks<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_TestProductRegister EXTENDS TcUnit.FB_TestSuite
 ]]></Declaration>
@@ -26,6 +27,8 @@ m_RemoveProductKeepsOrder();
 m_SetProductStateKeepsPrevious();
 m_MoveProduct();
 m_RemoveProductsBeyond();
+m_SetProductMarkKeepsMark();
+m_SetMarkNameChangesVersionOnce();
 ]]></ST>
     </Implementation>
     <Method Name="m_GetProductMovesWithBelt" Id="{f4481035-07a1-4f22-b51f-93d47930e5d5}">
@@ -407,6 +410,99 @@ AssertEquals_INT(Expected := 0, Actual := fb_TempConveyor.m_FindProduct(vi_udn_I
 AssertEquals_INT(Expected := 1, Actual := fb_TempConveyor.m_FindProduct(vi_udn_Id := 3), Message := 'product 3 moved up');
 AssertEquals_UINT(Expected := 0, Actual := fb_TempConveyor.m_RemoveProductsBeyond(vi_lr_BeltX := 1000),
 	Message := 'nothing more to remove');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetMarkNameChangesVersionOnce" Id="{fb736e25-3a72-428f-a45c-84c086d6fef9}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+_FC_VisuSetMarkName names a mark in the manifest and bumps the config version only when the name changes;<br>
+mark 0 and a mark above VISU_un_MAX_MARKS give FALSE.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SetMarkNameChangesVersionOnce
+VAR_INST
+	TempManifest						: ST_VisuManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('SetMarkNameChangesVersionOnce');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertEquals_STRING(Expected := '', Actual := TempManifest.aMarkNames[1], Message := 'unnamed at first');
+AssertTrue(Condition := _FC_VisuSetMarkName(vio_Manifest := TempManifest, vi_un_Mark := 1, vi_str_Name := 'Sample'),
+	Message := 'naming is a change');
+AssertEquals_STRING(Expected := 'Sample', Actual := TempManifest.aMarkNames[1], Message := 'named');
+AssertEquals_UDINT(Expected := 2, Actual := TempManifest.nConfigVersion, Message := 'config version bumped');
+AssertFalse(Condition := _FC_VisuSetMarkName(vio_Manifest := TempManifest, vi_un_Mark := 1, vi_str_Name := 'Sample'),
+	Message := 'same name: no change');
+AssertEquals_UDINT(Expected := 2, Actual := TempManifest.nConfigVersion, Message := 'config version kept');
+
+AssertFalse(Condition := _FC_VisuSetMarkName(vio_Manifest := TempManifest, vi_un_Mark := 0, vi_str_Name := 'None'),
+	Message := 'mark 0 has no name');
+AssertFalse(Condition := _FC_VisuSetMarkName(vio_Manifest := TempManifest,
+	vi_un_Mark := VISU_GlobalConst.VISU_un_MAX_MARKS + 1, vi_str_Name := 'Too high'), Message := 'no such mark');
+AssertEquals_UDINT(Expected := 2, Actual := TempManifest.nConfigVersion, Message := 'refused names change nothing');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetProductMarkKeepsMark" Id="{46752b4f-6460-4317-839b-94bd79314019}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A latched product is unmarked; m_SetProductMark marks it, the mark stays through m_SetProductState and<br>
+m_MoveProduct, 0 removes it. A mark above VISU_un_MAX_MARKS and an unknown product give FALSE.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SetProductMarkKeepsMark
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	TempProduct							: ST_VisuProduct;
+	TempPose							: ST_VisuPlanarPose;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('SetProductMarkKeepsMark');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+m_Latch(vio_Conveyor := fb_TempConveyor, vi_udn_Id := 1, vi_lr_X := 0);
+fb_TempConveyor.m_GetProduct(vi_un_Index := 0, vo_Product => TempProduct, vo_Pose => TempPose);
+AssertEquals_UINT(Expected := 0, Actual := TempProduct.nMark, Message := 'latched unmarked');
+
+AssertTrue(Condition := fb_TempConveyor.m_SetProductMark(vi_udn_Id := 1, vi_un_Mark := 2), Message := 'marked');
+fb_TempConveyor.m_SetProductState(vi_udn_Id := 1, vi_e_State := E_VisuProductState.PICKED, vi_udn_ClientId := 10,
+	vi_udn_MoverId := 0, vi_udn_FingerId := 1);
+TempPose.fX := 300;
+fb_TempConveyor.m_MoveProduct(vi_udn_Id := 1, vi_Pose := TempPose);
+fb_TempConveyor.m_GetProduct(vi_un_Index := 0, vo_Product => TempProduct, vo_Pose => TempPose);
+AssertEquals_UINT(Expected := 2, Actual := TempProduct.nMark, Message := 'mark kept through a state change and a move');
+
+AssertFalse(Condition := fb_TempConveyor.m_SetProductMark(vi_udn_Id := 1, vi_un_Mark := VISU_GlobalConst.VISU_un_MAX_MARKS + 1),
+	Message := 'no such mark');
+AssertFalse(Condition := fb_TempConveyor.m_SetProductMark(vi_udn_Id := 2, vi_un_Mark := 1), Message := 'unknown product');
+fb_TempConveyor.m_GetProduct(vi_un_Index := 0, vo_Product => TempProduct, vo_Pose => TempPose);
+AssertEquals_UINT(Expected := 2, Actual := TempProduct.nMark, Message := 'a refused mark changes nothing');
+
+AssertTrue(Condition := fb_TempConveyor.m_SetProductMark(vi_udn_Id := 1, vi_un_Mark := 0), Message := 'unmarked');
+fb_TempConveyor.m_GetProduct(vi_un_Index := 0, vo_Product => TempProduct, vo_Pose => TempPose);
+AssertEquals_UINT(Expected := 0, Actual := TempProduct.nMark, Message := 'mark removed');
 
 TEST_FINISHED();
 ]]></ST>

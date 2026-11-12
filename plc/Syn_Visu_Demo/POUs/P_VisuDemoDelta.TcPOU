@@ -16,7 +16,8 @@ onto the outfeed. Some products are deliberately missed. Each Delta has a differ
 Products come in five types of different size and shape (boxes, a can, an oval, a pouch), mixed on both infeeds;<br>
 Delta 1 picks a pair of one type, Delta 3 closes its fingers around the product's outline. A product put down<br>
 on the outfeed leaves the infeed's register.<br>
-A vision system over infeed 1 detects its products in the middle of its field of view; a light barrier on<br>
+A vision system over infeed 1 detects its products in the middle of its field of view and marks every tenth as a<br>
+sample (product mark 1, 'Sample'), which stays marked on the outfeed; a light barrier on<br>
 infeed 2 detects them at their front edge, its beam lighting up while a product interrupts it.<br>
 A reject unit (station) at the outfeed rejects every fifth product passing it: its pusher lights up and the<br>
 product is off the belt shortly after.<br>
@@ -58,6 +59,7 @@ VAR
 	udn_Seed							: UDINT := 12345;	// [-] pseudo random generator state
 	lr_BeltPosition						: ARRAY[0..2] OF LREAL;	// [mm] infeed 1, infeed 2, outfeed
 	lr_SinceSpawn						: ARRAY[0..1] OF LREAL := [0, 0.3];	// [s] since the last product per infeed
+	un_Vision1Latches					: UINT;	// [-] products Vision 1 latched: every un_SAMPLE_EVERY-th is a sample
 	fb_RefBelt							: REFERENCE TO _FB_VisuConveyor;
 	BeltPose							: ST_VisuPose;
 	LatchPose							: ST_VisuPlanarPose;
@@ -77,6 +79,7 @@ VAR
 	udn_Held							: ARRAY[0..2, 0..1] OF UDINT;	// [-] carried product ids per slot (Delta 1 carries two)
 	n_HeldBelt							: ARRAY[0..2, 0..1] OF INT;	// [-] infeed of each carried product: 0 = infeed 1, 1 = infeed 2
 	udn_HeldType						: ARRAY[0..2, 0..1] OF UDINT;	// [-] product type of each carried product
+	un_HeldMark							: ARRAY[0..2, 0..1] OF UINT;	// [-] product mark of each carried product, 0 = none
 	lr_HeldHeight						: LREAL;	// [mm] height of the product carried or approached
 	n_HeldCount							: ARRAY[0..2] OF INT;
 	lr_TiltRx							: LREAL;	// [deg] Delta 2: finger tilt about its X
@@ -139,6 +142,8 @@ VAR CONSTANT
 	lr_BARRIER_X						: LREAL := 300;	// [mm] beam across infeed 2
 	lr_BARRIER_HEIGHT					: LREAL := 20;	// [mm] beam above the belt
 	lr_BARRIER_BEAM						: LREAL := 500;	// [mm] from the head at the belt edge across the belt
+	un_SAMPLE_EVERY						: UINT := 10;	// [-] Vision 1 marks every n-th product as a sample
+	un_SAMPLE_MARK						: UINT := 1;	// [-] product mark of a sample, named 'Sample'
 	(* Reject unit, behind the last robot *)
 	lr_REJECT_X							: LREAL := 4500;	// [mm] MCS X of its pusher
 	un_REJECT_EVERY						: UINT := 5;	// [-] every n-th product is rejected
@@ -198,6 +203,8 @@ fb_Delta3.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 12, vi_st
 fb_Vision1.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 50, vi_str_Name := 'Vision 1');
 fb_Barrier2.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 51, vi_str_Name := 'Light barrier 2');
 fb_RejectUnit.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 60, vi_str_Name := 'Reject unit');
+(* What the product mark of a sample means, for the whole PLC. *)
+_FC_VisuSetMarkName(vio_Manifest := GVL_Visu.stManifest, vi_un_Mark := un_SAMPLE_MARK, vi_str_Name := 'Sample');
 
 
 (****************************************************************************************************)
@@ -308,6 +315,13 @@ FOR n_Belt := 0 TO 1 DO
 			vi_udn_ProductType := udn_Type, vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE,
 			vi_e_State := E_VisuProductState.DETECTED, vi_udn_ClientId := SEL(n_Belt = 0, fb_Barrier2.m_Id(), fb_Vision1.m_Id()))
 		THEN
+			(* Vision 1 singles out every tenth product as a sample. *)
+			IF n_Belt = 0 THEN
+				un_Vision1Latches := un_Vision1Latches + 1;
+				IF un_Vision1Latches MOD un_SAMPLE_EVERY = 0 THEN
+					fb_Infeed1.m_SetProductMark(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_un_Mark := un_SAMPLE_MARK);
+				END_IF
+			END_IF
 			DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 		END_IF
 	END_IF
@@ -887,6 +901,7 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 			udn_Held[n_Robot, n_Slot] := udn_TargetId[n_Robot];
 			n_HeldBelt[n_Robot, n_Slot] := n_TargetBelt[n_Robot];
 			udn_HeldType[n_Robot, n_Slot] := Product.nProductType;
+			un_HeldMark[n_Robot, n_Slot] := Product.nMark;
 			n_HeldCount[n_Robot] := n_Slot + 1;
 			udn_TargetId[n_Robot] := 0;
 			n_Phase[n_Robot] := n_PHASE_LIFT;
@@ -964,6 +979,8 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 				vi_b_UseLatchBeltPosition := FALSE, vi_e_State := E_VisuProductState.PLACED,
 				vi_udn_ClientId := fb_RefRobot.m_Id())
 			THEN
+				(* A sample stays marked on the outfeed. *)
+				fb_Outfeed.m_SetProductMark(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_un_Mark := un_HeldMark[n_Robot, n_Slot]);
 				DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 			END_IF
 			udn_Held[n_Robot, n_Slot] := 0;

@@ -15,6 +15,7 @@ STRUCT
 	nMoverId : UDINT; // mover of an XTS gantry or loop carrying the product, 0 = none
 	nFingerId : UDINT; // gripper finger (1-based) the product hangs from while picked, 0 = the gripper flange
 	nProductType : UDINT; // id in the conveyor's aProductTypes
+	nMark : UINT; // product mark 1..VISU_un_MAX_MARKS singling the product out, 0 = none (m_SetProductMark)
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

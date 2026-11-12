@@ -52,10 +52,10 @@ export { MachineFrame, SourceFrame } from "./scene/scene-frame";
 export { frameFromPose, toLocal, toMcs, type Vec3 } from "./scene/frames";
 
 // Rules about the machine and names, the same in both apps.
-export { faultText, isMissed, limitViolations, zoneSides, zoneWarnings } from "./machine-facts";
+export { faultText, isMissed, limitViolations, markName, productMark, zoneSides, zoneWarnings } from "./machine-facts";
 export { componentName, fieldLabel, singular } from "./naming";
 
 // Look and page helpers.
-export { OVERLAY, PRODUCT, STATUS, paletteCssVariables } from "./palette";
+export { MARK, OVERLAY, PRODUCT, STATUS, paletteCssVariables } from "./palette";
 export { download } from "./download";
 export { APP_VERSION } from "./version";

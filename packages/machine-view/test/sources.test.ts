@@ -6,7 +6,7 @@ const A = "ads:5.1.2.3.1.1:851";
 const B = "ads:5.1.2.4.1.1:851";
 
 function config(sourceId: string, configVersion = 1): ConfigMessage {
-  return { kind: "config", sourceId, protocolVersion: PROTOCOL_VERSION, configVersion, errors: [], components: [] };
+  return { kind: "config", sourceId, protocolVersion: PROTOCOL_VERSION, configVersion, errors: [], marks: [], components: [] };
 }
 
 function state(sourceId: string, tRel: number, configVersion = 1): StateMessage {

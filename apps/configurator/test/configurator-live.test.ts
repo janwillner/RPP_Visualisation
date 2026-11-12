@@ -147,7 +147,7 @@ describe("Configurator with a PLC", () => {
     c.importSource(A);
     expect(c.getSnapshot().matches[`${A}#1`]).toBe("matched");
 
-    live.send({ kind: "config", sourceId: A, protocolVersion: PROTOCOL_VERSION, configVersion: 2, errors: [], components: [conveyor(1, A, 500)] });
+    live.send({ kind: "config", sourceId: A, protocolVersion: PROTOCOL_VERSION, configVersion: 2, errors: [], marks: [], components: [conveyor(1, A, 500)] });
     expect(c.getSnapshot().matches[`${A}#1`]).toBe("changed");
   });
 });

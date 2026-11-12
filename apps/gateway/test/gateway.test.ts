@@ -472,6 +472,19 @@ describe("gateway discovery", () => {
     expect(old.configs()[0]!.errors[0]!.message).toMatch(/protocol version 99 \(Syn_Visu 4\.0\.0\)/);
   });
 
+  it("publishes the PLC's named product marks, leaving out the unnamed ones", async () => {
+    const t = setup([infeed, robot], { markNames: ["Sample", "", " Tracking "] });
+    await t.gateway.cycle();
+    expect(t.configs()[0]!.marks).toEqual([
+      { id: 1, name: "Sample" },
+      { id: 3, name: "Tracking" },
+    ]);
+
+    const none = setup([infeed, robot]);
+    await none.gateway.cycle();
+    expect(none.configs()[0]!.marks).toEqual([]);
+  });
+
   it("leaves the Syn_Visu version out for a library older than 5.1, whose manifest does not report it", async () => {
     const t = setup([infeed, robot]);
     await t.gateway.cycle();
@@ -832,10 +845,16 @@ describe("gateway state snapshots", () => {
       nMoverId: 3,
       nFingerId: 2,
       nProductType: 1,
+      nMark: 2,
     };
     state.aProducts[1] = { ...state.aProducts[0], nId: 8, bValid: false };
     // Enumerations objectified by the ADS client.
-    state.aProducts[2] = { ...state.aProducts[0], nId: 9, eState: { name: "PLACED", value: E_VisuProductState.PLACED } };
+    state.aProducts[2] = {
+      ...state.aProducts[0],
+      nId: 9,
+      eState: { name: "PLACED", value: E_VisuProductState.PLACED },
+      nMark: 0,
+    };
     await t.gateway.cycle();
 
     const conveyorState = t.states()[0]!.components.find((c) => c.id === 10);
@@ -851,8 +870,9 @@ describe("gateway state snapshots", () => {
           moverId: 3,
           fingerId: 2,
           productType: 1,
+          mark: 2,
         },
-        { id: 9, state: "placed" },
+        { id: 9, state: "placed", mark: 0 },
       ],
     });
   });

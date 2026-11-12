@@ -12,7 +12,10 @@ import { z } from "zod";
  */
 
 /** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 20;
+export const PROTOCOL_VERSION = 21;
+
+/** Product marks a PLC can give a product (`Product.mark` 1 to `MAX_MARKS`; protocol 21). */
+export const MAX_MARKS = 4;
 
 const mm = (description: string) => z.number().describe(description);
 const deg = (description: string) => z.number().describe(description);
@@ -536,6 +539,10 @@ export const ProductSchema = z
     moverId: int("Mover of an XTS gantry or loop that carries the product, when the last client is one; 0 = none."),
     fingerId: int("Gripper finger (1-based) the product hangs from while picked; 0 = the gripper flange."),
     productType: int("`id` of one of the conveyor's `productTypes`."),
+    mark: int(
+      "Product mark the PLC gave the product to single it out: 1 to 4, named in the config's `marks`; 0 = none. A " +
+        "marked product is drawn in its mark's colour.",
+    ),
   })
   .describe("A product in a conveyor's register.");
 export type Product = z.infer<typeof ProductSchema>;
@@ -709,6 +716,14 @@ export const SourceIdSchema = z
       "unique only within one source.",
   );
 
+export const ProductMarkSchema = z
+  .object({
+    id: int("The mark's number, 1 to 4, as products report it in `mark`."),
+    name: z.string().describe("What the mark means, as the PLC named it, e.g. `Sample`."),
+  })
+  .describe("A product mark the PLC named; it means the same on every conveyor of the source.");
+export type ProductMark = z.infer<typeof ProductMarkSchema>;
+
 export const ConfigMessageSchema = z
   .object({
     kind: z.literal("config").describe("Message kind: always `config`."),
@@ -722,6 +737,11 @@ export const ConfigMessageSchema = z
       "Changes whenever the PLC's configuration changes. A state belongs to the config with the same `configVersion`.",
     ),
     components: z.array(ComponentConfigSchema).describe("Every component discovered without error."),
+    marks: z
+      .array(ProductMarkSchema)
+      .describe(
+        "The product marks the PLC named, by number; a mark without a name is left out.",
+      ),
     errors: z.array(DiscoveryErrorSchema).describe("Problems found during discovery; empty when there were none."),
   })
   .describe(

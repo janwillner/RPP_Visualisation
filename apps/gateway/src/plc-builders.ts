@@ -1,4 +1,4 @@
-import { PROTOCOL_VERSION, type ComponentType } from "@rpp/protocol";
+import { MAX_MARKS, PROTOCOL_VERSION, type ComponentType } from "@rpp/protocol";
 import {
   E_VisuCartesianAxes,
   E_VisuProductShape,
@@ -114,6 +114,7 @@ export function emptyProduct(): ST_VisuProduct {
     nMoverId: 0,
     nFingerId: 0,
     nProductType: 0,
+    nMark: 0,
   };
 }
 
@@ -480,7 +481,14 @@ export type MachineComponent = {
 export function defineMachine(
   plc: InMemoryPlc,
   components: MachineComponent[],
-  options: { protocolVersion?: number; configVersion?: number; manifestPath?: string; libraryVersion?: string } = {},
+  options: {
+    protocolVersion?: number;
+    configVersion?: number;
+    manifestPath?: string;
+    libraryVersion?: string;
+    /** The product marks' names from mark 1 on; the others are unnamed. */
+    markNames?: string[];
+  } = {},
 ): void {
   const entries: ST_VisuManifestEntry[] = components.map((c) => ({
     nId: c.id,
@@ -495,6 +503,7 @@ export function defineMachine(
     aEntries: padded(entries, MAX_MANIFEST_ENTRIES, () => ({ nId: 0, eType: 0, sName: "", sPath: "" })),
     // Left out like a library older than 5.1 does.
     ...(options.libraryVersion !== undefined ? { sLibraryVersion: options.libraryVersion } : {}),
+    aMarkNames: padded(options.markNames ?? [], MAX_MARKS, () => ""),
   };
   plc.define(options.manifestPath ?? MANIFEST_PATH, PLC_MANIFEST_TYPE, manifest);
   for (const c of components) plc.define(c.path, COMPONENTS[c.kind].plcType, c.value);

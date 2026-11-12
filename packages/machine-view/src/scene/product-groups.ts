@@ -11,7 +11,7 @@ const GROUPED: ReadonlySet<ProductDisplay> = new Set<ProductDisplay>(["normal", 
 /** Instances a group starts with. */
 const MIN_CAPACITY = 64;
 
-/** Products that share one instanced mesh: the same look and the same solid (shape and size). */
+/** Products that share one instanced mesh: the same look (display, marked or not) and the same solid (shape and size). */
 export interface ProductGroup {
   key: string;
   /** Any of its products, for the solid and the look. */
@@ -25,10 +25,13 @@ export function isGrouped(p: SceneProduct): boolean {
   return GROUPED.has(p.display);
 }
 
-/** The group a grouped product falls into. */
+/**
+ * The group a grouped product falls into. Marked products form their own groups: a missed one shows its mark rather
+ * than the missed glow while marks are shown, so its mesh differs; the mark's colour is set per instance.
+ */
 export function groupKey(p: SceneProduct): string {
   const { length, width, height } = p.size;
-  return `${p.display}|${p.shape}|${length}|${width}|${height}|${p.cornerRadius}`;
+  return `${p.display}|${p.mark > 0 ? "marked" : ""}|${p.shape}|${length}|${width}|${height}|${p.cornerRadius}`;
 }
 
 /** A frame's products as they are drawn. */

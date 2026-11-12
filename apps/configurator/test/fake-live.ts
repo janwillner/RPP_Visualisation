@@ -44,7 +44,7 @@ export class FakeLive implements ConfiguratorLive {
   /** A connected source with these components, and one state of theirs. */
   plc(sourceId: string, components: ComponentConfig[], states: ComponentState[] = []): void {
     this.send({ kind: "status", sourceId, sourceName: "Line PLC", status: { plcConnected: true } });
-    this.send({ kind: "config", sourceId, protocolVersion: PROTOCOL_VERSION, configVersion: 1, errors: [], components });
+    this.send({ kind: "config", sourceId, protocolVersion: PROTOCOL_VERSION, configVersion: 1, errors: [], marks: [], components });
     this.send({ kind: "state", sourceId, configVersion: 1, timestamp: "0", tRel: 100, components: states });
   }
 

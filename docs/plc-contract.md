@@ -1,4 +1,4 @@
-# PLC contract (library `Syn_Visu`, protocol version 20)
+# PLC contract (library `Syn_Visu`, protocol version 21)
 
 This is the PLC side of the contract the gateway reads. It is implemented by the TwinCAT library project in
 `plc/Syn_Visu` (solution `plc/RPP_Visu.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
@@ -67,6 +67,10 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   coordinate system**: from the conveyor's `stPose` moved by its `stOriginShift`, `fX` along the conveying direction,
   `fY` across the belt, `fZ` up (0 on the belt surface), `fRz` from the belt's X axis. The visualisation moves the
   product from there along the belt by `fBeltPosition − fLatchBeltPosition`, keeping its height.
+- Product mark: `nMark` (UINT) singles a product out, 1 to `VISU_un_MAX_MARKS` (4); 0 = none. The application sets
+  it (`m_SetProductMark`); it stays through state changes and `m_MoveProduct` and starts at 0 on `m_LatchProduct`. A
+  marked product is drawn in its mark's colour instead of its state colour (layer "Product marks"); the manifest's
+  `aMarkNames` say what each mark means.
 - Stacked products: a product lying on another has `fZ` = the height of the one below (their sum for a higher stack)
   and is an entry of its own, travelling with the belt like the others. The visualisation knows no stack: when the
   product below is picked or removed, the one above stays at its height until the application moves it
@@ -197,6 +201,7 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
   robot.
 - Protocol version 20 added each finger's `stOffset` on the gripper flange and the finger state's `bPoseReported`
   (ADR 0018).
+- Protocol version 21 added product marks: the product's `nMark` and the manifest's `aMarkNames`.
 
 ## What the library contains
 
@@ -236,10 +241,15 @@ according to `eType`. Names qualified with the library namespace, such as `SynVi
 It then reads `<sPath>.stConfig` once. Every cycle it sum-reads `GVL_Visu.stManifest.nProtocolVersion`,
 `GVL_Visu.stManifest.nConfigVersion` and all `<sPath>.stState`, and rediscovers when either version changes.
 
-Since library 5.1.0 the manifest's last member `sLibraryVersion` (`STRING(15)`, e.g. `5.1.0`) names the library the
+Since library 5.1.0 the manifest's member `sLibraryVersion` (`STRING(15)`, e.g. `5.1.0`) names the library the
 PLC runs. The gateway passes it on in the `config` message and at `/health`, and the web app shows it in the status
 bar; it also appears in the protocol version error. Libraries 5.0 and older do not have the member, which the gateway
 accepts; it came without a protocol change.
+
+Since protocol 21 the manifest's `aMarkNames` (`ARRAY[1..VISU_un_MAX_MARKS] OF STRING(31)`, 4 marks) names the
+product marks for the whole PLC: entry n is what mark n means, e.g. `Sample`; an empty entry is an unnamed mark. The
+gateway reads it during discovery and passes the named marks on in the `config` message (`marks`), so a new name
+needs a config version bump, which the library's function for it does.
 
 ## Enumerations
 

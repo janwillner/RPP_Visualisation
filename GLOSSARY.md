@@ -101,6 +101,10 @@ _Avoid_: ghost, empty product
 A product that reached the end of its conveyor without being picked. Products placed onto a conveyor (an outfeed) or rejected pass its end on purpose and are not missed.
 _Avoid_: lost product
 
+**Product mark**:
+One of four marks (1 to 4) the PLC can give a product to single it out, e.g. a sample; the PLC names each mark once for the whole source. A marked product is drawn in its mark's colour instead of its state colour while the layer "Product marks" is on; only the selection colour wins over it. The mark stays with the product through state changes and moves between conveyors.
+_Avoid_: product colour, highlight, flag
+
 **Fault**:
 A condition the PLC reports for a component, a single mover or a single track module, with a message for the operator, until it clears it. A faulted component, mover or track module is drawn red.
 _Avoid_: error (for the display), alarm, warning

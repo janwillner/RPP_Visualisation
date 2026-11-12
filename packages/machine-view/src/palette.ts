@@ -7,6 +7,7 @@
  * differ in lightness (fault: medium red; pick and gripping: light green; missed: pink, apart from fault red by its
  * blue part).
  */
+import type { MAX_MARKS } from "@rpp/protocol";
 
 /** States and events: the same meaning everywhere in the app. */
 export const STATUS = {
@@ -36,6 +37,14 @@ export const PRODUCT = {
   rejected: "#a78bfa",
   placed: "#2fc6d6",
 } as const;
+
+/**
+ * Product marks 1 to 4 (`MARK[mark - 1]`): a marked product shows its mark instead of its state colour. Apart from the
+ * state colours, the status colours and the selection, and from each other also in lightness for red-green colour
+ * blindness: magenta (the first and most striking, the only one of its hue in the scene), white (lightest), brown,
+ * deep blue (darkest).
+ */
+export const MARK = ["#e040fb", "#ffffff", "#a1663a", "#2962ff"] as const satisfies { length: typeof MAX_MARKS };
 
 /**
  * Overlays: areas, zones and markers that explain the machine rather than show it. They are drawn unlit and

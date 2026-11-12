@@ -87,6 +87,9 @@ detector saw it) and moves with the belt. While it lies on the belt, its X in th
 `latchPose.x + beltPosition − latchBeltPosition`. The conveyor's coordinate system is its `pose` moved by its
 `originShift`, with X along the belt. `state`, `previousState` and `lastClientId` tell what happened to it last and who
 did it. While a product is `picked`, it hangs at the gripper finger `fingerId` (or the flange) of robot `lastClientId`.
+A product the PLC singled out has a `mark` (1 to 4, 0 = none); the config's `marks` say what each named mark means
+for the whole source, e.g. `{ "id": 1, "name": "Sample" }`. The visualisation draws a marked product in its mark's
+colour instead of its state colour.
 
 **Only what changed.** A register can hold thousands of products, and a `state` is sent every 20 ms, but only a few
 products change from one state to the next. Connect to `/ws?changes=1` to get states in register form: each `state`

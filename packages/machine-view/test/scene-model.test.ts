@@ -55,7 +55,7 @@ function conveyorConfig(overrides: Partial<ConveyorConfig> = {}): ConveyorConfig
 }
 
 function config(...components: ConfigMessage["components"]): ConfigMessage {
-  return { kind: "config", sourceId: "plc1", protocolVersion: 1, configVersion: 1, components, errors: [] };
+  return { kind: "config", sourceId: "plc1", protocolVersion: 1, configVersion: 1, components, errors: [], marks: [] };
 }
 
 describe("scene model: MCS to renderer frame", () => {
@@ -101,6 +101,7 @@ function product(overrides: Partial<Product> = {}): Product {
     id: 7,
     latchPose: { x: 0, y: 0, z: 0, rz: 0 },
     latchBeltPosition: 0,
+    mark: 0,
     state: "detected",
     previousState: "detected",
     lastClientId: 0,
@@ -135,6 +136,21 @@ describe("scene model: product tracking", () => {
     const a = (105 * Math.PI) / 180;
     closeTo(rotate(shown!.transform.quaternion, [1, 0, 0]), [Math.cos(a), 0, -Math.sin(a)]);
     expect(shown!.size).toEqual({ length: 0.1, width: 0.08, height: 0.04 });
+  });
+
+  it("gives every product its mark: 1 to 4, else unmarked, also one from a recording older than marks", () => {
+    const belt = conveyorConfig();
+    const { mark: _, ...old } = product({ id: 4 });
+    const products = [product({ id: 1, mark: 2 }), product({ id: 2, mark: 9 }), product({ id: 3 }), old as Product];
+
+    const scene = buildScene(config(belt), [snapshot(0, [conveyorState(0, products)])], 0);
+
+    expect(scene.products.map((p) => [p.productId, p.mark])).toEqual([
+      [1, 2],
+      [2, 0],
+      [3, 0],
+      [4, 0],
+    ]);
   });
 
   it("gives products snap points only when asked, as the 3D view does while measuring", () => {

@@ -31,11 +31,15 @@ VAR_GLOBAL CONSTANT
 	   17: Cartesian robot eAxes (E_VisuCartesianAxes): X, Y, Z or without the Y or the Z axis.
 	   18: stLimitArea for the XTS gantry and the Cartesian robot too, not only the Delta.
 	   19: stTcpLimitArea, a box around the TCP, for the Delta, the XTS gantry and the Cartesian robot.
-	   20: finger stOffset on the gripper flange, finger state bPoseReported (ADR 0018). *)
-	VISU_un_PROTOCOL_VERSION			: UINT := 20;
+	   20: finger stOffset on the gripper flange, finger state bPoseReported (ADR 0018).
+	   21: product marks: product nMark, manifest aMarkNames. *)
+	VISU_un_PROTOCOL_VERSION			: UINT := 21;
 	(* Version of this library as the visualisation shows it (manifest sLibraryVersion). Bump together with
 	   _FC_GetVersionSynVisu and the project version. *)
-	VISU_str_LIBRARY_VERSION			: STRING(15) := '9.5.0';
+	VISU_str_LIBRARY_VERSION			: STRING(15) := '9.6.0';
+	(* Product marks 1..VISU_un_MAX_MARKS a product can carry (nMark); the visualisation has a colour for each, so it
+	   is part of the contract, not a library parameter. *)
+	VISU_un_MAX_MARKS					: UINT := 4;	// [-] product marks
 	VISU_lr_DEG_TO_RAD					: LREAL := 0.017453292519943295;	// [rad/deg] pi / 180
 	VISU_lr_XTS_MODULE_LENGTH			: LREAL := 250;	// [mm] length of an XTS motor module along the track, straight or curve
 END_VAR]]></Declaration>

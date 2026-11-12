@@ -8,13 +8,16 @@ const LAYER_LABELS: { key: keyof Layers; label: string }[] = [
   { key: "tcpMarkers", label: "TCP markers" },
   { key: "faultLabels", label: "Fault labels" },
   { key: "origins", label: "Coordinate systems" },
+  { key: "marks", label: "Product marks" },
 ];
 
-/** The layer toggles of the 3D view in a toolbar group, the same in the visualisation and the configurator. */
+/**
+ * The layer toggles of the 3D view in a toolbar group, the same in the visualisation and the configurator. Named
+ * "Layers" for assistive technology only: a caption would push the configurator's header onto two lines at 1280 px.
+ */
 export function LayerToggles({ layers, onToggle }: { layers: Layers; onToggle: (key: keyof Layers) => void }) {
   return (
-    <div className="group">
-      <span className="muted">Layers</span>
+    <div className="group" role="group" aria-label="Layers">
       {LAYER_LABELS.map(({ key, label }) => (
         <button
           key={key}

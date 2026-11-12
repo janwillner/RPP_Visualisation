@@ -37,6 +37,7 @@ const delta: DeltaConfig = {
 
 const config = (...components: ConfigMessage["components"]): ConfigMessage => ({
   kind: "config",
+  marks: [],
   sourceId: "plc1",
   protocolVersion: 1,
   configVersion: 1,
@@ -48,6 +49,7 @@ const product = (id: number, overrides: Partial<Product> = {}): Product => ({
   id,
   latchPose: { x: id * 40, y: 0, z: 0, rz: 0 },
   latchBeltPosition: 0,
+  mark: 0,
   state: "detected",
   previousState: "detected",
   lastClientId: 0,

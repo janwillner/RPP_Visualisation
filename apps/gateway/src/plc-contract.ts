@@ -104,6 +104,11 @@ export interface ST_VisuManifest {
   aEntries: ST_VisuManifestEntry[];
   /** Version of the Syn_Visu library the PLC runs, e.g. "5.1.0"; missing before library 5.1. */
   sLibraryVersion?: string;
+  /**
+   * ARRAY[1..VISU_un_MAX_MARKS] OF STRING: what each product mark means, index 0 here = mark 1; empty = unnamed
+   * (protocol 21).
+   */
+  aMarkNames: string[];
 }
 
 export interface ST_VisuProductType {
@@ -142,6 +147,8 @@ export interface ST_VisuProduct {
   nMoverId: number;
   nFingerId: number;
   nProductType: number;
+  /** Product mark 1 to VISU_un_MAX_MARKS; 0 = none (protocol 21). */
+  nMark: number;
 }
 
 export interface ST_VisuConveyorState {

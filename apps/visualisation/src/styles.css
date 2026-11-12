@@ -550,6 +550,15 @@
   color: var(--bad);
 }
 
+/* A selected product's mark in the inspector: its colour, then its name. */
+.product-mark i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
 /* The machine's figures in the inspector. */
 table.metrics {
   width: 100%;

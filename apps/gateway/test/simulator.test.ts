@@ -69,6 +69,16 @@ describe("simulator", () => {
     const pusher = states.map((s) => s.components.find((c) => c.type === "station"));
     expect(new Set(pusher.map((c) => c?.type === "station" && c.bodies[1]!.active))).toEqual(new Set([true, false]));
 
+    // Vision 1 marks every tenth product as a sample; the mark stays with it when Delta 1 places it on the outfeed.
+    expect(config.marks).toEqual([{ id: 1, name: "Sample" }]);
+    const markedOn = (belt: string) =>
+      new Set(states.flatMap((s) => s.components.flatMap((c) => (c.id === idOf(belt) && c.type === "conveyor" ? c.products.filter((p) => p.mark === 1).map((p) => p.id) : []))));
+    const infeedIds = new Set(states.flatMap((s) => s.components.flatMap((c) => (c.id === idOf("Infeed") && c.type === "conveyor" ? c.products.map((p) => p.id) : []))));
+    expect(markedOn("Infeed").size).toBeGreaterThan(0);
+    expect(markedOn("Infeed").size).toBeLessThan(infeedIds.size / 5);
+    expect(markedOn("Outfeed").size).toBeGreaterThan(0);
+    expect(new Set(products.map((p) => p.mark))).toEqual(new Set([0, 1]));
+
     // The loop and the gantry carry products on their movers and hand them on to their own outfeeds.
     const byId = new Map(config.components.map((c) => [c.id, c.type]));
     const carriedBy = new Set(products.filter((p) => p.state === "picked" && p.moverId > 0).map((p) => byId.get(p.lastClientId)));

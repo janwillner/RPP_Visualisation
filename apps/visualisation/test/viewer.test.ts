@@ -27,7 +27,7 @@ class FakeLive implements LiveFeed {
   run(ms: number): void {
     if (this.sources.all.length === 0) {
       this.send({ kind: "status", sourceId: A, sourceName: "Infeed PLC", status: { plcConnected: true } });
-      this.send({ kind: "config", sourceId: A, protocolVersion: PROTOCOL_VERSION, configVersion: 1, errors: [], components: [] });
+      this.send({ kind: "config", sourceId: A, protocolVersion: PROTOCOL_VERSION, configVersion: 1, errors: [], marks: [], components: [] });
     }
     for (let t = 0; t < ms; t += 20) {
       vi.advanceTimersByTime(20);

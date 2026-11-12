@@ -66,6 +66,8 @@ export interface Layers {
   faultLabels: boolean;
   /** Every component's coordinate system: an axis triad where its origin shift puts it (always shown while measuring). */
   origins: boolean;
+  /** Product marks: a product the PLC marked shows its mark's colour instead of its state colour. */
+  marks: boolean;
 }
 
 /**
@@ -300,7 +302,7 @@ const PART_VIEWS: { [K in keyof SceneModel]: ((v: PartViewContext) => ReactNode)
         </Html>
       </group>
     )),
-  products: ({ structure, frame, selection, onSelect }) => (
+  products: ({ structure, frame, layers, selection, onSelect }) => (
     <>
       {frame.productGroups.map((g) => (
         <ProductInstances
@@ -308,6 +310,7 @@ const PART_VIEWS: { [K in keyof SceneModel]: ((v: PartViewContext) => ReactNode)
           group={g}
           frame={frame}
           selected={selection?.kind === "product" ? selection : undefined}
+          showMarks={layers.marks}
           onSelect={onSelect}
         />
       ))}
@@ -318,6 +321,7 @@ const PART_VIEWS: { [K in keyof SceneModel]: ((v: PartViewContext) => ReactNode)
             key={p.key}
             product={p}
             selected={selection?.kind === "product" && selection.conveyorId === p.conveyorId && selection.productId === p.productId}
+            showMarks={layers.marks}
             lookup={(key) => frame.single.get(key)}
             onSelect={onSelect}
           />

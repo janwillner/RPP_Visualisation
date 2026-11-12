@@ -1,6 +1,6 @@
 import type { ConveyorConfig, ConveyorState, Product, ProductType } from "@rpp/protocol";
 import { apply, child, type Frame, frameFromPose, rotZ, toMcs, toRendererTransform, type Vec3 } from "../frames";
-import { faultText, isMissed, productBeltX } from "../../machine-facts";
+import { faultText, isMissed, productBeltX, productMark } from "../../machine-facts";
 import type { ProductDisplay, SceneProduct, SnapPoint } from "../scene-model";
 import {
   carrierKey,
@@ -95,6 +95,7 @@ function conveyorProducts(
       conveyorId: c.id,
       display,
       state: p.state,
+      mark: productMark(p),
       transform: toRendererTransform({ rotation: frame.rotation, origin: toMcs(frame, [0, 0, type.height / 2]) }),
       bottom: frame,
       size,

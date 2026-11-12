@@ -3,13 +3,14 @@ import { ProductGroups } from "../src/scene/product-groups";
 import type { ProductDisplay, SceneProduct } from "../src/scene/scene-model";
 
 /** A product as the scene gives it; only display, size and shape decide its group. */
-function product(id: number, display: ProductDisplay = "normal", length = 0.12): SceneProduct {
+function product(id: number, display: ProductDisplay = "normal", length = 0.12, mark = 0): SceneProduct {
   return {
     key: `p${id}`,
     productId: id,
     conveyorId: 1,
     display,
     state: "detected",
+    mark,
     transform: { position: [0, 0, 0], quaternion: [0, 0, 0, 1] },
     bottom: { origin: [0, 0, 0], rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1] },
     size: { length, width: 0.08, height: 0.04 },
@@ -30,6 +31,14 @@ describe("product groups", () => {
     expect([...members.values()].map((list) => list.map((p) => p.productId))).toEqual([[1, 3], [2], [4]]);
     expect([...single.keys()]).toEqual(["p5", "p6"]);
     expect(groups.map((g) => g.sample.productId)).toEqual([1, 2, 4]);
+  });
+
+  it("groups marked products apart from unmarked ones of the same look, whatever their mark", () => {
+    // A missed product glows in the missed colour, a marked one shows its mark instead: their meshes differ.
+    const products = [product(1, "missed"), product(2, "missed", 0.12, 1), product(3, "missed", 0.12, 3), product(4), product(5, "normal", 0.12, 2)];
+
+    const { members } = new ProductGroups().update(products);
+    expect([...members.values()].map((list) => list.map((p) => p.productId))).toEqual([[1], [2, 3], [4], [5]]);
   });
 
   it("gives a group room for its products as a power of two, at least 64", () => {
