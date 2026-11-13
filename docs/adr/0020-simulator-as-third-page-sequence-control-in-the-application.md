@@ -26,7 +26,7 @@ So:
   fields and sends Start, Stop and Reset requests, which the application acknowledges or rejects (ADRs to follow with
   #42 and #43). This repo has one generator and one minimal sequence control, in the demo application only.
 
-## Considered options
+## Considered Options
 
 - **Keep the in-memory simulator for the browser tests** and use the demo only for the new page: the tests would keep
   running without TwinCAT, but two machines would have to show every scenario and stay alike, and the browser tests

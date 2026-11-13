@@ -32,6 +32,13 @@ async function returnToProgramValues(page: Page, component: Locator): Promise<bo
   return true;
 }
 
+/** Imports the demo PLC's components with the named one on its program values; gives that one in the list. */
+async function importDemoAtProgramValues(page: Page, name: RegExp): Promise<Locator> {
+  const list = await importDemo(page);
+  if (!(await returnToProgramValues(page, list.getByRole("button", { name })))) return list.getByRole("button", { name });
+  return (await importDemo(page)).getByRole("button", { name });
+}
+
 /** Every uncaught error in the page fails the test that saw it. */
 test.beforeEach(({ page }) => {
   page.on("pageerror", (error) => {
@@ -138,9 +145,7 @@ test("configurator: imports the demo PLC's configuration, reconciles it and mark
 });
 
 test("configurator: writes a changed zone to the demo PLC, which takes it over and shows it", async ({ page }) => {
-  let list = await importDemo(page);
-  if (await returnToProgramValues(page, list.getByRole("button", { name: /Delta 1/ }))) list = await importDemo(page);
-  const delta = list.getByRole("button", { name: /Delta 1/ });
+  const delta = await importDemoAtProgramValues(page, /Delta 1/);
   await delta.click();
 
   const zone = page.locator("aside.panel.right").getByRole("group", { name: "Zone 1" });
@@ -193,9 +198,7 @@ test("configurator: edits an XTS loop's modules, a station's bodies and a Cartes
 });
 
 test("configurator: writes an XTS gantry's track to the demo PLC", async ({ page }) => {
-  let list = await importDemo(page);
-  if (await returnToProgramValues(page, list.getByRole("button", { name: /^IDH #30/ }))) list = await importDemo(page);
-  const idh = list.getByRole("button", { name: /^IDH #30/ });
+  const idh = await importDemoAtProgramValues(page, /^IDH #30/);
   await idh.click();
 
   const properties = page.locator("aside.panel.right");

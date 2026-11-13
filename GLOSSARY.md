@@ -290,7 +290,7 @@ _Avoid_: toolbox, library (the PLC library is something else)
 ## Simulator
 
 **Simulator**:
-The third web app (`/simulator`, `apps/simulator`): with the machine as its PLC reports it, the commissioning engineer feeds products in patterns, sets the recipe and starts, stops and resets the machine, while the application's own sequence control does the work. It writes only while the PLC is in simulation mode.
+The third web app (to be served at `/simulator/`, spec #40): with the machine as its PLC reports it, the commissioning engineer feeds products in patterns, sets the recipe and starts, stops and resets the machine, while the application's own sequence control does the work. It writes only while the PLC is in simulation mode.
 _Avoid_: emulator, test bench, fake PLC (the gateway has none; its tests use an in-memory PLC)
 
 **Recipe**:

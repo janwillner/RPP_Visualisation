@@ -1,4 +1,4 @@
-# The demo PLC
+# The demo application
 
 `pnpm dev:gateway` and the browser tests (`pnpm test:e2e`) read the demo application `Syn_Visu_Demo`
 (`plc/Syn_Visu_Demo`, ADS port 852) on the local TwinCAT user-mode runtime (ADR 0020). `pnpm test` needs none of

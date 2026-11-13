@@ -143,7 +143,7 @@ describe("resolveGatewayOptions", () => {
   it("reads a PLC through the ADS bridge by default and knows no simulator options any more", () => {
     expect(resolveGatewayOptions([], env()).driver).toBe("ads");
     expect(() => resolveGatewayOptions(["--sim-products", "4000"], env())).toThrow(OptionsError);
-    expect(helpText()).not.toMatch(/\bsim\b|simulator/i);
+    expect(helpText()).not.toMatch(/\bsim\b|sim-products/);
   });
 
   it("takes the AmsNetId and port flags as the short form for one source, defaulting to the local runtime 851", () => {

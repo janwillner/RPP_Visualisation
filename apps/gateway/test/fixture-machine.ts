@@ -28,23 +28,26 @@ export const FIXTURE_SOURCE = "fixture";
 const INFEED = { id: 1, path: "MAIN.stInfeed" };
 const OUTFEED = { id: 2, path: "MAIN.stOutfeed" };
 const DELTA = { id: 10, path: "MAIN.stDelta1" };
+/** Clients that changed products on the infeed last. */
+const VISION_ID = 50;
+const REJECT_UNIT_ID = 60;
 
 /**
  * A fixed machine for the gateway tests that need a whole one (docs page, web pages, WebSocket commands): one
  * component of every type with the optional parts filled (fingers, limit areas, origin shifts, bodies, zones on a
  * lane), products in every state and of every shape on the infeed, one of them marked, faults on a component, a mover
  * and a track module. Syn_Config holds parameter sets of the infeed and Delta 1 (ADR 0017); `step` is one PLC cycle of
- * it. Nothing moves: what the gateway reads is the same in every cycle but the timestamps and the belt position.
+ * it. Nothing moves: what the gateway reads is the same in every cycle but the infeed's timestamp.
  */
 export function fixtureMachine() {
   const plc = new InMemoryPlc();
   const fault = (sMessage: string) => ({ bActive: true, sMessage });
   const products = [
-    { state: E_VisuProductState.DETECTED, previous: E_VisuProductState.DETECTED, client: 50, type: 1, mark: 1 },
+    { state: E_VisuProductState.DETECTED, previous: E_VisuProductState.DETECTED, client: VISION_ID, type: 1, mark: 1 },
     { state: E_VisuProductState.ASSIGNED, previous: E_VisuProductState.DETECTED, client: DELTA.id, type: 2, mark: 0 },
     { state: E_VisuProductState.PICKED, previous: E_VisuProductState.ASSIGNED, client: DELTA.id, type: 3, mark: 0 },
     { state: E_VisuProductState.PLACED, previous: E_VisuProductState.PICKED, client: DELTA.id, type: 1, mark: 2 },
-    { state: E_VisuProductState.REJECTED, previous: E_VisuProductState.PLACED, client: 60, type: 1, mark: 0 },
+    { state: E_VisuProductState.REJECTED, previous: E_VisuProductState.PLACED, client: REJECT_UNIT_ID, type: 1, mark: 0 },
   ];
   defineMachine(
     plc,
@@ -64,7 +67,7 @@ export function fixtureMachine() {
             { nId: 3, fLength: 120, fWidth: 80, fHeight: 40, eShape: E_VisuProductShape.ROUNDED_BOX, fCornerRadius: 10 },
           ],
           // Past the belt end, the last one is missed.
-          products: [...products, { state: E_VisuProductState.DETECTED, previous: E_VisuProductState.DETECTED, client: 50, type: 1, mark: 0 }].map(
+          products: [...products, { state: E_VisuProductState.DETECTED, previous: E_VisuProductState.DETECTED, client: VISION_ID, type: 1, mark: 0 }].map(
             (p, i) => ({
               nId: i + 1,
               stLatchPose: { fX: i === products.length ? 3100 : 200 + i * 300, fY: 0, fZ: 0, fRz: 0 },
@@ -137,7 +140,7 @@ export function fixtureMachine() {
         }),
       },
       {
-        id: 50,
+        id: VISION_ID,
         name: "Vision 1",
         path: "MAIN.fbVision.vo_Visu",
         kind: "vision",
@@ -162,7 +165,7 @@ export function fixtureMachine() {
         }),
       },
       {
-        id: 60,
+        id: REJECT_UNIT_ID,
         name: "Reject unit",
         path: "MAIN.fbRejectUnit.vo_Visu",
         kind: "station",
