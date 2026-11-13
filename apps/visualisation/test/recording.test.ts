@@ -6,6 +6,7 @@ import {
   type Machine,
   type MachineMessage,
   type MachineReport,
+  type Product,
   type StateMessage,
 } from "@rpp/protocol";
 import {
@@ -448,6 +449,23 @@ describe("recording: timeline events", () => {
       { at: 2000, kind: "message", sourceId: B, text: "Outfeed PLC: Message 4" },
     ]);
     expect(eventTime(recording.events, 1000, 1)).toBe(1600);
+  });
+
+  it("follows its products, also when opened from a file", async () => {
+    const p = { id: 5, latchPose: { x: 100, y: 0, z: 0, rz: 0 }, latchBeltPosition: 0, mark: 0, previousState: "detected" as const, moverId: 0, fingerId: 0, productType: 1 };
+    const register = (at: number, products: Product[]): StateMessage => ({
+      ...state(A, at),
+      components: [{ type: "conveyor", id: 1, timestamp: "0", beltPosition: 0, products, fault: null }],
+    });
+    const recorder = new Recorder([{ sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: config(A) }]);
+    recorder.add(0, register(0, [{ ...p, state: "detected", lastClientId: 0 }]));
+    recorder.add(500, register(500, [{ ...p, state: "picked", lastClientId: 10 }]));
+    recorder.add(800, register(800, []));
+    const recording = await recorder.stop();
+
+    for (const opened of [recording, await Recording.fromFile(await recording.toFile())]) {
+      expect(opened.products.of(A, 1, 5, 600).map((s) => s.text)).toEqual(["Entered the register (detected)", "Picked by client #10"]);
+    }
   });
 
   it("keeps its events in the file", async () => {

@@ -1,7 +1,6 @@
 import type { StateMessage } from "@rpp/protocol";
 import type { GatewayConnection, MessageListener, SceneSource, SourceInfo } from "@rpp/machine-view";
-import { METRICS_WINDOW_MS } from "./metrics";
-import { ProductHistory } from "./product-history";
+import { METRICS_WINDOW_MS, ProductHistory } from "@rpp/machine-view";
 import type { LiveFeed } from "./viewer";
 
 /**

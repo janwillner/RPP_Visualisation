@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type { StateMessage } from "@rpp/protocol";
 import type { MessageListener, SceneSource, SourceInfo } from "@rpp/machine-view";
-import type { ProductEvent, ProductStep } from "./product-history";
+import type { ProductEvent, ProductStep } from "@rpp/machine-view";
 import { Player } from "./player";
 import { MAX_RECORDING_MS, Recorder, Recording, RecordingFileError } from "./recording";
 

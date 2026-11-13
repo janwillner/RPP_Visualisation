@@ -15,6 +15,7 @@ import {
   type Selection,
   SidePanelControls,
   sidePanelsLayout,
+  TopBar,
   useSidePanel,
   useStore,
   ViewControls,
@@ -155,8 +156,7 @@ export function ConfiguratorApp() {
 
   return (
     <div className={["app configurator", panels.className].filter(Boolean).join(" ")} style={panels.style}>
-      <header className="toolbar">
-        <strong className="title">RPP Configurator</strong>
+      <TopBar title="RPP Configurator">
         <div className="group">
           <button onClick={() => configurator.newDraft()}>New</button>
           <button onClick={() => fileInput.current?.click()}>Open…</button>
@@ -189,7 +189,7 @@ export function ConfiguratorApp() {
           <TextInput value={draft.name} label="Machine name" onCommit={(name) => configurator.rename(name)} />
         </label>
         <LayerToggles layers={layers} onToggle={(key) => setLayers((l) => ({ ...l, [key]: !l[key] }))} />
-      </header>
+      </TopBar>
 
       <aside className="panel left" hidden={!left.open}>
         <h3>Palette</h3>

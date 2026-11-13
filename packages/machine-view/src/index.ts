@@ -2,8 +2,9 @@
  * @rpp/machine-view: what the visualisation and the configurator share (ADR 0019), and the only module either app
  * imports from it. A machine read from its PLC sources (the gateway connection, the sources on their timelines), the
  * machine scene built from it by the component kits and drawn by `SceneView` with the camera views, the rules both
- * apps apply to the machine (machine facts, names), the palette and the shared look (`@rpp/machine-view/styles.css`).
- * Neither app's own modules are known here.
+ * apps apply to the machine (machine facts, names), the panels the apps share (component tree, inspector with the
+ * product history and the metrics, status bar, top bar), the palette and the shared look
+ * (`@rpp/machine-view/styles.css`). Neither app's own modules are known here.
  */
 
 // The connection to the gateway and the PLC sources it reads.
@@ -66,6 +67,32 @@ export {
   zoneWarnings,
 } from "./machine-facts";
 export { componentName, fieldLabel, singular } from "./naming";
+
+// What happened to the products, the figures counted from it, and a component state's values and tables.
+export {
+  ProductHistory,
+  clientAction,
+  type ClientAction,
+  type ProductEvent,
+  type ProductStep,
+  type ProductStepKind,
+} from "./product-history";
+export {
+  CLIENT_ACTIONS,
+  METRICS_WINDOW_MS,
+  metrics,
+  type ClientMetrics,
+  type ConveyorMetrics,
+  type MachineMetrics,
+} from "./metrics";
+export { stateRows, type StateRows, type StateTable, type StateValue } from "./state-rows";
+
+// The panels the apps share.
+export { ComponentTree } from "./panels/ComponentTree";
+export { Inspector, sourceScene, type InspectorFeed } from "./panels/Inspector";
+export { StatusBar, offlineSources } from "./panels/StatusBar";
+export { TopBar } from "./panels/TopBar";
+export { useTick } from "./use-tick";
 
 // Look and page helpers.
 export { MARK, OVERLAY, PRODUCT, STATUS, paletteCssVariables } from "./palette";

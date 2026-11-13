@@ -1,5 +1,7 @@
 import type { GatewayMessage, Product } from "@rpp/protocol";
-import { componentName, isMissed, markName, productMark, type SourceInfo } from "@rpp/machine-view";
+import { isMissed, markName, productMark } from "./machine-facts";
+import { componentName } from "./naming";
+import type { SourceInfo } from "./sources";
 
 /** What happened to a product: its register state, that its mark changed, or that it was missed or left the register. */
 export type ProductStepKind = Product["state"] | "marked" | "missed" | "gone";

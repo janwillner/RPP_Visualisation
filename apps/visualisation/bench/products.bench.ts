@@ -10,7 +10,7 @@ import {
   type StateMessage,
 } from "@rpp/protocol";
 import { buildMachineScene, MachineFrame, SourceFrame, type SourceInfo } from "@rpp/machine-view";
-import { ProductHistory } from "../src/product-history";
+import { ProductHistory } from "@rpp/machine-view";
 import { Recorder } from "../src/recording";
 
 /**
