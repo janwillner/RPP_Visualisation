@@ -26,6 +26,7 @@ import {
 } from "./parameter-access";
 import { MANIFEST_PATH, PLC_MACHINE_TYPE, enumValue, machinePath, type ST_VisuManifest } from "./plc-contract";
 import { mapPlc, UnknownEntryError, type EntryMemory } from "./plc-mapping";
+import { recipeWrites } from "./recipe-access";
 import { SymbolNotFoundError, type SymbolAccess } from "./symbol-access";
 
 export interface GatewayOptions {
@@ -162,7 +163,14 @@ export function createGateway({
     const libraryVersion = manifest.sLibraryVersion?.trim() || undefined;
     const errors: DiscoveryError[] = [];
     const active: ActiveComponent[] = [];
-    let params: ParameterDiscovery = { present: false, entries: [], reason: "The PLC's Syn_Visu does not match this gateway.", errors: [] };
+    let params: ParameterDiscovery = {
+      present: false,
+      entries: [],
+      reason: "The PLC's Syn_Visu does not match this gateway.",
+      errors: [],
+      protocolVersion: 0,
+      machine: undefined,
+    };
     let machineEntry: MachineEntry | undefined;
     const result = (): Discovery => ({
       config: {
@@ -235,7 +243,14 @@ export function createGateway({
     } catch (error) {
       // A layout the gateway does not know leaves the source read-only; connection errors propagate.
       if (!(error instanceof TypeError) && !(error instanceof SymbolNotFoundError)) throw error;
-      params = { present: true, entries: [], reason: `Cannot read ${configManifestPath}: ${error.message}`, errors: [] };
+      params = {
+        present: true,
+        entries: [],
+        reason: `Cannot read ${configManifestPath}: ${error.message}`,
+        errors: [],
+        protocolVersion: 0,
+        machine: undefined,
+      };
     }
     return result();
   }
@@ -369,7 +384,21 @@ export function createGateway({
       const current = discovery;
       if (!current || !status.plcConnected) return { ok: false, error: "The PLC is not connected." };
       const id = (stageId += 1);
-      const planned = commandWrites(command, current.parameters, parameters, id);
+      const planned =
+        command.kind === "writeParameters" || command.kind === "resetParameters"
+          ? commandWrites(command, current.parameters, parameters, id)
+          : recipeWrites(
+              command,
+              {
+                reason: current.parameters.reason,
+                protocolVersion: current.parameters.protocolVersion,
+                machine: current.parameters.machine,
+                // Simulation mode as the application reports it in the machine entry (protocol 22, ADR 0021).
+                simulation: machine?.simulation === true,
+                current: parameters,
+              },
+              id,
+            );
       if ("error" in planned) return { ok: false, error: planned.error };
       try {
         await plc.sumWrite(planned.writes);

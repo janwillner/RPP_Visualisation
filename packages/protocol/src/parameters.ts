@@ -23,8 +23,11 @@ import {
  * fields, so a draft's component gives its parameter set by picking them.
  */
 
-/** Version of the Syn_Config contract. Must match `nProtocolVersion` in the PLC's config manifest. */
-export const CONFIG_PROTOCOL_VERSION = 2;
+/** Version of the Syn_Config contract the gateway writes (3: recipe fields and machine commands, ADR 0022). */
+export const CONFIG_PROTOCOL_VERSION = 3;
+
+/** The oldest Syn_Config protocol the gateway still writes parameter sets to; it has no recipe and no commands. */
+export const MIN_CONFIG_PROTOCOL_VERSION = 2;
 
 /**
  * The configuration fields of each component type that a parameter set holds; hardware (lengths, arm geometry, strokes,
@@ -136,6 +139,71 @@ export const ComponentParametersSchema = z
   .describe("A parameter FB's status and the effective values it gives its application.");
 export type ComponentParameters = z.infer<typeof ComponentParametersSchema>;
 
+/** How a recipe field's value is kept: a number, a whole number, a switch (on / off) or one of named choices. */
+export const RecipeFieldTypeSchema = z
+  .enum(["number", "integer", "switch", "choice"])
+  .describe(
+    "How a recipe field's value is kept: `number` (any number within min and max), `integer` (a whole number " +
+      "within min and max), `switch` (true or false) or `choice` (the number of one of `choices`, from 0).",
+  );
+export type RecipeFieldType = z.infer<typeof RecipeFieldTypeSchema>;
+
+/** One value of a recipe as the application declares it (ADR 0022). */
+export const RecipeFieldSchema = z
+  .object({
+    name: z.string().describe("The field's name, unique in the recipe, e.g. `BeltSpeed`."),
+    group: int("Manifest id of the component the field belongs to; 0 for the whole machine."),
+    type: RecipeFieldTypeSchema,
+    unit: z.string().describe("Unit of the value, e.g. `mm/s`; empty for none."),
+    min: z.number().describe("Smallest value of a `number` or `integer` field."),
+    max: z.number().describe("Largest value of a `number` or `integer` field."),
+    programValue: z
+      .number()
+      .describe("The application's own value, which applies while no recipe is active (a switch: 1 = on)."),
+    choices: z.array(z.string()).describe("The names of a `choice` field's values, from value 0; empty otherwise."),
+  })
+  .describe("One field of the recipe, as the application declares it.");
+export type RecipeField = z.infer<typeof RecipeFieldSchema>;
+
+/** A recipe value: a number, or a switch's on / off. */
+export const RecipeValueSchema = z
+  .union([z.number(), z.boolean()])
+  .describe("A recipe value: `true` / `false` for a `switch`, a number for every other field.");
+export type RecipeValue = z.infer<typeof RecipeValueSchema>;
+
+/** The machine's recipe: its declared fields, the status of the last write and the effective values (ADR 0022). */
+export const RecipeSchema = z
+  .object({
+    fields: z.array(RecipeFieldSchema).describe("Every field the application declares, in its order."),
+    activeVersion: int("Version of the active recipe; 0 while the application's program values apply."),
+    handledStageId: int("The stage id of the last recipe write the PLC handled; 0 = none yet."),
+    result: ParameterResultSchema,
+    message: z.string().describe("Why the last staged recipe was rejected; empty otherwise."),
+    values: z
+      .record(RecipeValueSchema)
+      .describe("The effective value of every field by its name: the active recipe, or the program values."),
+  })
+  .describe("The machine's recipe: the process values its application declares and runs with.");
+export type Recipe = z.infer<typeof RecipeSchema>;
+
+/** What a client may ask the machine to do. */
+export const MachineCommandKindSchema = z
+  .enum(["start", "stop", "reset"])
+  .describe("What the machine is asked to do: `start`, `stop` or `reset`.");
+export type MachineCommandKind = z.infer<typeof MachineCommandKindSchema>;
+
+/** What the application made of the last machine command. */
+export const MachineCommandStatusSchema = z
+  .object({
+    handledCommandId: int("The command id of the last command the application answered; 0 = none yet."),
+    result: z
+      .enum(["none", "accepted", "rejected"])
+      .describe("What the application made of it: `none` (nothing asked yet), `accepted` or `rejected`."),
+    message: z.string().describe("Why the application rejected it; empty otherwise."),
+  })
+  .describe("The application's answer to the last machine command (Start, Stop, Reset).");
+export type MachineCommandStatus = z.infer<typeof MachineCommandStatusSchema>;
+
 export const ParametersMessageSchema = z
   .object({
     kind: z.literal("parameters").describe("Message kind: always `parameters`."),
@@ -145,6 +213,12 @@ export const ParametersMessageSchema = z
       .describe("Parameter sets can be written to this source: it has Syn_Config and the gateway allows writing."),
     reason: z.string().describe("Why the source is not writable; absent when it is.").optional(),
     components: z.array(ComponentParametersSchema).describe("Every parameter FB of the source's config manifest."),
+    recipe: RecipeSchema.describe(
+      "The machine's recipe (Syn_Config config protocol 3, ADR 0022); absent without a machine FB.",
+    ).optional(),
+    machineCommand: MachineCommandStatusSchema.describe(
+      "The application's answer to the last machine command; absent without a machine FB.",
+    ).optional(),
   })
   .describe(
     "The parameter sets of one source (ADR 0017). Sent after discovery, whenever a status or an active set changes, " +
@@ -178,8 +252,56 @@ export const ResetParametersCommandSchema = z
   .describe("Return a component to its application's program values; only with `--allow-write`.");
 export type ResetParametersCommand = z.infer<typeof ResetParametersCommandSchema>;
 
+const recipeFields = {
+  requestId: int("Chosen by the client; the gateway's `writeResult` names it."),
+  sourceId: SourceIdSchema,
+};
+
+/** Sent by a client: stage the machine's recipe (ADR 0022). */
+export const WriteRecipeCommandSchema = z
+  .object({
+    kind: z.literal("writeRecipe").describe("Command kind: always `writeRecipe`."),
+    ...recipeFields,
+    baseVersion: int("The active recipe version the client knows; another active version refuses the command."),
+    values: z.record(RecipeValueSchema).describe("New values by field name; a field left out keeps its effective value."),
+  })
+  .describe(
+    "Stage the machine's recipe; only with `--allow-write` and while the PLC reports simulation mode. Refused for an " +
+      "unknown field, a value of the wrong type or outside min and max.",
+  );
+export type WriteRecipeCommand = z.infer<typeof WriteRecipeCommandSchema>;
+
+/** Sent by a client: make the active recipe invalid, so the application's program values apply again. */
+export const ResetRecipeCommandSchema = z
+  .object({
+    kind: z.literal("resetRecipe").describe("Command kind: always `resetRecipe`."),
+    ...recipeFields,
+    baseVersion: int("The active recipe version the client knows; another active version refuses the command."),
+  })
+  .describe("Return the machine to its application's program values; as `writeRecipe`, only in simulation mode.");
+export type ResetRecipeCommand = z.infer<typeof ResetRecipeCommandSchema>;
+
+/** Sent by a client: ask the machine to start, stop or reset (ADR 0022). */
+export const MachineCommandSchema = z
+  .object({
+    kind: z.literal("machineCommand").describe("Command kind: always `machineCommand`."),
+    ...recipeFields,
+    command: MachineCommandKindSchema,
+  })
+  .describe(
+    "Ask the machine to start, stop or reset; only with `--allow-write` and while the PLC reports simulation mode. " +
+      "The application accepts or rejects it: `machineCommand` in `parameters`.",
+  );
+export type MachineCommand = z.infer<typeof MachineCommandSchema>;
+
 export const ClientMessageSchema = z
-  .discriminatedUnion("kind", [WriteParametersCommandSchema, ResetParametersCommandSchema])
+  .discriminatedUnion("kind", [
+    WriteParametersCommandSchema,
+    ResetParametersCommandSchema,
+    WriteRecipeCommandSchema,
+    ResetRecipeCommandSchema,
+    MachineCommandSchema,
+  ])
   .describe("A command a client sends on the WebSocket; the gateway ignores anything else.");
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
@@ -191,7 +313,10 @@ export const WriteResultMessageSchema = z
     ok: z
       .boolean()
       .describe("The set was staged (or the reset requested); whether the PLC takes it over follows in `parameters`."),
-    stageId: int("Stage id of the write; `handledStageId` in `parameters` names it once the PLC handled it.").optional(),
+    stageId: int(
+      "Stage id of the write (of a machine command: its command id); `handledStageId` (`handledCommandId`) in " +
+        "`parameters` names it once the PLC handled it.",
+    ).optional(),
     error: z.string().describe("Why the command was refused; absent when `ok`.").optional(),
   })
   .describe("The gateway's answer to a command, sent to the client that sent it.");

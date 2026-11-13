@@ -2,13 +2,21 @@ import { CONFIG_PROTOCOL_VERSION, PARAMETER_SCHEMAS, type ParameterType } from "
 import { COMPONENTS } from "./components";
 import {
   CONFIG_MANIFEST_PATH,
+  E_ConfigCommandResult,
+  E_ConfigFieldType,
   E_ConfigResult,
+  MAX_CHOICES,
+  MAX_RECIPE_FIELDS,
+  PLC_CONFIG_MACHINE_TYPE,
   PLC_CONFIG_MANIFEST_TYPE,
   PLC_CONFIG_TYPES,
   type ST_ConfigComponent,
+  type ST_ConfigMachine,
   type ST_ConfigManifest,
   type ST_ConfigManifestEntry,
+  type ST_ConfigRecipeField,
 } from "./config-contract";
+import { enumValue } from "./plc-contract";
 import type { InMemoryPlc } from "./in-memory-plc";
 import { MAX_MANIFEST_ENTRIES } from "./plc-builders";
 import { MANIFEST_PATH, type ST_VisuFinger, type ST_VisuManifest, type ST_VisuProductType, type ST_VisuTrackModule, type ST_VisuZone } from "./plc-contract";
@@ -43,9 +51,37 @@ interface PersistentSet {
   stParam: Param;
 }
 
+/** A recipe field as the tests declare it: a number field of the whole machine unless given otherwise. */
+export function recipeField(f: Partial<ST_ConfigRecipeField> & { sName: string; choices?: string[] }): ST_ConfigRecipeField {
+  const { choices = [], ...rest } = f;
+  return {
+    nGroup: 0,
+    eType: E_ConfigFieldType.NUMBER,
+    sUnit: "",
+    fMin: 0,
+    fMax: 0,
+    fProgramValue: 0,
+    nChoiceCount: choices.length,
+    aChoices: [...choices, ...Array.from({ length: MAX_CHOICES - choices.length }, () => "")],
+    ...rest,
+  };
+}
+
+/** The application's machine FB (`_FB_ConfigMachine`, config protocol 3): its recipe fields at `path`. */
+export interface EmulatedMachineFb {
+  /** Symbol path of the machine FB's `vo_Config`. */
+  path: string;
+  fields: ST_ConfigRecipeField[];
+}
+
 export class ConfigEmulation {
   /** The application allows taking a staged set over (`vi_b_ApplyAllowed`). */
   applyAllowed = true;
+  /** How the application answers a machine command (E_ConfigCommand): '' accepts it, a reason rejects it. */
+  answerCommand: (command: number) => string = () => "";
+  /** The application's persistent recipe (`ST_ConfigRecipeSet`). */
+  private recipe = { bValid: false, nVersion: 0, nLastVersion: 0, aValues: [] as number[] };
+  private readonly machine: EmulatedMachineFb | undefined;
   private readonly fbs: {
     entry: EmulatedParameterFb;
     defaults: Param;
@@ -56,18 +92,36 @@ export class ConfigEmulation {
   constructor(
     private readonly plc: InMemoryPlc,
     entries: EmulatedParameterFb[],
-    options: { manifestPath?: string; protocolVersion?: number; visuManifestPath?: string } = {},
+    options: { manifestPath?: string; protocolVersion?: number; visuManifestPath?: string; machine?: EmulatedMachineFb } = {},
   ) {
     this.visuManifestPath = options.visuManifestPath ?? MANIFEST_PATH;
+    this.machine = options.machine;
+    const listed: ST_ConfigManifestEntry[] = [
+      ...entries.map((e): ST_ConfigManifestEntry => ({ nId: e.id, eType: COMPONENTS[e.kind].plcValue, sPath: e.path })),
+      // The machine FB: id 0, type NONE.
+      ...(options.machine ? [{ nId: 0, eType: 0, sPath: options.machine.path }] : []),
+    ];
     const manifest: ST_ConfigManifest = {
       nProtocolVersion: options.protocolVersion ?? CONFIG_PROTOCOL_VERSION,
       sLibraryVersion: "1.0.0",
-      nCount: entries.length,
-      aEntries: [
-        ...entries.map((e): ST_ConfigManifestEntry => ({ nId: e.id, eType: COMPONENTS[e.kind].plcValue, sPath: e.path })),
-        ...Array.from({ length: MAX_MANIFEST_ENTRIES - entries.length }, () => ({ nId: 0, eType: 0, sPath: "" })),
-      ],
+      nCount: listed.length,
+      aEntries: [...listed, ...Array.from({ length: MAX_MANIFEST_ENTRIES - listed.length }, () => ({ nId: 0, eType: 0, sPath: "" }))],
     };
+    if (options.machine) {
+      const { fields } = options.machine;
+      const values = (v: number[]) => [...v, ...Array.from({ length: MAX_RECIPE_FIELDS - v.length }, () => 0)];
+      const machine: ST_ConfigMachine = {
+        nFieldCount: fields.length,
+        aFields: [...fields, ...Array.from({ length: MAX_RECIPE_FIELDS - fields.length }, () => recipeField({ sName: "" }))],
+        stStaging: { nBaseVersion: 0, nStageId: 0, bReset: false, bStaged: false },
+        aStaged: values([]),
+        stStatus: { nActiveVersion: 0, nHandledStageId: 0, eResult: E_ConfigResult.NONE, sMessage: "" },
+        aActive: values(fields.map((f) => f.fProgramValue)),
+        stCommand: { nCommandId: 0, eCommand: 0, bRequested: false },
+        stCommandStatus: { nHandledCommandId: 0, eResult: E_ConfigCommandResult.NONE, sMessage: "" },
+      };
+      plc.define(options.machine.path, PLC_CONFIG_MACHINE_TYPE, machine);
+    }
     plc.define(options.manifestPath ?? CONFIG_MANIFEST_PATH, PLC_CONFIG_MANIFEST_TYPE, manifest);
     this.fbs = entries.map((entry) => {
       // The program values: what the application passes to Syn_Visu without a parameter set.
@@ -119,6 +173,52 @@ export class ConfigEmulation {
       vo.stActive = structuredClone(fb.persistent.bValid ? fb.persistent.stParam : fb.defaults);
       this.passOn(fb.entry, vo.stActive);
     }
+    if (this.machine) this.machineCycle(this.machine);
+  }
+
+  /** What `_FB_ConfigMachine.m_Cycle` and the application's command handling do in one cycle. */
+  private machineCycle(m: EmulatedMachineFb): void {
+    const vo = this.plc.get<ST_ConfigMachine>(m.path);
+    const { stStaging: staging, stStatus: status } = vo;
+    const active = () => (this.recipe.bValid ? this.recipe.nVersion : 0);
+    const handled = (reason: string) => {
+      Object.assign(status, {
+        nHandledStageId: staging.nStageId,
+        eResult: reason ? E_ConfigResult.REJECTED : E_ConfigResult.APPLIED,
+        sMessage: reason,
+      });
+      staging.bStaged = false;
+      staging.bReset = false;
+    };
+    if (staging.bReset) {
+      this.recipe.bValid = false;
+      handled("");
+    } else if (staging.bStaged) {
+      if (!this.applyAllowed) status.eResult = E_ConfigResult.PENDING;
+      else if (staging.nBaseVersion !== active()) {
+        handled(`Based on version ${staging.nBaseVersion}, but version ${active()} is active`);
+      } else {
+        const reason = invalidRecipe(m.fields, vo.aStaged);
+        if (!reason) {
+          this.recipe.nLastVersion += 1;
+          this.recipe = { ...this.recipe, bValid: true, nVersion: this.recipe.nLastVersion, aValues: [...vo.aStaged] };
+        }
+        handled(reason);
+      }
+    }
+    status.nActiveVersion = active();
+    vo.aActive = m.fields.map((f, i) => (this.recipe.bValid ? this.recipe.aValues[i]! : f.fProgramValue)).concat(vo.aActive.slice(m.fields.length));
+
+    const command = vo.stCommand;
+    if (command.bRequested) {
+      const reason = this.answerCommand(enumValue(command.eCommand));
+      vo.stCommandStatus = {
+        nHandledCommandId: command.nCommandId,
+        eResult: reason ? E_ConfigCommandResult.REJECTED : E_ConfigCommandResult.ACCEPTED,
+        sMessage: reason,
+      };
+      command.bRequested = false;
+    }
   }
 
   /**
@@ -166,4 +266,18 @@ export class ConfigEmulation {
 /** The parameter fields of a Syn_Visu config: what Syn_Config holds of it, by the naming convention. */
 function paramOf(kind: ParameterType, config: Record<string, unknown>): Param {
   return structuredClone(Object.fromEntries(plcMembers(PARAMETER_SCHEMAS[kind]).map((m) => [m, config[m]])));
+}
+
+/** Why staged recipe values cannot be taken over, as the library's m_Cycle says it; '' when they can. */
+function invalidRecipe(fields: readonly ST_ConfigRecipeField[], staged: readonly number[]): string {
+  for (const [i, f] of fields.entries()) {
+    const v = staged[i]!;
+    const type = enumValue(f.eType);
+    if (type === E_ConfigFieldType.SWITCH ? v !== 0 && v !== 1 : type !== E_ConfigFieldType.NUMBER && !Number.isInteger(v)) {
+      return `Field ${f.sName}: ${v} is not a value of its type`;
+    }
+    const [min, max] = type === E_ConfigFieldType.CHOICE ? [0, f.nChoiceCount - 1] : [f.fMin, f.fMax];
+    if (type !== E_ConfigFieldType.SWITCH && (v < min || v > max)) return `Field ${f.sName}: ${v} is outside ${min} to ${max}`;
+  }
+  return "";
 }
