@@ -95,5 +95,4 @@ fb_InfeedParam.m_PassOn(vio_Visu := fb_Infeed);	// origin shift and product type
 
 The demo (`plc/Syn_Visu_Demo`) does this for Infeed 1, Delta 1 and Vision 1 (`P_VisuDemoDelta`; the vision system
 latches its products under its effective lens position) and the IDH XTS gantry (`P_VisuDemoIdh`; its simulated motion
-keeps to the program's track), taking a set over at once; the simulator emulates the same for one component of every
-type (`apps/gateway/src/config-emulation.ts`).
+keeps to the program's track), taking a set over at once; the gateway tests emulate the same (`apps/gateway/src/config-emulation.ts`).

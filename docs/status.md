@@ -4,13 +4,13 @@ Snapshot of where the work stands, for picking it up later. Spec: GitHub issue #
 
 ## How to run it against the PLC
 
-1. Open `plc/RPP_Visu.sln` in TwinCAT XAE (4026, user-mode runtime `UmRT_Default`, target `169.254.123.103.1.1`, which is this PC).
-2. Build, activate the configuration, log in and start the PLC. If the manifest looks stale after an online change, do a cold reset and start again.
-3. `corepack pnpm install`, `corepack pnpm build:bridge`, `corepack pnpm --filter @rpp/web build`
-4. `cd apps/gateway && node_modules/.bin/tsx src/main.ts --driver ads --ams-net-id 169.254.123.103.1.1 --ads-port 852 --port 8080` (the demo project `Syn_Visu_Demo` runs on port 852; the library project on 851 has no task)
-5. Open http://localhost:8080
+The demo application on the local user-mode runtime (`docs/demo-plc.md`; the gateway has no simulator any more, ADR 0020):
 
-Without a PLC: `--driver sim` (built-in simulator, same contract).
+1. Open `plc/RPP_Visu.sln` in TwinCAT XAE (4026, user-mode runtime `UmRT_Default`, target `169.254.123.103.1.1`, which is this PC).
+2. Build, activate the configuration, log in to `Syn_Visu_Demo` and start it. If the manifest looks stale after an online change, do a cold reset and start again.
+3. `corepack pnpm install`, `corepack pnpm build:bridge`, `corepack pnpm build`
+4. `corepack pnpm dev:gateway` (the demo on port 852 through the local router; the library project on 851 has no task)
+5. Open http://localhost:8080
 
 ## Done
 

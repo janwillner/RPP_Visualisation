@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { combineGateways, createGateway } from "../src/gateway";
 import { startServer } from "../src/server";
-import { createSimulator } from "../src/simulator";
+import { fixtureMachine, FIXTURE_SOURCE } from "./fixture-machine";
 
 /** A built app: its page and one asset. */
 function builtApp(title: string): string {
@@ -17,8 +17,8 @@ function builtApp(title: string): string {
 }
 
 async function serve(dirs: { staticDir?: string; configuratorDir?: string }) {
-  const sim = createSimulator({ seed: 1 });
-  const gateway = createGateway({ plc: sim.plc, sourceId: "sim", sourceName: "Simulator" });
+  const machine = fixtureMachine();
+  const gateway = createGateway({ plc: machine.plc, sourceId: FIXTURE_SOURCE, sourceName: "Fixture" });
   const server = await startServer({ gateway: combineGateways([gateway]), port: 0, host: "127.0.0.1", ...dirs });
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const get = async (path: string) => {

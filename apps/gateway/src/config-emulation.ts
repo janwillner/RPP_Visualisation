@@ -15,8 +15,8 @@ import { MANIFEST_PATH, type ST_VisuFinger, type ST_VisuManifest, type ST_VisuPr
 import { plcMembers } from "./plc-writing";
 
 /**
- * The library Syn_Config and an application using it (ADR 0017), emulated on an in-memory PLC for the simulator and
- * the tests: a config manifest, one parameter FB per entry and, every `step`, what `m_Cycle` does (take over or reject
+ * The library Syn_Config and an application using it (ADR 0017), emulated on an in-memory PLC for the gateway
+ * tests: a config manifest, one parameter FB per entry and, every `step`, what `m_Cycle` does (take over or reject
  * a staged set while allowed, reset) followed by what the application does with the effective values (pass them on
  * to Syn_Visu, whose config version then changes).
  */

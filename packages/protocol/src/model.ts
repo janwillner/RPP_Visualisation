@@ -705,15 +705,15 @@ export const GatewayStatusSchema = z
 export type GatewayStatus = z.infer<typeof GatewayStatusSchema>;
 
 /**
- * A PLC the gateway reads, as `ads:<AmsNetId>:<port>` (`sim` for the simulator). Every message carries it, and manifest
+ * A PLC the gateway reads, as `ads:<AmsNetId>:<port>`. Every message carries it, and manifest
  * ids are unique only within one source.
  */
 export const SourceIdSchema = z
   .string()
   .min(1)
   .describe(
-    "The PLC (source) the message is about, as `ads:<AmsNetId>:<port>` (`sim` for the simulator). Manifest ids are " +
-      "unique only within one source.",
+    "The PLC (source) the message is about, as `ads:<AmsNetId>:<port>`. Manifest ids are unique only within one " +
+      "source.",
   );
 
 export const ProductMarkSchema = z

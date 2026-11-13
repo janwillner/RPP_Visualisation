@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-/** Opens the app on the simulator and waits until its components are discovered. */
+/** Opens the app on the demo PLC and waits until its components are discovered. */
 async function openApp(page: Page): Promise<void> {
   await page.goto("/");
   await expect(page.locator(".statusbar")).toContainText("Gateway: open");
@@ -15,7 +15,7 @@ test.beforeEach(({ page }) => {
   });
 });
 
-test("shows the simulated machine: 3D view, component tree and the release version", async ({ page }) => {
+test("shows the demo machine: 3D view, component tree and the release version", async ({ page }) => {
   await openApp(page);
   // E.g. v0.1.0+aa29151 (package.json version and commit) or v1.2.3 from a release tag.
   await expect(page.locator(".statusbar .statusbar-version")).toHaveText(/^v\d+\.\d+\.\d+/);
@@ -217,9 +217,10 @@ test("keeps layers, hidden components and the camera across a reload", async ({ 
 test("marks faults on the recording's timeline and jumps to them", async ({ page }) => {
   await openApp(page);
   await page.getByRole("button", { name: "Show components" }).click();
-  // The simulator puts a mover in a fault for 5 s every 20 s; one active when recording starts is marked at the start.
+  // The demo puts a component or mover in a fault for 5 s every 20 s; one active when recording starts is marked at the start.
   // Start on a fault that has just begun: one about to end may be over before the recording starts.
-  const faultIcons = page.locator("aside.panel.left .fault-icon");
+  // Faults only: the tree marks limit violations with the same icon, and the demo's Deltas have them often.
+  const faultIcons = page.locator('aside.panel.left .fault-icon[aria-label="Fault"]');
   await expect(faultIcons).toHaveCount(0, { timeout: 10_000 });
   await expect(faultIcons.first()).toBeVisible({ timeout: 25_000 });
   await page.getByRole("button", { name: "Record", exact: true }).click();
@@ -263,7 +264,8 @@ test("lists a limit violation under its robot and marks it on the timeline", asy
 
   await page.getByRole("button", { name: "Replay the last minute" }).click();
   const bar = page.getByRole("toolbar", { name: "Playback" });
-  await expect(bar.locator(".timeline-marker.limit").first()).toHaveAttribute("title", new RegExp(`Limit violation · ${text}`));
+  // The other Deltas of the demo have limit violations too: Delta 1's is one of the markers.
+  await expect(bar.locator(`.timeline-marker.limit[title*="Limit violation · ${text}"]`).first()).toBeAttached();
 });
 
 test("shows what happened to a selected product in the inspector", async ({ page }) => {
@@ -295,8 +297,8 @@ test("shows a product the PLC marked by its mark's name and colour, until marks 
   await openApp(page);
   // Only the Delta line, framed from above, without the overlays above its belts.
   await page.getByRole("button", { name: "Show components" }).click();
-  const others = ["Cartesian", "Cartesian X-Y", "Cartesian X-Z", "Cartesian infeed", "Cartesian outfeed", "Light barrier"];
-  others.push("IDH", "IDH infeed", "Tray belt", "Fxx", "Fxx infeed", "Fxx outfeed", "Fxx spacing");
+  const others = ["Cartesian", "Cartesian X-Y", "Cartesian X-Z", "Cartesian infeed", "Cartesian outfeed"];
+  others.push("IDH", "IDH infeed", "Tray belt", "Fxx", "Fxx infeed", "Fxx outfeed", "Spacing belt", "Spacer");
   for (const name of others) {
     const hide = page.getByRole("button", { name: `Hide ${name}`, exact: true });
     if (await hide.count()) await hide.click();
@@ -307,7 +309,7 @@ test("shows a product the PLC marked by its mark's name and colour, until marks 
   }
   await page.getByRole("button", { name: "Show inspector" }).click();
   await page.getByRole("button", { name: "View from above" }).click();
-  // The simulator marks every tenth product on the Delta infeed as a sample, one every 7 s.
+  // Vision 1 of the demo marks every tenth product on Infeed 1 as a sample.
   await page.waitForTimeout(10_000);
   // Held still in the replay of the last moments, so a product stays where it was seen.
   await page.getByRole("button", { name: "Replay the last minute" }).click();

@@ -3,7 +3,7 @@ import { parseArgs } from "node:util";
 import { CONFIG_MANIFEST_PATH } from "./config-contract";
 import { MANIFEST_PATH } from "./plc-contract";
 
-const drivers = ["sim", "ads", "ads-tcp"] as const;
+const drivers = ["ads", "ads-tcp"] as const;
 export type Driver = (typeof drivers)[number];
 
 /** One PLC runtime the gateway reads: an AmsNetId plus ADS port, reached through the local AMS router. */
@@ -25,8 +25,6 @@ export interface GatewayOptions {
   localAmsNetId?: string;
   cycleMs: number;
   configRecheckMs: number;
-  /** Simulator only: products kept on an extra buffer belt for load tests; 0 = none. */
-  simProducts: number;
   /** Symbol path of the application's manifest. */
   manifestPath: string;
   /** Symbol path of the application's Syn_Config manifest (ADR 0017). */
@@ -72,9 +70,9 @@ export const OPTION_HELP: readonly OptionHelp[] = [
     ],
   },
   {
-    flag: "--driver sim|ads|ads-tcp",
+    flag: "--driver ads|ads-tcp",
     text: [
-      "PLC driver (default: sim)",
+      "PLC driver (default: ads)",
       "ads:     official Beckhoff ADS library via the .NET bridge (local AMS router,",
       '         no route needed; build it with "pnpm build:bridge")',
       "ads-tcp: pure TCP client (ads-client); needs a route or AMS TCP loopback",
@@ -100,10 +98,6 @@ export const OPTION_HELP: readonly OptionHelp[] = [
   { flag: "--router-port <port>", text: ["ads-tcp only: ADS router TCP port (default: 48898)"] },
   { flag: "--local-ams-net-id <id>", text: ["ads-tcp only: local AmsNetId when connecting through a remote router"] },
   { flag: "--cycle-ms <ms>", text: ["Acquisition cycle (default: 20)"] },
-  {
-    flag: "--sim-products <n>",
-    text: ["sim only: load test with a buffer belt carrying about n products (default: 0 = none)"],
-  },
   {
     flag: "--config-recheck-ms <ms>",
     text: ["Re-read the full config at this interval to catch live changes (default: 1000, 0 = off)"],
@@ -152,7 +146,7 @@ const stringKeys = ["driver", "amsNetId", "routerAddress", "localAmsNetId", "hos
 const booleanKeys = ["allowWrite"] as const;
 /** String settings holding paths; relative ones resolve against the config file's folder or the working directory. */
 const pathKeys = ["adsBridge", "staticDir", "configuratorDir"] as const;
-const numberKeys = ["adsPort", "routerPort", "cycleMs", "configRecheckMs", "simProducts", "port"] as const;
+const numberKeys = ["adsPort", "routerPort", "cycleMs", "configRecheckMs", "port"] as const;
 
 type StringKey = (typeof stringKeys)[number] | (typeof pathKeys)[number];
 type NumberKey = (typeof numberKeys)[number];
@@ -197,16 +191,11 @@ export function resolveGatewayOptions(argv: readonly string[], env: OptionsEnvir
   const configPath = typeof values.config === "string" ? values.config : undefined;
   const settings: Settings = { ...(configPath ? readConfigFile(configPath, env) : {}), ...fromFlags };
 
-  const driver = settings.driver ?? "sim";
+  const driver = settings.driver ?? "ads";
   if (!isOneOf(drivers, driver)) throw new OptionsError(`driver must be one of ${drivers.join(", ")}, got "${driver}"`);
   const staticDir = settings.staticDir ?? defaultStaticDir(env);
   const configuratorDir = settings.configuratorDir ?? defaultConfiguratorDir(env);
   const sources = resolveSources(settings, driver as Driver);
-  const simProducts = settings.simProducts ?? 0;
-  if (simProducts !== 0 && driver !== "sim") throw new OptionsError(`simProducts is for the simulator only; driver is "${driver}"`);
-  if (!Number.isInteger(simProducts) || simProducts < 0) {
-    throw new OptionsError(`simProducts must be a whole number of products, got ${simProducts}`);
-  }
 
   return {
     driver: driver as Driver,
@@ -216,7 +205,6 @@ export function resolveGatewayOptions(argv: readonly string[], env: OptionsEnvir
     ...(settings.localAmsNetId !== undefined ? { localAmsNetId: settings.localAmsNetId } : {}),
     cycleMs: settings.cycleMs ?? 20,
     configRecheckMs: settings.configRecheckMs ?? 1000,
-    simProducts,
     manifestPath: settings.manifestPath ?? MANIFEST_PATH,
     configManifestPath: settings.configManifestPath ?? CONFIG_MANIFEST_PATH,
     allowWrite: settings.allowWrite ?? false,
@@ -237,7 +225,6 @@ function resolveSources(settings: Settings, driver: Driver): PlcSource[] {
   if (settings.amsNetId !== undefined || settings.adsPort !== undefined) {
     throw new OptionsError(`Give either "sources" or amsNetId / adsPort for a single source, not both`);
   }
-  if (driver === "sim") throw new OptionsError(`The simulator reads no PLC sources; remove "sources" or choose the ads driver`);
   const seen = new Set<string>();
   for (const source of settings.sources) {
     if (seen.has(source.sourceId)) throw new OptionsError(`Source ${source.amsNetId}:${source.adsPort} is listed twice`);

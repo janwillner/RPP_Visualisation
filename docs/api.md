@@ -28,7 +28,7 @@ network.
 ## Concepts
 
 **Source.** A PLC runtime the gateway reads, named by `sourceId` as `ads:<AmsNetId>:<port>`, e.g.
-`ads:5.80.201.232.1.1:851` (`sim` for the simulator). One gateway may read several sources. Every message names its
+`ads:5.80.201.232.1.1:851`. One gateway may read several sources. Every message names its
 source, and everything you keep should be keyed by it.
 
 **Component.** One part of the machine the PLC registers: a conveyor, a Delta robot, an XTS gantry, an XTS loop, a

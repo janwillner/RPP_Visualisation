@@ -5,6 +5,7 @@ import { join } from "node:path";
 import Ajv from "ajv";
 import { describe, expect, it } from "vitest";
 import {
+  COMPONENT_SCHEMAS,
   GatewayMessageSchema,
   HealthReportSchema,
   PROTOCOL_VERSION,
@@ -18,7 +19,7 @@ import { guideText } from "../src/docs-texts";
 import { combineGateways, createGateway } from "../src/gateway";
 import { watchHealth } from "../src/health";
 import { DOCS_PATH, DOCS_SCHEMA_PATH, startServer } from "../src/server";
-import { createSimulator } from "../src/simulator";
+import { fixtureMachine, FIXTURE_SOURCE } from "./fixture-machine";
 
 /** Every property below `schema` without a description, as paths. */
 function undescribed(schema: JsonSchema, path: string): string[] {
@@ -71,7 +72,7 @@ describe("PLC library guide at /docs", () => {
     expect(missing).toEqual([]);
   });
 
-  it("gives a JSON Schema that the simulator's messages and the health report pass", async () => {
+  it("gives a JSON Schema that the messages of a machine with every component type and the health report pass", async () => {
     const schema = protocolJsonSchema();
     const ajv = new Ajv({ allErrors: true });
     ajv.addSchema(schema);
@@ -80,17 +81,20 @@ describe("PLC library guide at /docs", () => {
       expect(check(value), `${ref}: ${ajv.errorsText(check.errors)}`).toBe(true);
     };
 
-    const sim = createSimulator({ seed: 1 });
-    const gateway = createGateway({ plc: sim.plc, sourceId: "sim", sourceName: "Simulator" });
+    const machine = fixtureMachine();
+    const gateway = createGateway({ plc: machine.plc, sourceId: FIXTURE_SOURCE, sourceName: "Fixture" });
     const health = watchHealth(gateway, "1.2.3");
     const last: { status?: StatusMessage; config?: ConfigMessage; state?: StateMessage } = {};
     gateway.subscribe((m) => {
       if (m.kind !== "parameters") last[m.kind] = m as never;
     });
-    for (let i = 0; i < 300; i++) {
-      sim.step(20);
+    for (let i = 0; i < 10; i++) {
+      machine.step();
       await gateway.cycle();
     }
+    // Discovered as a whole, with every component type.
+    expect(last.config!.errors).toEqual([]);
+    expect(new Set(last.config!.components.map((c) => c.type)).size).toBe(Object.keys(COMPONENT_SCHEMAS).length);
     for (const message of [last.status!, last.config!, last.state!]) {
       validate("", message);
       validate(`#/definitions/${message.kind[0]!.toUpperCase()}${message.kind.slice(1)}Message`, message);
@@ -103,7 +107,7 @@ describe("PLC library guide at /docs", () => {
   it("lets clients ignore fields they do not know: the schema allows extra properties", () => {
     const schema = protocolJsonSchema();
     const ajv = new Ajv();
-    const message = { kind: "status", sourceId: "sim", sourceName: "Simulator", status: { plcConnected: true }, extra: 1 };
+    const message = { kind: "status", sourceId: FIXTURE_SOURCE, sourceName: "Fixture", status: { plcConnected: true }, extra: 1 };
     expect(ajv.validate(schema, message)).toBe(true);
   });
 
@@ -111,8 +115,8 @@ describe("PLC library guide at /docs", () => {
     const web = mkdtempSync(join(tmpdir(), "rpp-web-"));
     writeFileSync(join(web, "index.html"), "<!doctype html><title>web app</title>");
     for (const staticDir of [undefined, web]) {
-      const sim = createSimulator({ seed: 1 });
-      const gateway = createGateway({ plc: sim.plc, sourceId: "sim", sourceName: "Simulator" });
+      const machine = fixtureMachine();
+      const gateway = createGateway({ plc: machine.plc, sourceId: FIXTURE_SOURCE, sourceName: "Fixture" });
       await gateway.cycle();
       const server = await startServer({
         gateway: combineGateways([gateway]),

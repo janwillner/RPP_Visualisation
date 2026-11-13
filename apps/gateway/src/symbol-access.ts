@@ -1,6 +1,6 @@
 /**
  * The gateway's seam to a PLC. Adapters: ADS (`ads-symbol-access`) and the in-memory PLC
- * (`in-memory-plc`, also used by the simulator).
+ * (`in-memory-plc`, the tests' PLC).
  *
  * Every operation rejects when the PLC is unreachable; the gateway treats a rejection as a lost connection.
  */

@@ -1,7 +1,7 @@
 import type { TrackModule } from "./model";
 
 /**
- * Geometry of an XTS track, shared by the web scene and the simulator: its modules joined end to start in the
+ * Geometry of an XTS track, shared by the web scene and the machine facts: its modules joined end to start in the
  * track's plane. A point in the plane is given in mm as `u` along the direction the first module starts in and `v`
  * to the left of it; `heading` is the tangent's angle from +u towards +v in degrees.
  */

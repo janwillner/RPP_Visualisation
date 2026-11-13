@@ -42,7 +42,7 @@ File: `C:\ProgramData\RPP_Visualisation\config.json` (created by the first insta
 
 | Key | Set to |
 | --- | --- |
-| `driver` | `ads`; `sim` for the simulator without a PLC |
+| `driver` | `ads` (the default); `ads-tcp` for the pure TCP client, which needs an ADS route |
 | `amsNetId` | `127.0.0.1.1.1` for this IPC, otherwise the AmsNetId of the remote IPC |
 | `adsPort` | PLC runtime: 851, 852, ... |
 | `port` | HTTP port of the page |

@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { OptionsError, resolveGatewayOptions, type OptionsEnvironment } from "../src/options";
+import { helpText, OptionsError, resolveGatewayOptions, type OptionsEnvironment } from "../src/options";
 
 const here = resolve("/install");
 
@@ -66,7 +66,9 @@ describe("resolveGatewayOptions", () => {
   it.each([
     ["an unknown key", { adsPrt: 852 }, /unknown key "adsPrt"/],
     ["a value of the wrong type", { adsPort: "852" }, /"adsPort" must be a number/],
-    ["an unknown driver", { driver: "opcua" }, /driver must be one of sim, ads, ads-tcp/],
+    ["an unknown driver", { driver: "opcua" }, /driver must be one of ads, ads-tcp/],
+    // The gateway's fake PLC is gone (ADR 0020): the demo application on the user-mode runtime takes its place.
+    ["the former simulator driver", { driver: "sim" }, /driver must be one of ads, ads-tcp/],
     ["invalid JSON", "{ port: 8080 ", /not valid JSON/],
   ])("rejects a config file with %s", (_, content, message) => {
     const files = { "/data/config.json": typeof content === "string" ? content : JSON.stringify(content) };
@@ -138,11 +140,10 @@ describe("resolveGatewayOptions", () => {
     ]);
   });
 
-  it("takes the simulator's load test products from the flag, none by default, and refuses them for a real PLC", () => {
-    expect(resolveGatewayOptions(["--sim-products", "4000"], env()).simProducts).toBe(4000);
-    expect(resolveGatewayOptions([], env()).simProducts).toBe(0);
-    expect(() => resolveGatewayOptions(["--driver", "ads", "--sim-products", "100"], env())).toThrow(/simulator only/);
-    expect(() => resolveGatewayOptions(["--sim-products", "1.5"], env())).toThrow(/whole number/);
+  it("reads a PLC through the ADS bridge by default and knows no simulator options any more", () => {
+    expect(resolveGatewayOptions([], env()).driver).toBe("ads");
+    expect(() => resolveGatewayOptions(["--sim-products", "4000"], env())).toThrow(OptionsError);
+    expect(helpText()).not.toMatch(/\bsim\b|simulator/i);
   });
 
   it("takes the AmsNetId and port flags as the short form for one source, defaulting to the local runtime 851", () => {
@@ -164,7 +165,6 @@ describe("resolveGatewayOptions", () => {
       [],
       /5.1.2.3.1.1:851 is listed twice/,
     ],
-    ["a source list with the simulator", { sources: [{ amsNetId: "5.1.2.3.1.1" }] }, [], /the simulator reads no PLC sources/i],
     [
       "several sources with the ads-tcp driver",
       { driver: "ads-tcp", sources: [{ amsNetId: "5.1.2.3.1.1" }, { amsNetId: "5.1.2.4.1.1" }] },
