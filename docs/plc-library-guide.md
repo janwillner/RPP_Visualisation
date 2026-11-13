@@ -778,6 +778,11 @@ marks a message appearing on the timeline; a click on a message about a componen
 
 The Simulator writes a recipe or sends a command only while the machine reports simulation mode (`m_SetSimulation`).
 
+The demo application (`Syn_Visu_Demo`) shows the whole wiring: its `P_VisuDemoMachine` declares the recipe of Infeed 1,
+Delta 1 and the product pattern, answers Start, Stop and Reset, ramps the belt and reports the run state and machine
+messages; the Delta application's product generator turns the pattern into Vision 1's detections, and its own
+sequence control runs Delta 1 with the recipe.
+
 ```st
 (* Every cycle, after the components *)
 fb_Machine.m_Register(vio_Machine := GVL_Visu.stMachine);

@@ -16,6 +16,14 @@ this: the gateway tests use an in-memory PLC.
 The gateway reaches the demo through the local AMS router, AmsNetId `127.0.0.1.1.1`. The browser tests take
 `E2E_AMS_NET_ID` and `E2E_ADS_PORT` to read another runtime, `E2E_PORT` for the gateway's own port (8090).
 
+## The machine and its recipe
+
+`P_VisuDemoMachine` is the demo's minimal sequence control of Infeed 1 and Delta 1 (ADR 0022): a recipe of 15 fields
+(belt, robot, product pattern of the generator before Vision 1, seed), Start, Stop and Reset through Syn_Config's
+machine FB, the run state and the machine messages "Reject bin almost full" and "Product missed" through Syn_Visu. It
+starts running with the program values, which reproduce the demo as before; the browser tests rely on that. A test
+that stops it or writes a recipe has to reset the recipe and start the machine again.
+
 ## What the browser tests rely on
 
 The demo runs these all the time; none of them needs a trigger.

@@ -156,6 +156,17 @@ END_CASE
 - Report simulation mode in the machine entry (Syn_Visu `_FB_VisuMachine.m_SetSimulation`) only where no real machine
   can move: without it the gateway writes no recipe and sends no command.
 
+The demo wires it in `P_VisuDemoMachine`, called before the applications: its machine FB declares 15 fields (Infeed 1's
+belt speed and acceleration, Delta 1's speed and acceleration in % and picks per cycle, and the product pattern: rate,
+lanes and their pitch, type mix, X / Y / rotation scatter, gap share, seed, feed on / off), copies the effective values
+to `DEMO_GlobalVar.DEMO_Recipe` for `P_VisuDemoDelta`, answers Start (while stopped), Stop (while starting or running)
+and Reset (while stopped), ramps Infeed 1 between 0 and the recipe's speed (STARTING, RUNNING, STOPPING, STOPPED) and
+reports the run state, simulation mode and two machine messages to Syn_Visu. `P_VisuDemoDelta`'s product generator
+(`m_Generate`) makes up Vision 1's detections from the pattern with deterministic pseudo-random numbers from the seed;
+Delta 1 moves as fast as its belt and recipe allow (`m_Delta1Step`), so it halts with it; Reset empties Infeed 1 and
+Delta 1 and starts the generator from its seed again (`m_Reset`); a product passing Infeed 1 unpicked raises
+"Product missed" (`m_Missed`). The demo starts running with the program values, which are the demo as it ran before.
+
 The demo (`plc/Syn_Visu_Demo`) does this for Infeed 1, Delta 1 and Vision 1 (`P_VisuDemoDelta`; the vision system
 latches its products under its effective lens position) and the IDH XTS gantry (`P_VisuDemoIdh`; its simulated motion
 keeps to the program's track), taking a set over at once; the gateway tests emulate the same (`apps/gateway/src/config-emulation.ts`).

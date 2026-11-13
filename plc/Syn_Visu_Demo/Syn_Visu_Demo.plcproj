@@ -47,6 +47,9 @@
     <Compile Include="POUs\P_VisuDemoIdh.TcPOU">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="POUs\P_VisuDemoMachine.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="POUs\P_VisuDemoSpacing.TcPOU">
       <SubType>Code</SubType>
     </Compile>
@@ -60,6 +63,9 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\_FC_DemoMcsToBelt.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="TVisuDemo_Recipe.TcDUT">
       <SubType>Code</SubType>
     </Compile>
   </ItemGroup>

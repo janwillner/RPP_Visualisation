@@ -107,6 +107,14 @@ VAR
 	un_Placed							: ARRAY[0..2] OF UINT;	// [-] times each robot has put its products down
 	lr_PlaceWait						: ARRAY[0..2] OF LREAL;	// [s] waited above the place position
 	b_FarPlace							: BOOL;	// the current robot places far downstream this time
+
+	(* Sequence control (P_VisuDemoMachine, recipe): Infeed 1 at its ramped speed, Delta 1 as fast as its belt and its
+	   recipe allow, the product generator before Vision 1. *)
+	lr_Delta1Speed						: LREAL;	// [mm/s] Delta 1's TCP speed now, ramped
+	udn_GenRandom						: UDINT;	// [-] the generator's pseudo-random numbers, started from the recipe's seed
+	dn_GenSeed							: DINT;	// [-] the seed they started from; another seed or a reset starts them again
+	lr_GenTravel						: LREAL;	// [mm] Infeed 1's travel since the generator's last place
+	lr_MissedLeft						: LREAL;	// [s] the missed-product message stays this long
 END_VAR
 VAR PERSISTENT
 	Infeed1Set							: SynConfig.ST_ConfigConveyorSet;	// active parameter set of Infeed 1, kept over a restart
@@ -185,6 +193,11 @@ VAR CONSTANT
 	n_PHASE_TRANSFER					: INT := 4;
 	n_PHASE_LOWER						: INT := 5;
 	n_PHASE_RELEASE						: INT := 6;
+	(* Sequence control *)
+	lr_TCP_ACCEL						: LREAL := 20000;	// [mm/s2] Delta 1's TCP acceleration at 100 %
+	lr_MISSED_HOLD						: LREAL := 3;	// [s] the missed-product message stays after the last missed product
+	udn_RANDOM_A						: UDINT := 1664525;	// [-] the generator's linear congruential pseudo-random numbers
+	udn_RANDOM_C						: UDINT := 1013904223;	// [-]
 END_VAR]]></Declaration>
     <Implementation>
       <ST><![CDATA[lr_Dt := DEMO_GlobalVar.DEMO_lr_Dt;
@@ -249,7 +262,7 @@ fb_Infeed2.m_SetOriginShift(vi_lr_X := lr_INFEED2_ORIGIN_X, vi_lr_Y := 0, vi_lr_
 fb_Outfeed.m_SetOriginShift(vi_lr_X := lr_OUTFEED_ORIGIN_X, vi_lr_Y := 0, vi_lr_Z := 0);
 
 (* Belt travel *)
-lr_BeltPosition[0] := lr_BeltPosition[0] + lr_INFEED_SPEED * lr_Dt;
+lr_BeltPosition[0] := lr_BeltPosition[0] + DEMO_GlobalVar.DEMO_lr_Infeed1Speed * lr_Dt;	// ramped by the sequence control
 lr_BeltPosition[1] := lr_BeltPosition[1] + lr_INFEED_SPEED * lr_Dt;
 lr_BeltPosition[2] := lr_BeltPosition[2] + lr_OUTFEED_SPEED * lr_Dt;
 fb_Infeed1.m_SetBeltPosition(lr_BeltPosition[0]);
@@ -286,52 +299,45 @@ fb_Barrier2.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed2.m_Id(), v
 
 
 (****************************************************************************************************)
-(* PRODUCT INFEED: both infeeds, products slightly offset across the belt and turned                *)
+(* PRODUCT INFEED: Infeed 1 from the product generator, Infeed 2 every lr_SPAWN_INTERVAL             *)
 (****************************************************************************************************)
-FOR n_Belt := 0 TO 1 DO
-	lr_SinceSpawn[n_Belt] := lr_SinceSpawn[n_Belt] + lr_Dt;
-	IF lr_SinceSpawn[n_Belt] >= lr_SPAWN_INTERVAL THEN
-		lr_SinceSpawn[n_Belt] := 0;
-		udn_Seed := udn_Seed * 1103515245 + 12345;
-		lr_Random := UDINT_TO_LREAL(udn_Seed MOD 1000) / 1000.0;
-		IF n_Belt = 0 THEN
-			fb_RefBelt REF= fb_Infeed1;
-			LatchPose.fY := fb_Infeed1.vo_Visu.stConfig.stPose.fY + (lr_Random - 0.5) * 160.0;
-		ELSE
-			fb_RefBelt REF= fb_Infeed2;
-			LatchPose.fY := lr_INFEED2_Y + (lr_Random - 0.5) * 160.0;
-		END_IF
-		LatchPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
-		LatchPose.fRz := (UDINT_TO_LREAL((udn_Seed / 1000) MOD 1000) / 1000.0 - 0.5) * 60.0;
-		udn_Type := (udn_Seed / 1000000) MOD udn_TYPE_COUNT + 1;
-		(* Where its detector sees it: the vision system in the middle of its field, the light barrier at its front edge. *)
-		IF n_Belt = 0 THEN
-			LatchPose.fX := fb_Vision1Param.vo_Config.stActive.stPose.fX;
-		ELSE
-			LatchPose.fX := lr_BARRIER_X - lr_TYPE_LENGTH[udn_Type] / 2;
-		END_IF
-		IF fb_RefBelt.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
-			vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_RefBelt.vo_Visu.stConfig, vi_Pose := LatchPose),
-			vi_udn_ProductType := udn_Type, vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE,
-			vi_e_State := E_VisuProductState.DETECTED, vi_udn_ClientId := SEL(n_Belt = 0, fb_Barrier2.m_Id(), fb_Vision1.m_Id()))
-		THEN
-			(* Vision 1 singles out every tenth product as a sample. *)
-			IF n_Belt = 0 THEN
-				un_Vision1Latches := un_Vision1Latches + 1;
-				IF un_Vision1Latches MOD un_SAMPLE_EVERY = 0 THEN
-					fb_Infeed1.m_SetProductMark(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_un_Mark := un_SAMPLE_MARK);
-				END_IF
-			END_IF
-			DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
-		END_IF
+(* Reset accepted by the sequence control: Infeed 1 and Delta 1 start empty, the generator from its seed. *)
+IF DEMO_GlobalVar.DEMO_b_Reset THEN
+	m_Reset();
+END_IF
+m_Generate();
+(* Infeed 2: products slightly offset across the belt and turned, latched where the light barrier sees their front
+   edge. *)
+lr_SinceSpawn[1] := lr_SinceSpawn[1] + lr_Dt;
+IF lr_SinceSpawn[1] >= lr_SPAWN_INTERVAL THEN
+	lr_SinceSpawn[1] := 0;
+	udn_Seed := udn_Seed * 1103515245 + 12345;
+	lr_Random := UDINT_TO_LREAL(udn_Seed MOD 1000) / 1000.0;
+	LatchPose.fY := lr_INFEED2_Y + (lr_Random - 0.5) * 160.0;
+	LatchPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+	LatchPose.fRz := (UDINT_TO_LREAL((udn_Seed / 1000) MOD 1000) / 1000.0 - 0.5) * 60.0;
+	udn_Type := (udn_Seed / 1000000) MOD udn_TYPE_COUNT + 1;
+	LatchPose.fX := lr_BARRIER_X - lr_TYPE_LENGTH[udn_Type] / 2;
+	IF fb_Infeed2.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
+		vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_Infeed2.vo_Visu.stConfig, vi_Pose := LatchPose),
+		vi_udn_ProductType := udn_Type, vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE,
+		vi_e_State := E_VisuProductState.DETECTED, vi_udn_ClientId := fb_Barrier2.m_Id())
+	THEN
+		DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
 	END_IF
-END_FOR
+END_IF
 
 
 (****************************************************************************************************)
 (* ROBOTS: per robot configure it, follow its target, run its sequence and report it                *)
 (****************************************************************************************************)
 FOR n_Robot := 0 TO 2 DO
+	(* Delta 1 runs with the recipe and as fast as its belt, so it halts with it; the others at full speed. *)
+	IF n_Robot = 0 THEN
+		lr_Step := m_Delta1Step();
+	ELSE
+		lr_Step := lr_TCP_SPEED * lr_Dt;
+	END_IF
 	m_Configure();
 	m_Target();
 	m_Sequence();
@@ -359,6 +365,7 @@ m_RejectUnit();
 (****************************************************************************************************)
 (* HOUSEKEEPING                                                                                     *)
 (****************************************************************************************************)
+m_Missed();
 (* Drop register entries some distance beyond the belt end, so "missed" stays visible briefly. *)
 fb_Infeed1.m_RemoveProductsBeyond(lr_BELT_LENGTH + DEMO_GlobalConst.DEMO_lr_REMOVE_BEYOND_END);
 fb_Infeed2.m_RemoveProductsBeyond(lr_BELT_LENGTH + DEMO_GlobalConst.DEMO_lr_REMOVE_BEYOND_END);
@@ -598,6 +605,30 @@ END_IF
 m_Configure := TRUE;]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_Delta1Step" Id="{53a32b8b-4167-4083-8af1-317b2e881104}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Delta 1's TCP travel this cycle: its speed ramps with the recipe's acceleration (% of lr_TCP_ACCEL) towards the<br>
+recipe's speed (% of lr_TCP_SPEED), scaled by how far Infeed 1 is at its recipe speed, so the robot slows down and<br>
+halts with its belt when the machine stops.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Delta1Step : LREAL
+VAR
+	lr_TempBeltShare					: LREAL;	// [-] Infeed 1's speed of its recipe speed, 0..1
+	lr_TempTarget						: LREAL;	// [mm/s]
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[lr_TempBeltShare := LIMIT(0.0, DEMO_GlobalVar.DEMO_lr_Infeed1Speed / MAX(DEMO_GlobalVar.DEMO_Recipe.lr_BeltSpeed, 1.0), 1.0);
+lr_TempTarget := lr_TCP_SPEED * DEMO_GlobalVar.DEMO_Recipe.lr_RobotSpeed / 100.0 * lr_TempBeltShare;
+lr_Delta1Speed := _FC_DemoApproach(lr_Delta1Speed, lr_TempTarget,
+	lr_TCP_ACCEL * DEMO_GlobalVar.DEMO_Recipe.lr_RobotAccel / 100.0 * lr_Dt);
+m_Delta1Step := lr_Delta1Speed * lr_Dt;]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_FingerPose" Id="{5d17ab15-cc0a-4d43-ad44-94110b303ed7}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -643,6 +674,85 @@ m_FingerPose.fY := m_FingerPose.fY + lr_TempRadius * SIN(lr_TempRz * VISU_Global
 m_FingerPose.fRz := lr_TempRz;]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_Generate" Id="{2f044e52-b683-47d0-993c-b94d873f037d}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The product generator on Infeed 1 before Vision 1, from the recipe's product pattern: a place every so many mm of<br>
+belt travel (the rate at the recipe's belt speed, so the pattern keeps its spacing while the belt ramps or stands),<br>
+a share of the places left empty, each product in one of the lanes at random, of a type of the type mix, scattered<br>
+along and across the belt and turned. It makes up a detection (its pose, the belt position at that moment, its type)<br>
+and latches it as Vision 1's, which marks every tenth as a sample. A new seed, or a reset, starts the numbers again:<br>
+the same seed gives the same products.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+TRUE in the cycle a product was latched.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Generate : BOOL
+VAR
+	lr_TempSpacing						: LREAL;	// [mm] belt travel between the generator's places
+	dn_TempLanes						: DINT;	// [-]
+	lr_TempLaneY						: LREAL;	// [mm] the lane's middle from the belt's middle
+	udn_TempType						: UDINT;	// [-] product type
+	Detection							: ST_VisuPlanarPose;	// MCS pose of the made-up detection
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Generate := FALSE;
+IF DEMO_GlobalVar.DEMO_Recipe.dn_Seed <> dn_GenSeed THEN
+	dn_GenSeed := DEMO_GlobalVar.DEMO_Recipe.dn_Seed;
+	udn_GenRandom := DINT_TO_UDINT(dn_GenSeed);
+	lr_GenTravel := 0;
+	un_Vision1Latches := 0;
+END_IF
+IF NOT DEMO_GlobalVar.DEMO_Recipe.b_Feed OR DEMO_GlobalVar.DEMO_Recipe.lr_Rate <= 0 THEN
+	RETURN;
+END_IF
+
+(* A place every lr_TempSpacing of belt travel. *)
+lr_TempSpacing := MAX(DEMO_GlobalVar.DEMO_Recipe.lr_BeltSpeed, 1) * 60.0 / DEMO_GlobalVar.DEMO_Recipe.lr_Rate;
+lr_GenTravel := lr_GenTravel + DEMO_GlobalVar.DEMO_lr_Infeed1Speed * lr_Dt;
+IF lr_GenTravel < lr_TempSpacing THEN
+	RETURN;
+END_IF
+lr_GenTravel := lr_GenTravel - lr_TempSpacing;
+IF m_Random() * 100.0 < DEMO_GlobalVar.DEMO_Recipe.lr_GapShare THEN
+	RETURN;	// a gap
+END_IF
+
+(* Its lane, type and scatter. *)
+dn_TempLanes := LIMIT(1, DEMO_GlobalVar.DEMO_Recipe.dn_Lanes, 4);
+lr_TempLaneY := (DINT_TO_LREAL(m_RandomIndex(vi_dn_Count := dn_TempLanes)) - DINT_TO_LREAL(dn_TempLanes - 1) / 2.0)
+	* DEMO_GlobalVar.DEMO_Recipe.lr_LanePitch;
+CASE DEMO_GlobalVar.DEMO_Recipe.dn_TypeMix OF
+	1: udn_TempType := 1 + DINT_TO_UDINT(m_RandomIndex(vi_dn_Count := 2));	// boxes: 1, 2
+	2: udn_TempType := 3 + DINT_TO_UDINT(m_RandomIndex(vi_dn_Count := 2));	// round: the can and the oval, 3, 4
+ELSE
+	udn_TempType := 1 + DINT_TO_UDINT(m_RandomIndex(vi_dn_Count := UDINT_TO_DINT(udn_TYPE_COUNT)));
+END_CASE
+Detection.fX := fb_Vision1Param.vo_Config.stActive.stPose.fX + (m_Random() * 2.0 - 1.0) * DEMO_GlobalVar.DEMO_Recipe.lr_ScatterX;
+Detection.fY := fb_Infeed1.vo_Visu.stConfig.stPose.fY + lr_TempLaneY
+	+ (m_Random() * 2.0 - 1.0) * DEMO_GlobalVar.DEMO_Recipe.lr_ScatterY;
+Detection.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
+Detection.fRz := (m_Random() * 2.0 - 1.0) * DEMO_GlobalVar.DEMO_Recipe.lr_ScatterRz;
+
+(* Vision 1's detection: latched at the belt position of this moment; every tenth is a sample. *)
+IF fb_Infeed1.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
+	vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_Infeed1.vo_Visu.stConfig, vi_Pose := Detection),
+	vi_udn_ProductType := udn_TempType, vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE,
+	vi_e_State := E_VisuProductState.DETECTED, vi_udn_ClientId := fb_Vision1.m_Id())
+THEN
+	un_Vision1Latches := un_Vision1Latches + 1;
+	IF un_Vision1Latches MOD un_SAMPLE_EVERY = 0 THEN
+		fb_Infeed1.m_SetProductMark(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId, vi_un_Mark := un_SAMPLE_MARK);
+	END_IF
+	DEMO_GlobalVar.DEMO_udn_NextId := DEMO_GlobalVar.DEMO_udn_NextId + 1;
+	m_Generate := TRUE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_GripOffset" Id="{17c91ded-f2c7-4097-a75c-f658d8a501b8}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -681,6 +791,44 @@ lr_TempRz := TempTop.fRz * VISU_GlobalConst.VISU_lr_DEG_TO_RAD;
 m_GripOffset.fX := TempTop.fX - Tcp[vi_n_Robot].fX - lr_TempHeight * SIN(lr_TempRx) * SIN(lr_TempRz);
 m_GripOffset.fY := TempTop.fY - Tcp[vi_n_Robot].fY + lr_TempHeight * SIN(lr_TempRx) * COS(lr_TempRz);
 m_GripOffset.fZ := TempTop.fZ - Tcp[vi_n_Robot].fZ - lr_TempHeight * COS(lr_TempRx);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Missed" Id="{42a41e1d-3d75-4a8f-a4a2-fbbe13e08d2b}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Whether a product passed Infeed 1's end unpicked (still DETECTED or ASSIGNED): it raises the machine message<br>
+'Product missed' (P_VisuDemoMachine), which stays lr_MISSED_HOLD after the last one.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+TRUE while a missed product is beyond the belt end.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Missed : BOOL
+VAR
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Missed := FALSE;
+un_TempIndex := 0;
+WHILE un_TempIndex < fb_Infeed1.m_ProductCount() DO
+	fb_Infeed1.m_GetProduct(vi_un_Index := un_TempIndex, vo_Product => Product, vo_Pose => ProductPose);
+	ProductPose := _FC_DemoBeltToMcs(vio_Config := fb_Infeed1.vo_Visu.stConfig, vi_Pose := ProductPose);
+	IF (Product.eState = E_VisuProductState.DETECTED OR Product.eState = E_VisuProductState.ASSIGNED)
+		AND ProductPose.fX > fb_Infeed1.vo_Visu.stConfig.stPose.fX + lr_BELT_LENGTH
+	THEN
+		m_Missed := TRUE;
+	END_IF
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE
+IF m_Missed THEN
+	lr_MissedLeft := lr_MISSED_HOLD;
+ELSE
+	lr_MissedLeft := MAX(0.0, lr_MissedLeft - lr_Dt);
+END_IF
+DEMO_GlobalVar.DEMO_b_Infeed1Missed := lr_MissedLeft > 0;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_MoveToward" Id="{bd7e26dd-c6e5-4891-85ce-b9f758a69322}">
@@ -724,6 +872,40 @@ ELSE
 	vio_Tcp.fZ := vio_Tcp.fZ + lr_TempDz / lr_TempDist * vi_lr_MaxStep;
 	m_MoveToward := FALSE;
 END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Random" Id="{2e4634d7-0d76-4117-a776-894b6f18927d}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The product generator's next pseudo-random number in 0..1 (below 1): a linear congruential generator, so the same<br>
+seed always gives the same numbers.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Random : LREAL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[udn_GenRandom := udn_GenRandom * udn_RANDOM_A + udn_RANDOM_C;
+(* The upper 24 bits: the lower ones of such a generator repeat soon. *)
+m_Random := UDINT_TO_LREAL(SHR(udn_GenRandom, 8)) / 16777216.0;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RandomIndex" Id="{46333092-dc15-4193-b964-3c123d928fe9}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+One of vi_dn_Count values 0..vi_dn_Count-1, each as likely, from the generator's next pseudo-random number.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RandomIndex : DINT
+VAR_INPUT
+	vi_dn_Count							: DINT;	// [-] at least 1
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_RandomIndex := LIMIT(0, LREAL_TO_DINT(m_Random() * DINT_TO_LREAL(vi_dn_Count) - 0.5), MAX(vi_dn_Count, 1) - 1);]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_RejectUnit" Id="{8dedf384-7c94-4843-81de-1a1bdc2e33c2}">
@@ -853,6 +1035,45 @@ END_FOR
 m_Report := TRUE;]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_Reset" Id="{43492bae-a9a2-44c7-aa03-d96c00773bfd}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Reset of the machine (accepted while stopped): every product leaves Infeed 1's register, Delta 1 holds and<br>
+approaches nothing (nor does a robot approach a product of Infeed 1), the generator starts again from its seed and<br>
+the missed-product message is acknowledged.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Reset : BOOL
+VAR
+	n_TempRobot							: INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[WHILE fb_Infeed1.m_ProductCount() > 0 DO
+	fb_Infeed1.m_GetProduct(vi_un_Index := 0, vo_Product => Product, vo_Pose => ProductPose);
+	IF NOT fb_Infeed1.m_RemoveProduct(Product.nId) THEN
+		EXIT;	// never: the first entry is always there
+	END_IF
+END_WHILE
+FOR n_TempRobot := 0 TO 2 DO
+	IF n_TempRobot = 0 OR (udn_TargetId[n_TempRobot] <> 0 AND n_TargetBelt[n_TempRobot] = 0) THEN
+		udn_TargetId[n_TempRobot] := 0;
+		IF n_HeldCount[n_TempRobot] = 0 OR n_TempRobot = 0 THEN
+			n_Phase[n_TempRobot] := n_PHASE_IDLE;
+		END_IF
+	END_IF
+END_FOR
+n_HeldCount[0] := 0;
+udn_Held[0, 0] := 0;
+udn_Held[0, 1] := 0;
+dn_GenSeed := 0;	// the generator starts again from the recipe's seed
+lr_MissedLeft := 0;
+DEMO_GlobalVar.DEMO_b_Infeed1Missed := FALSE;
+m_Reset := TRUE;]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_Sequence" Id="{6f116a11-a958-4cf7-80a0-01f0179b7ab9}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -913,8 +1134,8 @@ METHOD PRIVATE m_Sequence : BOOL]]></Declaration>
 							+ lr_HOVER,
 			vi_lr_MaxStep := lr_Step)
 		THEN
-			(* Delta 1 picks a second product before it places both. *)
-			IF n_Robot = 0 AND n_HeldCount[n_Robot] < 2 THEN
+			(* Delta 1 picks as many products as its recipe says (1 or 2, one per cup) before it places them. *)
+			IF n_Robot = 0 AND n_HeldCount[n_Robot] < LIMIT(1, DEMO_GlobalVar.DEMO_Recipe.dn_PicksPerCycle, 2) THEN
 				n_Phase[n_Robot] := n_PHASE_IDLE;
 			ELSE
 				n_Phase[n_Robot] := n_PHASE_TRANSFER;
