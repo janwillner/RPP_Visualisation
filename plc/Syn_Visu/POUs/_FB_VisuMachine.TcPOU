@@ -1,0 +1,219 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="_FB_VisuMachine" Id="{543669de-c55d-4e3a-92af-3469bff5a216}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The machine as its application reports it (protocol 22, ADR 0021): run state, simulation mode and machine<br>
+messages, written to the machine entry GVL_Visu.stMachine next to the manifest. Not a component: it has no<br>
+manifest entry. The application calls m_Register and the other methods every cycle; a machine message is set by<br>
+its level (m_SetMessage), like a component's fault.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 9.7.0  ¦ 2026-11-13 ¦ J.Willner ¦ Created: run state, simulation mode, machine messages (protocol 22)<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_VisuMachine
+VAR
+	RefMachine							: REFERENCE TO ST_VisuMachine;	// set by m_Register
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_DcTime" Id="{eb3da221-d97e-4c5a-884e-036c1ad25854}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Distributed-clock time of the calling task's current cycle in ns since 2000-01-01; 0 if unknown.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_DcTime : ULINT
+VAR
+	dn_TempTaskIndex					: DINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[dn_TempTaskIndex := Tc2_System.GETCURTASKINDEXEX();
+IF dn_TempTaskIndex > 0 THEN
+	m_DcTime := LINT_TO_ULINT(TwinCAT_SystemInfoVarList._TaskInfo[dn_TempTaskIndex].DcTaskTime);
+ELSE
+	m_DcTime := 0;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Register" Id="{30a1b674-51e2-4572-9736-dfd04ee58be3}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Connects this block to the application's machine entry, GVL_Visu.stMachine. Call it every cycle before the other<br>
+methods, which also keeps the reference valid after an online change.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+Always TRUE.<br>
+****************************************************************************************************)
+METHOD m_Register : BOOL
+VAR_IN_OUT
+	vio_Machine							: ST_VisuMachine;	// GVL_Visu.stMachine of the application
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[RefMachine REF= vio_Machine;
+m_Register := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetMessage" Id="{e6b2d4a2-3bd9-4d7f-84cf-375d64fdfbc5}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Sets a machine message by its level: call it every cycle with vi_b_Active TRUE while the condition lasts. A message<br>
+that becomes active (new, or again after it was gone) gets the current DC time; while active its severity, text and<br>
+component follow the inputs. Once vi_b_Active is FALSE it is gone: it stays listed, inactive, until its place is<br>
+needed. A new message is appended; in a full register the oldest gone message makes room for it.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE before m_Register, for vi_udn_Id = 0, and for a new active message while every listed one is active.<br>
+*****************************************************************************************************<br>
+LIMITS:<br>
+VISU_un_MAX_MACHINE_MESSAGES messages, active and gone.<br>
+****************************************************************************************************)
+METHOD m_SetMessage : BOOL
+VAR_INPUT
+	vi_udn_Id							: UDINT;	// [-] the application's number of the message, > 0
+	vi_b_Active							: BOOL;	// TRUE while the message is active
+	vi_e_Severity						: E_VisuMessageSeverity;
+	vi_str_Text							: STRING(80);	// shown to the operator, '' = 'Message <id>'
+	vi_udn_ComponentId					: UDINT;	// [-] manifest id of the component it is about, 0 = the whole machine
+END_VAR
+VAR
+	un_TempIndex						: UINT;	// [-] the message's entry
+	un_TempGone							: UINT;	// [-] the oldest gone entry
+	b_TempFound							: BOOL;
+	b_TempGoneFound						: BOOL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetMessage := FALSE;
+IF NOT __ISVALIDREF(RefMachine) OR vi_udn_Id = 0 THEN
+	RETURN;
+END_IF
+
+(* The message's entry, if it is listed. *)
+b_TempFound := FALSE;
+un_TempIndex := 0;
+WHILE NOT b_TempFound AND un_TempIndex < RefMachine.nMessageCount
+	AND un_TempIndex < VISU_GlobalConst_Param.VISU_un_MAX_MACHINE_MESSAGES
+DO
+	IF RefMachine.aMessages[un_TempIndex].nId = vi_udn_Id THEN
+		b_TempFound := TRUE;
+	ELSE
+		un_TempIndex := un_TempIndex + 1;
+	END_IF
+END_WHILE
+
+(* Cleared: a listed message is gone from now on; one not listed stays unlisted. *)
+IF NOT vi_b_Active THEN
+	IF b_TempFound THEN
+		RefMachine.aMessages[un_TempIndex].bActive := FALSE;
+	END_IF
+	m_SetMessage := TRUE;
+	RETURN;
+END_IF
+
+(* A new message is appended. In a full register the oldest gone one makes room; its gap closes, so the register
+   keeps the order the messages appeared in. Without a gone one the new message is not listed. *)
+IF NOT b_TempFound THEN
+	IF RefMachine.nMessageCount >= VISU_GlobalConst_Param.VISU_un_MAX_MACHINE_MESSAGES THEN
+		b_TempGoneFound := FALSE;
+		un_TempGone := 0;
+		FOR un_TempIndex := 0 TO VISU_GlobalConst_Param.VISU_un_MAX_MACHINE_MESSAGES - 1 DO
+			IF NOT RefMachine.aMessages[un_TempIndex].bActive
+				AND (NOT b_TempGoneFound OR RefMachine.aMessages[un_TempIndex].nTime < RefMachine.aMessages[un_TempGone].nTime)
+			THEN
+				un_TempGone := un_TempIndex;
+				b_TempGoneFound := TRUE;
+			END_IF
+		END_FOR
+		IF NOT b_TempGoneFound THEN
+			RETURN;
+		END_IF
+		FOR un_TempIndex := un_TempGone TO VISU_GlobalConst_Param.VISU_un_MAX_MACHINE_MESSAGES - 2 DO
+			RefMachine.aMessages[un_TempIndex] := RefMachine.aMessages[un_TempIndex + 1];
+		END_FOR
+		RefMachine.nMessageCount := VISU_GlobalConst_Param.VISU_un_MAX_MACHINE_MESSAGES - 1;
+	END_IF
+	un_TempIndex := RefMachine.nMessageCount;
+	RefMachine.aMessages[un_TempIndex].nId := vi_udn_Id;
+	RefMachine.aMessages[un_TempIndex].bActive := FALSE;
+	RefMachine.nMessageCount := RefMachine.nMessageCount + 1;
+END_IF
+
+(* Appearing, new or again: the message gets the current time; an active one keeps its time. *)
+IF NOT RefMachine.aMessages[un_TempIndex].bActive THEN
+	RefMachine.aMessages[un_TempIndex].nTime := m_DcTime();
+	RefMachine.aMessages[un_TempIndex].bActive := TRUE;
+END_IF
+RefMachine.aMessages[un_TempIndex].eSeverity := vi_e_Severity;
+RefMachine.aMessages[un_TempIndex].sText := vi_str_Text;
+RefMachine.aMessages[un_TempIndex].nComponentId := vi_udn_ComponentId;
+m_SetMessage := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetRunState" Id="{2f588a5b-d05a-479a-a238-6f5fb5a62386}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Reports what the machine is doing (stopped, starting, running, stopping, fault) with a text, e.g. why it is in a<br>
+fault. Call it every cycle.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE before m_Register.<br>
+****************************************************************************************************)
+METHOD m_SetRunState : BOOL
+VAR_INPUT
+	vi_e_RunState						: E_VisuRunState;
+	vi_str_Text							: STRING(80);	// what the application says about it, '' = nothing
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetRunState := __ISVALIDREF(RefMachine);
+IF m_SetRunState THEN
+	RefMachine.eRunState := vi_e_RunState;
+	RefMachine.sRunStateText := vi_str_Text;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetSimulation" Id="{bced0a2e-7039-4486-b584-98494a1a6c8f}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Reports whether the application runs without real hardware (simulation mode). Only then does the Simulator write<br>
+a recipe or send Start, Stop or Reset. Report TRUE only where no real machine can move.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE before m_Register.<br>
+****************************************************************************************************)
+METHOD m_SetSimulation : BOOL
+VAR_INPUT
+	vi_b_Simulation						: BOOL;	// TRUE: simulation mode
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetSimulation := __ISVALIDREF(RefMachine);
+IF m_SetSimulation THEN
+	RefMachine.bSimulation := vi_b_Simulation;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

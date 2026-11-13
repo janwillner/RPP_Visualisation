@@ -20,6 +20,7 @@ VAR_GLOBAL CONSTANT
 	VISU_un_MAX_FINGERS					: UINT := 8;	// [-] fingers per gripper
 	VISU_un_MAX_BODIES					: UINT := 16;	// [-] bodies per detector
 	VISU_un_MAX_MODULES					: UINT := 64;	// [-] track modules per XTS gantry or loop
+	VISU_un_MAX_MACHINE_MESSAGES		: UINT := 32;	// [-] machine messages, active and gone, in the machine entry
 	VISU_un_INSTANCE_PATH_SKIP			: UINT := 2;	// [-] leading segments of an instance path that are not part of its symbol path: TwinCAT project and PLC project
 END_VAR]]></Declaration>
   </GVL>

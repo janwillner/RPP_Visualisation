@@ -56,13 +56,15 @@ the commands on parameter sets (see "Parameter sets" below), and it ignores anyt
 Right after you connect, you get for every source:
 
 1. a `status` message: is the PLC connected?
-2. its current `config`, if the gateway has discovered that PLC.
+2. its current `config`, if the gateway has discovered that PLC;
+3. its `machine` report, if its application has the machine entry.
 
 After that, the server sends:
 
 - a `state` for every source in every acquisition cycle (20 ms by default, `--cycle-ms`) while its PLC is connected;
 - a `status` whenever a PLC connects or drops out. After a drop-out, the gateway tries again every 5 s;
-- a new `config` when the PLC's configuration changes (a new `configVersion`), and after every reconnect.
+- a new `config` when the PLC's configuration changes (a new `configVersion`), and after every reconnect;
+- a `machine` report when the machine's run state, simulation mode or messages change (protocol 22).
 
 Messages of one source arrive in order: a new `config` comes before the first `state` that belongs to it.
 
@@ -80,7 +82,8 @@ what changed", the server sends every product after a dropped one).
   Otherwise match each `components[i]` to its config by `id`.
 - On `status`: show the source as offline while `status.plcConnected` is false. Keep its last config to show what was
   there.
-- On close: connect again after a short wait. The server sends status and config again.
+- On `machine`: keep it per `sourceId`, replacing the old one (see "The machine" below).
+- On close: connect again after a short wait. The server sends status, config and the machine report again.
 
 **Products.** A conveyor's `products` is its product register. A product's position is given at its latch (the moment a
 detector saw it) and moves with the belt. While it lies on the belt, its X in the conveyor's coordinate system is
@@ -100,6 +103,14 @@ there and from the previous state otherwise. The first `state` of each source af
 so does the next `state` after the server dropped one for a slow client, so a client never has to ask again. Without
 `?changes=1` every `state` is whole, as described above. The web app connects with `?changes=1`; ADR 0013 explains the
 choice.
+
+**The machine.** Since protocol 22 an application may report its whole machine (ADR 0021): a `machine` message per
+source with `runState` (`stopped`, `starting`, `running`, `stopping`, `fault`) and its `runStateText`,
+`simulation` (it runs without real hardware) and `messages`, its machine messages. Each message has the application's
+`id`, a `severity` (`error`, `warning`, `info`), a `text`, the PLC `time` it appeared (DC time like a timestamp), a
+`componentId` (0 for the whole machine) and `active`: a gone message (`active` false) stays listed for a while. A
+source whose application has no machine entry sends no `machine` message; one is never sent between two `state`s for
+nothing, only when something in it changed.
 
 ## Parameter sets
 
@@ -266,7 +277,7 @@ The web app can record what it receives and save it as a `.rpprec` file. Other p
 - The file is gzip-compressed UTF-8 text with one JSON object per line.
 - The first line is the header (`RecordingFileHeader`). Its `format` is `rpp-recording`. `formatVersion` (currently 1)
   is the version of this layout, and `protocolVersion` the version of the messages in the file. `sources` holds every
-  source as it was when the recording started, with its last status and config.
+  source as it was when the recording started, with its last status, config and machine report.
 - Every other line is a `RecordingEntry`: a gateway message as described above, with `at`, its arrival time in ms after
   the start.
 - To keep files small, a `state` holds per conveyor only the products that changed since that conveyor's previous
@@ -303,6 +314,9 @@ The current version is `protocolVersion` in `/health` and in every `config`. The
 
 | Version | Change                                                                                                                      |
 | ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 22      | The machine's run state, simulation mode and machine messages: the `machine` message. A PLC of protocol 21 is still read; it sends no `machine`. ADR 0021. |
+| 21      | Products may carry a `mark`; the config names the marks (`marks`).                                                      |
+| 20      | Gripper fingers have an `offset` on the flange; a finger state says whether its pose is reported (`poseReported`). ADR 0018. |
 | 19      | Deltas, XTS gantries and Cartesian robots may have a `tcpLimitArea`, a box around the TCP. ADR 0015.                      |
 | 18      | XTS gantries and Cartesian robots may have a `limitArea`, like the Delta.                                                  |
 | 17      | Cartesian robots say which axes they have: `axes` (`xyz`, `xz`, `xy`).                                                     |
@@ -312,8 +326,9 @@ The current version is `protocolVersion` in `/health` and in every `config`. The
 | 13      | Products name their last client and their state before that change: `lastClientId`, `previousState`. ADR 0009.            |
 | 12      | XTS gantries and loops describe their track as a chain of motor modules (`modules`), each with its own fault. ADR 0008.   |
 
-The ADRs (architecture decision records) are in the source repository under `docs/adr/`. The gateway accepts only
-PLCs that report its own protocol version, so a server never mixes versions.
+The ADRs (architecture decision records) are in the source repository under `docs/adr/`. The gateway accepts PLCs that
+report its own protocol version or, where the newer one only adds something, the one before (22 reads 21: such a
+source sends no `machine`). `config.protocolVersion` is the version that PLC reports.
 
 ## The PLC side
 

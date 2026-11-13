@@ -309,6 +309,10 @@ _Avoid_: machine state (ambiguous with the components' state), mode, status
 A message about the whole machine, or about one of its components, that the application raises and clears: its severity (error, warning or info), id, text and time. Shown next to the component faults.
 _Avoid_: alarm, event, fault (a fault belongs to a component, mover or track module)
 
+**Machine entry**:
+Where the application reports its whole machine, next to its manifest (`GVL_Visu.stMachine`): run state, simulation mode and machine messages. Not a component; an application may leave it out (ADR 0021).
+_Avoid_: machine component, machine state, machine status
+
 **Simulation mode**:
 The application's report that it runs without real hardware. Only then does the Simulator write a recipe or send Start, Stop or Reset.
 _Avoid_: test mode, demo mode, dry run

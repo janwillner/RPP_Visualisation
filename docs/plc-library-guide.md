@@ -65,11 +65,12 @@ methods, and it fills its output `vo_Visu`, the structure the gateway reads.
 
 ### 2.2 Match the gateway
 
-The PLC and the gateway must speak the same protocol version. The gateway refuses a PLC with a different one and
-says so in its status.
+The PLC and the gateway must speak the same protocol version. The gateway refuses a PLC with a version it does not
+read and says so in its status; it reads its own protocol version and the one before (22 and 21).
 
 | Library `SynVisu` | Protocol version | Gateway |
 | --- | --- | --- |
+| 9.7.x | 22 | releases from protocol 22 on; `_FB_VisuMachine` reports the machine's run state, simulation mode and machine messages in `GVL_Visu.stMachine` (section 14.1); no change to existing calls, and an application without `stMachine` works as before |
 | 9.6.x | 21 | releases from protocol 21 on; `m_SetProductMark` and `_FC_VisuSetMarkName` mark products to single them out (section 5.5); no change to existing calls. With `SynConfig`, use 2.0.1 or newer: it takes `SynVisu` through a placeholder, so both use the same version |
 | 9.5.x | 20 | releases from protocol 20 on; `m_SetFingerOffset` places a finger on the gripper flange, drawn there while its pose is not reported (section 7); no change to existing calls |
 | 9.4.x | 19 | releases from protocol 19 on; `m_SetTcpLimitArea` for a box around the TCP (section 8); no change to existing calls |
@@ -100,6 +101,17 @@ END_VAR
 ```
 
 If your project must use a different name, set the gateway option `manifestPath` to the symbol path instead.
+
+To report the machine's run state and machine messages (section 14.1), declare the machine entry **`stMachine`** in
+the same GVL. It is optional: without it the visualisation simply shows no run state.
+
+```st
+{attribute 'qualified_only'}
+VAR_GLOBAL
+	stManifest							: SynVisu.ST_VisuManifest;	// read by the visualisation gateway
+	stMachine							: SynVisu.ST_VisuMachine;	// run state and machine messages (protocol 22)
+END_VAR
+```
 
 ### 2.4 Where to call it
 
@@ -733,6 +745,35 @@ There are three levels of faults, all shown red with their message:
 fb_Delta1.m_SetFault(vi_b_Active := Delta1_Iface.b_Error, vi_str_Message := Delta1_Iface.str_ErrorText);
 ```
 
+### 14.1 The machine: run state and machine messages
+
+Besides the faults of its parts, the application can report its whole machine with `_FB_VisuMachine` in the machine
+entry `GVL_Visu.stMachine` (section 2.3; protocol 22):
+
+- **Run state:** what the machine is doing, `E_VisuRunState` `STOPPED`, `STARTING`, `RUNNING`, `STOPPING` or
+  `FAULT`, with a text, e.g. why it is in a fault (`m_SetRunState`).
+- **Simulation mode:** whether the application runs without real hardware (`m_SetSimulation`). The Simulator page
+  writes a recipe or sends Start, Stop or Reset only to a PLC in simulation mode, so report TRUE only where no real
+  machine can move.
+- **Machine messages:** messages about the whole machine or about one component, each with a number, a severity
+  (`E_VisuMessageSeverity` `ERROR`, `WARNING`, `INFO`) and a text (`m_SetMessage`). Like a fault, a message is set by
+  its level: call `m_SetMessage` every cycle with `vi_b_Active` TRUE while its condition lasts. A message that becomes
+  active gets the current time; once FALSE it is gone but stays listed until its place is needed
+  (`VISU_un_MAX_MACHINE_MESSAGES`, 32 active and gone). Give every message its own number.
+
+The visualisation shows the run state and the active messages above the components, keeps them in recordings and
+marks a message appearing on the timeline; a click on a message about a component selects it.
+
+```st
+(* Every cycle, after the components *)
+fb_Machine.m_Register(vio_Machine := GVL_Visu.stMachine);
+fb_Machine.m_SetRunState(vi_e_RunState := SynVisu.E_VisuRunState.RUNNING, vi_str_Text := '');
+fb_Machine.m_SetSimulation(vi_b_Simulation := FALSE);
+fb_Machine.m_SetMessage(vi_udn_Id := 1, vi_b_Active := RejectBin_Iface.b_AlmostFull,
+	vi_e_Severity := SynVisu.E_VisuMessageSeverity.WARNING, vi_str_Text := 'Reject bin almost full',
+	vi_udn_ComponentId := fb_RejectUnit.m_Id());
+```
+
 ## 15. Wrapping existing machine code
 
 On real machines the values come from the machine's own data structures (queues, kinematics configurations, axis
@@ -765,6 +806,7 @@ The array sizes are library parameters (`SynVisu.VISU_GlobalConst_Param`):
 | `VISU_un_MAX_FINGERS` | 8 | gripper |
 | `VISU_un_MAX_BODIES` | 16 | detector or station |
 | `VISU_un_MAX_MODULES` | 64 | XTS track |
+| `VISU_un_MAX_MACHINE_MESSAGES` | 32 | PLC: machine messages, active and gone (section 14.1) |
 | `VISU_un_INSTANCE_PATH_SKIP` | 2 | PLC: leading segments of an instance's device tree path that are not part of its symbol path, TwinCAT project and PLC project (section 3.2) |
 
 Methods that would exceed a limit return FALSE and change nothing. A machine with more than 32 components can split
@@ -827,12 +869,14 @@ Use the component FBs. The structures underneath are what the gateway reads; the
 | `_FB_VisuVision` | One vision system |
 | `_FB_VisuSensor` | One product sensor, e.g. a light barrier |
 | `_FB_VisuStation` | One station, e.g. a reject unit, a labeller, a printer |
+| `_FB_VisuMachine` | The machine: run state, simulation mode and machine messages ([section 14.1](#141-the-machine-run-state-and-machine-messages)); not a component |
 | `_FB_VisuComponent` | Abstract base of all: `m_Register`, `m_Id`, `m_SetFault`, `m_SetOriginShift` |
 | `_FB_VisuZoneComponent` | Abstract base of every component with zones: `m_SetZone`, `m_ClearZones` |
 | `_FB_VisuRobot` | Abstract base of the robots: zones plus fingers, limit area and TCP limit area |
 | `_FB_VisuXtsTrack` | Abstract base of the XTS kinematics: a robot plus its track of modules |
 | `_FB_VisuBodyComponent` | Abstract base of the components drawn from bodies (detectors, stations) |
 | `ST_VisuManifest` | The manifest your application declares as `GVL_Visu.stManifest` |
+| `ST_VisuMachine` | The machine entry your application may declare as `GVL_Visu.stMachine` |
 | `ST_VisuPose` | Pose: `fX`, `fY`, `fZ` (mm), `fRx`, `fRy`, `fRz` (degrees) |
 | `ST_VisuPlanarPose` | Pose on a belt: `fX`, `fY`, `fZ`, `fRz` |
 | `ST_VisuPosition` | Position: `fX`, `fY`, `fZ` |
@@ -957,6 +1001,15 @@ Detectors and stations (`_FB_VisuBodyComponent`):
 | `_FB_VisuSensor.m_SetSignal(vi_b_Signal)` | The beam lights up while TRUE; once per cycle |
 | `_FB_VisuStation.m_Configure(vi_Pose)` | Pose of the station's origin; its bodies follow from `m_SetBody` |
 
+`_FB_VisuMachine` ([section 14.1](#141-the-machine-run-state-and-machine-messages)), every cycle:
+
+| Method | Purpose |
+| --- | --- |
+| `m_Register(vio_Machine)` | Connects the FB to `GVL_Visu.stMachine`; call it first, every cycle |
+| `m_SetRunState(vi_e_RunState, vi_str_Text)` | What the machine is doing, with a text ('' = none) |
+| `m_SetSimulation(vi_b_Simulation)` | TRUE: the application runs without real hardware (simulation mode) |
+| `m_SetMessage(vi_udn_Id, vi_b_Active, vi_e_Severity, vi_str_Text, vi_udn_ComponentId)` | Sets machine message `vi_udn_Id` (> 0) by its level; `vi_udn_ComponentId` the component it is about, 0 = the whole machine. FALSE for a new message while all 32 listed ones are active |
+
 ### 19.3 Enumerations
 
 | Enum | Values |
@@ -967,4 +1020,6 @@ Detectors and stations (`_FB_VisuBodyComponent`):
 | `E_VisuCartesianAxes` | `XYZ` 0, `XZ` 1 (no Y axis), `XY` 2 (no Z axis) |
 | `E_VisuBodyShape` | `BOX` 0, `CYLINDER` 1, `FRUSTUM` 2 |
 | `E_VisuBodyRole` | `STRUCTURE` 0, `SENSOR` 1, `BEAM` 2, `FIELD_OF_VIEW` 3 |
+| `E_VisuRunState` | `STOPPED` 0, `STARTING` 1, `RUNNING` 2, `STOPPING` 3, `FAULT` 4 |
+| `E_VisuMessageSeverity` | `ERROR` 0, `WARNING` 1, `INFO` 2 |
 | `E_VisuComponentType` | `NONE` 0, `CONVEYOR` 1, `DELTA` 2, `XTS_GANTRY` 3, `XTS_LOOP` 4, `CARTESIAN` 5, `VISION` 6, `SENSOR` 7, `STATION` 8 (the FBs set it in the manifest) |

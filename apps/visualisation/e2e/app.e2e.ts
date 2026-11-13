@@ -250,6 +250,24 @@ test("marks faults on the recording's timeline and jumps to them", async ({ page
   await expect.poll(async () => Number(await slider.inputValue())).toBe(atEvent);
 });
 
+test("shows the machine's run state and a machine message, marks it on the timeline and selects its component", async ({ page }) => {
+  await openApp(page);
+  // The demo runs in simulation mode and warns about the reject bin for 4 s at the start of every 20 s.
+  await expect(page.locator(".statusbar")).toContainText("Machine: Running");
+  await page.getByRole("button", { name: "Show components" }).click();
+  const machine = page.locator("aside.panel.left .machine");
+  await expect(machine.locator(".run-state")).toHaveText("Running · simulation");
+  const message = machine.getByRole("list", { name: "Machine messages" }).locator("li.warning", { hasText: "Reject bin almost full" });
+  await expect(message).toContainText("Reject unit", { timeout: 25_000 });
+
+  await message.getByRole("button").click();
+  await expect(page.locator("aside.panel.left .tree button.selected")).toContainText("Reject unit");
+
+  await page.getByRole("button", { name: "Replay the last minute" }).click();
+  const bar = page.getByRole("toolbar", { name: "Playback" });
+  await expect(bar.locator('.timeline-marker.message[title*="Machine message · Reject unit: Reject bin almost full"]').first()).toBeAttached();
+});
+
 test("lists a limit violation under its robot and marks it on the timeline", async ({ page }) => {
   await openApp(page);
   await page.getByRole("button", { name: "Show components" }).click();

@@ -45,6 +45,9 @@
     <Compile Include="POUs\Tests\_FB_TestConveyor.TcPOU">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="POUs\Tests\_FB_TestMachine.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="POUs\Tests\_FB_TestProductRegister.TcPOU">
       <SubType>Code</SubType>
     </Compile>

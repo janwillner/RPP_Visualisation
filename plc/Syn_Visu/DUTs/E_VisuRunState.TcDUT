@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="E_VisuRunState" Id="{75cd1946-4b16-47ad-9b0d-d8abfef727b0}">
+    <Declaration><![CDATA[(* What the application reports its machine is doing (contract, protocol 22): ST_VisuMachine.eRunState. *)
+{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_VisuRunState :
+(
+	(* Values are part of the gateway contract: append, never renumber. *)
+	STOPPED := 0,
+	STARTING := 1,
+	RUNNING := 2,
+	STOPPING := 3,
+	FAULT := 4
+) UINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>
