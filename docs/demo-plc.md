@@ -21,8 +21,13 @@ The gateway reaches the demo through the local AMS router, AmsNetId `127.0.0.1.1
 `P_VisuDemoMachine` is the demo's minimal sequence control of Infeed 1 and Delta 1 (ADR 0022): a recipe of 15 fields
 (belt, robot, product pattern of the generator before Vision 1, seed), Start, Stop and Reset through Syn_Config's
 machine FB, the run state and the machine messages "Reject bin almost full" and "Product missed" through Syn_Visu. It
-starts running with the program values, which reproduce the demo as before; the browser tests rely on that. A test
-that stops it or writes a recipe has to reset the recipe and start the machine again.
+starts running with the program values, which give the product pattern the demo had before its recipe (one lane, 60
+products a minute, every type, scattered), though not the same products: the generator draws its own random numbers
+and Infeed 1 ramps up from standstill after every download. The browser tests rely only on such a pattern, not on
+particular products. The active recipe is persistent: a test that stops the machine or writes a recipe has to return
+the recipe to its program values and start the machine again. Rate counts the generator's places a minute at the
+recipe's belt speed, so the pattern keeps its spacing while the belt ramps or stands; Reset (while stopped) also
+acknowledges Delta 1's periodic fault until its next fault period.
 
 ## What the browser tests rely on
 

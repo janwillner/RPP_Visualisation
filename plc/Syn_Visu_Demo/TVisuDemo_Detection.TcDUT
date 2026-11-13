@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="TVisuDemo_Detection" Id="{76bde75d-ed94-4aeb-ab2d-cc1063d83456}">
+    <Declaration><![CDATA[(* A raw detection as the demo's product generator makes it up and a vision system would report it: where the
+   product lies (MCS), the belt position at that moment and its type. The demo's tracking latches it as Vision 1's. *)
+TYPE TVisuDemo_Detection :
+STRUCT
+	Pose								: ST_VisuPlanarPose;	// MCS
+	lr_BeltPosition						: LREAL;	// [mm] Infeed 1's belt position when it was seen
+	udn_ProductType						: UDINT;	// [-]
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

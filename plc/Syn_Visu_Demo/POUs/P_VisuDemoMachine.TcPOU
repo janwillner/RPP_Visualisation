@@ -13,9 +13,10 @@ generator before Vision 1) and hands it Start, Stop and Reset; the effective rec
 P_VisuDemoDelta. Run states: STARTING ramps Infeed 1 up to the recipe's speed, RUNNING, STOPPING ramps it down,<br>
 STOPPED; Delta 1 moves only as fast as its belt, so it halts with it. Start is accepted while stopped, Stop while<br>
 starting or running, Reset while stopped: it empties Infeed 1 and Delta 1, restarts the generator from its seed and<br>
-acknowledges the missed-product message. The demo starts running and always reports simulation mode. It reports<br>
-the machine to Syn_Visu (GVL_Visu.stMachine) with two machine messages: 'Reject bin almost full' about the reject<br>
-unit for lr_REJECT_BIN_DURATION of every fault period, and 'Product missed' about Infeed 1. Called first by P_VisuDemo.<br>
+acknowledges the missed-product message and Delta 1's fault. The demo starts running and always reports simulation<br>
+mode. It reports the machine to Syn_Visu (GVL_Visu.stMachine) with two machine messages: 'Reject bin almost full'<br>
+about the reject unit for lr_REJECT_BIN_DURATION of every fault period, and 'Product missed' about Infeed 1. Called<br>
+first by P_VisuDemo.<br>
 ****************************************************************************************************)
 PROGRAM P_VisuDemoMachine
 VAR
@@ -23,6 +24,7 @@ VAR
 	fb_MachineParam						: SynConfig._FB_ConfigMachine;	// Syn_Config: recipe and commands
 	e_RunState							: E_VisuRunState := E_VisuRunState.STARTING;	// the demo starts running
 	lr_TargetSpeed						: LREAL;	// [mm/s] Infeed 1 ramps to this
+	lr_RampStep							: LREAL;	// [mm/s] Infeed 1's speed change at most this cycle
 END_VAR
 VAR PERSISTENT
 	RecipeSet							: SynConfig.ST_ConfigRecipeSet;	// the active recipe, kept over a restart
@@ -113,8 +115,8 @@ IF e_RunState = E_VisuRunState.STARTING OR e_RunState = E_VisuRunState.RUNNING T
 ELSE
 	lr_TargetSpeed := 0;
 END_IF
-DEMO_GlobalVar.DEMO_lr_Infeed1Speed := _FC_DemoApproach(DEMO_GlobalVar.DEMO_lr_Infeed1Speed, lr_TargetSpeed,
-	DEMO_GlobalVar.DEMO_Recipe.lr_BeltAccel * DEMO_GlobalVar.DEMO_lr_Dt);
+lr_RampStep := DEMO_GlobalVar.DEMO_Recipe.lr_BeltAccel * DEMO_GlobalVar.DEMO_lr_Dt;
+DEMO_GlobalVar.DEMO_lr_Infeed1Speed := _FC_DemoApproach(DEMO_GlobalVar.DEMO_lr_Infeed1Speed, lr_TargetSpeed, lr_RampStep);
 IF e_RunState = E_VisuRunState.STARTING AND DEMO_GlobalVar.DEMO_lr_Infeed1Speed = lr_TargetSpeed THEN
 	e_RunState := E_VisuRunState.RUNNING;
 ELSIF e_RunState = E_VisuRunState.STOPPING AND DEMO_GlobalVar.DEMO_lr_Infeed1Speed = 0 THEN
@@ -142,13 +144,14 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 The demo's recipe fields: Infeed 1's belt, Delta 1 and the product pattern of the generator before Vision 1 (for<br>
-the whole machine). The program values are the demo as it runs without a recipe: one lane, 60 products a minute<br>
-at 150 mm/s, every product type, scattered across the belt and turned.<br>
+the whole machine). The program values give the pattern the demo had before its recipe: one lane, 60 products a<br>
+minute at 150 mm/s, every product type, scattered across the belt and turned. Rate counts the generator's places a<br>
+minute at the recipe's belt speed: the pattern keeps its spacing while the belt ramps.<br>
 ****************************************************************************************************)
 METHOD PRIVATE m_DeclareFields]]></Declaration>
       <Implementation>
         <ST><![CDATA[fb_MachineParam.m_DeclareField(vi_un_Field := un_F_BELT_SPEED, vi_str_Name := 'BeltSpeed', vi_udn_Group := udn_INFEED1_ID,
-	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := 'mm/s', vi_lr_Min := 0, vi_lr_Max := 500,
+	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := 'mm/s', vi_lr_Min := 10, vi_lr_Max := 500,
 	vi_lr_ProgramValue := 150);
 fb_MachineParam.m_DeclareField(vi_un_Field := un_F_BELT_ACCEL, vi_str_Name := 'BeltAcceleration', vi_udn_Group := udn_INFEED1_ID,
 	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := 'mm/s2', vi_lr_Min := 50, vi_lr_Max := 2000,

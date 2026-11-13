@@ -65,6 +65,9 @@
     <Compile Include="POUs\_FC_DemoMcsToBelt.TcPOU">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="TVisuDemo_Detection.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="TVisuDemo_Recipe.TcDUT">
       <SubType>Code</SubType>
     </Compile>
