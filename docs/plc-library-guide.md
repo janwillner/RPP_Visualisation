@@ -765,7 +765,18 @@ entry `GVL_Visu.stMachine` (section 2.3; protocol 22):
 The visualisation shows the run state and the active messages above the components, keeps them in recordings and
 marks a message appearing on the timeline; a click on a message about a component selects it. The machine's recipe
 (process values such as belt speed or picks per cycle) and the commands Start, Stop and Reset come with the library
-`SynConfig`, version 2.1.0 or newer: its machine FB `_FB_ConfigMachine` (`docs/config-contract.md`).
+`SynConfig`, version 2.1.0 or newer: its machine FB `SynConfig._FB_ConfigMachine`, one per application, every cycle:
+
+| Method | Purpose |
+| --- | --- |
+| `m_Register(vio_Manifest, vi_udn_Id)` | Lists the machine FB in `GVL_Config.stManifest`; always with `vi_udn_Id := 0` |
+| `m_DeclareField(vi_un_Field, vi_str_Name, vi_udn_Group, vi_e_Type, vi_str_Unit, vi_lr_Min, vi_lr_Max, vi_lr_ProgramValue)` | Declares recipe field 1, 2, ...: `vi_udn_Group` the component it belongs to (0 = the machine), `vi_e_Type` `E_ConfigFieldType` NUMBER, INTEGER, SWITCH or CHOICE. Declare every field from the start and keep their order |
+| `m_SetChoice(vi_un_Field, vi_un_Value, vi_str_Text)` | Names value 0, 1, ... of a CHOICE field |
+| `m_Cycle(vio_Set, vi_b_ApplyAllowed)` | Takes a written recipe over while allowed and gives the effective values; `vio_Set` is your `VAR PERSISTENT` `ST_ConfigRecipeSet` |
+| `m_Value(vi_un_Field)`, `m_Integer`, `m_Switch` | A field's effective value: the recipe's, else the program value |
+| `m_Command()`, `m_AnswerCommand(vi_b_Accepted, vi_str_Reason)` | The waiting command (START, STOP, RESET; NONE while none waits) and your answer to it: you alone decide whether it is carried out |
+
+The Simulator writes a recipe or sends a command only while the machine reports simulation mode (`m_SetSimulation`).
 
 ```st
 (* Every cycle, after the components *)

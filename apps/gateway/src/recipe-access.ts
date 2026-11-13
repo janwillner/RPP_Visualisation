@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   CONFIG_PROTOCOL_VERSION,
   MachineCommandStatusSchema,
+  ParameterResultSchema,
   RecipeFieldSchema,
   type MachineCommand,
   type MachineCommandStatus,
@@ -13,6 +14,7 @@ import {
   type WriteRecipeCommand,
 } from "@rpp/protocol";
 import { E_ConfigCommand } from "./config-contract";
+import type { ParameterDiscovery } from "./parameter-access";
 import { mapPlc } from "./plc-mapping";
 import type { SymbolWrite } from "./symbol-access";
 
@@ -35,13 +37,21 @@ const DeclarationSchema = z.object({ fields: z.array(RecipeFieldSchema) });
 const StatusSchema = z.object({
   activeVersion: z.number().int(),
   handledStageId: z.number().int(),
-  result: z.enum(["none", "pending", "applied", "rejected"]),
+  result: ParameterResultSchema,
   message: z.string(),
 });
 
-/** Reads the fields the application declares; a layout the gateway does not know throws a TypeError. */
+/**
+ * Reads the fields the application declares. A layout the gateway does not know, or a field without a name or with
+ * the name of another (the recipe is written by name), throws a TypeError, which discovery reports.
+ */
 export function machineFbEntry(path: string, raw: unknown): MachineFbEntry {
-  return { path, fields: mapPlc(DeclarationSchema, raw).fields };
+  const fields = mapPlc(DeclarationSchema, raw).fields.map((f) => ({ ...f, name: f.name.trim() }));
+  for (const [i, f] of fields.entries()) {
+    if (f.name === "") throw new TypeError(`recipe field ${i + 1} has no name`);
+    if (fields.findIndex((other) => other.name === f.name) < i) throw new TypeError(`recipe field ${f.name} is declared twice`);
+  }
+  return { path, fields };
 }
 
 /** What the cyclic sum-read reads of the machine FB: the recipe's status, its effective values and the command answer. */
@@ -68,13 +78,8 @@ export function machineParameters(
 
 export type RecipeCommand = WriteRecipeCommand | ResetRecipeCommand | MachineCommand;
 
-/** What a recipe command needs to know about the source. */
+/** What a recipe command needs to know about the source besides its Syn_Config discovery. */
 export interface RecipeContext {
-  /** Why the source cannot be written at all (no Syn_Config, no `--allow-write`); undefined when it can. */
-  reason: string | undefined;
-  /** Config protocol of the PLC's Syn_Config. */
-  protocolVersion: number;
-  machine: MachineFbEntry | undefined;
   /** The PLC reports simulation mode (machine entry, protocol 22). */
   simulation: boolean;
   /** The last `parameters` message: the active recipe. */
@@ -91,14 +96,19 @@ const COMMAND_VALUES = { start: E_ConfigCommand.START, stop: E_ConfigCommand.STO
  * recipe's every value and its staging with `bStaged` last (a waiting one withdrawn first), a reset with `bReset` last,
  * a machine command with `bRequested` last. `id` is the stage or command id.
  */
-export function recipeWrites(command: RecipeCommand, ctx: RecipeContext, id: number): { error: string } | { writes: SymbolWrite[] } {
-  if (ctx.reason !== undefined) return { error: ctx.reason };
-  if (ctx.protocolVersion < CONFIG_PROTOCOL_VERSION) {
+export function recipeWrites(
+  command: RecipeCommand,
+  discovery: Pick<ParameterDiscovery, "reason" | "protocolVersion" | "machine">,
+  ctx: RecipeContext,
+  id: number,
+): { error: string } | { writes: SymbolWrite[] } {
+  if (discovery.reason !== undefined) return { error: discovery.reason };
+  if (discovery.protocolVersion < CONFIG_PROTOCOL_VERSION) {
     return {
-      error: `The PLC's Syn_Config has config protocol ${ctx.protocolVersion}: recipes and machine commands need ${CONFIG_PROTOCOL_VERSION}.`,
+      error: `The PLC's Syn_Config has config protocol ${discovery.protocolVersion}: recipes and machine commands need ${CONFIG_PROTOCOL_VERSION}.`,
     };
   }
-  const machine = ctx.machine;
+  const machine = discovery.machine;
   if (!machine) {
     return { error: "The PLC's application has no machine FB (Syn_Config _FB_ConfigMachine): no recipe and no machine commands." };
   }
@@ -106,8 +116,10 @@ export function recipeWrites(command: RecipeCommand, ctx: RecipeContext, id: num
 
   if (command.kind === "machineCommand") {
     const at = `${machine.path}.stCommand`;
+    // A command still waiting is withdrawn first, so the application never takes the new id with the old command.
     return {
       writes: [
+        { path: `${at}.bRequested`, value: false },
         { path: `${at}.nCommandId`, value: id },
         { path: `${at}.eCommand`, value: COMMAND_VALUES[command.command] },
         { path: `${at}.bRequested`, value: true },
@@ -131,9 +143,13 @@ export function recipeWrites(command: RecipeCommand, ctx: RecipeContext, id: num
   if (unknown !== undefined) return { error: `The recipe has no field ${unknown}.` };
   const staged: SymbolWrite[] = [];
   for (const [i, field] of machine.fields.entries()) {
-    const value = command.values[field.name] ?? recipe.values[field.name] ?? field.programValue;
-    const problem = invalidValue(field, value);
-    if (problem) return { error: problem };
+    // Only what the client sends is checked: a field it leaves out keeps the value the application runs with.
+    const sent = command.values[field.name];
+    if (sent !== undefined) {
+      const problem = invalidValue(field, sent);
+      if (problem) return { error: problem };
+    }
+    const value = sent ?? recipe.values[field.name] ?? (field.type === "switch" ? field.programValue !== 0 : field.programValue);
     staged.push({ path: `${machine.path}.aStaged[${i}]`, value: typeof value === "boolean" ? Number(value) : value });
   }
   // A recipe still waiting to be allowed is withdrawn first, so it is never taken over half overwritten.

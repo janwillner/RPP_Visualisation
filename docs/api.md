@@ -139,7 +139,8 @@ name) and `machineCommand` (the application's answer to the last command).
 - **`writeRecipe`** (`baseVersion`, `values` by field name; a field left out keeps its value) and **`resetRecipe`**:
   stage a recipe or return to the program values, answered with `writeResult` like a parameter set.
 - **`machineCommand`** (`command`: `start`, `stop` or `reset`): a request the application accepts or rejects; the
-  `writeResult`'s `stageId` is the command id, which `machineCommand.handledCommandId` names once answered.
+  `writeResult`'s `stageId` is the command id, which `machineCommand.handledCommandId` names once answered. A command
+  sent while an earlier one still waits replaces it: only the last one is answered.
 
 All three are refused without `--allow-write`, from a page of another origin, while the PLC is not in simulation mode
 (`machine.simulation`), without a machine FB or with config protocol 2, on another active recipe version, and for an

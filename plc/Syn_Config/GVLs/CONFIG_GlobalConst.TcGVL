@@ -12,14 +12,16 @@ Global constants of the Syn_Config library.<br>
 {attribute 'qualified_only'}
 VAR_GLOBAL CONSTANT
 	(* Version of the Syn_Config <-> gateway contract (ADR 0017). The gateway writes nothing to a PLC whose config
-	   manifest reports another value. Bump together with CONFIG_PROTOCOL_VERSION in the gateway.
+	   manifest reports a version it does not know (it knows 2 and 3). Bump together with CONFIG_PROTOCOL_VERSION in
+	   the gateway.
 	   1: conveyor (pose, origin shift, product types) and Delta (pose, origin shift, zones, working, limit and
 	      TCP limit area); since library 1.1.0 also XTS gantry, XTS loop, Cartesian, vision, sensor and station
 	      (new parameter FBs only: no change for a gateway or an application of 1.0.0).
 	   2: gripper fingers with their flange offsets (nFingerCount, aFingers) in the parameter sets of the Delta,
 	      the XTS gantry and loop and the Cartesian robot (library 2.0.0, ADR 0018).
 	   3: the machine FB _FB_ConfigMachine (id 0, type NONE in the manifest): recipe fields the application declares,
-	      their staging, and machine commands (library 2.1.0, ADR 0022). The gateway still writes 2, without them. *)
+	      their staging, and machine commands (library 2.1.0, ADR 0022). A PLC of version 2 still gets its parameter
+	      sets written, but no recipe and no commands. *)
 	CONFIG_un_PROTOCOL_VERSION			: UINT := 3;
 	(* Version of this library (config manifest sLibraryVersion). Bump together with _FC_GetVersionSynConfig and the
 	   project version. *)

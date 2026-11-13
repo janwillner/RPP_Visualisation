@@ -301,6 +301,10 @@ _Avoid_: parameter set, settings, draft
 One value of a recipe as the application declares it: name, group (a component or the whole machine), type, unit, min, max and program value.
 _Avoid_: recipe parameter, setting
 
+**Machine FB**:
+The one function block of an application's Syn_Config (`_FB_ConfigMachine`, listed in its config manifest with id 0) that declares the recipe fields, takes a recipe over and hands machine commands to the application (ADR 0022).
+_Avoid_: recipe FB, machine component
+
 **Machine command**:
 Start, Stop or Reset, sent to the application as a request it accepts or rejects with a reason; only to a PLC in simulation mode (ADR 0022).
 _Avoid_: machine control, remote start

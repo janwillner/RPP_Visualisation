@@ -1,4 +1,5 @@
-import { ConfigEmulation } from "../src/config-emulation";
+import { ConfigEmulation, recipeField } from "../src/config-emulation";
+import { E_ConfigFieldType } from "../src/config-contract";
 import { InMemoryPlc } from "../src/in-memory-plc";
 import {
   body,
@@ -188,10 +189,25 @@ export function fixtureMachine() {
       machineMessage({ nId: 7, eSeverity: E_VisuMessageSeverity.INFO, sText: "Door closed", nTime: 500_000n, bActive: false }),
     ],
   });
-  const config = new ConfigEmulation(plc, [
-    { id: INFEED.id, kind: "conveyor", path: "MAIN.fbInfeedConfig.vo_Config", visuPath: INFEED.path },
-    { id: DELTA.id, kind: "delta", path: "MAIN.fbDelta1Config.vo_Config", visuPath: DELTA.path },
-  ]);
+  const config = new ConfigEmulation(
+    plc,
+    [
+      { id: INFEED.id, kind: "conveyor", path: "MAIN.fbInfeedConfig.vo_Config", visuPath: INFEED.path },
+      { id: DELTA.id, kind: "delta", path: "MAIN.fbDelta1Config.vo_Config", visuPath: DELTA.path },
+    ],
+    {
+      // The machine FB with a recipe field of every type (config protocol 3).
+      machine: {
+        path: "MAIN.fbMachineConfig.vo_Config",
+        fields: [
+          recipeField({ sName: "BeltSpeed", nGroup: INFEED.id, sUnit: "mm/s", fMin: 0, fMax: 500, fProgramValue: 150 }),
+          recipeField({ sName: "PicksPerCycle", eType: E_ConfigFieldType.INTEGER, fMin: 1, fMax: 4, fProgramValue: 1 }),
+          recipeField({ sName: "Feed", eType: E_ConfigFieldType.SWITCH, fProgramValue: 1 }),
+          recipeField({ sName: "Pattern", eType: E_ConfigFieldType.CHOICE, choices: ["Lanes", "Random"] }),
+        ],
+      },
+    },
+  );
   const infeed = plc.get<ST_VisuConveyor>(INFEED.path);
   let cycle = 0;
   return {

@@ -20,6 +20,7 @@ import { CONFIG_MANIFEST_PATH } from "./config-contract";
 import {
   commandWrites,
   discoverParameters,
+  noParameters,
   parameterReadPaths,
   parametersMessage,
   type ParameterDiscovery,
@@ -163,14 +164,7 @@ export function createGateway({
     const libraryVersion = manifest.sLibraryVersion?.trim() || undefined;
     const errors: DiscoveryError[] = [];
     const active: ActiveComponent[] = [];
-    let params: ParameterDiscovery = {
-      present: false,
-      entries: [],
-      reason: "The PLC's Syn_Visu does not match this gateway.",
-      errors: [],
-      protocolVersion: 0,
-      machine: undefined,
-    };
+    let params = noParameters("The PLC's Syn_Visu does not match this gateway.", false);
     let machineEntry: MachineEntry | undefined;
     const result = (): Discovery => ({
       config: {
@@ -243,14 +237,7 @@ export function createGateway({
     } catch (error) {
       // A layout the gateway does not know leaves the source read-only; connection errors propagate.
       if (!(error instanceof TypeError) && !(error instanceof SymbolNotFoundError)) throw error;
-      params = {
-        present: true,
-        entries: [],
-        reason: `Cannot read ${configManifestPath}: ${error.message}`,
-        errors: [],
-        protocolVersion: 0,
-        machine: undefined,
-      };
+      params = noParameters(`Cannot read ${configManifestPath}: ${error.message}`);
     }
     return result();
   }
@@ -389,14 +376,9 @@ export function createGateway({
           ? commandWrites(command, current.parameters, parameters, id)
           : recipeWrites(
               command,
-              {
-                reason: current.parameters.reason,
-                protocolVersion: current.parameters.protocolVersion,
-                machine: current.parameters.machine,
-                // Simulation mode as the application reports it in the machine entry (protocol 22, ADR 0021).
-                simulation: machine?.simulation === true,
-                current: parameters,
-              },
+              current.parameters,
+              // Simulation mode as the application reports it in the machine entry (protocol 22, ADR 0021).
+              { simulation: machine?.simulation === true, current: parameters },
               id,
             );
       if ("error" in planned) return { ok: false, error: planned.error };

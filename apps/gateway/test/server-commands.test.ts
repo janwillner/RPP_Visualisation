@@ -68,12 +68,13 @@ describe("WebSocket commands (ADR 0017)", () => {
       const robot = (messages.find((m) => m.kind === "parameters") as ParametersMessage).components.find((c) => c.set.type === "delta")!;
       socket.send(JSON.stringify({ kind: "writeParameters", requestId: 9, sourceId: FIXTURE_SOURCE, componentId: robot.id, baseVersion: 0, set: robot.set }));
       // Recipes and machine commands alike (ADR 0022).
-      socket.send(JSON.stringify({ kind: "machineCommand", requestId: 10, sourceId: FIXTURE_SOURCE, command: "start" }));
-      for (let i = 0; i < 100 && messages.filter((m) => m.kind === "writeResult").length < 2; i++) await new Promise((r) => setTimeout(r, 10));
-      expect(messages.filter((m) => m.kind === "writeResult")).toEqual([
-        { kind: "writeResult", requestId: 9, ok: false, error: FOREIGN_ORIGIN },
-        { kind: "writeResult", requestId: 10, ok: false, error: FOREIGN_ORIGIN },
-      ]);
+      socket.send(JSON.stringify({ kind: "writeRecipe", requestId: 10, sourceId: FIXTURE_SOURCE, baseVersion: 0, values: {} }));
+      socket.send(JSON.stringify({ kind: "resetRecipe", requestId: 11, sourceId: FIXTURE_SOURCE, baseVersion: 0 }));
+      socket.send(JSON.stringify({ kind: "machineCommand", requestId: 12, sourceId: FIXTURE_SOURCE, command: "start" }));
+      for (let i = 0; i < 100 && messages.filter((m) => m.kind === "writeResult").length < 4; i++) await new Promise((r) => setTimeout(r, 10));
+      expect(messages.filter((m) => m.kind === "writeResult")).toEqual(
+        [9, 10, 11, 12].map((requestId) => ({ kind: "writeResult", requestId, ok: false, error: FOREIGN_ORIGIN })),
+      );
     } finally {
       socket.close();
       server.close();

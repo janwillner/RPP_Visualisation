@@ -16,7 +16,7 @@ import {
   type ST_ConfigManifestEntry,
   type ST_ConfigRecipeField,
 } from "./config-contract";
-import { enumValue } from "./plc-contract";
+import { E_VisuComponentType, enumValue } from "./plc-contract";
 import type { InMemoryPlc } from "./in-memory-plc";
 import { MAX_MANIFEST_ENTRIES } from "./plc-builders";
 import { MANIFEST_PATH, type ST_VisuFinger, type ST_VisuManifest, type ST_VisuProductType, type ST_VisuTrackModule, type ST_VisuZone } from "./plc-contract";
@@ -99,7 +99,7 @@ export class ConfigEmulation {
     const listed: ST_ConfigManifestEntry[] = [
       ...entries.map((e): ST_ConfigManifestEntry => ({ nId: e.id, eType: COMPONENTS[e.kind].plcValue, sPath: e.path })),
       // The machine FB: id 0, type NONE.
-      ...(options.machine ? [{ nId: 0, eType: 0, sPath: options.machine.path }] : []),
+      ...(options.machine ? [{ nId: 0, eType: E_VisuComponentType.NONE, sPath: options.machine.path }] : []),
     ];
     const manifest: ST_ConfigManifest = {
       nProtocolVersion: options.protocolVersion ?? CONFIG_PROTOCOL_VERSION,
@@ -179,6 +179,8 @@ export class ConfigEmulation {
   /** What `_FB_ConfigMachine.m_Cycle` and the application's command handling do in one cycle. */
   private machineCycle(m: EmulatedMachineFb): void {
     const vo = this.plc.get<ST_ConfigMachine>(m.path);
+    // As the library: the fields as declared in vo_Config.
+    const fields = vo.aFields.slice(0, vo.nFieldCount);
     const { stStaging: staging, stStatus: status } = vo;
     const active = () => (this.recipe.bValid ? this.recipe.nVersion : 0);
     const handled = (reason: string) => {
@@ -198,7 +200,7 @@ export class ConfigEmulation {
       else if (staging.nBaseVersion !== active()) {
         handled(`Based on version ${staging.nBaseVersion}, but version ${active()} is active`);
       } else {
-        const reason = invalidRecipe(m.fields, vo.aStaged);
+        const reason = invalidRecipe(fields, vo.aStaged);
         if (!reason) {
           this.recipe.nLastVersion += 1;
           this.recipe = { ...this.recipe, bValid: true, nVersion: this.recipe.nLastVersion, aValues: [...vo.aStaged] };
@@ -207,7 +209,7 @@ export class ConfigEmulation {
       }
     }
     status.nActiveVersion = active();
-    vo.aActive = m.fields.map((f, i) => (this.recipe.bValid ? this.recipe.aValues[i]! : f.fProgramValue)).concat(vo.aActive.slice(m.fields.length));
+    vo.aActive = fields.map((f, i) => (this.recipe.bValid ? this.recipe.aValues[i]! : f.fProgramValue)).concat(vo.aActive.slice(fields.length));
 
     const command = vo.stCommand;
     if (command.bRequested) {
@@ -268,16 +270,18 @@ function paramOf(kind: ParameterType, config: Record<string, unknown>): Param {
   return structuredClone(Object.fromEntries(plcMembers(PARAMETER_SCHEMAS[kind]).map((m) => [m, config[m]])));
 }
 
-/** Why staged recipe values cannot be taken over, as the library's m_Cycle says it; '' when they can. */
+/**
+ * Why staged recipe values cannot be taken over, in the order the library's m_Invalid checks them (the range first, a
+ * switch 0 to 1; then a whole number for every type but NUMBER); '' when they can.
+ */
 function invalidRecipe(fields: readonly ST_ConfigRecipeField[], staged: readonly number[]): string {
   for (const [i, f] of fields.entries()) {
     const v = staged[i]!;
     const type = enumValue(f.eType);
-    if (type === E_ConfigFieldType.SWITCH ? v !== 0 && v !== 1 : type !== E_ConfigFieldType.NUMBER && !Number.isInteger(v)) {
-      return `Field ${f.sName}: ${v} is not a value of its type`;
-    }
-    const [min, max] = type === E_ConfigFieldType.CHOICE ? [0, f.nChoiceCount - 1] : [f.fMin, f.fMax];
-    if (type !== E_ConfigFieldType.SWITCH && (v < min || v > max)) return `Field ${f.sName}: ${v} is outside ${min} to ${max}`;
+    const [min, max] =
+      type === E_ConfigFieldType.SWITCH ? [0, 1] : type === E_ConfigFieldType.CHOICE ? [0, f.nChoiceCount - 1] : [f.fMin, f.fMax];
+    if (Number.isNaN(v) || v < min || v > max) return `Field ${f.sName}: ${v} is outside ${min} to ${max}`;
+    if (type !== E_ConfigFieldType.NUMBER && !Number.isInteger(v)) return `Field ${f.sName}: ${v} is not a value of its type`;
   }
   return "";
 }

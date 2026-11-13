@@ -17,7 +17,8 @@ listed in the config manifest with id 0. Typical cycle:<br>
     vi_lr_ProgramValue := 150);<br>
   fb_Machine.m_Cycle(vio_Set := RecipeSet, vi_b_ApplyAllowed := b_Stopped);<br>
   lr_BeltSpeed := fb_Machine.m_Value(vi_un_Field := 1);<br>
-  CASE fb_Machine.m_Command() OF E_ConfigCommand.START: ... fb_Machine.m_AnswerCommand(TRUE, ''); END_CASE<br>
+  CASE fb_Machine.m_Command() OF E_ConfigCommand.START: ...<br>
+    fb_Machine.m_AnswerCommand(vi_b_Accepted := TRUE, vi_str_Reason := ''); END_CASE<br>
 RecipeSet is the application's VAR PERSISTENT ST_ConfigRecipeSet.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
@@ -236,8 +237,8 @@ WHILE un_TempIndex < vo_Config.nFieldCount AND un_TempIndex < CONFIG_GlobalConst
 		lr_TempMin := vo_Config.aFields[un_TempIndex].fMin;
 		lr_TempMax := vo_Config.aFields[un_TempIndex].fMax;
 	END_CASE
-	(* The range first: only a value in range is turned into a whole number. *)
-	IF lr_TempValue < lr_TempMin OR lr_TempValue > lr_TempMax THEN
+	(* The range first: only a value in range is turned into a whole number. NaN equals nothing, not even itself. *)
+	IF lr_TempValue <> lr_TempValue OR lr_TempValue < lr_TempMin OR lr_TempValue > lr_TempMax THEN
 		m_Invalid := CONCAT(CONCAT('Field ', vo_Config.aFields[un_TempIndex].sName), CONCAT(': ', CONCAT(LREAL_TO_STRING(lr_TempValue),
 			CONCAT(' is outside ', CONCAT(LREAL_TO_STRING(lr_TempMin), CONCAT(' to ', LREAL_TO_STRING(lr_TempMax)))))));
 		RETURN;

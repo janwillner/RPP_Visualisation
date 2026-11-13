@@ -11,6 +11,7 @@ import {
   PROTOCOL_VERSION,
   type ConfigMessage,
   type MachineReport,
+  type ParametersMessage,
   type GatewayMessage,
   type StateMessage,
   type StatusMessage,
@@ -85,9 +86,9 @@ describe("PLC library guide at /docs", () => {
     const machine = fixtureMachine();
     const gateway = createGateway({ plc: machine.plc, sourceId: FIXTURE_SOURCE, sourceName: "Fixture" });
     const health = watchHealth(gateway, "1.2.3");
-    const last: { status?: StatusMessage; config?: ConfigMessage; state?: StateMessage; machine?: MachineReport } = {};
+    const last: { status?: StatusMessage; config?: ConfigMessage; state?: StateMessage; machine?: MachineReport; parameters?: ParametersMessage } = {};
     gateway.subscribe((m) => {
-      if (m.kind !== "parameters") last[m.kind] = m as never;
+      last[m.kind] = m as never;
     });
     for (let i = 0; i < 10; i++) {
       machine.step();
@@ -102,6 +103,10 @@ describe("PLC library guide at /docs", () => {
       validate(`#/definitions/${definition}`, message);
       expect(GatewayMessageSchema.parse(message)).toEqual(message);
     }
+    // Parameter sets with a recipe and a machine command's answer (ADR 0022).
+    expect(last.parameters!.recipe?.fields.map((f) => f.type)).toEqual(["number", "integer", "switch", "choice"]);
+    validate("", last.parameters!);
+    validate("#/definitions/ParametersMessage", last.parameters!);
     validate("#/definitions/HealthReport", health());
     HealthReportSchema.parse(health());
   }, 30_000);

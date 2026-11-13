@@ -14,7 +14,7 @@ import {
 } from "@rpp/protocol";
 import { componentKind } from "./components";
 import { PLC_CONFIG_MACHINE_TYPE, PLC_CONFIG_MANIFEST_TYPE, PLC_CONFIG_TYPES, type ST_ConfigManifest } from "./config-contract";
-import { enumValue } from "./plc-contract";
+import { E_VisuComponentType, enumValue } from "./plc-contract";
 import { mapPlc, type EntryMemory } from "./plc-mapping";
 import { plcLeaves } from "./plc-writing";
 import { machineFbEntry, machineParameters, machineReadPaths, type MachineFbEntry } from "./recipe-access";
@@ -60,20 +60,18 @@ const StatusSchema = z.object({
 
 export const NOT_ALLOWED = "The gateway does not allow writing; start it with --allow-write.";
 
+/** A source without parameter FBs that cannot be written, for `reason`; `present`: it has Syn_Config all the same. */
+export function noParameters(reason: string, present = true): ParameterDiscovery {
+  return { present, entries: [], reason, errors: [], protocolVersion: 0, machine: undefined };
+}
+
 /** Finds the parameter FBs; a source without a config manifest has none and cannot be written. */
 export async function discoverParameters(
   plc: SymbolAccess,
   manifestPath: string,
   allowWrite: boolean,
 ): Promise<ParameterDiscovery> {
-  const none = (reason: string, present = true): ParameterDiscovery => ({
-    present,
-    entries: [],
-    reason,
-    errors: [],
-    protocolVersion: 0,
-    machine: undefined,
-  });
+  const none = noParameters;
   const type = await plc.typeOf(manifestPath);
   if (type === undefined) {
     return none(`The PLC has no Syn_Config (${manifestPath} not found): its components cannot be written.`, false);
@@ -93,7 +91,7 @@ export async function discoverParameters(
   let machine: MachineFbEntry | undefined;
   for (const e of manifest.aEntries.slice(0, manifest.nCount)) {
     // The machine FB: id 0, type NONE (config protocol 3).
-    if (e.nId === 0 && enumValue(e.eType) === 0) {
+    if (e.nId === 0 && enumValue(e.eType) === E_VisuComponentType.NONE) {
       const actual = await plc.typeOf(e.sPath);
       if (actual !== PLC_CONFIG_MACHINE_TYPE && !actual?.endsWith(`.${PLC_CONFIG_MACHINE_TYPE}`)) {
         errors.push({ path: e.sPath, message: `Symbol has expected type ${PLC_CONFIG_MACHINE_TYPE} but is ${actual ?? "missing"}` });

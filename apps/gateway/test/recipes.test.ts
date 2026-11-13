@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ServerMessageSchema, type ClientMessage, type ServerMessage } from "@rpp/protocol";
 import { ConfigEmulation, recipeField } from "../src/config-emulation";
-import { E_ConfigFieldType } from "../src/config-contract";
+import { E_ConfigFieldType, type ST_ConfigMachine } from "../src/config-contract";
 import { createGateway, type GatewayCommandResult } from "../src/gateway";
 import { InMemoryPlc } from "../src/in-memory-plc";
 import { NOT_ALLOWED } from "../src/parameter-access";
@@ -114,6 +114,7 @@ describe("recipe fields and machine commands (Syn_Config config protocol 3, ADR 
     const started = await send({ kind: "machineCommand", command: "start" });
     expect(started).toEqual({ ok: true, stageId: expect.any(Number) });
     expect(writes[0]).toEqual([
+      { path: `${MACHINE_FB}.stCommand.bRequested`, value: false },
       { path: `${MACHINE_FB}.stCommand.nCommandId`, value: (started as { stageId: number }).stageId },
       { path: `${MACHINE_FB}.stCommand.eCommand`, value: 1 },
       { path: `${MACHINE_FB}.stCommand.bRequested`, value: true },
@@ -155,6 +156,18 @@ describe("recipe fields and machine commands (Syn_Config config protocol 3, ADR 
     expect(writes).toEqual([]);
   });
 
+  it("checks only the values a client sends: a field left out is written as it is, even outside its range", async () => {
+    const { plc, cycle, send, writes } = setup();
+    // The application's own value of Picks lies outside the range it declares.
+    const machine = plc.get<ST_ConfigMachine>(MACHINE_FB);
+    machine.aFields[1]!.fProgramValue = 9;
+    machine.aActive[1] = 9;
+    await cycle();
+
+    expect(await send({ kind: "writeRecipe", baseVersion: 0, values: { BeltSpeed: 200 } })).toMatchObject({ ok: true });
+    expect(writes[0]!.filter((w) => w.path.startsWith(`${MACHINE_FB}.aStaged[`)).map((w) => w.value)).toEqual([200, 9, 1, 0]);
+  });
+
   it("refuses a recipe based on another active version", async () => {
     const { cycle, send, writes } = setup();
     await cycle();
@@ -183,6 +196,20 @@ describe("recipe fields and machine commands (Syn_Config config protocol 3, ADR 
       expect(!result.ok && result.error, command.kind).toMatch(error);
     }
     expect(writes).toEqual([]);
+  });
+
+  it.each([
+    ["a field without a name", "", /recipe field 2 has no name/],
+    ["two fields of the same name", "BeltSpeed", /BeltSpeed is declared twice/],
+  ])("reports %s as a discovery error and offers no recipe", async (_, name, error) => {
+    const { plc, parameters, messages, cycle, send } = setup();
+    plc.get<ST_ConfigMachine>(MACHINE_FB).aFields[1]!.sName = name;
+    await cycle();
+
+    const config = messages.find((m) => m.kind === "config");
+    expect(config?.kind === "config" && config.errors.map((e) => e.message).join()).toMatch(error);
+    expect(parameters()?.kind === "parameters" && "recipe" in parameters()!).toBe(false);
+    expect(await send({ kind: "machineCommand", command: "start" })).toMatchObject({ ok: false, error: expect.stringMatching(/no machine FB/) });
   });
 
   it("reads and writes a PLC of config protocol 2 as before: parameter sets, no recipe", async () => {
