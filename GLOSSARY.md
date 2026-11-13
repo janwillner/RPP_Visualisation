@@ -301,6 +301,10 @@ _Avoid_: parameter set, settings, draft
 One value of a recipe as the application declares it: name, group (a component or the whole machine), type, unit, min, max and program value.
 _Avoid_: recipe parameter, setting
 
+**Machine command**:
+Start, Stop or Reset, sent to the application as a request it accepts or rejects with a reason; only to a PLC in simulation mode (ADR 0022).
+_Avoid_: machine control, remote start
+
 **Run state**:
 What the application reports its machine is doing: stopped, starting, running, stopping or fault, with a text.
 _Avoid_: machine state (ambiguous with the components' state), mode, status

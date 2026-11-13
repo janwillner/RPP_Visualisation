@@ -72,7 +72,7 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <LibraryReference Include="SynConfig,2.0.1.0,Syntegon Group">
+    <LibraryReference Include="SynConfig,2.1.0.0,Syntegon Group">
       <Namespace>SynConfig</Namespace>
     </LibraryReference>
     <LibraryReference Include="SynVisu,9.7.0.0,Syntegon Group">

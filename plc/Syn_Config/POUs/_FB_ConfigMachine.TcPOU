@@ -1,0 +1,328 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_ConfigMachine" Id="{35dab7a1-8ead-4949-b973-09890ad480be}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The machine as a whole (config protocol 3, ADR 0022): the recipe fields the application declares (process values<br>
+such as belt speed, picks per cycle, the product pattern), their staging by the Simulator with the mechanism of the<br>
+parameter sets, and the machine commands Start, Stop and Reset the application answers. One per application,<br>
+listed in the config manifest with id 0. Typical cycle:<br>
+  fb_Machine.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := 0);<br>
+  fb_Machine.m_DeclareField(vi_un_Field := 1, vi_str_Name := 'BeltSpeed', vi_udn_Group := fb_Infeed.m_Id(),<br>
+    vi_e_Type := E_ConfigFieldType.NUMBER, vi_str_Unit := 'mm/s', vi_lr_Min := 0, vi_lr_Max := 500,<br>
+    vi_lr_ProgramValue := 150);<br>
+  fb_Machine.m_Cycle(vio_Set := RecipeSet, vi_b_ApplyAllowed := b_Stopped);<br>
+  lr_BeltSpeed := fb_Machine.m_Value(vi_un_Field := 1);<br>
+  CASE fb_Machine.m_Command() OF E_ConfigCommand.START: ... fb_Machine.m_AnswerCommand(TRUE, ''); END_CASE<br>
+RecipeSet is the application's VAR PERSISTENT ST_ConfigRecipeSet.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+vo_Config is the contract structure the gateway reads and writes at the path in the config manifest.<br>
+*****************************************************************************************************<br>
+LIMITS:<br>
+CONFIG_un_MAX_RECIPE_FIELDS fields, CONFIG_un_MAX_CHOICES choices each. The gateway reads the declarations when<br>
+it discovers the PLC: declare every field from the start and keep their order.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 2.1.0 ¦ 2026-11-14 ¦ J.Willner ¦ Created: recipe fields and machine commands (protocol 3)<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_ConfigMachine EXTENDS _FB_ConfigComponent
+VAR_OUTPUT
+	vo_Config							: ST_ConfigMachine;	// contract structure of the gateway
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_AnswerCommand" Id="{b0d0973f-d301-4821-b1f6-aa1568be8bfe}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Answers the waiting machine command: accepted, or rejected with the reason the Simulator shows. The command no<br>
+longer waits afterwards.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE while no command waits.<br>
+****************************************************************************************************)
+METHOD m_AnswerCommand : BOOL
+VAR_INPUT
+	vi_b_Accepted						: BOOL;	// TRUE: the application carries the command out
+	vi_str_Reason						: STRING(80);	// why it is rejected, '' when accepted
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_AnswerCommand := vo_Config.stCommand.bRequested;
+IF NOT m_AnswerCommand THEN
+	RETURN;
+END_IF
+vo_Config.stCommandStatus.nHandledCommandId := vo_Config.stCommand.nCommandId;
+vo_Config.stCommandStatus.eResult := SEL(vi_b_Accepted, E_ConfigCommandResult.REJECTED, E_ConfigCommandResult.ACCEPTED);
+vo_Config.stCommandStatus.sMessage := SEL(vi_b_Accepted, vi_str_Reason, '');
+vo_Config.stCommand.bRequested := FALSE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Command" Id="{11855b5a-16ef-4503-9406-86698ddf44ce}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The machine command waiting for the application's answer (START, STOP, RESET); NONE while none waits. Answer it<br>
+with m_AnswerCommand: the application alone decides whether it is carried out.<br>
+****************************************************************************************************)
+METHOD m_Command : E_ConfigCommand]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF vo_Config.stCommand.bRequested THEN
+	m_Command := vo_Config.stCommand.eCommand;
+ELSE
+	m_Command := E_ConfigCommand.NONE;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Cycle" Id="{f9e2cdc5-99c0-4bed-87fe-1059ad1732ab}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Every cycle, after the fields are declared: handles a staged recipe or a reset (a recipe only while<br>
+vi_b_ApplyAllowed), keeps the active recipe in vio_Set and gives the effective values in vo_Config.aActive: the<br>
+active recipe while one is valid, else the fields' program values.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+TRUE in the cycle a recipe was taken over or reset.<br>
+****************************************************************************************************)
+METHOD m_Cycle : BOOL
+VAR_IN_OUT
+	vio_Set								: ST_ConfigRecipeSet;	// the application's VAR PERSISTENT active recipe
+END_VAR
+VAR_INPUT
+	vi_b_ApplyAllowed					: BOOL;	// [-] a staged recipe may be taken over now, e.g. while the machine stands
+END_VAR
+VAR
+	str_TempRejection					: STRING(80);
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Cycle := FALSE;
+CASE m_Staging(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_b_ApplyAllowed := vi_b_ApplyAllowed,
+	vi_udn_ActiveVersion := SEL(vio_Set.bValid, 0, vio_Set.nVersion)) OF
+	E_ConfigAction.RESET:
+		vio_Set.bValid := FALSE;
+		m_Handled(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_str_Rejection := '');
+		m_Cycle := TRUE;
+	E_ConfigAction.TAKE_OVER:
+		str_TempRejection := m_Invalid();
+		IF str_TempRejection = '' THEN
+			vio_Set.nLastVersion := vio_Set.nLastVersion + 1;
+			vio_Set.nVersion := vio_Set.nLastVersion;
+			vio_Set.aValues := vo_Config.aStaged;
+			vio_Set.bValid := TRUE;
+			m_Cycle := TRUE;
+		END_IF
+		m_Handled(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_str_Rejection := str_TempRejection);
+END_CASE
+
+
+(****************************************************************************************************
+EFFECTIVE VALUES
+****************************************************************************************************)
+un_TempIndex := 0;
+WHILE un_TempIndex < vo_Config.nFieldCount AND un_TempIndex < CONFIG_GlobalConst_Param.CONFIG_un_MAX_RECIPE_FIELDS DO
+	vo_Config.aActive[un_TempIndex] := SEL(vio_Set.bValid, vo_Config.aFields[un_TempIndex].fProgramValue,
+		vio_Set.aValues[un_TempIndex]);
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE
+vo_Config.stStatus.nActiveVersion := SEL(vio_Set.bValid, 0, vio_Set.nVersion);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_DeclareField" Id="{238781a9-49bc-4e4a-88f6-8824213fd48c}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Declares recipe field vi_un_Field (1..CONFIG_un_MAX_RECIPE_FIELDS): its name, the component it belongs to, how its<br>
+value is kept, its unit, range and the program value that applies while no recipe is active. Fields are listed up<br>
+to the highest one declared. Idempotent: call it every cycle, before m_Cycle. A CHOICE field's values are named with<br>
+m_SetChoice and range from 0; its vi_lr_Min and vi_lr_Max are not used, nor a SWITCH's.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for vi_un_Field = 0 or above CONFIG_un_MAX_RECIPE_FIELDS.<br>
+****************************************************************************************************)
+METHOD m_DeclareField : BOOL
+VAR_INPUT
+	vi_un_Field							: UINT;	// [-] 1..CONFIG_un_MAX_RECIPE_FIELDS
+	vi_str_Name							: STRING(31);	// unique in the recipe, e.g. 'BeltSpeed'
+	vi_udn_Group						: UDINT;	// [-] manifest id of the Syn_Visu component, 0 = the whole machine
+	vi_e_Type							: E_ConfigFieldType;
+	vi_str_Unit							: STRING(15);	// e.g. 'mm/s', '' = none
+	vi_lr_Min							: LREAL;	// smallest value of a NUMBER or INTEGER field
+	vi_lr_Max							: LREAL;	// largest value of a NUMBER or INTEGER field
+	vi_lr_ProgramValue					: LREAL;	// the application's own value; a SWITCH: 1 = on
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_DeclareField := vi_un_Field > 0 AND vi_un_Field <= CONFIG_GlobalConst_Param.CONFIG_un_MAX_RECIPE_FIELDS;
+IF NOT m_DeclareField THEN
+	RETURN;
+END_IF
+vo_Config.aFields[vi_un_Field - 1].sName := vi_str_Name;
+vo_Config.aFields[vi_un_Field - 1].nGroup := vi_udn_Group;
+vo_Config.aFields[vi_un_Field - 1].eType := vi_e_Type;
+vo_Config.aFields[vi_un_Field - 1].sUnit := vi_str_Unit;
+vo_Config.aFields[vi_un_Field - 1].fMin := vi_lr_Min;
+vo_Config.aFields[vi_un_Field - 1].fMax := vi_lr_Max;
+vo_Config.aFields[vi_un_Field - 1].fProgramValue := vi_lr_ProgramValue;
+IF vi_un_Field > vo_Config.nFieldCount THEN
+	vo_Config.nFieldCount := vi_un_Field;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Integer" Id="{759d8a35-60da-4255-8a22-65a901b02837}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Effective value of an INTEGER or CHOICE recipe field as a whole number (see m_Value).<br>
+****************************************************************************************************)
+METHOD m_Integer : DINT
+VAR_INPUT
+	vi_un_Field							: UINT;	// [-] 1..the field count
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Integer := LREAL_TO_DINT(m_Value(vi_un_Field := vi_un_Field));]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Invalid" Id="{4d9ed3a9-dd6e-499c-9328-15ad9af9729c}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Why the staged recipe cannot be taken over; '' when it can: a value outside its field's range (NUMBER, INTEGER),<br>
+not one of its choices (CHOICE), not a whole number (INTEGER, CHOICE) or not 0 or 1 (SWITCH).<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Invalid : STRING(80)
+VAR
+	un_TempIndex						: UINT;
+	lr_TempValue						: LREAL;
+	lr_TempMin							: LREAL;
+	lr_TempMax							: LREAL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Invalid := '';
+un_TempIndex := 0;
+WHILE un_TempIndex < vo_Config.nFieldCount AND un_TempIndex < CONFIG_GlobalConst_Param.CONFIG_un_MAX_RECIPE_FIELDS DO
+	lr_TempValue := vo_Config.aStaged[un_TempIndex];
+	CASE vo_Config.aFields[un_TempIndex].eType OF
+		E_ConfigFieldType.SWITCH:
+			lr_TempMin := 0;
+			lr_TempMax := 1;
+		E_ConfigFieldType.CHOICE:
+			lr_TempMin := 0;
+			lr_TempMax := UINT_TO_LREAL(vo_Config.aFields[un_TempIndex].nChoiceCount) - 1;
+	ELSE
+		lr_TempMin := vo_Config.aFields[un_TempIndex].fMin;
+		lr_TempMax := vo_Config.aFields[un_TempIndex].fMax;
+	END_CASE
+	(* The range first: only a value in range is turned into a whole number. *)
+	IF lr_TempValue < lr_TempMin OR lr_TempValue > lr_TempMax THEN
+		m_Invalid := CONCAT(CONCAT('Field ', vo_Config.aFields[un_TempIndex].sName), CONCAT(': ', CONCAT(LREAL_TO_STRING(lr_TempValue),
+			CONCAT(' is outside ', CONCAT(LREAL_TO_STRING(lr_TempMin), CONCAT(' to ', LREAL_TO_STRING(lr_TempMax)))))));
+		RETURN;
+	END_IF
+	IF vo_Config.aFields[un_TempIndex].eType <> E_ConfigFieldType.NUMBER
+		AND LINT_TO_LREAL(LREAL_TO_LINT(lr_TempValue)) <> lr_TempValue
+	THEN
+		m_Invalid := CONCAT(CONCAT('Field ', vo_Config.aFields[un_TempIndex].sName), CONCAT(': ',
+			CONCAT(LREAL_TO_STRING(lr_TempValue), ' is not a value of its type')));
+		RETURN;
+	END_IF
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetChoice" Id="{879d24d3-1159-43e0-938d-a50dbca81caf}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Names value vi_un_Value (0..CONFIG_un_MAX_CHOICES-1) of the CHOICE field vi_un_Field, e.g. 0 = 'Lanes'. The field<br>
+has as many choices as the highest value named plus one. Idempotent: call it every cycle with m_DeclareField.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for a field not declared or a value above CONFIG_un_MAX_CHOICES - 1.<br>
+****************************************************************************************************)
+METHOD m_SetChoice : BOOL
+VAR_INPUT
+	vi_un_Field							: UINT;	// [-] the field, 1..its count
+	vi_un_Value							: UINT;	// [-] the value it names, from 0
+	vi_str_Text							: STRING(31);	// e.g. 'Lanes'
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetChoice := vi_un_Field > 0 AND vi_un_Field <= vo_Config.nFieldCount
+	AND vi_un_Value < CONFIG_GlobalConst_Param.CONFIG_un_MAX_CHOICES;
+IF NOT m_SetChoice THEN
+	RETURN;
+END_IF
+vo_Config.aFields[vi_un_Field - 1].aChoices[vi_un_Value] := vi_str_Text;
+IF vi_un_Value >= vo_Config.aFields[vi_un_Field - 1].nChoiceCount THEN
+	vo_Config.aFields[vi_un_Field - 1].nChoiceCount := vi_un_Value + 1;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Switch" Id="{c45069ed-1c24-40a8-ab81-b39cee26234f}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Effective value of a SWITCH recipe field: TRUE for on (see m_Value).<br>
+****************************************************************************************************)
+METHOD m_Switch : BOOL
+VAR_INPUT
+	vi_un_Field							: UINT;	// [-] 1..the field count
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Switch := m_Value(vi_un_Field := vi_un_Field) <> 0;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Value" Id="{f13b4439-3137-4704-b106-8af55bd7a73a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Effective value of recipe field vi_un_Field, for the application's logic: the active recipe's, else the program<br>
+value. 0 for a field not declared. A SWITCH gives 1 or 0, an INTEGER or CHOICE a whole number (m_Switch,<br>
+m_Integer give them typed).<br>
+****************************************************************************************************)
+METHOD m_Value : LREAL
+VAR_INPUT
+	vi_un_Field							: UINT;	// [-] 1..the field count
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[IF vi_un_Field > 0 AND vi_un_Field <= vo_Config.nFieldCount THEN
+	m_Value := vo_Config.aActive[vi_un_Field - 1];
+ELSE
+	m_Value := 0;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

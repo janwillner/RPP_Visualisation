@@ -763,7 +763,9 @@ entry `GVL_Visu.stMachine` (section 2.3; protocol 22):
   appeared earliest. Give every message its own number.
 
 The visualisation shows the run state and the active messages above the components, keeps them in recordings and
-marks a message appearing on the timeline; a click on a message about a component selects it.
+marks a message appearing on the timeline; a click on a message about a component selects it. The machine's recipe
+(process values such as belt speed or picks per cycle) and the commands Start, Stop and Reset come with the library
+`SynConfig`, version 2.1.0 or newer: its machine FB `_FB_ConfigMachine` (`docs/config-contract.md`).
 
 ```st
 (* Every cycle, after the components *)

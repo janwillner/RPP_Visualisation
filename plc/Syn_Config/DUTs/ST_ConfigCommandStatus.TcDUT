@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigCommandStatus" Id="{e8fd650a-41a1-48b2-9608-a9c4a0320183}">
+    <Declaration><![CDATA[TYPE ST_ConfigCommandStatus :
+STRUCT
+	nHandledCommandId : UDINT; // nCommandId of the last command the application answered
+	eResult : E_ConfigCommandResult; // what the application made of it
+	sMessage : STRING(80); // why it was rejected; empty otherwise
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

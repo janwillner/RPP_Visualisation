@@ -130,7 +130,22 @@ a component's configuration its application runs with (a conveyor's pose and pro
 - **`writeResult`** (server → that client only): `ok` with the `stageId` of the write, or `error`. Whether the PLC
   took the set over follows in `parameters`, once its `handledStageId` is that stage id.
 
-A client that only shows the machine can ignore all three.
+A PLC whose application has Syn_Config's machine FB (config protocol 3, ADR 0022) also has a **recipe**: the process
+values its application declares (belt speed, picks per cycle, the product pattern, ...). Then `parameters` carries
+`recipe` (its `fields` with name, `group` (component id, 0 = the machine), `type` (`number`, `integer`, `switch`,
+`choice`), unit, min, max, program value and choices; the status like a parameter FB's; the effective `values` by field
+name) and `machineCommand` (the application's answer to the last command).
+
+- **`writeRecipe`** (`baseVersion`, `values` by field name; a field left out keeps its value) and **`resetRecipe`**:
+  stage a recipe or return to the program values, answered with `writeResult` like a parameter set.
+- **`machineCommand`** (`command`: `start`, `stop` or `reset`): a request the application accepts or rejects; the
+  `writeResult`'s `stageId` is the command id, which `machineCommand.handledCommandId` names once answered.
+
+All three are refused without `--allow-write`, from a page of another origin, while the PLC is not in simulation mode
+(`machine.simulation`), without a machine FB or with config protocol 2, on another active recipe version, and for an
+unknown field or a value of the wrong type or outside its range.
+
+A client that only shows the machine can ignore all of these.
 
 ## Compatibility
 

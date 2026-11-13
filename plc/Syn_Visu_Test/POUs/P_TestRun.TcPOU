@@ -25,6 +25,7 @@ VAR
 	fb_TestConfigStaging				: _FB_TestConfigStaging;
 	fb_TestConfigRobot					: _FB_TestConfigRobot;
 	fb_TestConfigBodyComponent			: _FB_TestConfigBodyComponent;
+	fb_TestConfigMachine				: _FB_TestConfigMachine;
 END_VAR
 ]]></Declaration>
     <Implementation>

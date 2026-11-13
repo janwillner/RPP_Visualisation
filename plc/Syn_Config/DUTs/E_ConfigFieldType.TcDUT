@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="E_ConfigFieldType" Id="{e241b074-f13c-4feb-baca-2467910108f7}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_ConfigFieldType :
+(
+	(* How a recipe field's value is kept (config protocol 3). Every value travels as LREAL. Values are part of the
+	   gateway contract: append, never renumber. *)
+	NUMBER := 0,	// any number within fMin..fMax
+	INTEGER := 1,	// a whole number within fMin..fMax, e.g. picks per cycle
+	SWITCH := 2,	// on or off: 1 or 0
+	CHOICE := 3		// one of the named choices: 0..nChoiceCount-1
+) UINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

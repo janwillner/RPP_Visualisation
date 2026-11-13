@@ -1,0 +1,282 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_TestConfigMachine" Id="{954c270e-a645-43d1-bb27-155df358c620}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+TcUnit test suite of _FB_ConfigMachine: registration with id 0, recipe fields and their program values, a staged<br>
+recipe taken over or rejected, a reset, and machine commands answered by the application. The tests write<br>
+vo_Config through its address, as the gateway writes over ADS.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 2.1.0 ¦ 2026-11-14 ¦ J.Willner ¦ Unit tests of the machine FB (config protocol 3)<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_TestConfigMachine EXTENDS TcUnit.FB_TestSuite
+VAR
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[m_RegisterWithIdZero();
+m_ProgramValues();
+m_RecipeTakenOverAndReset();
+m_RecipeRejected();
+m_CommandAnswered();]]></ST>
+    </Implementation>
+    <Method Name="m_CommandAnswered" Id="{01f0e5c8-6042-4f8a-8c6c-dc16b13b1f99}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A requested command waits for the application; its answer names the command id, accepted or rejected with the<br>
+reason, and the command no longer waits. Without a request nothing can be answered.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_CommandAnswered
+VAR_INST
+	fb_TempMachine						: SynConfig._FB_ConfigMachine;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	p_TempConfig						: POINTER TO SynConfig.ST_ConfigMachine;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigMachineCommandAnswered');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertTrue(Condition := fb_TempMachine.m_Command() = SynConfig.E_ConfigCommand.NONE, Message := 'nothing waits');
+AssertFalse(Condition := fb_TempMachine.m_AnswerCommand(vi_b_Accepted := TRUE, vi_str_Reason := ''), Message := 'nothing to answer');
+
+p_TempConfig := ADR(fb_TempMachine.vo_Config);
+p_TempConfig^.stCommand.nCommandId := 7;
+p_TempConfig^.stCommand.eCommand := SynConfig.E_ConfigCommand.START;
+p_TempConfig^.stCommand.bRequested := TRUE;
+AssertTrue(Condition := fb_TempMachine.m_Command() = SynConfig.E_ConfigCommand.START, Message := 'START waits');
+AssertTrue(Condition := fb_TempMachine.m_AnswerCommand(vi_b_Accepted := FALSE, vi_str_Reason := 'Not stopped'), Message := 'answered');
+AssertEquals_UDINT(Expected := 7, Actual := fb_TempMachine.vo_Config.stCommandStatus.nHandledCommandId, Message := 'command 7 handled');
+AssertTrue(Condition := fb_TempMachine.vo_Config.stCommandStatus.eResult = SynConfig.E_ConfigCommandResult.REJECTED, Message := 'rejected');
+AssertEquals_STRING(Expected := 'Not stopped', Actual := fb_TempMachine.vo_Config.stCommandStatus.sMessage, Message := 'its reason');
+AssertTrue(Condition := fb_TempMachine.m_Command() = SynConfig.E_ConfigCommand.NONE, Message := 'no longer waits');
+
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_DeclareFields" Id="{4b351086-fb21-4ca7-8536-99d6b5071dc8}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The recipe the tests declare: 1 BeltSpeed (NUMBER 0..500, 150), 2 Picks (INTEGER 1..4, 2), 3 Feed (SWITCH, on),<br>
+4 Pattern (CHOICE Lanes, Random; 0).<br>
+****************************************************************************************************)
+METHOD PRIVATE m_DeclareFields
+VAR_IN_OUT
+	vio_Machine							: SynConfig._FB_ConfigMachine;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vio_Machine.m_DeclareField(vi_un_Field := 1, vi_str_Name := 'BeltSpeed', vi_udn_Group := 1,
+	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := 'mm/s', vi_lr_Min := 0, vi_lr_Max := 500,
+	vi_lr_ProgramValue := 150);
+vio_Machine.m_DeclareField(vi_un_Field := 2, vi_str_Name := 'Picks', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.INTEGER, vi_str_Unit := '', vi_lr_Min := 1, vi_lr_Max := 4,
+	vi_lr_ProgramValue := 2);
+vio_Machine.m_DeclareField(vi_un_Field := 3, vi_str_Name := 'Feed', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.SWITCH, vi_str_Unit := '', vi_lr_Min := 0, vi_lr_Max := 0,
+	vi_lr_ProgramValue := 1);
+vio_Machine.m_DeclareField(vi_un_Field := 4, vi_str_Name := 'Pattern', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.CHOICE, vi_str_Unit := '', vi_lr_Min := 0, vi_lr_Max := 0,
+	vi_lr_ProgramValue := 0);
+vio_Machine.m_SetChoice(vi_un_Field := 4, vi_un_Value := 0, vi_str_Text := 'Lanes');
+vio_Machine.m_SetChoice(vi_un_Field := 4, vi_un_Value := 1, vi_str_Text := 'Random');]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_ProgramValues" Id="{d3457b5f-b34b-4f5a-b697-5072fa7eb306}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Declared fields are listed with their choices; without a recipe the program values apply, typed by m_Value,<br>
+m_Integer and m_Switch. A field 0 is refused, an undeclared one gives 0.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_ProgramValues
+VAR_INST
+	fb_TempMachine						: SynConfig._FB_ConfigMachine;
+	TempSet								: SynConfig.ST_ConfigRecipeSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigMachineProgramValues');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+m_DeclareFields(vio_Machine := fb_TempMachine);
+AssertFalse(Condition := fb_TempMachine.m_DeclareField(vi_un_Field := 0, vi_str_Name := 'x', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := '', vi_lr_Min := 0, vi_lr_Max := 1, vi_lr_ProgramValue := 0),
+	Message := 'field 0 refused');
+fb_TempMachine.m_Cycle(vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
+AssertEquals_UINT(Expected := 4, Actual := fb_TempMachine.vo_Config.nFieldCount, Message := 'four fields');
+AssertEquals_UINT(Expected := 2, Actual := fb_TempMachine.vo_Config.aFields[3].nChoiceCount, Message := 'two choices');
+AssertEquals_STRING(Expected := 'Random', Actual := fb_TempMachine.vo_Config.aFields[3].aChoices[1], Message := 'choice 1');
+AssertEquals_LREAL(Expected := 150, Actual := fb_TempMachine.m_Value(vi_un_Field := 1), Delta := 0, Message := 'BeltSpeed program value');
+AssertEquals_DINT(Expected := 2, Actual := fb_TempMachine.m_Integer(vi_un_Field := 2), Message := 'Picks program value');
+AssertTrue(Condition := fb_TempMachine.m_Switch(vi_un_Field := 3), Message := 'Feed on');
+AssertEquals_UDINT(Expected := 0, Actual := fb_TempMachine.vo_Config.stStatus.nActiveVersion, Message := 'no recipe active');
+AssertEquals_LREAL(Expected := 0, Actual := fb_TempMachine.m_Value(vi_un_Field := 9), Delta := 0, Message := 'undeclared field: 0');
+
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RecipeRejected" Id="{ffe38fb4-ce81-4f93-8237-9b21740e0ef0}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A recipe with a value outside its range, a fraction for a whole number or a choice that does not exist is<br>
+rejected with the field's name; the program values stay.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RecipeRejected
+VAR_INST
+	fb_TempMachine						: SynConfig._FB_ConfigMachine;
+	TempSet								: SynConfig.ST_ConfigRecipeSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	p_TempConfig						: POINTER TO SynConfig.ST_ConfigMachine;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigMachineRecipeRejected');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+m_DeclareFields(vio_Machine := fb_TempMachine);
+p_TempConfig := ADR(fb_TempMachine.vo_Config);
+p_TempConfig^.aStaged[0] := 501;
+p_TempConfig^.aStaged[1] := 2;
+p_TempConfig^.aStaged[2] := 1;
+p_TempConfig^.aStaged[3] := 0;
+_FC_TestConfigStage(vi_p_Staging := ADR(p_TempConfig^.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 1, vi_b_Reset := FALSE);
+AssertFalse(Condition := fb_TempMachine.m_Cycle(vio_Set := TempSet, vi_b_ApplyAllowed := TRUE), Message := 'out of range: not taken over');
+AssertTrue(Condition := fb_TempMachine.vo_Config.stStatus.eResult = SynConfig.E_ConfigResult.REJECTED, Message := 'rejected');
+AssertTrue(Condition := FIND(fb_TempMachine.vo_Config.stStatus.sMessage, 'BeltSpeed') > 0, Message := 'names BeltSpeed');
+
+p_TempConfig^.aStaged[0] := 100;
+p_TempConfig^.aStaged[1] := 2.5;
+_FC_TestConfigStage(vi_p_Staging := ADR(p_TempConfig^.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 2, vi_b_Reset := FALSE);
+fb_TempMachine.m_Cycle(vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
+AssertTrue(Condition := FIND(fb_TempMachine.vo_Config.stStatus.sMessage, 'Picks') > 0, Message := 'a fraction: names Picks');
+
+p_TempConfig^.aStaged[1] := 2;
+p_TempConfig^.aStaged[3] := 2;
+_FC_TestConfigStage(vi_p_Staging := ADR(p_TempConfig^.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 3, vi_b_Reset := FALSE);
+fb_TempMachine.m_Cycle(vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
+AssertTrue(Condition := FIND(fb_TempMachine.vo_Config.stStatus.sMessage, 'Pattern') > 0, Message := 'no such choice: names Pattern');
+AssertEquals_UDINT(Expected := 0, Actual := fb_TempMachine.vo_Config.stStatus.nActiveVersion, Message := 'program values stay');
+
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RecipeTakenOverAndReset" Id="{11db0ef8-6a59-4fa5-920a-2a15aa4b7e42}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A staged recipe waits while not allowed, is taken over under version 1 and gives the effective values; a reset<br>
+returns to the program values.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RecipeTakenOverAndReset
+VAR_INST
+	fb_TempMachine						: SynConfig._FB_ConfigMachine;
+	TempSet								: SynConfig.ST_ConfigRecipeSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	p_TempConfig						: POINTER TO SynConfig.ST_ConfigMachine;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigMachineRecipeTakenOverAndReset');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+m_DeclareFields(vio_Machine := fb_TempMachine);
+p_TempConfig := ADR(fb_TempMachine.vo_Config);
+p_TempConfig^.aStaged[0] := 220;
+p_TempConfig^.aStaged[1] := 3;
+p_TempConfig^.aStaged[2] := 0;
+p_TempConfig^.aStaged[3] := 1;
+_FC_TestConfigStage(vi_p_Staging := ADR(p_TempConfig^.stStaging), vi_udn_BaseVersion := 0, vi_udn_StageId := 41, vi_b_Reset := FALSE);
+
+fb_TempMachine.m_Cycle(vio_Set := TempSet, vi_b_ApplyAllowed := FALSE);
+AssertTrue(Condition := fb_TempMachine.vo_Config.stStatus.eResult = SynConfig.E_ConfigResult.PENDING, Message := 'pending while not allowed');
+AssertEquals_LREAL(Expected := 150, Actual := fb_TempMachine.m_Value(vi_un_Field := 1), Delta := 0, Message := 'program value meanwhile');
+
+AssertTrue(Condition := fb_TempMachine.m_Cycle(vio_Set := TempSet, vi_b_ApplyAllowed := TRUE), Message := 'taken over');
+AssertEquals_UDINT(Expected := 1, Actual := fb_TempMachine.vo_Config.stStatus.nActiveVersion, Message := 'version 1 active');
+AssertEquals_UDINT(Expected := 41, Actual := fb_TempMachine.vo_Config.stStatus.nHandledStageId, Message := 'stage 41 handled');
+AssertEquals_LREAL(Expected := 220, Actual := fb_TempMachine.m_Value(vi_un_Field := 1), Delta := 0, Message := 'BeltSpeed 220');
+AssertEquals_DINT(Expected := 3, Actual := fb_TempMachine.m_Integer(vi_un_Field := 2), Message := 'Picks 3');
+AssertFalse(Condition := fb_TempMachine.m_Switch(vi_un_Field := 3), Message := 'Feed off');
+AssertEquals_DINT(Expected := 1, Actual := fb_TempMachine.m_Integer(vi_un_Field := 4), Message := 'Pattern Random');
+
+_FC_TestConfigStage(vi_p_Staging := ADR(p_TempConfig^.stStaging), vi_udn_BaseVersion := 1, vi_udn_StageId := 42, vi_b_Reset := TRUE);
+fb_TempMachine.m_Cycle(vio_Set := TempSet, vi_b_ApplyAllowed := FALSE);
+AssertEquals_UDINT(Expected := 0, Actual := fb_TempMachine.vo_Config.stStatus.nActiveVersion, Message := 'reset: program values');
+AssertEquals_LREAL(Expected := 150, Actual := fb_TempMachine.m_Value(vi_un_Field := 1), Delta := 0, Message := 'BeltSpeed 150 again');
+
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RegisterWithIdZero" Id="{637a9ffe-0167-4a6d-a3d4-8d12760a3508}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The machine FB is listed in the config manifest with id 0 and type NONE; another id is refused, and the manifest<br>
+reports config protocol 3.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterWithIdZero
+VAR_INST
+	fb_TempMachine						: SynConfig._FB_ConfigMachine;
+	fb_TempOther						: SynConfig._FB_ConfigMachine;
+	TempManifest						: SynConfig.ST_ConfigManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigMachineRegisterWithIdZero');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertTrue(Condition := fb_TempMachine.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 0), Message := 'id 0 accepted');
+AssertEquals_UINT(Expected := 1, Actual := TempManifest.nCount, Message := 'one entry');
+AssertEquals_UDINT(Expected := 0, Actual := TempManifest.aEntries[0].nId, Message := 'its id 0');
+AssertTrue(Condition := TempManifest.aEntries[0].eType = SynVisu.E_VisuComponentType.NONE, Message := 'its type NONE');
+AssertFalse(Condition := fb_TempOther.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 5), Message := 'another id refused');
+AssertEquals_UINT(Expected := 3, Actual := TempManifest.nProtocolVersion, Message := 'config protocol 3');
+
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>
