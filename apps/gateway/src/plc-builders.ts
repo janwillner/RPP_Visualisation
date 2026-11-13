@@ -522,7 +522,7 @@ export function machineMessage(m: Partial<ST_VisuMachineMessage> = {}): ST_VisuM
 }
 
 /** The machine entry (protocol 22): stopped, not in simulation mode, without messages unless given. */
-export interface MachineStateSpec {
+export interface MachineEntrySpec {
   eRunState?: number;
   sRunStateText?: string;
   bSimulation?: boolean;
@@ -530,7 +530,7 @@ export interface MachineStateSpec {
 }
 
 /** Registers the machine entry next to the manifest in an in-memory PLC. */
-export function defineMachineState(plc: InMemoryPlc, spec: MachineStateSpec = {}, path = MACHINE_PATH): void {
+export function defineMachineEntry(plc: InMemoryPlc, spec: MachineEntrySpec = {}, path = MACHINE_PATH): void {
   const messages = spec.messages ?? [];
   const machine: ST_VisuMachine = {
     eRunState: spec.eRunState ?? E_VisuRunState.STOPPED,

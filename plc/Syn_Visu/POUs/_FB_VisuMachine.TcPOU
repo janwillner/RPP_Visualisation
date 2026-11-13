@@ -76,7 +76,7 @@ DESCRIPTION:<br>
 Sets a machine message by its level: call it every cycle with vi_b_Active TRUE while the condition lasts. A message<br>
 that becomes active (new, or again after it was gone) gets the current DC time; while active its severity, text and<br>
 component follow the inputs. Once vi_b_Active is FALSE it is gone: it stays listed, inactive, until its place is<br>
-needed. A new message is appended; in a full register the oldest gone message makes room for it.<br>
+needed. A new message is appended; in a full register the gone message that appeared earliest makes room for it.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
 FALSE before m_Register, for vi_udn_Id = 0, and for a new active message while every listed one is active.<br>
@@ -126,8 +126,8 @@ IF NOT vi_b_Active THEN
 	RETURN;
 END_IF
 
-(* A new message is appended. In a full register the oldest gone one makes room; its gap closes, so the register
-   keeps the order the messages appeared in. Without a gone one the new message is not listed. *)
+(* A new message is appended. In a full register the gone one that appeared earliest makes room; its gap closes, so
+   the others keep their order. Without a gone one the new message is not listed. *)
 IF NOT b_TempFound THEN
 	IF RefMachine.nMessageCount >= VISU_GlobalConst_Param.VISU_un_MAX_MACHINE_MESSAGES THEN
 		b_TempGoneFound := FALSE;
@@ -143,9 +143,11 @@ IF NOT b_TempFound THEN
 		IF NOT b_TempGoneFound THEN
 			RETURN;
 		END_IF
-		FOR un_TempIndex := un_TempGone TO VISU_GlobalConst_Param.VISU_un_MAX_MACHINE_MESSAGES - 2 DO
+		un_TempIndex := un_TempGone;
+		WHILE un_TempIndex + 1 < VISU_GlobalConst_Param.VISU_un_MAX_MACHINE_MESSAGES DO
 			RefMachine.aMessages[un_TempIndex] := RefMachine.aMessages[un_TempIndex + 1];
-		END_FOR
+			un_TempIndex := un_TempIndex + 1;
+		END_WHILE
 		RefMachine.nMessageCount := VISU_GlobalConst_Param.VISU_un_MAX_MACHINE_MESSAGES - 1;
 	END_IF
 	un_TempIndex := RefMachine.nMessageCount;
@@ -198,8 +200,8 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Reports whether the application runs without real hardware (simulation mode). Only then does the Simulator write<br>
-a recipe or send Start, Stop or Reset. Report TRUE only where no real machine can move.<br>
+Reports whether the application runs without real hardware (simulation mode). Report TRUE only where no real<br>
+machine can move: tools that start the machine or change its process values are to act only in simulation mode.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
 FALSE before m_Register.<br>

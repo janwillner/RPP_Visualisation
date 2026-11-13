@@ -5,7 +5,7 @@ import {
   cartesian,
   conveyor,
   defineMachine,
-  defineMachineState,
+  defineMachineEntry,
   machineMessage,
   delta,
   detector,
@@ -179,7 +179,7 @@ export function fixtureMachine() {
     { markNames: ["Sample"] },
   );
   // The machine entry (protocol 22): a run state, simulation mode, a message about Delta 1 and a gone one.
-  defineMachineState(plc, {
+  defineMachineEntry(plc, {
     eRunState: E_VisuRunState.RUNNING,
     sRunStateText: "Production",
     bSimulation: true,

@@ -831,7 +831,7 @@ export const MachineSchema = z
     runStateText: z.string().describe("What the application says about its run state, e.g. why it is in a fault."),
     simulation: z
       .boolean()
-      .describe("The application runs without real hardware (simulation mode); only then does the Simulator write."),
+      .describe("The application runs without real hardware (simulation mode): nothing real moves when it is started."),
     messages: z.array(MachineMessageSchema).describe("The machine messages, active and gone, in the application's order."),
   })
   .describe("The machine as its application reports it: run state, simulation mode and machine messages.");

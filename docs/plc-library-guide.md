@@ -65,8 +65,8 @@ methods, and it fills its output `vo_Visu`, the structure the gateway reads.
 
 ### 2.2 Match the gateway
 
-The PLC and the gateway must speak the same protocol version. The gateway refuses a PLC with a version it does not
-read and says so in its status; it reads its own protocol version and the one before (22 and 21).
+The PLC and the gateway must speak a protocol version they share. The gateway reads its own protocol version and the
+one before (22 and 21); it refuses a PLC with any other and says so in its status.
 
 | Library `SynVisu` | Protocol version | Gateway |
 | --- | --- | --- |
@@ -752,14 +752,15 @@ entry `GVL_Visu.stMachine` (section 2.3; protocol 22):
 
 - **Run state:** what the machine is doing, `E_VisuRunState` `STOPPED`, `STARTING`, `RUNNING`, `STOPPING` or
   `FAULT`, with a text, e.g. why it is in a fault (`m_SetRunState`).
-- **Simulation mode:** whether the application runs without real hardware (`m_SetSimulation`). The Simulator page
-  writes a recipe or sends Start, Stop or Reset only to a PLC in simulation mode, so report TRUE only where no real
-  machine can move.
+- **Simulation mode:** whether the application runs without real hardware (`m_SetSimulation`). Report TRUE only
+  where no real machine can move: tools that start the machine or change its process values are to act only in
+  simulation mode.
 - **Machine messages:** messages about the whole machine or about one component, each with a number, a severity
   (`E_VisuMessageSeverity` `ERROR`, `WARNING`, `INFO`) and a text (`m_SetMessage`). Like a fault, a message is set by
   its level: call `m_SetMessage` every cycle with `vi_b_Active` TRUE while its condition lasts. A message that becomes
   active gets the current time; once FALSE it is gone but stays listed until its place is needed
-  (`VISU_un_MAX_MACHINE_MESSAGES`, 32 active and gone). Give every message its own number.
+  (`VISU_un_MAX_MACHINE_MESSAGES`, 32 active and gone): a new message then takes the place of the gone one that
+  appeared earliest. Give every message its own number.
 
 The visualisation shows the run state and the active messages above the components, keeps them in recordings and
 marks a message appearing on the timeline; a click on a message about a component selects it.

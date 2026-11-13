@@ -571,6 +571,22 @@ describe("replay buffer: the last minute as a recording", () => {
     expect(belt(view, A)).toBe(9000);
   });
 
+  it("keeps the machine reported before its last minute, and marks only the messages that appeared within it", async () => {
+    const buffer = new Recorder([], "2026-01-01T00:00:00.000Z", REPLAY_BUFFER_MS);
+    buffer.add(0, status(A, true));
+    buffer.add(0, config(A));
+    buffer.add(0, machine(A, "fault", [machineMessage(3, 0)]));
+    for (let at = 0; at <= 150_000; at += 100) {
+      if (at === 120_000) buffer.add(at, machine(A, "fault", [machineMessage(3, 0), machineMessage(4, 120_000)]));
+      buffer.add(at, state(A, at));
+    }
+
+    const recording = (await buffer.snapshot())!;
+    expect((await recording.viewAt(0)).sources[0]!.machine).toMatchObject({ runState: "fault", messages: [{ id: 3 }] });
+    // Message 3 was active before the kept minute; message 4 appeared 30 s into it.
+    expect(recording.events.filter((e) => e.kind === "message").map((e) => [e.at, e.text])).toEqual([[30_000, "Infeed PLC: Message 4"]]);
+  });
+
   it("marks the events and follows the products of the last minute only", async () => {
     const buffer = new Recorder([], "2026-01-01T00:00:00.000Z", REPLAY_BUFFER_MS);
     buffer.add(0, status(A, true));

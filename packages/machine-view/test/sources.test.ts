@@ -60,7 +60,7 @@ describe("sources: what the web app knows about every PLC source", () => {
     expect(info.status?.plcConnected).toBe(true);
   });
 
-  it("keeps each source's machine as its application last reported it, also offline and with a new config", () => {
+  it("keeps each source's machine as its application last reported it, also offline, until a new config", () => {
     const sources = running(0, 100);
     const before = sources.all;
     const message = { id: 3, severity: "error" as const, text: "Vacuum lost", time: "1000", active: true, componentId: 10 };
@@ -76,10 +76,24 @@ describe("sources: what the web app knows about every PLC source", () => {
     expect(sources.all[0]!.machine).toEqual({ runState: "fault", runStateText: "", simulation: true, messages: [message] });
 
     sources.apply(300, status(A, false));
-    sources.apply(400, config(A, 2));
     expect(sources.all[0]!.machine?.runState).toBe("fault");
+    // A new config may come from an application without the machine entry: the gateway sends the report again after
+    // every config, so until then there is none.
+    sources.apply(400, config(A, 2));
+    expect(sources.all[0]!.machine).toBeUndefined();
+    sources.apply(420, machine(A, "running"));
+    expect(sources.all[0]!.machine?.runState).toBe("running");
     // An application without the machine entry reports none.
     expect(new Sources().apply(0, status(B, true)).machine).toBeUndefined();
+  });
+
+  it("starts in playback with the machine as it was where the recording's block starts", () => {
+    const { kind: _kind, sourceId: _sourceId, ...stopped } = machine(A, "stopped");
+    const sources = new Sources([{ sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: config(A), machine: stopped }]);
+
+    expect(sources.all[0]!.machine).toEqual(stopped);
+    sources.apply(100, machine(A, "starting"));
+    expect(sources.all[0]!.machine?.runState).toBe("starting");
   });
 
   it("takes states only of the source's current config version", () => {

@@ -615,11 +615,14 @@ function MachineSummary({ source, onSelect }: { source: SourceInfo; onSelect: (s
   const machine = source.machine;
   if (!machine) return null;
   const messages = activeMachineMessages(machine);
+  // Offline, it is only what the application reported last.
+  const stale = !isOnline(source);
   return (
-    <div className="machine">
+    <div className={stale ? "machine stale" : "machine"}>
       <div className={`run-state ${machine.runState}`}>
         {runStateText(machine)}
         {machine.simulation && <span className="muted"> · simulation</span>}
+        {stale && <span className="muted"> · last reported</span>}
       </div>
       {messages.length > 0 && (
         <ul className="machine-messages" aria-label="Machine messages">
@@ -899,7 +902,9 @@ function StatusBar(props: {
         Data age: {age === undefined ? "–" : `${Math.round(age)} ms`}
         {stale ? " – stale" : ""}
       </span>
-      {single?.machine && <span className={`run-state ${single.machine.runState}`}>Machine: {runStateText(single.machine)}</span>}
+      {single?.machine && isOnline(single) && (
+        <span className={`run-state ${single.machine.runState}`}>Machine: {runStateText(single.machine)}</span>
+      )}
       {single?.config && <span className="muted">Config v{single.config.configVersion}</span>}
       {single?.config?.libraryVersion && <span className="muted">Syn_Visu {single.config.libraryVersion}</span>}
       <button className={errors.length ? "bad link" : "muted link"} onClick={() => setShowErrors((v) => !v)}>

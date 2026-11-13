@@ -39,13 +39,13 @@ export class EventTracker {
   private readonly missed = new Map<string, Set<string>>();
   /** Per source the limit violations of its previous state, by their key. */
   private readonly limits = new Map<string, Set<string>>();
-  /** Per source the machine messages active in its previous report, by `id:time`. */
-  private readonly messages = new Map<string, Set<string>>();
+  /** Per source the machine messages active in its previous report: their time by id. */
+  private readonly messages = new Map<string, Map<number, string>>();
 
   constructor(initial: readonly SourceInfo[]) {
     for (const s of initial) {
       if (s.status) this.connected.set(s.sourceId, s.status.plcConnected);
-      if (s.machine) this.messages.set(s.sourceId, activeMessageKeys(s.machine.messages));
+      if (s.machine) this.messages.set(s.sourceId, activeMessageTimes(s.machine.messages));
     }
   }
 
@@ -70,14 +70,14 @@ export class EventTracker {
       return;
     }
     if (message.kind === "machine") {
-      // A message raised anew appears again: it has another time.
+      // A message appears when it becomes active, or is active again with another time (raised anew in between).
       const was = this.messages.get(message.sourceId);
       for (const m of message.messages) {
-        if (m.active && !was?.has(messageKey(m))) {
+        if (m.active && was?.get(m.id) !== m.time) {
           push("message", `${machineMessagePlace(m, source.config, source.name)}: ${machineMessageText(m)}`);
         }
       }
-      this.messages.set(message.sourceId, activeMessageKeys(message.messages));
+      this.messages.set(message.sourceId, activeMessageTimes(message.messages));
       return;
     }
     if (message.kind !== "state") return;
@@ -140,8 +140,6 @@ export function eventTime(events: readonly TimelineEvent[], time: number, direct
   return previous;
 }
 
-const messageKey = (m: MachineMessage) => `${m.id}:${m.time}`;
-
-function activeMessageKeys(messages: readonly MachineMessage[]): Set<string> {
-  return new Set(messages.filter((m) => m.active).map(messageKey));
+function activeMessageTimes(messages: readonly MachineMessage[]): Map<number, string> {
+  return new Map(messages.filter((m) => m.active).map((m) => [m.id, m.time]));
 }

@@ -16,15 +16,18 @@ So:
   active and gone. `_FB_VisuMachine` fills it every cycle: `m_SetRunState`, `m_SetSimulation` and `m_SetMessage`, which
   sets a message by its level like `m_SetFault`; a message that becomes active gets the current DC time, a gone one
   stays listed until a new one needs its place. Protocol 22, Syn_Visu 9.7.0.
-- **Optional for the application, and protocol 21 still read.** The entry only adds to the contract, so the gateway
-  reads protocol 21 and 22 (`MIN_PROTOCOL_VERSION`), and with 22 it looks for the entry during discovery: an
+- **Optional for the application, and protocol 21 still read.** This amends ADR 0004, by which a gateway release
+  supports exactly one protocol version: the entry only adds to the contract, so the gateway reads protocol 21 and 22
+  (`MIN_PROTOCOL_VERSION`), and with 22 it looks for the entry during discovery: an
   application without it is read as before, one of another type is a discovery error. Machine projects can take the new
   library without code changes and the new gateway without a new library.
 - **On the wire, a message of its own:** `machine`, per source, with `runState`, `runStateText`, `simulation` and
   `messages`, sent when it changes and to every new client after `status` and `config`. Clients switch on `kind` and
   ignore kinds they do not know (`docs/api.md`), so one that does not care loses nothing.
 - **In the web app, part of what it knows about a source:** `Sources` folds the report into the source's
-  `SourceInfo.machine`. Recordings and the replay buffer keep every block's `SourceInfo` as its context, so the machine
+  `SourceInfo.machine`, keeps it while the source is offline (shown as last reported) and drops it with every
+  `config`: the gateway sends the report again after each one, so an application rediscovered without the entry shows
+  none. Recordings and the replay buffer keep every block's `SourceInfo` as its context, so the machine
   is known at every moment of a playback without anything of its own; a recording file's header carries it. A machine
   message appearing (becoming active, or active again with a new time) is a timeline event.
 

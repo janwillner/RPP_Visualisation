@@ -16,7 +16,7 @@ export const PLC_MANIFEST_TYPE = "ST_VisuManifest";
  * The machine entry next to the manifest (protocol 22, ADR 0021): run state, simulation mode and machine messages. An
  * application declares it in the same GVL as its manifest; one without it is read as before.
  */
-export const MACHINE_PATH = "GVL_Visu.stMachine";
+export const MACHINE_PATH = machinePath(MANIFEST_PATH);
 
 /** PLC data type of the machine entry, checked during discovery. */
 export const PLC_MACHINE_TYPE = "ST_VisuMachine";

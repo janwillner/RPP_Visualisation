@@ -82,7 +82,8 @@ what changed", the server sends every product after a dropped one).
   Otherwise match each `components[i]` to its config by `id`.
 - On `status`: show the source as offline while `status.plcConnected` is false. Keep its last config to show what was
   there.
-- On `machine`: keep it per `sourceId`, replacing the old one (see "The machine" below).
+- On `machine`: keep it per `sourceId`, replacing the old one (see "The machine" below). Drop it with every new
+  `config` of that source: the server sends the report again right after, unless the application no longer has one.
 - On close: connect again after a short wait. The server sends status, config and the machine report again.
 
 **Products.** A conveyor's `products` is its product register. A product's position is given at its latch (the moment a

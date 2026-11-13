@@ -266,7 +266,7 @@ a `machine` message whenever it changes.
 | --- | --- |
 | `eRunState` (`E_VisuRunState`) | What the machine is doing: stopped, starting, running, stopping, fault |
 | `sRunStateText` (STRING(80)) | What the application says about it, e.g. why it is in a fault |
-| `bSimulation` | The application runs without real hardware (simulation mode); only then does the Simulator write |
+| `bSimulation` | The application runs without real hardware (simulation mode): nothing real moves when it is started |
 | `nMessageCount`, `aMessages` | The machine messages, entries `[0..nMessageCount-1]`, `VISU_un_MAX_MACHINE_MESSAGES` (32) at most |
 
 A machine message (`ST_VisuMachineMessage`) has its number `nId` (> 0, unique in the register), `eSeverity`
@@ -274,8 +274,8 @@ A machine message (`ST_VisuMachineMessage`) has its number `nId` (> 0, unique in
 gone, kept until its place is needed) and `nComponentId` (the manifest id of the component it is about, 0 for the
 whole machine). The register is read like a product register: as changes by `nId` (ADR 0013). `_FB_VisuMachine` fills
 the entry: `m_Register(vio_Machine)`, `m_SetRunState`, `m_SetSimulation` and `m_SetMessage`, which sets a message by its
-level like a fault; a message that becomes active gets the current time, and in a full register the oldest gone
-message makes room for a new one.
+level like a fault; a message that becomes active gets the current time, and in a full register the gone message that
+appeared earliest makes room for a new one.
 
 ## Enumerations
 

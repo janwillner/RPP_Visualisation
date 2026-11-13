@@ -590,6 +590,11 @@ table.metrics td + td {
   font-weight: 600;
 }
 
+/* The source is offline: what its application reported last, faded. */
+.machine.stale {
+  opacity: 0.6;
+}
+
 .run-state.running {
   color: var(--ok);
 }

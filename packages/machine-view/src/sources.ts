@@ -24,7 +24,8 @@ export interface SourceInfo {
   config: ConfigMessage | undefined;
   /**
    * The machine as its application last reported it (run state, simulation mode, machine messages; ADR 0021), kept
-   * while the source is offline; undefined for an application without the machine entry.
+   * while the source is offline and dropped with every config, after which the gateway sends it again; undefined for
+   * an application without the machine entry.
    */
   machine?: Machine | undefined;
 }
@@ -77,7 +78,8 @@ export class Sources {
       case "config":
         // A refreshed config of the same version keeps the timeline.
         if (message.configVersion !== current.config?.configVersion) this.timelines.delete(message.sourceId);
-        next = { ...current, config: message };
+        // The gateway sends the machine report again after every config; an application without the entry sends none.
+        next = { ...current, config: message, machine: undefined };
         break;
       case "machine": {
         const { kind: _kind, sourceId: _sourceId, ...machine } = message;

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { GatewayMessageSchema, type GatewayMessage, type MachineReport } from "@rpp/protocol";
 import { createGateway } from "../src/gateway";
 import { InMemoryPlc } from "../src/in-memory-plc";
-import { conveyor, defineMachine, defineMachineState, machineMessage, type MachineComponent } from "../src/plc-builders";
+import { conveyor, defineMachine, defineMachineEntry, machineMessage, type MachineComponent } from "../src/plc-builders";
 import { E_VisuMessageSeverity, E_VisuRunState, MACHINE_PATH, type ST_VisuMachine } from "../src/plc-contract";
 
 const infeed: MachineComponent = { id: 10, name: "Infeed", path: "MAIN.stInfeed", kind: "conveyor", value: conveyor() };
@@ -12,7 +12,7 @@ function setup(options: { machine?: boolean; protocolVersion?: number } = {}) {
   const plc = new InMemoryPlc();
   defineMachine(plc, [infeed], options.protocolVersion !== undefined ? { protocolVersion: options.protocolVersion } : {});
   if (options.machine ?? true) {
-    defineMachineState(plc, {
+    defineMachineEntry(plc, {
       eRunState: E_VisuRunState.RUNNING,
       sRunStateText: "Production",
       bSimulation: true,
@@ -72,6 +72,28 @@ describe("machine run state and machine messages (protocol 22)", () => {
     expect(raised!.messages.map((m) => [m.id, m.active])).toEqual([[101, false], [7, false], [3, true]]);
     expect(raised!.messages[2]).toMatchObject({ severity: "error", text: "Vacuum lost" });
     expect(fault).toMatchObject({ runState: "fault", runStateText: "Vacuum lost" });
+  });
+
+  it("sends the report again after every new config, and none once the rediscovered application has no entry", async () => {
+    const t = setup();
+    await t.gateway.cycle();
+    const manifest = t.plc.get<{ nConfigVersion: number; nProtocolVersion: number }>("GVL_Visu.stManifest");
+
+    manifest.nConfigVersion += 1;
+    await t.gateway.cycle();
+    // A client drops a source's machine with a new config: the unchanged report follows it again.
+    expect(t.messages.filter((m) => m.kind === "config" || m.kind === "machine").map((m) => m.kind)).toEqual([
+      "config",
+      "machine",
+      "config",
+      "machine",
+    ]);
+
+    // E.g. the application went back to a library of protocol 21: the gateway no longer reads the entry.
+    manifest.nProtocolVersion = 21;
+    await t.gateway.cycle();
+    await t.gateway.cycle();
+    expect(t.messages.filter((m) => m.kind === "config" || m.kind === "machine").at(-1)?.kind).toBe("config");
   });
 
   it("hands a new client the machine's last report right after it connects", async () => {

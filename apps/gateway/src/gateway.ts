@@ -271,6 +271,8 @@ export function createGateway({
       return false;
     }
     const raws = rest.slice(0, current.active.length);
+    /** Where the machine entry is in `rest`: after the states and the parameter sets. */
+    const machineAt = current.active.length + paramPaths.length;
     const mapStart = performance.now();
     let components: ComponentState[];
     let params: ParametersMessage | undefined;
@@ -278,10 +280,10 @@ export function createGateway({
     try {
       components = current.active.map((a, i) => mapState(a, raws[i]));
       if (current.parameters.present) {
-        params = parametersMessage(sourceId, current.parameters, rest.slice(current.active.length, current.active.length + paramPaths.length));
+        params = parametersMessage(sourceId, current.parameters, rest.slice(current.active.length, machineAt));
       }
       if (current.machine) {
-        report = { kind: "machine", sourceId, ...mapPlc(MachineSchema, rest.at(-1), {}, current.machine.memory) };
+        report = { kind: "machine", sourceId, ...mapPlc(MachineSchema, rest[machineAt], {}, current.machine.memory) };
       }
     } catch (error) {
       // Out of step with the PLC access (e.g. a restarted ADS bridge): read again with every entry.
@@ -342,8 +344,10 @@ export function createGateway({
     discovery = next;
     restartChanges(next);
     emit(next.config);
-    // A client drops a source's parameter sets with its new config: they are sent again with the next snapshot.
+    // A client drops a source's parameter sets and machine with its new config: they are sent again with the next
+    // snapshot.
     parameters = undefined;
+    machine = undefined;
     return next;
   }
 
