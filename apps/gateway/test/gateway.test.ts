@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 import {
   GatewayMessageSchema,
+  MIN_PROTOCOL_VERSION,
   PROTOCOL_VERSION,
   RegisterDecoder,
   type ConfigMessage,
@@ -449,15 +450,17 @@ describe("gateway discovery", () => {
     });
   });
 
-  it("refuses a PLC with a different protocol version and publishes no component data", async () => {
-    const t = setup([infeed, robot], { protocolVersion: 99 });
+  it.each([99, MIN_PROTOCOL_VERSION - 1])("refuses a PLC with protocol version %i and publishes no component data", async (version) => {
+    const t = setup([infeed, robot], { protocolVersion: version });
     await t.gateway.cycle();
     await t.gateway.cycle();
 
     const [config] = t.configs();
     expect(config!.components).toEqual([]);
     expect(config!.errors).toHaveLength(1);
-    expect(config!.errors[0]!.message).toMatch(new RegExp(`protocol version 99.*expects ${PROTOCOL_VERSION}`, "i"));
+    expect(config!.errors[0]!.message).toMatch(
+      new RegExp(`protocol version ${version}.*expects ${MIN_PROTOCOL_VERSION} to ${PROTOCOL_VERSION}`, "i"),
+    );
     expect(t.states()).toEqual([]);
   });
 

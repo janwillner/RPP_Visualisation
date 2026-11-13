@@ -12,6 +12,20 @@ export const MANIFEST_PATH = "GVL_Visu.stManifest";
 /** PLC data type of the manifest, checked during discovery; the components' types are in `COMPONENTS`. */
 export const PLC_MANIFEST_TYPE = "ST_VisuManifest";
 
+/**
+ * The machine entry next to the manifest (protocol 22, ADR 0021): run state, simulation mode and machine messages. An
+ * application declares it in the same GVL as its manifest; one without it is read as before.
+ */
+export const MACHINE_PATH = "GVL_Visu.stMachine";
+
+/** PLC data type of the machine entry, checked during discovery. */
+export const PLC_MACHINE_TYPE = "ST_VisuMachine";
+
+/** The machine entry's symbol path in the GVL of a manifest at `manifestPath`. */
+export function machinePath(manifestPath: string): string {
+  return manifestPath.replace(/[^.]+$/, "stMachine");
+}
+
 /** E_VisuComponentType: the manifest's component type; the gateway's `COMPONENTS` says which type each value is. */
 export const E_VisuComponentType = {
   NONE: 0,
@@ -419,6 +433,36 @@ export interface ST_VisuStationState {
 export interface ST_VisuStation {
   stConfig: ST_VisuStationConfig;
   stState: ST_VisuStationState;
+}
+
+/** E_VisuRunState: the run state the application reports (protocol 22). */
+export const E_VisuRunState = { STOPPED: 0, STARTING: 1, RUNNING: 2, STOPPING: 3, FAULT: 4 } as const;
+
+/** E_VisuMessageSeverity: how serious a machine message is (protocol 22). */
+export const E_VisuMessageSeverity = { ERROR: 0, WARNING: 1, INFO: 2 } as const;
+
+/** One machine message in the register of ST_VisuMachine; entries [0..nMessageCount-1] are listed. */
+export interface ST_VisuMachineMessage {
+  nId: number;
+  eSeverity: PlcEnum;
+  /** STRING(80) */
+  sText: string;
+  /** DC time in ns when the message appeared last. */
+  nTime: bigint;
+  /** FALSE: gone, kept until its place is needed. */
+  bActive: boolean;
+  /** Manifest id of the component it is about; 0 = the whole machine. */
+  nComponentId: number;
+}
+
+/** The machine entry `GVL_Visu.stMachine` (protocol 22). */
+export interface ST_VisuMachine {
+  eRunState: PlcEnum;
+  /** STRING(80) */
+  sRunStateText: string;
+  bSimulation: boolean;
+  nMessageCount: number;
+  aMessages: ST_VisuMachineMessage[];
 }
 
 export function enumValue(value: PlcEnum): number {

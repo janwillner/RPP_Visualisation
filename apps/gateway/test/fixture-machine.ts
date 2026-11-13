@@ -5,6 +5,8 @@ import {
   cartesian,
   conveyor,
   defineMachine,
+  defineMachineState,
+  machineMessage,
   delta,
   detector,
   fingerStates,
@@ -17,8 +19,10 @@ import {
   E_VisuBodyRole,
   E_VisuBodyShape,
   E_VisuCartesianAxes,
+  E_VisuMessageSeverity,
   E_VisuProductShape,
   E_VisuProductState,
+  E_VisuRunState,
   type ST_VisuConveyor,
 } from "../src/plc-contract";
 
@@ -174,6 +178,16 @@ export function fixtureMachine() {
     ],
     { markNames: ["Sample"] },
   );
+  // The machine entry (protocol 22): a run state, simulation mode, a message about Delta 1 and a gone one.
+  defineMachineState(plc, {
+    eRunState: E_VisuRunState.RUNNING,
+    sRunStateText: "Production",
+    bSimulation: true,
+    messages: [
+      machineMessage({ nId: 101, eSeverity: E_VisuMessageSeverity.ERROR, sText: "Vacuum lost", nTime: 1_000_000n, nComponentId: DELTA.id }),
+      machineMessage({ nId: 7, eSeverity: E_VisuMessageSeverity.INFO, sText: "Door closed", nTime: 500_000n, bActive: false }),
+    ],
+  });
   const config = new ConfigEmulation(plc, [
     { id: INFEED.id, kind: "conveyor", path: "MAIN.fbInfeedConfig.vo_Config", visuPath: INFEED.path },
     { id: DELTA.id, kind: "delta", path: "MAIN.fbDelta1Config.vo_Config", visuPath: DELTA.path },

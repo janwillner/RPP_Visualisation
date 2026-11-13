@@ -1,7 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentConfig, ComponentState, ProductMark } from "@rpp/protocol";
 import {
+  activeMachineMessages,
   APP_VERSION,
+  machineMessagePlace,
+  machineMessageText,
+  runStateText,
   MARK,
   markName,
   type CameraPose,
@@ -513,6 +517,8 @@ function ComponentTree(props: {
   // A source that never answered has no config and appears only in the status bar.
   const sources = props.sources.filter((s) => s.config !== undefined);
   const components = (source: SourceInfo) => (
+    <>
+    <MachineSummary source={source} onSelect={onSelect} />
     <ul className="tree">
       {(source.config?.components ?? []).map((c) => {
         const key = componentKey(source.sourceId, c.id);
@@ -555,6 +561,7 @@ function ComponentTree(props: {
         );
       })}
     </ul>
+    </>
   );
   const empty = sources.every((s) => (s.config?.components.length ?? 0) === 0);
   return (
@@ -590,6 +597,54 @@ function ComponentTree(props: {
         sources[0] && components(sources[0])
       )}
     </>
+  );
+}
+
+/** PLC distributed clock time (ns since 2000-01-01) as a local time of day. */
+function dcTimeOfDay(time: string): string {
+  const ms = Date.UTC(2000, 0, 1) + Number(BigInt(time) / 1_000_000n);
+  return new Date(ms).toLocaleTimeString();
+}
+
+/**
+ * The machine as its application reports it (ADR 0021): run state, simulation mode and the active machine messages,
+ * above the components; a click on a message about a component selects it. Nothing for an application without the
+ * machine entry.
+ */
+function MachineSummary({ source, onSelect }: { source: SourceInfo; onSelect: (s: Selection) => void }) {
+  const machine = source.machine;
+  if (!machine) return null;
+  const messages = activeMachineMessages(machine);
+  return (
+    <div className="machine">
+      <div className={`run-state ${machine.runState}`}>
+        {runStateText(machine)}
+        {machine.simulation && <span className="muted"> · simulation</span>}
+      </div>
+      {messages.length > 0 && (
+        <ul className="machine-messages" aria-label="Machine messages">
+          {messages.map((m) => {
+            const content = (
+              <>
+                <strong>{machineMessagePlace(m, source.config, source.name)}</strong>: {machineMessageText(m)}{" "}
+                <span className="muted">{dcTimeOfDay(m.time)}</span>
+              </>
+            );
+            return (
+              <li key={m.id} className={m.severity}>
+                {m.componentId === 0 ? (
+                  content
+                ) : (
+                  <button className="link" onClick={() => onSelect({ kind: "component", sourceId: source.sourceId, id: m.componentId })}>
+                    {content}
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -844,6 +899,7 @@ function StatusBar(props: {
         Data age: {age === undefined ? "–" : `${Math.round(age)} ms`}
         {stale ? " – stale" : ""}
       </span>
+      {single?.machine && <span className={`run-state ${single.machine.runState}`}>Machine: {runStateText(single.machine)}</span>}
       {single?.config && <span className="muted">Config v{single.config.configVersion}</span>}
       {single?.config?.libraryVersion && <span className="muted">Syn_Visu {single.config.libraryVersion}</span>}
       <button className={errors.length ? "bad link" : "muted link"} onClick={() => setShowErrors((v) => !v)}>

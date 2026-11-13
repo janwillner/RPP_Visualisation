@@ -225,6 +225,11 @@
   background: var(--missed);
 }
 
+/* A machine message: the application's own diagnosis, apart from a component's fault. */
+.timeline-marker.message {
+  background: var(--warning);
+}
+
 /* A limit violation: fault red, but dashed, apart from a fault the PLC reports. */
 .timeline-marker.limit {
   background: repeating-linear-gradient(0deg, var(--bad) 0 3px, var(--limit-label) 3px 6px);
@@ -574,4 +579,53 @@ table.metrics td + td {
   padding-left: 8px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* The machine as its application reports it, above the components: run state and active machine messages. */
+.machine {
+  margin: 0 0 8px;
+}
+
+.machine .run-state {
+  font-weight: 600;
+}
+
+.run-state.running {
+  color: var(--ok);
+}
+
+.run-state.starting,
+.run-state.stopping {
+  color: var(--warning);
+}
+
+.run-state.fault {
+  color: var(--bad-text);
+}
+
+.machine-messages {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 0.92em;
+}
+
+.machine-messages li {
+  padding: 1px 0;
+}
+
+.machine-messages button {
+  text-align: left;
+}
+
+.machine-messages .error {
+  color: var(--bad-text);
+}
+
+.machine-messages .warning {
+  color: var(--warning);
+}
+
+.machine-messages .info {
+  color: var(--accent);
 }

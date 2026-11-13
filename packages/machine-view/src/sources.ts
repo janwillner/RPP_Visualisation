@@ -1,4 +1,4 @@
-import type { ConfigMessage, GatewayMessage, GatewayStatus, StateMessage, StatusMessage } from "@rpp/protocol";
+import type { ConfigMessage, GatewayMessage, GatewayStatus, Machine, StateMessage, StatusMessage } from "@rpp/protocol";
 import type { SceneSource } from "./scene/scene-model";
 
 /**
@@ -22,6 +22,11 @@ export interface SourceInfo {
   status: GatewayStatus | undefined;
   /** The last config, kept while the source is offline. */
   config: ConfigMessage | undefined;
+  /**
+   * The machine as its application last reported it (run state, simulation mode, machine messages; ADR 0021), kept
+   * while the source is offline; undefined for an application without the machine entry.
+   */
+  machine?: Machine | undefined;
 }
 
 /** Whether the gateway currently reads this source's PLC (false for all after the gateway connection was lost). */
@@ -46,7 +51,7 @@ export class Sources {
   }
 
   /**
-   * Every source in the order first heard of. A new array whenever a source's name, status or config changes, the
+   * Every source in the order first heard of. A new array whenever a source's name, status, config or machine changes, the
    * same one after a state; a `SourceInfo` is never changed, only replaced.
    */
   get all(): readonly SourceInfo[] {
@@ -74,6 +79,11 @@ export class Sources {
         if (message.configVersion !== current.config?.configVersion) this.timelines.delete(message.sourceId);
         next = { ...current, config: message };
         break;
+      case "machine": {
+        const { kind: _kind, sourceId: _sourceId, ...machine } = message;
+        next = { ...current, machine };
+        break;
+      }
     }
     this.list = i < 0 ? [...this.list, next] : this.list.map((s, j) => (j === i ? next : s));
     return next;

@@ -10,6 +10,7 @@ import {
   HealthReportSchema,
   PROTOCOL_VERSION,
   type ConfigMessage,
+  type MachineReport,
   type GatewayMessage,
   type StateMessage,
   type StatusMessage,
@@ -84,7 +85,7 @@ describe("PLC library guide at /docs", () => {
     const machine = fixtureMachine();
     const gateway = createGateway({ plc: machine.plc, sourceId: FIXTURE_SOURCE, sourceName: "Fixture" });
     const health = watchHealth(gateway, "1.2.3");
-    const last: { status?: StatusMessage; config?: ConfigMessage; state?: StateMessage } = {};
+    const last: { status?: StatusMessage; config?: ConfigMessage; state?: StateMessage; machine?: MachineReport } = {};
     gateway.subscribe((m) => {
       if (m.kind !== "parameters") last[m.kind] = m as never;
     });
@@ -95,9 +96,10 @@ describe("PLC library guide at /docs", () => {
     // Discovered as a whole, with every component type.
     expect(last.config!.errors).toEqual([]);
     expect(new Set(last.config!.components.map((c) => c.type)).size).toBe(Object.keys(COMPONENT_SCHEMAS).length);
-    for (const message of [last.status!, last.config!, last.state!]) {
+    for (const message of [last.status!, last.config!, last.state!, last.machine!]) {
       validate("", message);
-      validate(`#/definitions/${message.kind[0]!.toUpperCase()}${message.kind.slice(1)}Message`, message);
+      const definition = message.kind === "machine" ? "MachineReport" : `${message.kind[0]!.toUpperCase()}${message.kind.slice(1)}Message`;
+      validate(`#/definitions/${definition}`, message);
       expect(GatewayMessageSchema.parse(message)).toEqual(message);
     }
     validate("#/definitions/HealthReport", health());

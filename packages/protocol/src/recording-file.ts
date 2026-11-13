@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ConfigMessageSchema, GatewayMessageSchema, GatewayStatusSchema } from "./model";
+import { ConfigMessageSchema, GatewayMessageSchema, GatewayStatusSchema, MachineSchema } from "./model";
 
 /**
  * The file a recording is saved to from the web app (ADR 0006): gzip-compressed text, one JSON object per line. The
@@ -18,6 +18,10 @@ export const RecordingSourceSchema = z
     name: z.string().describe("Display name of the source."),
     status: GatewayStatusSchema.describe("The source's last status; absent while the WebSocket was down.").optional(),
     config: ConfigMessageSchema.describe("The source's last config; absent before the first one.").optional(),
+    machine: MachineSchema.describe(
+      "The machine as the source's application last reported it (protocol 22); absent before the first report and " +
+        "for an application without the machine entry.",
+    ).optional(),
   })
   .describe("A source as it was when the recording started.");
 export type RecordingSource = z.infer<typeof RecordingSourceSchema>;

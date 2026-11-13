@@ -52,7 +52,19 @@ export { MachineFrame, SourceFrame } from "./scene/scene-frame";
 export { frameFromPose, toLocal, toMcs, type Vec3 } from "./scene/frames";
 
 // Rules about the machine and names, the same in both apps.
-export { faultText, isMissed, limitViolations, markName, productMark, zoneSides, zoneWarnings } from "./machine-facts";
+export {
+  activeMachineMessages,
+  faultText,
+  isMissed,
+  limitViolations,
+  machineMessagePlace,
+  machineMessageText,
+  markName,
+  productMark,
+  runStateText,
+  zoneSides,
+  zoneWarnings,
+} from "./machine-facts";
 export { componentName, fieldLabel, singular } from "./naming";
 
 // Look and page helpers.

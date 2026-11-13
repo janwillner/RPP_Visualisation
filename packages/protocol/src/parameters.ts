@@ -14,6 +14,7 @@ import {
   type ComponentType,
   StateMessageSchema,
   StatusMessageSchema,
+  MachineReportSchema,
 } from "./model";
 
 /**
@@ -202,6 +203,7 @@ export const ServerMessageSchema = z
     ConfigMessageSchema,
     StateMessageSchema,
     StatusMessageSchema,
+    MachineReportSchema,
     ParametersMessageSchema,
     WriteResultMessageSchema,
   ])

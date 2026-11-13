@@ -8,13 +8,19 @@ import {
   type ComponentState,
   type ConveyorConfig,
   type ConveyorState,
+  type ConfigMessage,
   type Fault,
+  type Machine,
+  type MachineMessage,
+  type MessageSeverity,
+  type RunState,
   type LimitArea,
   type Product,
   type TrackPoint,
   type XtsGantryConfig,
   type Zone,
 } from "@rpp/protocol";
+import { componentName } from "./naming";
 import {
   apply,
   boxInside,
@@ -275,4 +281,40 @@ export function limitViolations(
     }
   });
   return { boxes, violations };
+}
+
+/** How a machine message reads; one without a text by its number. */
+export function machineMessageText(m: MachineMessage): string {
+  return m.text || `Message ${m.id}`;
+}
+
+/**
+ * Where a machine message comes from, as the lists and the timeline name it: the component it is about, or the source
+ * (`sourceName`) for a message about the whole machine.
+ */
+export function machineMessagePlace(m: MachineMessage, config: ConfigMessage | undefined, sourceName: string): string {
+  return m.componentId === 0 ? sourceName : componentName(config, m.componentId);
+}
+
+const SEVERITY_ORDER: Record<MessageSeverity, number> = { error: 0, warning: 1, info: 2 };
+
+/** The active machine messages, errors first, then warnings and infos, the newest first within each. */
+export function activeMachineMessages(machine: Machine | undefined): MachineMessage[] {
+  return (machine?.messages ?? [])
+    .filter((m) => m.active)
+    .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] || (BigInt(b.time) > BigInt(a.time) ? 1 : BigInt(b.time) < BigInt(a.time) ? -1 : 0));
+}
+
+const RUN_STATE_NAMES: Record<RunState, string> = {
+  stopped: "Stopped",
+  starting: "Starting",
+  running: "Running",
+  stopping: "Stopping",
+  fault: "Fault",
+};
+
+/** How a run state reads, e.g. "Fault: Vacuum lost"; the application's text follows the state's name. */
+export function runStateText(machine: Machine): string {
+  const name = RUN_STATE_NAMES[machine.runState];
+  return machine.runStateText ? `${name}: ${machine.runStateText}` : name;
 }

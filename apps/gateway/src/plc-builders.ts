@@ -6,8 +6,14 @@ import {
   E_VisuBodyShape,
   E_VisuModuleKind,
   E_VisuProductState,
+  E_VisuMessageSeverity,
+  E_VisuRunState,
+  MACHINE_PATH,
   MANIFEST_PATH,
+  PLC_MACHINE_TYPE,
   PLC_MANIFEST_TYPE,
+  type ST_VisuMachine,
+  type ST_VisuMachineMessage,
   type ST_VisuCartesian,
   type ST_VisuCartesianConfig,
   type ST_VisuCartesianState,
@@ -48,6 +54,7 @@ export const MAX_MOVERS = 40;
 export const MAX_FINGERS = 8;
 export const MAX_BODIES = 16;
 export const MAX_MODULES = 64;
+export const MAX_MACHINE_MESSAGES = 32;
 /** Length of an XTS motor module, straight or curve (VISU_f_XTS_MODULE_LENGTH). */
 export const XTS_MODULE_LENGTH = 250;
 
@@ -507,4 +514,30 @@ export function defineMachine(
   };
   plc.define(options.manifestPath ?? MANIFEST_PATH, PLC_MANIFEST_TYPE, manifest);
   for (const c of components) plc.define(c.path, COMPONENTS[c.kind].plcType, c.value);
+}
+
+/** A machine message; an active warning about the whole machine unless given otherwise. */
+export function machineMessage(m: Partial<ST_VisuMachineMessage> = {}): ST_VisuMachineMessage {
+  return { nId: 0, eSeverity: E_VisuMessageSeverity.WARNING, sText: "", nTime: 0n, bActive: true, nComponentId: 0, ...m };
+}
+
+/** The machine entry (protocol 22): stopped, not in simulation mode, without messages unless given. */
+export interface MachineStateSpec {
+  eRunState?: number;
+  sRunStateText?: string;
+  bSimulation?: boolean;
+  messages?: ST_VisuMachineMessage[];
+}
+
+/** Registers the machine entry next to the manifest in an in-memory PLC. */
+export function defineMachineState(plc: InMemoryPlc, spec: MachineStateSpec = {}, path = MACHINE_PATH): void {
+  const messages = spec.messages ?? [];
+  const machine: ST_VisuMachine = {
+    eRunState: spec.eRunState ?? E_VisuRunState.STOPPED,
+    sRunStateText: spec.sRunStateText ?? "",
+    bSimulation: spec.bSimulation ?? false,
+    nMessageCount: messages.length,
+    aMessages: padded(messages, MAX_MACHINE_MESSAGES, () => machineMessage({ bActive: false })),
+  };
+  plc.define(path, PLC_MACHINE_TYPE, machine);
 }

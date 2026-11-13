@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { PROTOCOL_VERSION, type ConfigMessage, type GatewayMessage, type StateMessage } from "@rpp/protocol";
+import {
+  PROTOCOL_VERSION,
+  type ConfigMessage,
+  type GatewayMessage,
+  type Machine,
+  type MachineMessage,
+  type MachineReport,
+  type StateMessage,
+} from "@rpp/protocol";
 import {
   MAX_RECORDING_MS,
   REPLAY_BUFFER_MS,
@@ -77,6 +85,14 @@ async function threeSeconds(extra: [number, GatewayMessage][] = []): Promise<Rec
   return recorder.stop();
 }
 
+function machineMessage(id: number, time: number, active = true, componentId = 0): MachineMessage {
+  return { id, severity: "error", text: `Message ${id}`, time: String(time), active, componentId };
+}
+
+function machine(sourceId: string, runState: Machine["runState"], messages: MachineMessage[] = []): MachineReport {
+  return { kind: "machine", sourceId, runState, runStateText: runState === "fault" ? "Vacuum lost" : "", simulation: true, messages };
+}
+
 const belt = (view: Awaited<ReturnType<Recording["viewAt"]>>, sourceId: string) => {
   const latest = view.latestState(sourceId)?.components[0];
   return latest?.type === "conveyor" ? latest.beltPosition : undefined;
@@ -129,6 +145,22 @@ describe("recording: playback at any point in time", () => {
     expect(after.sources[0]!.config!.components[0]!.name).toBe("Infeed renamed");
     // States of the old config version do not belong to the new one.
     expect(after.scene[0]!.snapshots).toEqual([]);
+  });
+
+  it("shows the machine's run state and messages as they were at that moment, also before the first report", async () => {
+    const { kind: _kind, sourceId: _sourceId, ...running } = machine(A, "running");
+    const recorder = new Recorder([{ sourceId: A, name: "Infeed PLC", status: { plcConnected: true }, config: config(A), machine: running }]);
+    for (let at = 0; at <= 3000; at += 20) {
+      if (at === 1000) recorder.add(at, machine(A, "fault", [machineMessage(3, 1000)]));
+      recorder.add(at, state(A, at));
+    }
+    const recording = await recorder.stop();
+    const opened = await Recording.fromFile(await recording.toFile());
+
+    for (const r of [recording, opened]) {
+      expect((await r.viewAt(500)).sources[0]!.machine).toEqual(running);
+      expect((await r.viewAt(2500)).sources[0]!.machine).toMatchObject({ runState: "fault", runStateText: "Vacuum lost", messages: [{ id: 3 }] });
+    }
   });
 
   it("shows a source offline while it was not connected", async () => {
@@ -400,6 +432,24 @@ describe("recording: timeline events", () => {
     ]);
   });
 
+  it("marks where a machine message appears, once while it is active, again when the application raises it anew", async () => {
+    const recording = await threeSeconds([
+      [500, machine(A, "running", [machineMessage(3, 500, true, 1), machineMessage(9, 100, false)])],
+      [800, machine(A, "fault", [machineMessage(3, 500, true, 1)])],
+      [1200, machine(A, "running", [machineMessage(3, 500, false, 1)])],
+      [1600, machine(A, "running", [machineMessage(3, 1600, true, 1)])],
+      [2000, machine(B, "running", [machineMessage(4, 2000)])],
+    ]);
+
+    // A gone message is history, not an event; a message about a component names it, one about the machine its source.
+    expect(recording.events.filter((e) => e.kind === "message")).toEqual([
+      { at: 500, kind: "message", sourceId: A, text: "Infeed: Message 3" },
+      { at: 1600, kind: "message", sourceId: A, text: "Infeed: Message 3" },
+      { at: 2000, kind: "message", sourceId: B, text: "Outfeed PLC: Message 4" },
+    ]);
+    expect(eventTime(recording.events, 1000, 1)).toBe(1600);
+  });
+
   it("keeps its events in the file", async () => {
     const recording = await threeSeconds([
       [1000, status(B, false)],
@@ -477,6 +527,15 @@ describe("recording: limits and files", () => {
     const opened = await Recording.fromFile(await gzip(old));
     const latest = (await opened.viewAt(500)).latestState(A)!.components[0]!;
     expect(latest.type === "conveyor" && latest.products.map(productMark)).toEqual([0]);
+  });
+
+  it("opens a recording of protocol 21, from before the machine entry, without a machine", async () => {
+    const recording = await threeSeconds();
+    const text = new TextDecoder().decode(await gunzip(await recording.toFile()));
+    const old = text.replace(`"protocolVersion":${PROTOCOL_VERSION}`, '"protocolVersion":21');
+
+    const opened = await Recording.fromFile(await gzip(old));
+    expect((await opened.viewAt(1000)).sources.map((s) => s.machine)).toEqual([undefined, undefined]);
   });
 
   it("refuses a file that is no recording", async () => {
