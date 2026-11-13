@@ -103,7 +103,6 @@ function formatAgo(ms: number): string {
   return `${Math.floor(s / 60)} min ${String(Math.floor(s % 60)).padStart(2, "0")} s ago`;
 }
 
-
 export function Inspector(props: {
   /** The live gateway or the recording being played back. */
   feed: InspectorFeed;

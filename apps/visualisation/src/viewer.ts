@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { StateMessage } from "@rpp/protocol";
-import type { MessageListener, SceneSource, SourceInfo } from "@rpp/machine-view";
-import type { ProductEvent, ProductStep } from "@rpp/machine-view";
+import type { InspectorFeed, MessageListener, SceneSource, SourceInfo } from "@rpp/machine-view";
 import { Player } from "./player";
 import { MAX_RECORDING_MS, Recorder, Recording, RecordingFileError } from "./recording";
 
@@ -14,16 +13,11 @@ import { MAX_RECORDING_MS, Recorder, Recording, RecordingFileError } from "./rec
 export type ViewMode = "live" | "playback";
 
 /** What the 3D view and the inspector read every frame: the live machine or a recording being played back. */
-export interface SceneFeed {
+/** What is shown, live or a recording: the scene of every frame and, for the inspector, states and products. */
+export interface SceneFeed extends InspectorFeed {
   /** Every source as the machine scene takes it, at `now` (performance.now()); called once per drawn frame, it moves
    * the playback clock on. */
   frame(now?: number): SceneSource[];
-  /** A source's newest state, e.g. for the inspector. */
-  latestState(sourceId: string): StateMessage | undefined;
-  /** What has happened to a product so far, and the current moment on the same clock. */
-  productHistory(sourceId: string, conveyorId: number, productId: number): { steps: ProductStep[]; now: number };
-  /** Product events of the last `windowMs`, the current moment and when the data starts, for the metrics. */
-  productEvents(windowMs: number): { events: ProductEvent[]; now: number; since: number };
 }
 
 /** The live machine as the viewer needs it; `LiveMachine` in the app, a fake in tests. */

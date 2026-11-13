@@ -4,6 +4,7 @@ import type { MachineScene } from "../scene/scene-model";
 import { runStateText } from "../machine-facts";
 import { isOnline, type SourceInfo } from "../sources";
 import { useTick } from "../use-tick";
+import { StatusList } from "./StatusList";
 import { APP_VERSION } from "../version";
 
 /** Sources the gateway cannot read right now (all of them while the gateway connection is down). */
@@ -27,7 +28,6 @@ export function StatusBar(props: {
 }) {
   const { store, gateway, modelRef } = props;
   useTick(250);
-  const [showErrors, setShowErrors] = useState(false);
   const [showSources, setShowSources] = useState(false);
   const age = dataAge(store, gateway);
   const stale = age === undefined || age > STALE_AFTER_MS;
@@ -70,13 +70,11 @@ export function StatusBar(props: {
       )}
       {single?.config && <span className="muted">Config v{single.config.configVersion}</span>}
       {single?.config?.libraryVersion && <span className="muted">Syn_Visu {single.config.libraryVersion}</span>}
-      <button className={errors.length ? "bad link" : "muted link"} onClick={() => setShowErrors((v) => !v)}>
-        {errors.length} discovery error{errors.length === 1 ? "" : "s"}
-      </button>
+      <StatusList items={errors.map((text) => ({ text, severity: "error" }))} noun={["discovery error", "discovery errors"]} />
       <a className="muted link statusbar-api" href="/docs" target="_blank" rel="noopener" title="Guide to the PLC library Syn_Visu">
         PLC guide
       </a>
-      <span className="muted statusbar-version" title="Version of this visualisation">
+      <span className="muted statusbar-version" title="Version of the RPP tools">
         v{APP_VERSION}
       </span>
       {showSources && several && (
@@ -97,13 +95,6 @@ export function StatusBar(props: {
               </li>
             );
           })}
-        </ul>
-      )}
-      {showErrors && errors.length > 0 && (
-        <ul className="errors">
-          {errors.map((e, i) => (
-            <li key={i}>{e}</li>
-          ))}
         </ul>
       )}
     </footer>

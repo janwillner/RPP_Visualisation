@@ -46,3 +46,11 @@ So there are two apps and one library:
   palette and defaults stay in `apps/configurator`.
 - `pnpm dev:visualisation` and `pnpm dev:configurator` start one Vite dev server each; `pnpm build` and `pnpm test:e2e`
   run both.
+
+## Amendment (#44)
+
+The panels the Simulator shares with the visualisation (and partly the configurator) moved into `machine-view` as
+well: the component tree, the inspector with the product history and the metrics counted from it, the status bar with
+its count and list (`StatusList`, which each app fills: discovery errors, the draft's problems, machine messages) and
+the top bar. The visualisation keeps the viewer, recordings and playback; a page that does not show the inspector
+loads none of it, as the apps' own chunks show.

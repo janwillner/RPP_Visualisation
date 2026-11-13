@@ -15,6 +15,7 @@ import {
   type Selection,
   SidePanelControls,
   sidePanelsLayout,
+  StatusList,
   TopBar,
   useSidePanel,
   useStore,
@@ -355,7 +356,15 @@ export function ConfiguratorApp() {
           {plcSources.length > 0 ? `Gateway: ${gateway.socket} · ${plcSources.length} PLC` : "Offline draft"}
           {snapshot.saved ? "" : " · not saved"}
         </span>
-        <Problems issues={issues} onSelect={(key) => configurator.select(key)} />
+        <StatusList
+          className="problems"
+          noun={["problem", "problems"]}
+          items={issues.map((issue) => ({
+            text: issue.message,
+            severity: issue.severity === "error" ? "error" : "warning",
+            onSelect: () => configurator.select(issue.key),
+          }))}
+        />
         <span className="statusbar-version">v{APP_VERSION}</span>
       </footer>
     </div>
@@ -611,36 +620,6 @@ function TextInput(props: { value: string; label: string; onCommit: (value: stri
   return <input type="text" aria-label={props.label} {...input} />;
 }
 
-/**
- * The draft's problems in the status bar, as the visualisation shows its discovery errors: their count (red with an
- * error, else yellow), a click lists them above; a click on a problem selects its component.
- */
-function Problems({ issues, onSelect }: { issues: readonly Issue[]; onSelect: (key: ComponentKey) => void }) {
-  const [open, setOpen] = useState(false);
-  const errors = issues.some((i) => i.severity === "error");
-  const tone = errors ? "bad" : issues.length > 0 ? "warn" : "muted";
-  return (
-    <>
-      <button className={`${tone} link`} onClick={() => setOpen((o) => !o)}>
-        {issues.length} problem{issues.length === 1 ? "" : "s"}
-      </button>
-      {open && issues.length > 0 && (
-        <ul className="errors problems">
-          {issues.map((issue, i) => (
-            <li key={i}>
-              <button
-                className={issue.severity === "error" ? "bad link" : "warn link"}
-                onClick={() => onSelect(issue.key)}
-              >
-                {issue.message}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
-  );
-}
 
 /** Opens the confirmation of a write to one PLC; disabled with the reason while it cannot be written. */
 function WriteButton(props: { configurator: Configurator; sourceId: string; onPlan: () => void }) {

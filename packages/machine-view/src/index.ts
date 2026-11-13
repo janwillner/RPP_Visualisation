@@ -69,28 +69,14 @@ export {
 export { componentName, fieldLabel, singular } from "./naming";
 
 // What happened to the products, the figures counted from it, and a component state's values and tables.
-export {
-  ProductHistory,
-  clientAction,
-  type ClientAction,
-  type ProductEvent,
-  type ProductStep,
-  type ProductStepKind,
-} from "./product-history";
-export {
-  CLIENT_ACTIONS,
-  METRICS_WINDOW_MS,
-  metrics,
-  type ClientMetrics,
-  type ConveyorMetrics,
-  type MachineMetrics,
-} from "./metrics";
-export { stateRows, type StateRows, type StateTable, type StateValue } from "./state-rows";
+export { ProductHistory, type ProductEvent, type ProductStep } from "./product-history";
+export { METRICS_WINDOW_MS } from "./metrics";
 
 // The panels the apps share.
 export { ComponentTree } from "./panels/ComponentTree";
 export { Inspector, sourceScene, type InspectorFeed } from "./panels/Inspector";
 export { StatusBar, offlineSources } from "./panels/StatusBar";
+export { StatusList, type StatusItem } from "./panels/StatusList";
 export { TopBar } from "./panels/TopBar";
 export { useTick } from "./use-tick";
 

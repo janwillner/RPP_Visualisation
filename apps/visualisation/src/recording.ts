@@ -10,9 +10,8 @@ import {
   type RecordingFileHeader,
   type StateMessage,
 } from "@rpp/protocol";
-import { type SceneSource, type SourceInfo, Sources } from "@rpp/machine-view";
+import { ProductHistory, type SceneSource, type SourceInfo, Sources } from "@rpp/machine-view";
 import { EventTracker, type TimelineEvent } from "./timeline-events";
-import { ProductHistory } from "@rpp/machine-view";
 
 export { eventTime, type TimelineEvent, type TimelineEventKind } from "./timeline-events";
 
