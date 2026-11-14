@@ -5,8 +5,6 @@ import {
   Inspector,
   MARK,
   markName,
-  type CameraPose,
-  type CameraPreset,
   type ConnectionSnapshot,
   defaultGatewayUrl,
   formatPointCopy,
@@ -32,6 +30,7 @@ import {
   TopBar,
   useSidePanel,
   useStore,
+  useMachineView,
   useTick,
   type Vec3,
   ViewControls,
@@ -45,12 +44,22 @@ import {
   useRecordingControls,
 } from "./RecordingControls";
 import { Viewer } from "./viewer";
-import { loadViewSettings, saveViewSettings, type ViewSettings } from "./view-settings";
 
 /** `?embedded`: the page is a frame inside the machine HMI, which has its own header; title and status bar go. */
 const EMBEDDED = new URLSearchParams(window.location.search).has("embedded");
 /** The clipboard exists only in a secure context (https or localhost), not when embedded over http. */
 const CAN_COPY = window.isSecureContext && navigator.clipboard !== undefined;
+/** Every layer on at first but the coordinate systems: the panel PCs show the machine (they show while measuring). */
+const DEFAULT_LAYERS: Layers = {
+  workingAreas: true,
+  limitAreas: true,
+  zones: true,
+  tcpMarkers: true,
+  faultLabels: true,
+  origins: false,
+  marks: true,
+};
+
 /** From this window width the components panel starts open; below, the 3D view gets the room. */
 const WIDE_SCREEN_PX = 1600;
 
@@ -71,28 +80,10 @@ export function App() {
   }, [store, viewer]);
   const gateway = useStore(store);
   // Layers, hidden components and camera come back as they were left on this device.
-  const initialView = useMemo(loadViewSettings, []);
-  const view = useRef<ViewSettings>(initialView);
-  const [layers, setLayers] = useState<Layers>(initialView.layers);
+  const machineView = useMachineView("rpp.view", DEFAULT_LAYERS);
+  const { layers, hidden } = machineView;
   const [faults, setFaults] = useState<SourcedFaults[]>([]);
   const [selection, setSelection] = useState<Selection>();
-  // Component keys, and source ids for whole sources.
-  const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set(initialView.hidden));
-  useEffect(() => {
-    view.current = { ...view.current, layers, hidden: [...hidden] };
-    saveViewSettings(view.current);
-  }, [layers, hidden]);
-  const rememberCamera = (camera: CameraPose) => {
-    view.current = { ...view.current, camera };
-    saveViewSettings(view.current);
-  };
-  const toggleHidden = (key: string) =>
-    setHidden((h) => {
-      const next = new Set(h);
-      if (!next.delete(key)) next.add(key);
-      return next;
-    });
-  const [cameraRequest, setCameraRequest] = useState<{ action: CameraPreset; seq: number }>({ action: "iso", seq: 0 });
   const left = useSidePanel("rpp.panel.components", "Components", () => window.innerWidth >= WIDE_SCREEN_PX);
   // The inspector starts closed: the 3D view gets the room until someone wants the details.
   const right = useSidePanel("rpp.panel.inspector", "Inspector", () => false);
@@ -130,8 +121,6 @@ export function App() {
   // While playing back, the tree, the 3D view and the inspector show the recording instead of the live data.
   const playback = recording.mode === "playback";
 
-  const camera = (action: CameraPreset) => setCameraRequest((r) => ({ action, seq: r.seq + 1 }));
-  const toggle = (key: keyof Layers) => setLayers((l) => ({ ...l, [key]: !l[key] }));
   const appClass = ["app", EMBEDDED && "embedded", panels.className].filter(Boolean).join(" ");
 
   return (
@@ -144,7 +133,7 @@ export function App() {
       }}
     >
       <TopBar title={EMBEDDED ? undefined : "RPP Visualisation"}>
-        <LayerToggles layers={layers} onToggle={toggle} />
+        <LayerToggles layers={layers} onToggle={machineView.toggleLayer} />
       </TopBar>
       <aside className="panel left" hidden={!left.open}>
         <ComponentTree
@@ -152,7 +141,7 @@ export function App() {
           selection={selection}
           onSelect={setSelection}
           hidden={hidden}
-          onToggleHidden={toggleHidden}
+          onToggleHidden={machineView.toggleHidden}
           faults={faults}
         />
       </aside>
@@ -168,9 +157,9 @@ export function App() {
           layers={layers}
           selection={selection}
           onSelect={setSelection}
-          cameraRequest={cameraRequest}
-          initialCamera={initialView.camera}
-          onCameraChange={rememberCamera}
+          cameraRequest={machineView.cameraRequest}
+          initialCamera={machineView.initialCamera}
+          onCameraChange={machineView.rememberCamera}
           modelRef={modelRef}
           measureMode={measureMode}
           onMeasure={addMeasurePoint}
@@ -179,7 +168,7 @@ export function App() {
           onFaults={setFaults}
         />
         <SidePanelControls left={left} right={right} />
-        <ViewControls onCamera={camera} />
+        <ViewControls onCamera={machineView.requestCamera} />
         <MeasureButton on={measureMode} onClick={() => setMeasureMode((m) => !m)} />
         <ReplayButton controls={recording} />
         <RecordButton controls={recording} />

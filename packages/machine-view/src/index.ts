@@ -48,6 +48,7 @@ export {
   type Selection,
 } from "./scene/SceneView";
 export { ViewControls } from "./ViewControls";
+export { useLeaveGuard, useMachineView, type CameraRequest, type MachineView } from "./view-settings";
 export { LayerToggles } from "./LayerToggles";
 export { SidePanelControls, sidePanelsLayout, useSidePanel, type SidePanel } from "./SidePanels";
 export { pickOnScreen, type Projection } from "./scene/picking";

@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { COMPONENT_SCHEMAS, TrackModuleKindSchema, type ComponentConfig, type ConveyorConfig, type Draft, type TrackModuleKind } from "@rpp/protocol";
 import {
   APP_VERSION,
-  type CameraPreset,
   componentKey,
   type ComponentKey,
   defaultGatewayUrl,
@@ -21,6 +20,8 @@ import {
   TextInput,
   TopBar,
   type TrackedWrite,
+  useLeaveGuard,
+  useMachineView,
   useSidePanel,
   useStore,
   ViewControls,
@@ -45,7 +46,6 @@ const LAYERS: Layers = {
   origins: true,
   marks: true,
 };
-const NO_HIDDEN: ReadonlySet<string> = new Set();
 /** MIME type of a palette entry being dragged onto the 3D view. */
 const PALETTE_DRAG_TYPE = "application/x-rpp-palette";
 
@@ -105,11 +105,11 @@ export function ConfiguratorApp() {
   const floorRef = useRef<FloorPicker | undefined>(undefined);
   const handlePressed = useRef(false);
   const viewportRef = useRef<HTMLElement>(null);
-  const [cameraRequest, setCameraRequest] = useState<{ action: CameraPreset; seq: number }>({ action: "iso", seq: 0 });
   const fileInput = useRef<HTMLInputElement>(null);
   /** The source whose write is being confirmed. */
   const [writing, setWriting] = useState<string | undefined>(undefined);
-  const [layers, setLayers] = useState<Layers>(LAYERS);
+  // Layers and camera come back as they were left on this device.
+  const machineView = useMachineView("rpp.configurator.view", LAYERS);
   // Both start open, as the visualisation's; open state and width are remembered on this device.
   const left = useSidePanel("rpp.configurator.panel.left", "Palette and components", () => true);
   const right = useSidePanel("rpp.configurator.panel.right", "Properties", () => true);
@@ -150,12 +150,7 @@ export function ConfiguratorApp() {
   }, [configurator, selection]);
 
   // Leaving the page with unsaved changes asks first.
-  useEffect(() => {
-    if (snapshot.saved) return;
-    const onBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [snapshot.saved]);
+  useLeaveGuard(!snapshot.saved);
 
   return (
     <div className={["app configurator", panels.className].filter(Boolean).join(" ")} style={panels.style}>
@@ -191,7 +186,7 @@ export function ConfiguratorApp() {
           <span className="muted">Machine</span>
           <TextInput value={draft.name} label="Machine name" onCommit={(name) => configurator.rename(name)} />
         </label>
-        <LayerToggles layers={layers} onToggle={(key) => setLayers((l) => ({ ...l, [key]: !l[key] }))} />
+        <LayerToggles layers={machineView.layers} onToggle={machineView.toggleLayer} />
       </TopBar>
 
       <aside className="panel left" hidden={!left.open}>
@@ -292,20 +287,17 @@ export function ConfiguratorApp() {
       >
         <SceneView
           frame={(now) => configurator.frame(now)}
-          layers={layers}
+          layers={machineView.layers}
           selection={sceneSelection}
           onSelect={(s) => {
             // A tap on the move handle is no tap on empty space.
             if (!s && handlePressed.current) return;
             configurator.select(s?.kind === "component" ? componentKey(s.sourceId, s.id) : undefined);
           }}
-          cameraRequest={cameraRequest}
+          cameraRequest={machineView.cameraRequest}
+          initialCamera={machineView.initialCamera}
+          onCameraChange={machineView.rememberCamera}
           modelRef={modelRef}
-          measureMode={false}
-          onMeasure={() => {}}
-          measurePoints={[]}
-          hidden={NO_HIDDEN}
-          onFaults={() => {}}
         >
           <EditControls
             configurator={configurator}
@@ -317,7 +309,7 @@ export function ConfiguratorApp() {
           />
         </SceneView>
         <SidePanelControls left={left} right={right} />
-        <ViewControls onCamera={(action) => setCameraRequest((r) => ({ action, seq: r.seq + 1 }))} />
+        <ViewControls onCamera={machineView.requestCamera} />
         {snapshot.notice && (
           <div className="recording-notice" role="alert">
             {snapshot.notice} <button onClick={() => configurator.dismissNotice()}>OK</button>

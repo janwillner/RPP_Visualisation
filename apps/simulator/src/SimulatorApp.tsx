@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MachineCommandKind } from "@rpp/protocol";
 import {
-  type CameraPreset,
   ComponentTree,
   defaultGatewayUrl,
   download,
@@ -22,6 +21,8 @@ import {
   StatusList,
   TextInput,
   TopBar,
+  useLeaveGuard,
+  useMachineView,
   useSidePanel,
   useStore,
   ViewControls,
@@ -76,22 +77,16 @@ export function SimulatorApp() {
   const gateway = useStore(store);
   const snapshot = useSimulator(simulator);
   const modelRef = useRef<MachineScene | undefined>(undefined);
-  const [layers, setLayers] = useState<Layers>(LAYERS);
+  // Layers, hidden components and camera come back as they were left on this device.
+  const machineView = useMachineView("rpp.simulator.view", LAYERS);
   const [faults, setFaults] = useState<SourcedFaults[]>([]);
-  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set());
-  const [cameraRequest, setCameraRequest] = useState<{ action: CameraPreset; seq: number }>({ action: "iso", seq: 0 });
   // Both start open: the recipe is what the page is for. Open state and width are remembered on this device.
   const left = useSidePanel("rpp.simulator.panel.left", "Components", () => true);
   const right = useSidePanel("rpp.simulator.panel.right", "Recipe", () => true);
   const panels = sidePanelsLayout(left, right);
 
   // Leaving the page with recipe changes that were not saved asks first.
-  useEffect(() => {
-    if (snapshot.saved) return;
-    const onBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [snapshot.saved]);
+  useLeaveGuard(!snapshot.saved);
 
   return (
     <div className={["app simulator", panels.className].filter(Boolean).join(" ")} style={panels.style}>
@@ -100,7 +95,7 @@ export function SimulatorApp() {
         <a className="muted link" href="/" target="_blank" rel="noopener" title="Open the visualisation of the machine">
           Visualisation
         </a>
-        <LayerToggles layers={layers} onToggle={(key) => setLayers((l) => ({ ...l, [key]: !l[key] }))} />
+        <LayerToggles layers={machineView.layers} onToggle={machineView.toggleLayer} />
       </TopBar>
 
       <aside className="panel left" hidden={!left.open}>
@@ -108,14 +103,8 @@ export function SimulatorApp() {
           sources={gateway.sources}
           selection={snapshot.selection}
           onSelect={(s) => simulator.select(s)}
-          hidden={hidden}
-          onToggleHidden={(key) =>
-            setHidden((h) => {
-              const next = new Set(h);
-              if (!next.delete(key)) next.add(key);
-              return next;
-            })
-          }
+          hidden={machineView.hidden}
+          onToggleHidden={machineView.toggleHidden}
           faults={faults}
         />
       </aside>
@@ -123,22 +112,21 @@ export function SimulatorApp() {
       <main className="viewport" onContextMenu={(e) => e.preventDefault()}>
         <SceneView
           frame={(now) => live.frame(now)}
-          layers={layers}
+          layers={machineView.layers}
           selection={snapshot.selection}
           onSelect={(s) => simulator.select(s)}
-          cameraRequest={cameraRequest}
+          cameraRequest={machineView.cameraRequest}
+          initialCamera={machineView.initialCamera}
+          onCameraChange={machineView.rememberCamera}
           modelRef={modelRef}
-          measureMode={false}
-          onMeasure={() => {}}
-          measurePoints={[]}
-          hidden={hidden}
+          hidden={machineView.hidden}
           onFaults={(f) => {
             setFaults(f);
             simulator.setFaults(f);
           }}
         />
         <SidePanelControls left={left} right={right} />
-        <ViewControls onCamera={(action) => setCameraRequest((r) => ({ action, seq: r.seq + 1 }))} />
+        <ViewControls onCamera={machineView.requestCamera} />
         {snapshot.notice && (
           <div className="recording-notice" role="alert">
             {snapshot.notice} <button onClick={() => simulator.dismissNotice()}>OK</button>
