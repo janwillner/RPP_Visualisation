@@ -8,6 +8,7 @@
     "dev:gateway": "pnpm --filter @rpp/gateway dev",
     "dev:visualisation": "pnpm --filter @rpp/visualisation dev",
     "dev:configurator": "pnpm --filter @rpp/configurator dev",
+    "dev:simulator": "pnpm --filter @rpp/simulator dev",
     "build": "pnpm --filter @rpp/visualisation build && pnpm --filter @rpp/configurator build && pnpm --filter @rpp/simulator build",
     "start": "pnpm --filter @rpp/gateway start",
     "typecheck": "pnpm -r typecheck",

@@ -58,6 +58,7 @@ export { frameFromPose, toLocal, toMcs, type Vec3 } from "./scene/frames";
 // Rules about the machine and names, the same in both apps.
 export {
   activeMachineMessages,
+  dcTimeOfDay,
   faultText,
   isMissed,
   limitViolations,

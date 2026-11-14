@@ -105,7 +105,9 @@ test("stops and resets the demo, which clears its products, and starts it again:
   await expect.poll(() => infeed1Products(page), { timeout: 15_000 }).toBeGreaterThan(0);
   // The metrics below the recipe count what Delta 1 picks.
   const metrics = page.locator("aside.panel.right table.metrics");
-  await expect(metrics.locator("tr", { hasText: "Delta 1" })).toContainText("picked/min", { timeout: 30_000 });
+  await expect(metrics.locator("tr", { hasText: "Delta 1" })).toContainText(/([1-9]\d*\.\d|0\.[1-9]) picked\/min/, {
+    timeout: 30_000,
+  });
 });
 
 test("lists a machine message the demo raises, and selects its component", async ({ page }) => {
@@ -114,10 +116,14 @@ test("lists a machine message the demo raises, and selects its component", async
   await page.locator("footer").getByRole("button", { name: /messages?$/ }).click();
   const entry = page
     .locator("ul.status-messages")
-    .getByRole("button", { name: "Reject unit: Reject bin almost full", exact: true });
+    .getByRole("button", { name: /^Reject unit: Reject bin almost full · #1 · / });
   await expect(entry).toBeVisible({ timeout: 25_000 });
   await entry.click();
   await expect(page.locator("aside.panel.left .tree button.selected")).toContainText("Reject unit");
+
+  // A component with recipe fields brings its group into view, marked.
+  await page.locator("aside.panel.left .tree").getByRole("button", { name: /Delta 1 #10/ }).click();
+  await expect(recipe(page).locator("fieldset.selected legend")).toHaveText("Delta 1");
 });
 
 test("saves the recipe to a file and opens it again", async ({ page }) => {

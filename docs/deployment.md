@@ -7,7 +7,7 @@ For commissioning and service technicians. Use only the zip from a GitHub releas
 - [ ] Windows 10/11 x64, build 1607 or newer (LTSC 2019/2021 included), with TwinCAT 3
 - [ ] Administrator rights (no internet, Node or .NET needed)
 - [ ] PLC project references the `Syn_Visu` library of the version in the package: on the engineering PC install `plc\Syn_Visu_<version>.compiled-library` (XAE: PLC → Library Repository → Install), reference it and download the PLC project
-- [ ] Only where the configurator writes parameter sets: the PLC project also references `plc\Syn_Config_<version>.compiled-library` (`docs/config-contract.md`), and the gateway runs with `--allow-write` (or `"allowWrite": true` in its config file)
+- [ ] Only where the configurator writes parameter sets or the Simulator writes a recipe and sends Start / Stop / Reset (the latter only to an application reporting simulation mode, with Syn_Config 2.1 or later): the PLC project also references `plc\Syn_Config_<version>.compiled-library` (`docs/config-contract.md`), and the gateway runs with `--allow-write` (or `"allowWrite": true` in its config file)
 - [ ] Remote PLCs only: ADS route and firewall, see [Several IPCs](#several-ipcs)
 
 ## Install or update

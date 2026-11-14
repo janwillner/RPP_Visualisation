@@ -296,6 +296,12 @@ export function machineMessagePlace(m: MachineMessage, config: ConfigMessage | u
   return m.componentId === 0 ? sourceName : componentName(config, m.componentId);
 }
 
+/** PLC distributed clock time (ns since 2000-01-01) as a local time of day, e.g. when a machine message appeared. */
+export function dcTimeOfDay(time: string): string {
+  const ms = Date.UTC(2000, 0, 1) + Number(BigInt(time) / 1_000_000n);
+  return new Date(ms).toLocaleTimeString();
+}
+
 const SEVERITY_ORDER: Record<MessageSeverity, number> = { error: 0, warning: 1, info: 2 };
 
 /** The active machine messages, errors first, then warnings and infos, the newest first within each. */

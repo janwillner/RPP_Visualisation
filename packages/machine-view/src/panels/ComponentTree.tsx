@@ -1,6 +1,6 @@
 import type { Selection } from "../scene/SceneView";
 import type { SourcedFaults } from "../scene/scene-model";
-import { activeMachineMessages, machineMessagePlace, machineMessageText, runStateText } from "../machine-facts";
+import { activeMachineMessages, dcTimeOfDay, machineMessagePlace, machineMessageText, runStateText } from "../machine-facts";
 import { componentKey } from "../scene/scene-model";
 import { isOnline, type SourceInfo } from "../sources";
 
@@ -102,12 +102,6 @@ export function ComponentTree(props: {
       )}
     </>
   );
-}
-
-/** PLC distributed clock time (ns since 2000-01-01) as a local time of day. */
-function dcTimeOfDay(time: string): string {
-  const ms = Date.UTC(2000, 0, 1) + Number(BigInt(time) / 1_000_000n);
-  return new Date(ms).toLocaleTimeString();
 }
 
 /**

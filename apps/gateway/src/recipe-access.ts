@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   CONFIG_PROTOCOL_VERSION,
   invalidRecipeValue,
+  recipeProgramValue,
   MachineCommandStatusSchema,
   ParameterResultSchema,
   RecipeFieldSchema,
@@ -150,7 +151,7 @@ export function recipeWrites(
       const problem = invalidRecipeValue(field, sent);
       if (problem) return { error: problem };
     }
-    const value = sent ?? recipe.values[field.name] ?? (field.type === "switch" ? field.programValue !== 0 : field.programValue);
+    const value = sent ?? recipe.values[field.name] ?? recipeProgramValue(field);
     staged.push({ path: `${machine.path}.aStaged[${i}]`, value: typeof value === "boolean" ? Number(value) : value });
   }
   // A recipe still waiting to be allowed is withdrawn first, so it is never taken over half overwritten.

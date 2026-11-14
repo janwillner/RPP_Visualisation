@@ -27,9 +27,11 @@ import {
   ViewControls,
 } from "@rpp/machine-view";
 import {
+  COMMANDS,
   RECIPE_FILE_EXTENSION,
   type CommandState,
   type RecipeFormField,
+  type RecipeFormGroup,
   type RecipeWrite,
   shownValue,
   Simulator,
@@ -152,7 +154,11 @@ export function SimulatorApp() {
       <StatusBar store={store} gateway={gateway} modelRef={modelRef}>
         <StatusList
           noun={["problem", "problems"]}
-          items={snapshot.problems.map((p) => ({ text: p.text, severity: p.severity }))}
+          items={snapshot.problems.map((p) => ({
+            text: p.text,
+            severity: p.severity,
+            ...(p.selection ? { onSelect: () => simulator.select(p.selection) } : {}),
+          }))}
         />
         <StatusList
           className="status-messages"
@@ -187,7 +193,7 @@ function MachineControls({ simulator, snapshot }: { simulator: Simulator; snapsh
         {machine && !machine.simulation && <span className="bad"> · not in simulation mode</span>}
       </span>
       <div className="group">
-        {(["start", "stop", "reset"] as const).map((kind) => (
+        {COMMANDS.map((kind) => (
           <button
             key={kind}
             disabled={!snapshot.commands[kind].enabled}
@@ -262,12 +268,7 @@ function RecipePanel({ simulator, snapshot }: { simulator: Simulator; snapshot: 
       ) : (
         <>
           {form.map((group) => (
-            <fieldset key={group.group}>
-              <legend>{group.name}</legend>
-              {group.fields.map((f) => (
-                <RecipeInput key={f.field.name} field={f} onCommit={(value) => simulator.edit(f.field.name, value)} />
-              ))}
-            </fieldset>
+            <RecipeGroup key={group.group} group={group} simulator={simulator} />
           ))}
           <p className="muted">
             {recipe.activeVersion > 0 ? `Recipe v${recipe.activeVersion} active in the PLC.` : "The PLC runs its program values."}
@@ -298,6 +299,22 @@ function RecipePanel({ simulator, snapshot }: { simulator: Simulator; snapshot: 
         </>
       )}
     </section>
+  );
+}
+
+/** A component's recipe fields; the group of the selected component is marked and scrolled into view. */
+function RecipeGroup({ group, simulator }: { group: RecipeFormGroup; simulator: Simulator }) {
+  const ref = useRef<HTMLFieldSetElement>(null);
+  useEffect(() => {
+    if (group.selected) ref.current?.scrollIntoView({ block: "nearest" });
+  }, [group.selected]);
+  return (
+    <fieldset ref={ref} className={group.selected ? "selected" : undefined}>
+      <legend>{group.name}</legend>
+      {group.fields.map((f) => (
+        <RecipeInput key={f.field.name} field={f} onCommit={(value) => simulator.edit(f.field.name, value)} />
+      ))}
+    </fieldset>
   );
 }
 

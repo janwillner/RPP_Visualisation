@@ -13,11 +13,14 @@ import {
   type RecipeField,
   type RecipeFile,
   type RecipeValue,
+  type RunState,
   type WriteResultMessage,
+  recipeProgramValue,
 } from "@rpp/protocol";
 import {
   activeMachineMessages,
   componentName,
+  dcTimeOfDay,
   fieldLabel,
   isOnline,
   machineMessagePlace,
@@ -65,6 +68,8 @@ export interface RecipeFormField {
 export interface RecipeFormGroup {
   group: number;
   name: string;
+  /** The group of the selected component. */
+  selected: boolean;
   fields: RecipeFormField[];
 }
 
@@ -73,6 +78,8 @@ export interface Problem {
   text: string;
   /** The recipe field it is about. */
   field?: string;
+  /** The component whose field it is about; none for a field of the whole machine. */
+  selection?: Selection;
 }
 
 /** One value a write changes, as the form shows it. */
@@ -135,7 +142,7 @@ export interface SimulatorSnapshot {
   blocked: string | undefined;
   commands: Record<MachineCommandKind, CommandAvailability>;
   command: CommandState | undefined;
-  /** Every source's active machine messages, then the component faults. */
+  /** The shown source's active machine messages with their id and time, then its component faults. */
   messages: MessageEntry[];
   selection: Selection;
   notice: string | undefined;
@@ -148,10 +155,11 @@ export interface RecipeFileText {
 
 type Values = Record<string, RecipeValue>;
 
-const COMMANDS: readonly MachineCommandKind[] = ["start", "stop", "reset"];
+/** The machine commands, in the order the page shows them. */
+export const COMMANDS: readonly MachineCommandKind[] = ["start", "stop", "reset"];
 
 /** The run states in which a command makes sense; the application decides all the same. */
-const COMMAND_RUN_STATES: Record<MachineCommandKind, { states: readonly string[]; reason: string }> = {
+const COMMAND_RUN_STATES: Record<MachineCommandKind, { states: readonly RunState[]; reason: string }> = {
   start: { states: ["stopped"], reason: "The machine is not stopped." },
   stop: { states: ["starting", "running"], reason: "The machine is not running." },
   reset: { states: ["stopped", "fault"], reason: "Stop the machine first." },
@@ -165,7 +173,6 @@ export function shownValue(field: RecipeField, value: RecipeValue | undefined): 
   return field.unit ? `${value} ${field.unit}` : String(value);
 }
 
-const programValue = (f: RecipeField): RecipeValue => (f.type === "switch" ? f.programValue !== 0 : f.programValue);
 
 export class Simulator {
   private readonly listeners = new Set<() => void>();
@@ -179,7 +186,7 @@ export class Simulator {
   private fileWarnings: string[] = [];
   private writes: Record<string, RecipeWrite> = {};
   /** The values a write sent, by source: dropped from the edits once the PLC applied them. */
-  private sent: Record<string, Values> = {};
+  private writtenValues: Record<string, Values> = {};
   private commandStates: Record<string, CommandState> = {};
   private faults: readonly SourcedFaults[] = [];
   private selection: Selection = undefined;
@@ -198,10 +205,10 @@ export class Simulator {
 
   start(): void {
     this.unsubscribe ??= this.live.subscribe(() => {
-      this.follow();
+      this.followAnswers();
       this.changed();
     });
-    this.follow();
+    this.followAnswers();
     this.changed();
   }
 
@@ -296,7 +303,7 @@ export class Simulator {
     if (!sourceId || !recipe || plan.blocked || plan.changes.length === 0) return;
     const values = Object.fromEntries(plan.changes.map((c) => [c.name, this.edits[sourceId]![c.name]!]));
     const answer = await this.send({ kind: "writeRecipe", requestId: 0, sourceId, baseVersion: recipe.activeVersion, values });
-    this.sent = { ...this.sent, [sourceId]: values };
+    this.writtenValues = { ...this.writtenValues, [sourceId]: values };
     this.track(sourceId, "write", answer);
   }
 
@@ -305,7 +312,7 @@ export class Simulator {
     const { sourceId, recipe } = this.snapshot;
     if (!sourceId || !recipe || this.snapshot.blocked) return;
     const answer = await this.send({ kind: "resetRecipe", requestId: 0, sourceId, baseVersion: recipe.activeVersion });
-    this.sent = { ...this.sent, [sourceId]: {} };
+    this.writtenValues = { ...this.writtenValues, [sourceId]: {} };
     this.track(sourceId, "reset", answer);
   }
 
@@ -323,7 +330,7 @@ export class Simulator {
           ? { command, state: "sent", commandId: answer.stageId }
           : { command, state: "failed", message: answer.error ?? "The gateway refused the command." },
     };
-    this.follow();
+    this.followAnswers();
     this.changed();
   }
 
@@ -331,8 +338,8 @@ export class Simulator {
 
   /** Every source's recipe as a file, by group and field name; what it holds counts as saved. */
   save(): RecipeFileText {
-    const parameters = this.live.getSnapshot().parameters;
-    const sources = this.live.getSnapshot().sources.filter((s) => parameters[s.sourceId]?.recipe);
+    const { sources: all, parameters } = this.live.getSnapshot();
+    const sources = all.filter((s) => parameters[s.sourceId]?.recipe);
     const file: RecipeFile = {
       format: RECIPE_FILE_FORMAT,
       formatVersion: RECIPE_FILE_FORMAT_VERSION,
@@ -365,8 +372,10 @@ export class Simulator {
       this.changed();
       return;
     }
-    if (file.formatVersion > RECIPE_FILE_FORMAT_VERSION) {
-      this.notice = "The recipe file was saved by a newer Simulator; update this one to open it.";
+    if (file.formatVersion !== RECIPE_FILE_FORMAT_VERSION) {
+      this.notice =
+        `The recipe file has layout version ${file.formatVersion}; this Simulator reads version ${RECIPE_FILE_FORMAT_VERSION}` +
+        (file.formatVersion > RECIPE_FILE_FORMAT_VERSION ? ": update it to open the file." : ".");
       this.changed();
       return;
     }
@@ -387,7 +396,7 @@ export class Simulator {
         this.fileWarnings.push(`The file's recipe of ${saved.sourceName} has no PLC here: skipped.`);
         continue;
       }
-      this.take(source, parameters[source.sourceId]!.recipe!, saved.values);
+      this.applyFileValues(source, parameters[source.sourceId]!.recipe!, saved.values);
     }
     this.name = file.name;
     this.changed();
@@ -396,7 +405,7 @@ export class Simulator {
   // Inside.
 
   /** One source's values of a file: matched to the recipe's fields by name. */
-  private take(source: SourceInfo, recipe: Recipe, values: Record<string, Values>): void {
+  private applyFileValues(source: SourceInfo, recipe: Recipe, values: Record<string, Values>): void {
     const edits: Values = {};
     const warnings: Record<string, string> = {};
     const groupName = (group: number) => (group === 0 ? "the whole machine" : componentName(source.config, group));
@@ -424,7 +433,7 @@ export class Simulator {
   }
 
   private shown(sourceId: string, recipe: Recipe, f: RecipeField): RecipeValue {
-    return this.edits[sourceId]?.[f.name] ?? recipe.values[f.name] ?? programValue(f);
+    return this.edits[sourceId]?.[f.name] ?? recipe.values[f.name] ?? recipeProgramValue(f);
   }
 
   /** Why the shown source can be neither written nor commanded now; undefined when it can. */
@@ -433,9 +442,9 @@ export class Simulator {
     const source = sources.find((s) => s.sourceId === sourceId);
     if (!source) return "The gateway reads no PLC.";
     if (!isOnline(source)) return "The PLC is not connected.";
-    const p: ParametersMessage | undefined = parameters[source.sourceId];
-    if (!p?.recipe) return "The PLC has no machine FB (Syn_Config 2.1 or later): it has no recipe and takes no commands.";
-    if (!p.writable) return p.reason ?? "The PLC cannot be written.";
+    const params: ParametersMessage | undefined = parameters[source.sourceId];
+    if (!params?.recipe) return "The PLC has no machine FB (Syn_Config 2.1 or later): it has no recipe and takes no commands.";
+    if (!params.writable) return params.reason ?? "The PLC cannot be written.";
     if (!source.machine?.simulation) return "The machine does not report simulation mode: the Simulator writes nothing to a real machine.";
     return undefined;
   }
@@ -452,12 +461,12 @@ export class Simulator {
           ? { kind, state: "staged", stageId: answer.stageId }
           : { kind, state: "failed", message: answer.error ?? "The gateway refused the write." },
     };
-    this.follow();
+    this.followAnswers();
     this.changed();
   }
 
   /** Writes and commands the PLC has answered since. */
-  private follow(): void {
+  private followAnswers(): void {
     const parameters = this.live.getSnapshot().parameters;
     for (const [sourceId, write] of Object.entries(this.writes)) {
       const recipe = parameters[sourceId]?.recipe;
@@ -490,7 +499,7 @@ export class Simulator {
 
   /** The edits a write sent, once the PLC applied them: they are the active values now. */
   private dropWritten(sourceId: string): void {
-    const sent = this.sent[sourceId] ?? {};
+    const sent = this.writtenValues[sourceId] ?? {};
     const edits = Object.entries(this.edits[sourceId] ?? {}).filter(([name, value]) => sent[name] !== value);
     this.edits = { ...this.edits, [sourceId]: Object.fromEntries(edits) };
   }
@@ -510,12 +519,13 @@ export class Simulator {
     const recipe = sourceId ? parameters[sourceId]?.recipe : undefined;
     const form = source && recipe ? this.form(source, recipe) : [];
     const problems: Problem[] = [
-      ...form.flatMap((g) =>
-        g.fields.flatMap((f): Problem[] => [
-          ...(f.error ? [{ severity: "error" as const, text: f.error, field: f.field.name }] : []),
-          ...(f.warning ? [{ severity: "warning" as const, text: `${f.label}: ${f.warning}`, field: f.field.name }] : []),
-        ]),
-      ),
+      ...form.flatMap((g) => {
+        const about = g.group !== 0 && sourceId ? { selection: { kind: "component" as const, sourceId, id: g.group } } : {};
+        return g.fields.flatMap((f): Problem[] => [
+          ...(f.error ? [{ ...about, severity: "error" as const, text: f.error, field: f.field.name }] : []),
+          ...(f.warning ? [{ ...about, severity: "warning" as const, text: `${f.label}: ${f.warning}`, field: f.field.name }] : []),
+        ]);
+      }),
       ...this.fileWarnings.map((text) => ({ severity: "warning" as const, text })),
     ];
     const saved = Object.entries(this.edits).every(([s, edits]) =>
@@ -542,7 +552,7 @@ export class Simulator {
       blocked,
       commands,
       command: sourceId ? this.commandStates[sourceId] : undefined,
-      messages: this.messages(sources),
+      messages: source ? this.messages(source) : [],
       selection: this.selection,
       notice: this.notice,
     };
@@ -555,11 +565,15 @@ export class Simulator {
     for (const field of recipe.fields) {
       let group = groups.find((g) => g.group === field.group);
       if (!group) {
-        group = { group: field.group, name: field.group === 0 ? "Machine" : componentName(source.config, field.group), fields: [] };
+        const name = field.group === 0 ? "Machine" : componentName(source.config, field.group);
+        const selection = this.selection;
+        const selected =
+          field.group !== 0 && selection?.kind === "component" && selection.sourceId === source.sourceId && selection.id === field.group;
+        group = { group: field.group, name, selected, fields: [] };
         groups.push(group);
       }
       const active = recipe.values[field.name];
-      const value = edits[field.name] ?? active ?? programValue(field);
+      const value = edits[field.name] ?? active ?? recipeProgramValue(field);
       const error = invalidRecipeValue(field, value);
       const warning = warnings[field.name];
       group.fields.push({
@@ -576,25 +590,27 @@ export class Simulator {
     return [...groups.filter((g) => g.group !== 0), ...groups.filter((g) => g.group === 0)];
   }
 
-  private messages(sources: readonly SourceInfo[]): MessageEntry[] {
-    const component = (sourceId: string, id: number): Selection => ({ kind: "component", sourceId, id });
-    const messages = sources.flatMap((s) =>
-      activeMachineMessages(s.machine).map(
-        (m): MessageEntry => ({
-          text: `${machineMessagePlace(m, s.config, s.name)}: ${machineMessageText(m)}`,
-          severity: m.severity,
-          ...(m.componentId !== 0 ? { selection: component(s.sourceId, m.componentId) } : {}),
-        }),
-      ),
+  /** The shown source's active machine messages, with their id and time, then its component faults. */
+  private messages(source: SourceInfo): MessageEntry[] {
+    const component = (id: number): Selection => ({ kind: "component", sourceId: source.sourceId, id });
+    const messages = activeMachineMessages(source.machine).map(
+      (m): MessageEntry => ({
+        text: `${machineMessagePlace(m, source.config, source.name)}: ${machineMessageText(m)} · #${m.id} · ${dcTimeOfDay(m.time)}`,
+        severity: m.severity,
+        ...(m.componentId !== 0 ? { selection: component(m.componentId) } : {}),
+      }),
     );
-    const faults = this.faults.flatMap((f) => {
-      const config = sources.find((s) => s.sourceId === f.sourceId)?.config;
-      const selection = component(f.sourceId, f.componentId);
-      return [
-        ...f.messages.map((text): MessageEntry => ({ text: `${componentName(config, f.componentId)}: ${text}`, severity: "error", selection })),
-        ...f.limitViolations.map((text): MessageEntry => ({ text, severity: "warning", selection })),
-      ];
-    });
+    const faults = this.faults
+      .filter((f) => f.sourceId === source.sourceId)
+      .flatMap((f) => {
+        const selection = component(f.componentId);
+        return [
+          ...f.messages.map(
+            (text): MessageEntry => ({ text: `${componentName(source.config, f.componentId)}: ${text}`, severity: "error", selection }),
+          ),
+          ...f.limitViolations.map((text): MessageEntry => ({ text, severity: "warning", selection })),
+        ];
+      });
     return [...messages, ...faults];
   }
 }

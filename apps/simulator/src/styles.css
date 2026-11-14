@@ -19,6 +19,10 @@
   border-radius: 4px;
 }
 
+.simulator .recipe fieldset.selected {
+  border-color: var(--accent);
+}
+
 .simulator .recipe-field.changed > .property > span {
   font-weight: 600;
 }

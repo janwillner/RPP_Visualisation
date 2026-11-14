@@ -186,6 +186,11 @@ export const RecipeSchema = z
   .describe("The machine's recipe: the process values its application declares and runs with.");
 export type Recipe = z.infer<typeof RecipeSchema>;
 
+/** The value a field has while no recipe is active: its program value, a switch's as on / off. */
+export function recipeProgramValue(field: RecipeField): RecipeValue {
+  return field.type === "switch" ? field.programValue !== 0 : field.programValue;
+}
+
 /** Why `value` is not one of `field`'s (its type, its range, its choices); undefined when it is. */
 export function invalidRecipeValue(field: RecipeField, value: RecipeValue): string | undefined {
   const { name, type, min, max } = field;

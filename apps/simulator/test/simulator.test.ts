@@ -77,6 +77,9 @@ describe("Simulator: editing", () => {
     sim.edit(name, value);
     expect(sim.field(name)?.error).toMatch(error);
     expect(sim.getSnapshot().problems).toEqual([expect.objectContaining({ severity: "error", text: expect.stringMatching(error) })]);
+    // A field of a component selects it; a field of the whole machine selects nothing.
+    const group = sim.field(name)!.field.group;
+    expect(sim.getSnapshot().problems[0]!.selection).toEqual(group === 0 ? undefined : { kind: "component", sourceId: A, id: group });
     expect(sim.writePlan().blocked).toMatch(/Fix/);
   });
 
@@ -234,8 +237,10 @@ describe("Simulator: machine commands", () => {
 });
 
 describe("Simulator: machine messages and faults", () => {
-  it("lists the active machine messages, errors first, and the component faults; an entry selects its component", () => {
+  it("lists the shown source's active machine messages, errors first, and its component faults; an entry selects its component", () => {
     const { live, sim } = simulator();
+    live.plc(B, [infeed(1)], "Other PLC");
+    live.machine(B, { messages: [message({ id: 9, text: "Other line" })] });
     live.machine(A, {
       messages: [
         message({ id: 1, text: "Reject bin almost full", componentId: 1 }),
@@ -243,17 +248,31 @@ describe("Simulator: machine messages and faults", () => {
         message({ id: 3, text: "Gone", active: false }),
       ],
     });
-    sim.setFaults([{ sourceId: A, componentId: 10, messages: ["Gripper lost vacuum"], limitViolations: [] }]);
+    sim.setFaults([
+      { sourceId: A, componentId: 10, messages: ["Gripper lost vacuum"], limitViolations: [] },
+      { sourceId: B, componentId: 1, messages: ["Not this PLC"], limitViolations: [] },
+    ]);
 
     const entries = sim.getSnapshot().messages;
+    // A message with its id and the time it appeared.
     expect(entries.map((e) => [e.severity, e.text])).toEqual([
-      ["error", "Line PLC: Emergency stop"],
-      ["warning", "Infeed 1: Reject bin almost full"],
+      ["error", expect.stringMatching(/^Line PLC: Emergency stop · #2 · \S/)],
+      ["warning", expect.stringMatching(/^Infeed 1: Reject bin almost full · #1 · \S/)],
       ["error", "Delta 1: Gripper lost vacuum"],
     ]);
     sim.select(entries[1]!.selection);
     expect(sim.getSnapshot().selection).toEqual({ kind: "component", sourceId: A, id: 1 });
     expect(entries[0]!.selection).toBeUndefined();
+  });
+
+  it("marks the recipe group of the selected component", () => {
+    const { sim } = simulator();
+    sim.select({ kind: "component", sourceId: A, id: 10 });
+    expect(sim.getSnapshot().form.map((g) => [g.name, g.selected])).toEqual([
+      ["Infeed 1", false],
+      ["Delta 1", true],
+      ["Machine", false],
+    ]);
   });
 });
 
@@ -351,6 +370,16 @@ describe("Simulator: recipe file", () => {
     expect(sim.getSnapshot().notice).toMatch(/not a recipe file/i);
     sim.dismissNotice();
     expect(sim.getSnapshot().notice).toBeUndefined();
+  });
+
+  it.each([0, 2])("refuses a recipe file of layout version %s", (formatVersion) => {
+    const { sim } = simulator();
+    const file = JSON.parse(sim.save().text);
+    file.formatVersion = formatVersion;
+    file.sources[0].values["0"].Rate = 30;
+    sim.open(JSON.stringify(file));
+    expect(sim.getSnapshot().notice).toMatch(/version/);
+    expect(sim.field("Rate")?.value).toBe(60);
   });
 });
 
