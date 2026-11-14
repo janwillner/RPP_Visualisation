@@ -1,4 +1,4 @@
-import { CONFIG_PROTOCOL_VERSION, PARAMETER_SCHEMAS, type ParameterType } from "@rpp/protocol";
+import { CONFIG_PROTOCOL_VERSION, FIELD_TEXT_CONFIG_PROTOCOL_VERSION, PARAMETER_SCHEMAS, type ParameterType } from "@rpp/protocol";
 import { COMPONENTS } from "./components";
 import {
   CONFIG_MANIFEST_PATH,
@@ -63,11 +63,15 @@ export function recipeField(f: Partial<ST_ConfigRecipeField> & { sName: string; 
     fProgramValue: 0,
     nChoiceCount: choices.length,
     aChoices: [...choices, ...Array.from({ length: MAX_CHOICES - choices.length }, () => "")],
+    sLabel: "",
+    sDescription: "",
+    nVisibleField: 0,
+    nVisibleValue: 0,
     ...rest,
   };
 }
 
-/** The application's machine FB (`_FB_ConfigMachine`, config protocol 3): its recipe fields at `path`. */
+/** The application's machine FB (`_FB_ConfigMachine`, config protocol 3 or later): its recipe fields at `path`. */
 export interface EmulatedMachineFb {
   /** Symbol path of the machine FB's `vo_Config`. */
   path: string;
@@ -109,10 +113,16 @@ export class ConfigEmulation {
     };
     if (options.machine) {
       const { fields } = options.machine;
+      // Config protocol 3 declares no label, description or condition.
+      const declared = (f: ST_ConfigRecipeField): ST_ConfigRecipeField => {
+        if (manifest.nProtocolVersion >= FIELD_TEXT_CONFIG_PROTOCOL_VERSION) return f;
+        const { sLabel: _l, sDescription: _d, nVisibleField: _f, nVisibleValue: _v, ...older } = f;
+        return older;
+      };
       const values = (v: number[]) => [...v, ...Array.from({ length: MAX_RECIPE_FIELDS - v.length }, () => 0)];
       const machine: ST_ConfigMachine = {
         nFieldCount: fields.length,
-        aFields: [...fields, ...Array.from({ length: MAX_RECIPE_FIELDS - fields.length }, () => recipeField({ sName: "" }))],
+        aFields: [...fields, ...Array.from({ length: MAX_RECIPE_FIELDS - fields.length }, () => recipeField({ sName: "" }))].map(declared),
         stStaging: { nBaseVersion: 0, nStageId: 0, bReset: false, bStaged: false },
         aStaged: values([]),
         stStatus: { nActiveVersion: 0, nHandledStageId: 0, eResult: E_ConfigResult.NONE, sMessage: "" },

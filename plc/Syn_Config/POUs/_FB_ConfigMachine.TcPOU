@@ -15,6 +15,8 @@ listed in the config manifest with id 0. Typical cycle:<br>
   fb_Machine.m_DeclareField(vi_un_Field := 1, vi_str_Name := 'BeltSpeed', vi_udn_Group := fb_Infeed.m_Id(),<br>
     vi_e_Type := E_ConfigFieldType.NUMBER, vi_str_Unit := 'mm/s', vi_lr_Min := 0, vi_lr_Max := 500,<br>
     vi_lr_ProgramValue := 150);<br>
+  fb_Machine.m_SetText(vi_un_Field := 1, vi_str_Label := 'Belt speed', vi_str_Description := 'Speed of the infeed');<br>
+  fb_Machine.m_SetVisibleWhen(vi_un_Field := 3, vi_un_OnField := 2, vi_dn_Value := 0);  // field 3 only with 2 = 0<br>
   fb_Machine.m_Cycle(vio_Set := RecipeSet, vi_b_ApplyAllowed := b_Stopped);<br>
   lr_BeltSpeed := fb_Machine.m_Value(vi_un_Field := 1);<br>
   CASE fb_Machine.m_Command() OF E_ConfigCommand.START: ...<br>
@@ -30,6 +32,7 @@ it discovers the PLC: declare every field from the start and keep their order.<b
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 2.1.0 ¦ 2026-11-14 ¦ J.Willner ¦ Created: recipe fields and machine commands (protocol 3)<br>
+Syn_Config 2.2.0 ¦ 2026-11-14 ¦ J.Willner ¦ m_SetText, m_SetVisibleWhen (protocol 4, #49)<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_ConfigMachine EXTENDS _FB_ConfigComponent
 VAR_OUTPUT
@@ -283,6 +286,67 @@ vo_Config.aFields[vi_un_Field - 1].aChoices[vi_un_Value] := vi_str_Text;
 IF vi_un_Value >= vo_Config.aFields[vi_un_Field - 1].nChoiceCount THEN
 	vo_Config.aFields[vi_un_Field - 1].nChoiceCount := vi_un_Value + 1;
 END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetText" Id="{185c4701-e68b-4acd-ac34-4c6f580b4317}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Gives the declared field vi_un_Field the label the Simulator shows instead of its name put into words, and a<br>
+description of what it is for, shown in the field's tooltip (config protocol 4, #49). Free text in the operators'<br>
+language; the name stays the field's key. Idempotent: call it every cycle with m_DeclareField.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for a field not declared.<br>
+****************************************************************************************************)
+METHOD m_SetText : BOOL
+VAR_INPUT
+	vi_un_Field							: UINT;	// [-] the field, 1..its count
+	vi_str_Label						: STRING(40);	// e.g. 'Belt speed', '' = the name put into words
+	vi_str_Description					: STRING(160);	// what the field is for, '' = none
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetText := vi_un_Field > 0 AND vi_un_Field <= vo_Config.nFieldCount;
+IF NOT m_SetText THEN
+	RETURN;
+END_IF
+vo_Config.aFields[vi_un_Field - 1].sLabel := vi_str_Label;
+vo_Config.aFields[vi_un_Field - 1].sDescription := vi_str_Description;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetVisibleWhen" Id="{8218e0f3-8935-4089-9758-e130a720f3d8}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Shows the declared field vi_un_Field in the Simulator only while field vi_un_OnField has the value vi_dn_Value<br>
+(config protocol 4, #49), e.g. a lane count only while the pattern is Lanes. vi_un_OnField must be a SWITCH (0 / 1),<br>
+CHOICE or INTEGER field and may belong to another group; a field depending on a hidden one is hidden too. A hidden<br>
+field keeps its value and is written with the recipe. vi_un_OnField = 0 shows the field always. The gateway reports<br>
+a condition on a NUMBER field, on the field itself, on a field not declared, on a value that field can never have<br>
+or in a ring as a discovery error and shows that field always. Idempotent: call it every cycle with m_DeclareField.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for a field not declared.<br>
+****************************************************************************************************)
+METHOD m_SetVisibleWhen : BOOL
+VAR_INPUT
+	vi_un_Field							: UINT;	// [-] the field shown on condition, 1..its count
+	vi_un_OnField						: UINT;	// [-] the field the condition reads, 0 = always shown
+	vi_dn_Value							: DINT;	// [-] the value vi_un_OnField must have
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetVisibleWhen := vi_un_Field > 0 AND vi_un_Field <= vo_Config.nFieldCount;
+IF NOT m_SetVisibleWhen THEN
+	RETURN;
+END_IF
+vo_Config.aFields[vi_un_Field - 1].nVisibleField := vi_un_OnField;
+vo_Config.aFields[vi_un_Field - 1].nVisibleValue := vi_dn_Value;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_Switch" Id="{c45069ed-1c24-40a8-ab81-b39cee26234f}">

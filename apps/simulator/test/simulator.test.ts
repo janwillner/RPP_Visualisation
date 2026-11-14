@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { RECIPE_FILE_FORMAT, RecipeFileSchema, type RunState } from "@rpp/protocol";
-import { A, B, FakeLive, RECIPE, infeed, message, simulator } from "./fake-live";
+import { RECIPE_FILE_FORMAT, RecipeFileSchema, type RecipeField, type RunState } from "@rpp/protocol";
+import { A, B, FakeLive, FIELDS, RECIPE, infeed, message, simulator } from "./fake-live";
 import { RECIPE_FILE_EXTENSION, Simulator } from "../src/simulator";
 
 describe("Simulator: source and recipe form", () => {
@@ -98,8 +98,8 @@ describe("Simulator: writing the recipe", () => {
     sim.edit("Feed", false);
     expect(sim.writePlan()).toEqual({
       changes: [
-        { name: "Rate", label: "Rate", from: "60 1/min", to: "90 1/min" },
-        { name: "Feed", label: "Feed", from: "on", to: "off" },
+        { name: "Rate", label: "Rate", from: "60 1/min", to: "90 1/min", hidden: false },
+        { name: "Feed", label: "Feed", from: "on", to: "off", hidden: false },
       ],
     });
   });
@@ -169,6 +169,90 @@ describe("Simulator: writing the recipe", () => {
     expect(live.commands).toEqual([expect.objectContaining({ kind: "resetRecipe", sourceId: A, baseVersion: 3 })]);
     live.recipe(A, { activeVersion: 0, handledStageId: 101, result: "applied" });
     expect(sim.getSnapshot().write).toEqual({ kind: "reset", state: "applied", stageId: 101 });
+  });
+});
+
+describe("Simulator: fields shown by their conditions, with the application's texts (#49)", () => {
+  /**
+   * Picks per cycle (Delta 1) applies only while the type mix (machine) is Boxes, Delta 1's robot speed only while
+   * Picks per cycle is 2, the rate only while Feed is on. Active: every type, 2 picks, feed on.
+   */
+  function conditional() {
+    const s = simulator();
+    const conditions: Record<string, Partial<RecipeField>> = {
+      PicksPerCycle: { visibleWhen: { field: "TypeMix", value: 1 } },
+      RobotSpeed: { visibleWhen: { field: "PicksPerCycle", value: 2 } },
+      Rate: { visibleWhen: { field: "Feed", value: 1 } },
+    };
+    s.live.recipe(A, { fields: FIELDS.map((f) => ({ ...f, ...conditions[f.name] })) });
+    return s;
+  }
+  const visible = (sim: Simulator) => sim.getSnapshot().form.flatMap((g) => g.fields.filter((f) => f.visible).map((f) => f.field.name));
+
+  it("shows a field only while its condition holds in the form; a field depending on a hidden one is hidden too", () => {
+    const { sim } = conditional();
+    // Picks per cycle waits for Boxes; Delta 1's robot speed for Picks per cycle, hidden although it is 2.
+    expect(visible(sim)).toEqual(["BeltSpeed", "Rate", "TypeMix", "Feed"]);
+
+    sim.edit("TypeMix", 1);
+    expect(visible(sim)).toEqual(["BeltSpeed", "RobotSpeed", "PicksPerCycle", "Rate", "TypeMix", "Feed"]);
+    sim.edit("Feed", false);
+    expect(visible(sim)).not.toContain("Rate");
+  });
+
+  it("judges a condition by the active value while the field is not edited", () => {
+    const { live, sim } = conditional();
+    live.recipe(A, { fields: sim.getSnapshot().recipe!.fields, values: { ...RECIPE.values, TypeMix: 1, PicksPerCycle: 1 } });
+    expect(visible(sim)).toEqual(["BeltSpeed", "PicksPerCycle", "Rate", "TypeMix", "Feed"]);
+  });
+
+  it("keeps, plans, writes and saves an edit of a field that became hidden, and still lists its problems", async () => {
+    const { live, sim } = conditional();
+    sim.edit("TypeMix", 1);
+    sim.edit("PicksPerCycle", 1);
+    sim.edit("TypeMix", 0);
+    expect(visible(sim)).not.toContain("PicksPerCycle");
+
+    expect(sim.writePlan().changes).toEqual([{ name: "PicksPerCycle", label: "Picks per cycle", from: "2", to: "1", hidden: true }]);
+    expect(JSON.parse(sim.save().text).sources[0].values["10"].PicksPerCycle).toBe(1);
+    await sim.write();
+    expect(live.commands).toEqual([expect.objectContaining({ kind: "writeRecipe", values: { PicksPerCycle: 1 } })]);
+
+    sim.edit("PicksPerCycle", 5);
+    expect(sim.getSnapshot().problems).toEqual([expect.objectContaining({ severity: "error", field: "PicksPerCycle" })]);
+  });
+
+  it("opens a file with the value of a field hidden now as an edit of that field", () => {
+    const { sim } = conditional();
+    const file = JSON.parse(sim.save().text);
+    file.sources[0].values["10"].PicksPerCycle = 1;
+    sim.open(JSON.stringify(file));
+    expect(visible(sim)).not.toContain("PicksPerCycle");
+    expect(sim.field("PicksPerCycle")).toMatchObject({ value: 1, changed: true });
+    expect(sim.writePlan().changes).toEqual([expect.objectContaining({ name: "PicksPerCycle", hidden: true })]);
+  });
+
+  it("shows a group only while one of its fields is visible", () => {
+    const { sim } = conditional();
+    // Delta 1's fields both wait for Boxes.
+    expect(sim.getSnapshot().form.map((g) => [g.name, g.visible])).toEqual([
+      ["Infeed 1", true],
+      ["Delta 1", false],
+      ["Machine", true],
+    ]);
+    sim.edit("TypeMix", 1);
+    expect(sim.getSnapshot().form.find((g) => g.name === "Delta 1")?.visible).toBe(true);
+  });
+
+  it("labels a field with the application's label, else its name in words, and keeps its description", () => {
+    const { live, sim } = simulator();
+    live.recipe(A, {
+      fields: FIELDS.map((f) => (f.name === "PicksPerCycle" ? { ...f, label: "Products per pick", description: "How many products one pick takes" } : f)),
+    });
+    expect(sim.field("PicksPerCycle")).toMatchObject({ label: "Products per pick", field: { description: "How many products one pick takes" } });
+    expect(sim.field("BeltSpeed")?.label).toBe("Belt speed");
+    sim.edit("PicksPerCycle", 1);
+    expect(sim.writePlan().changes[0]?.label).toBe("Products per pick");
   });
 });
 

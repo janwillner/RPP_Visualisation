@@ -10,6 +10,9 @@ import type { SymbolWrite } from "../src/symbol-access";
 
 const MACHINE_FB = "MAIN.fbMachineParam.vo_Config";
 
+/** What a field without label, description and condition carries. */
+const PLAIN = { label: "", description: "", visibleWhen: null };
+
 /** A command as a test sends it: source and request id are filled in. */
 type Command = ClientMessage extends infer C ? (C extends ClientMessage ? Omit<C, "requestId" | "sourceId"> : never) : never;
 
@@ -57,7 +60,7 @@ function setup(options: { allowWrite?: boolean; simulation?: boolean | undefined
   return { plc, emulation, gateway, messages, parameters, writes, cycle, send };
 }
 
-describe("recipe fields and machine commands (Syn_Config config protocol 3, ADR 0022)", () => {
+describe("recipe fields and machine commands (Syn_Config config protocol 3 and 4, ADR 0022)", () => {
   it("publishes the declared fields, the recipe's status and the program values while no recipe is active", async () => {
     const { parameters, cycle } = setup();
     await cycle();
@@ -65,10 +68,10 @@ describe("recipe fields and machine commands (Syn_Config config protocol 3, ADR 
     const message = parameters();
     expect(message?.kind === "parameters" && message.recipe).toEqual({
       fields: [
-        { name: "BeltSpeed", group: 1, type: "number", unit: "mm/s", min: 0, max: 500, programValue: 150, choices: [] },
-        { name: "PicksPerCycle", group: 0, type: "integer", unit: "", min: 1, max: 4, programValue: 1, choices: [] },
-        { name: "Feed", group: 0, type: "switch", unit: "", min: 0, max: 0, programValue: 1, choices: [] },
-        { name: "Pattern", group: 0, type: "choice", unit: "", min: 0, max: 0, programValue: 0, choices: ["Lanes", "Random", "Gaps"] },
+        { name: "BeltSpeed", group: 1, type: "number", unit: "mm/s", min: 0, max: 500, programValue: 150, choices: [], ...PLAIN },
+        { name: "PicksPerCycle", group: 0, type: "integer", unit: "", min: 1, max: 4, programValue: 1, choices: [], ...PLAIN },
+        { name: "Feed", group: 0, type: "switch", unit: "", min: 0, max: 0, programValue: 1, choices: [], ...PLAIN },
+        { name: "Pattern", group: 0, type: "choice", unit: "", min: 0, max: 0, programValue: 0, choices: ["Lanes", "Random", "Gaps"], ...PLAIN },
       ],
       activeVersion: 0,
       handledStageId: 0,
@@ -210,6 +213,56 @@ describe("recipe fields and machine commands (Syn_Config config protocol 3, ADR 
     expect(config?.kind === "config" && config.errors.map((e) => e.message).join()).toMatch(error);
     expect(parameters()?.kind === "parameters" && "recipe" in parameters()!).toBe(false);
     expect(await send({ kind: "machineCommand", command: "start" })).toMatchObject({ ok: false, error: expect.stringMatching(/no machine FB/) });
+  });
+
+  it("publishes a field's label, description and visibility condition (config protocol 4), the condition by field name", async () => {
+    const { plc, parameters, cycle } = setup();
+    const fields = plc.get<ST_ConfigMachine>(MACHINE_FB).aFields;
+    // Picks only while the pattern (field 4) is Lanes; Feed only while Picks (field 2) is 3.
+    Object.assign(fields[1]!, { sLabel: "Picks per cycle", sDescription: "How many products a pick takes", nVisibleField: 4, nVisibleValue: 0 });
+    Object.assign(fields[2]!, { nVisibleField: 2, nVisibleValue: 3 });
+    await cycle();
+
+    const recipe = parameters()?.kind === "parameters" ? parameters()!.recipe : undefined;
+    expect(recipe?.fields.map((f) => [f.name, f.label, f.description, f.visibleWhen])).toEqual([
+      ["BeltSpeed", "", "", null],
+      ["PicksPerCycle", "Picks per cycle", "How many products a pick takes", { field: "Pattern", value: 0 }],
+      ["Feed", "", "", { field: "PicksPerCycle", value: 3 }],
+      ["Pattern", "", "", null],
+    ]);
+  });
+
+  it.each([
+    ["a number field", 1, 0, /PicksPerCycle.*BeltSpeed is a number field/],
+    ["itself", 2, 1, /PicksPerCycle.*depends on itself/],
+    ["a field not declared", 9, 0, /PicksPerCycle.*field 9, which is not declared/],
+    ["a field depending on it", 3, 1, /depend on each other/],
+    ["a value its field can never have", 4, 3, /PicksPerCycle.*Pattern = 3, which Pattern can never have/],
+  ])("reports a condition on %s as a discovery error and publishes the field without it", async (_, on, value, error) => {
+    const { plc, parameters, messages, cycle } = setup();
+    const fields = plc.get<ST_ConfigMachine>(MACHINE_FB).aFields;
+    Object.assign(fields[1]!, { nVisibleField: on, nVisibleValue: value });
+    // For the cycle: Feed (3) depends on Picks (2), which depends on Feed.
+    Object.assign(fields[2]!, { nVisibleField: 2, nVisibleValue: 1 });
+    await cycle();
+
+    const config = messages.find((m) => m.kind === "config");
+    expect(config?.kind === "config" && config.errors.map((e) => e.message).join()).toMatch(error);
+    const recipe = parameters()?.kind === "parameters" ? parameters()!.recipe : undefined;
+    expect(recipe?.fields[1]!.visibleWhen).toBeNull();
+  });
+
+  it("reads a PLC of config protocol 3 as before: fields without label, description and condition", async () => {
+    const { parameters, cycle } = setup({ configProtocol: 3 });
+    await cycle();
+
+    const recipe = parameters()?.kind === "parameters" ? parameters()!.recipe : undefined;
+    expect(recipe?.fields.map((f) => [f.name, f.label, f.description, f.visibleWhen])).toEqual([
+      ["BeltSpeed", "", "", null],
+      ["PicksPerCycle", "", "", null],
+      ["Feed", "", "", null],
+      ["Pattern", "", "", null],
+    ]);
   });
 
   it("reads and writes a PLC of config protocol 2 as before: parameter sets, no recipe", async () => {

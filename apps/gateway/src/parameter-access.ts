@@ -46,7 +46,7 @@ export interface ParameterDiscovery {
   errors: DiscoveryError[];
   /** Config protocol of the PLC's Syn_Config; 0 without one. */
   protocolVersion: number;
-  /** The application's machine FB with its recipe (config protocol 3, ADR 0022), if it has one. */
+  /** The application's machine FB with its recipe (config protocol 3 or later, ADR 0022), if it has one. */
   machine: MachineFbEntry | undefined;
 }
 
@@ -90,7 +90,7 @@ export async function discoverParameters(
   const errors: DiscoveryError[] = [];
   let machine: MachineFbEntry | undefined;
   for (const e of manifest.aEntries.slice(0, manifest.nCount)) {
-    // The machine FB: id 0, type NONE (config protocol 3).
+    // The machine FB: id 0, type NONE (config protocol 3 or later).
     if (e.nId === 0 && enumValue(e.eType) === E_VisuComponentType.NONE) {
       const actual = await plc.typeOf(e.sPath);
       if (actual !== PLC_CONFIG_MACHINE_TYPE && !actual?.endsWith(`.${PLC_CONFIG_MACHINE_TYPE}`)) {
@@ -98,7 +98,9 @@ export async function discoverParameters(
         continue;
       }
       try {
-        machine = machineFbEntry(e.sPath, await plc.read(e.sPath));
+        const read = machineFbEntry(e.sPath, await plc.read(e.sPath), manifest.nProtocolVersion);
+        machine = read.entry;
+        errors.push(...read.errors.map((message) => ({ path: e.sPath, message })));
       } catch (error) {
         // A layout the gateway does not know leaves the source without a recipe; connection errors propagate.
         if (!(error instanceof TypeError) && !(error instanceof SymbolNotFoundError)) throw error;

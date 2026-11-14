@@ -44,3 +44,26 @@ So, in the library Syn_Config (config protocol 3, library 2.1.0):
   persistent recipe keeps values by index).
 - The demo application declares its recipe and handles the commands with its own product generator and sequence
   control (#46); the Simulator page binds to `recipe` and `machineCommand` (#45).
+
+## Amendment (#49)
+
+Many recipe fields matter only for one variant of an application (a product pattern's lane count only for "Lanes"),
+and their names say little about what they are for; the Simulator showed every field all the time, labelled by its
+name turned into words. The PLC keeps deciding what is settable, and now also says when a field applies and what it
+is called (config protocol 4, Syn_Config 2.2.0):
+
+- **A visibility condition per field.** `m_SetVisibleWhen(field, onField, value)`: the field is shown only while
+  `onField` (a SWITCH, CHOICE or INTEGER field, in any group) has that value in the Simulator's form, i.e. its edit,
+  else its active value, else its program value. A field whose condition field is hidden is hidden too. A hidden field keeps its edit, which is
+  written and named in the write plan, and its value in a recipe file; it is hidden, not disabled. A condition on a
+  NUMBER field, on itself, on an unknown field, on a value its field can never have or in a ring is a discovery error,
+  and the field stays visible.
+- **A label and a description per field** (`m_SetText`): free text in the application's language, shown instead of
+  the worded name and in the field's tooltip. The name stays the field's key for writing and for recipe files.
+- **Unchanged:** `m_DeclareField`, the persistent recipe set, static declarations read at discovery, 64 fields and 8
+  choices. A gateway still reads config protocol 3, whose fields have no condition or texts.
+
+Considered and left out: declarations changing at run time (they would break the persistent recipe kept by index and
+recipe files), ready-made fields per component type in the library (the fixed recipe this ADR rejected), and declared
+parameter sets for the configurator (they hold geometry the 3D view must understand, so they stay fixed per component
+type).

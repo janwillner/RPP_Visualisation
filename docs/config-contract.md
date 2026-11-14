@@ -1,4 +1,4 @@
-# Parameter set contract (library `Syn_Config`, config protocol version 3)
+# Parameter set contract (library `Syn_Config`, config protocol version 4)
 
 The library `Syn_Config` (ADR 0017) holds the parameter sets the configurator writes and the application takes over:
 the part of a component's configuration the machine runs with, never its hardware. It is the PLC project
@@ -25,7 +25,7 @@ The machine FB (`_FB_ConfigMachine`, config protocol 3, ADR 0022) is listed with
 
 | Member | Who | Content |
 | --- | --- | --- |
-| `nFieldCount`, `aFields[0..63] : ST_ConfigRecipeField` | read at discovery | the declared recipe fields: `sName`, `nGroup` (component id, 0 = machine), `eType` (`E_ConfigFieldType`: NUMBER, INTEGER, SWITCH, CHOICE), `sUnit`, `fMin`, `fMax`, `fProgramValue`, `nChoiceCount`, `aChoices[0..7]` |
+| `nFieldCount`, `aFields[0..63] : ST_ConfigRecipeField` | read at discovery | the declared recipe fields: `sName`, `nGroup` (component id, 0 = machine), `eType` (`E_ConfigFieldType`: NUMBER, INTEGER, SWITCH, CHOICE), `sUnit`, `fMin`, `fMax`, `fProgramValue`, `nChoiceCount`, `aChoices[0..7]`; from config protocol 4 also `sLabel` (STRING(40), '' = the name put into words), `sDescription` (STRING(160)), `nVisibleField` (the field it applies only with, from 1; 0 = always) and `nVisibleValue` (DINT, the value that field must have) |
 | `stStaging : ST_ConfigStaging`, `aStaged[0..63] : LREAL` | written by the gateway | as a parameter set's: the proposed recipe by field index |
 | `stStatus : ST_ConfigStatus`, `aActive[0..63] : LREAL` | read every cycle | the recipe's status and effective values by field index |
 | `stCommand : ST_ConfigCommand` | written by the gateway | `nCommandId`, `eCommand` (`E_ConfigCommand`: START, STOP, RESET), `bRequested` last |
@@ -62,6 +62,7 @@ parameter FB uses (`m_InvalidZones`, `m_InvalidModules`, `m_InvalidFingers`, `m_
 
 | Library | Config protocol | Change |
 | --- | --- | --- |
+| 2.2.0 | 4 | A recipe field's label, description and visibility condition (`sLabel`, `sDescription`, `nVisibleField`, `nVisibleValue`; `m_SetText`, `m_SetVisibleWhen`; #49). `m_DeclareField` and the persistent `ST_ConfigRecipeSet` are unchanged; the gateway still reads config protocol 3, its fields without them |
 | 2.1.0 | 3 | The machine FB `_FB_ConfigMachine`: recipe fields the application declares, their staging, machine commands (ADR 0022). No change to the parameter FBs; the gateway still writes parameter sets to a PLC of config protocol 2 |
 | 2.0.1 | 2 | References `SynVisu` through a placeholder (default: the newest installed) instead of a fixed version, so an application uses one SynVisu for both libraries; redirect the placeholder in the application's library manager when it pins SynVisu. No change to the structures |
 | 2.0.0 | 2 | Gripper fingers (`nFingerCount`, `aFingers` with their `stOffset`) in the robots' sets; references Syn_Visu 9.5.0. The robots' structures changed: gateway and library are updated together |
@@ -149,6 +150,17 @@ END_CASE
 - Fields are numbered from 1 and listed up to the highest one declared. The gateway reads the declarations when it
   discovers the PLC: declare every field from the start, and keep their order (the persistent recipe keeps values by
   index; add new fields at the end).
+- An active recipe saved before a field was added gives that field 0, not its program value: choose a field's values
+  so that 0 keeps the machine as it was (the demo's `Pattern` has Scattered, its old pattern, as 0).
+- `m_SetText(vi_un_Field, vi_str_Label, vi_str_Description)` (config protocol 4) gives a field the label the
+  Simulator shows instead of its name put into words, and a description for its tooltip: free text in the operators'
+  language; the name stays the field's key for writing and for recipe files.
+- `m_SetVisibleWhen(vi_un_Field, vi_un_OnField, vi_dn_Value)` (config protocol 4) shows a field only while field
+  `vi_un_OnField` (a SWITCH as 0 / 1, a CHOICE or an INTEGER field, in any group) has that value in the Simulator's
+  form, e.g. a lane count only for the pattern Lanes; a field depending on a hidden one is hidden too, and
+  `vi_un_OnField` 0 shows it always. A hidden field keeps its value and is written with the recipe. The gateway reports
+  a condition on a NUMBER field, on the field itself, on a field not declared, on a value that field can never have or in a ring of fields as a discovery
+  error and shows that field always.
 - `m_Cycle` takes a staged recipe over only while `vi_b_ApplyAllowed`, on the active version it is based on, and only
   when every value fits its field (else REJECTED with the field's name); a reset returns to the program values.
 - A machine command is a request: `m_Command` gives the waiting one, and the application alone decides with
@@ -156,9 +168,11 @@ END_CASE
 - Report simulation mode in the machine entry (Syn_Visu `_FB_VisuMachine.m_SetSimulation`) only where no real machine
   can move: without it the gateway writes no recipe and sends no command.
 
-The demo wires it in `P_VisuDemoMachine`, called before the applications: its machine FB declares 15 fields (Infeed 1's
+The demo wires it in `P_VisuDemoMachine`, called before the applications: its machine FB declares 16 fields (Infeed 1's
 belt speed and acceleration, Delta 1's speed and acceleration in % and picks per cycle, and the product pattern: rate,
-lanes and their pitch, type mix, X / Y / rotation scatter, gap share, seed, feed on / off), copies the effective values
+lanes and their pitch, type mix, X / Y / rotation scatter, gap share, seed, feed on / off and, as field 16, the
+pattern Scattered or Lanes), each with a description and some with a label, the lane fields shown only for Lanes and
+the scatter fields only for Scattered (`m_SetText`, `m_SetVisibleWhen`), copies the effective values
 to `DEMO_GlobalVar.DEMO_Recipe` for `P_VisuDemoDelta`, answers Start (while stopped), Stop (while starting or running)
 and Reset (while stopped), ramps Infeed 1 between 0 and the recipe's speed (STARTING, RUNNING, STOPPING, STOPPED) and
 reports the run state, simulation mode and two machine messages to Syn_Visu. `P_VisuDemoDelta`'s product generator

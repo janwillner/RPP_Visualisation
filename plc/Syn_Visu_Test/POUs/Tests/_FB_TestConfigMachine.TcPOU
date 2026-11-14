@@ -8,11 +8,13 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 TcUnit test suite of _FB_ConfigMachine: registration with id 0, recipe fields and their program values, a staged<br>
-recipe taken over or rejected, a reset, and machine commands answered by the application. The tests write<br>
+recipe taken over or rejected, a reset, machine commands answered by the application, and the fields' labels,<br>
+descriptions and visibility conditions. The tests write<br>
 vo_Config through its address, as the gateway writes over ADS.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 2.1.0 ¦ 2026-11-14 ¦ J.Willner ¦ Unit tests of the machine FB (config protocol 3)<br>
+Syn_Config 2.2.0 ¦ 2026-11-14 ¦ J.Willner ¦ Labels, descriptions and visibility conditions (protocol 4, #49)<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_TestConfigMachine EXTENDS TcUnit.FB_TestSuite
 VAR
@@ -22,7 +24,8 @@ END_VAR]]></Declaration>
 m_ProgramValues();
 m_RecipeTakenOverAndReset();
 m_RecipeRejected();
-m_CommandAnswered();]]></ST>
+m_CommandAnswered();
+m_TextAndCondition();]]></ST>
     </Implementation>
     <Method Name="m_CommandAnswered" Id="{01f0e5c8-6042-4f8a-8c6c-dc16b13b1f99}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
@@ -252,7 +255,7 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 The machine FB is listed in the config manifest with id 0 and type NONE; another id is refused, and the manifest<br>
-reports config protocol 3.<br>
+reports config protocol 4.<br>
 ****************************************************************************************************)
 METHOD PRIVATE m_RegisterWithIdZero
 VAR_INST
@@ -273,7 +276,53 @@ AssertEquals_UINT(Expected := 1, Actual := TempManifest.nCount, Message := 'one 
 AssertEquals_UDINT(Expected := 0, Actual := TempManifest.aEntries[0].nId, Message := 'its id 0');
 AssertTrue(Condition := TempManifest.aEntries[0].eType = SynVisu.E_VisuComponentType.NONE, Message := 'its type NONE');
 AssertFalse(Condition := fb_TempOther.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 5), Message := 'another id refused');
-AssertEquals_UINT(Expected := 3, Actual := TempManifest.nProtocolVersion, Message := 'config protocol 3');
+AssertEquals_UINT(Expected := 4, Actual := TempManifest.nProtocolVersion, Message := 'config protocol 4');
+
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_TextAndCondition" Id="{954a85ba-15f8-427c-ac51-bdd33ac08ea1}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A declared field gets its label, description and visibility condition (config protocol 4, #49); a field not<br>
+declared and field 0 are refused, and a field declared again keeps them.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_TextAndCondition
+VAR_INST
+	fb_TempMachine						: SynConfig._FB_ConfigMachine;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigMachineTextAndCondition');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+m_DeclareFields(vio_Machine := fb_TempMachine);
+AssertTrue(Condition := fb_TempMachine.m_SetText(vi_un_Field := 2, vi_str_Label := 'Picks per cycle',
+	vi_str_Description := 'How many products one pick takes'), Message := 'text of field 2');
+AssertTrue(Condition := fb_TempMachine.m_SetVisibleWhen(vi_un_Field := 2, vi_un_OnField := 4, vi_dn_Value := 0),
+	Message := 'condition of field 2');
+AssertEquals_STRING(Expected := 'Picks per cycle', Actual := fb_TempMachine.vo_Config.aFields[1].sLabel, Message := 'its label');
+AssertEquals_STRING(Expected := 'How many products one pick takes', Actual := fb_TempMachine.vo_Config.aFields[1].sDescription,
+	Message := 'its description');
+AssertEquals_UINT(Expected := 4, Actual := fb_TempMachine.vo_Config.aFields[1].nVisibleField, Message := 'shown with field 4');
+AssertEquals_DINT(Expected := 0, Actual := fb_TempMachine.vo_Config.aFields[1].nVisibleValue, Message := 'at value 0');
+AssertEquals_UINT(Expected := 0, Actual := fb_TempMachine.vo_Config.aFields[0].nVisibleField, Message := 'field 1 always shown');
+
+AssertFalse(Condition := fb_TempMachine.m_SetText(vi_un_Field := 9, vi_str_Label := 'x', vi_str_Description := ''),
+	Message := 'text of an undeclared field refused');
+AssertFalse(Condition := fb_TempMachine.m_SetVisibleWhen(vi_un_Field := 0, vi_un_OnField := 4, vi_dn_Value := 0),
+	Message := 'condition of field 0 refused');
+
+m_DeclareFields(vio_Machine := fb_TempMachine);
+AssertEquals_STRING(Expected := 'Picks per cycle', Actual := fb_TempMachine.vo_Config.aFields[1].sLabel, Message := 'kept when declared again');
+AssertEquals_UINT(Expected := 4, Actual := fb_TempMachine.vo_Config.aFields[1].nVisibleField, Message := 'condition kept');
 
 TEST_FINISHED();]]></ST>
       </Implementation>

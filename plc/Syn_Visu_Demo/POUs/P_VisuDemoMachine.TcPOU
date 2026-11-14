@@ -46,6 +46,10 @@ VAR CONSTANT
 	un_F_GAP_SHARE						: UINT := 13;
 	un_F_SEED							: UINT := 14;
 	un_F_FEED							: UINT := 15;
+	un_F_PATTERN						: UINT := 16;
+	(* Pattern: Scattered is 0, so a recipe saved before the field existed (its value 0) keeps the demo's old pattern. *)
+	dn_PATTERN_SCATTERED				: DINT := 0;	// [-] Pattern: one lane, scattered
+	dn_PATTERN_LANES					: DINT := 1;	// [-] Pattern: in lanes, unscattered
 	udn_INFEED1_ID						: UDINT := 1;	// [-] manifest id of Infeed 1 (P_VisuDemoDelta)
 	udn_DELTA1_ID						: UDINT := 10;	// [-] manifest id of Delta 1 (P_VisuDemoDelta)
 	udn_REJECT_UNIT_ID					: UDINT := 60;	// [-] manifest id of the reject unit (P_VisuDemoDelta)
@@ -76,6 +80,7 @@ DEMO_GlobalVar.DEMO_Recipe.lr_ScatterRz := fb_MachineParam.m_Value(vi_un_Field :
 DEMO_GlobalVar.DEMO_Recipe.lr_GapShare := fb_MachineParam.m_Value(vi_un_Field := un_F_GAP_SHARE);
 DEMO_GlobalVar.DEMO_Recipe.dn_Seed := fb_MachineParam.m_Integer(vi_un_Field := un_F_SEED);
 DEMO_GlobalVar.DEMO_Recipe.b_Feed := fb_MachineParam.m_Switch(vi_un_Field := un_F_FEED);
+DEMO_GlobalVar.DEMO_Recipe.b_PatternLanes := fb_MachineParam.m_Integer(vi_un_Field := un_F_PATTERN) = dn_PATTERN_LANES;
 
 
 (****************************************************************************************************)
@@ -144,9 +149,11 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 The demo's recipe fields: Infeed 1's belt, Delta 1 and the product pattern of the generator before Vision 1 (for<br>
-the whole machine). The program values give the pattern the demo had before its recipe: one lane, 60 products a<br>
-minute at 150 mm/s, every product type, scattered across the belt and turned. Rate counts the generator's places a<br>
-minute at the recipe's belt speed: the pattern keeps its spacing while the belt ramps.<br>
+the whole machine), each with a description and some with a label of their own (Syn_Config 2.2.0). The pattern is<br>
+Lanes or Scattered: the lane fields apply only to Lanes, the scatter fields only to Scattered, so the Simulator<br>
+shows only the fields of the chosen one. The program values give the pattern the demo had before its recipe: one<br>
+lane, 60 products a minute at 150 mm/s, every product type, scattered across the belt and turned. Rate counts the<br>
+generator's places a minute at the recipe's belt speed: the pattern keeps its spacing while the belt ramps.<br>
 ****************************************************************************************************)
 METHOD PRIVATE m_DeclareFields]]></Declaration>
       <Implementation>
@@ -197,7 +204,59 @@ fb_MachineParam.m_DeclareField(vi_un_Field := un_F_SEED, vi_str_Name := 'Seed', 
 	vi_lr_ProgramValue := 12345);
 fb_MachineParam.m_DeclareField(vi_un_Field := un_F_FEED, vi_str_Name := 'Feed', vi_udn_Group := 0,
 	vi_e_Type := SynConfig.E_ConfigFieldType.SWITCH, vi_str_Unit := '', vi_lr_Min := 0, vi_lr_Max := 0,
-	vi_lr_ProgramValue := 1);]]></ST>
+	vi_lr_ProgramValue := 1);
+fb_MachineParam.m_DeclareField(vi_un_Field := un_F_PATTERN, vi_str_Name := 'Pattern', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.CHOICE, vi_str_Unit := '', vi_lr_Min := 0, vi_lr_Max := 0,
+	vi_lr_ProgramValue := DINT_TO_LREAL(dn_PATTERN_SCATTERED));
+fb_MachineParam.m_SetChoice(vi_un_Field := un_F_PATTERN, vi_un_Value := DINT_TO_UINT(dn_PATTERN_SCATTERED), vi_str_Text := 'Scattered');
+fb_MachineParam.m_SetChoice(vi_un_Field := un_F_PATTERN, vi_un_Value := DINT_TO_UINT(dn_PATTERN_LANES), vi_str_Text := 'Lanes');
+
+
+(****************************************************************************************************)
+(* TEXTS: label ('' = the name put into words) and description                                     *)
+(****************************************************************************************************)
+fb_MachineParam.m_SetText(vi_un_Field := un_F_BELT_SPEED, vi_str_Label := '',
+	vi_str_Description := 'Speed Infeed 1 ramps up to while the machine runs');
+fb_MachineParam.m_SetText(vi_un_Field := un_F_BELT_ACCEL, vi_str_Label := '',
+	vi_str_Description := 'How fast Infeed 1 speeds up after Start and slows down after Stop');
+fb_MachineParam.m_SetText(vi_un_Field := un_F_ROBOT_SPEED, vi_str_Label := '',
+	vi_str_Description := 'Delta 1 moves at this share of its maximum TCP speed');
+fb_MachineParam.m_SetText(vi_un_Field := un_F_ROBOT_ACCEL, vi_str_Label := '',
+	vi_str_Description := 'Delta 1 accelerates at this share of its maximum TCP acceleration');
+fb_MachineParam.m_SetText(vi_un_Field := un_F_PICKS, vi_str_Label := '',
+	vi_str_Description := 'Products Delta 1 picks before it places them');
+fb_MachineParam.m_SetText(vi_un_Field := un_F_RATE, vi_str_Label := '',
+	vi_str_Description := 'Places the generator fills a minute at the belt speed of the recipe');
+fb_MachineParam.m_SetText(vi_un_Field := un_F_PATTERN, vi_str_Label := '',
+	vi_str_Description := 'Scattered: one lane, scattered along, across and turned. Lanes: in lanes, unscattered');
+fb_MachineParam.m_SetText(vi_un_Field := un_F_LANES, vi_str_Label := '',
+	vi_str_Description := 'Lanes across the belt; each product goes into one at random');
+fb_MachineParam.m_SetText(vi_un_Field := un_F_LANE_PITCH, vi_str_Label := '',
+	vi_str_Description := 'Distance between the lanes, centred on the belt');
+fb_MachineParam.m_SetText(vi_un_Field := un_F_TYPE_MIX, vi_str_Label := '',
+	vi_str_Description := 'Which product types the generator feeds');
+fb_MachineParam.m_SetText(vi_un_Field := un_F_SCATTER_X, vi_str_Label := 'Scatter along',
+	vi_str_Description := 'A product lies at most this far before or behind its place');
+fb_MachineParam.m_SetText(vi_un_Field := un_F_SCATTER_Y, vi_str_Label := 'Scatter across',
+	vi_str_Description := 'A product lies at most this far beside the middle of the belt');
+fb_MachineParam.m_SetText(vi_un_Field := un_F_SCATTER_RZ, vi_str_Label := 'Scatter turn',
+	vi_str_Description := 'A product is turned at most this far either way');
+fb_MachineParam.m_SetText(vi_un_Field := un_F_GAP_SHARE, vi_str_Label := 'Gaps',
+	vi_str_Description := 'Share of the places left empty');
+fb_MachineParam.m_SetText(vi_un_Field := un_F_SEED, vi_str_Label := 'Random seed',
+	vi_str_Description := 'The same seed gives the same products; a new one starts the pattern again');
+fb_MachineParam.m_SetText(vi_un_Field := un_F_FEED, vi_str_Label := '',
+	vi_str_Description := 'Off: the generator feeds no products');
+
+
+(****************************************************************************************************)
+(* CONDITIONS: the lane fields only for Lanes, the scatter fields only for Scattered                *)
+(****************************************************************************************************)
+fb_MachineParam.m_SetVisibleWhen(vi_un_Field := un_F_LANES, vi_un_OnField := un_F_PATTERN, vi_dn_Value := dn_PATTERN_LANES);
+fb_MachineParam.m_SetVisibleWhen(vi_un_Field := un_F_LANE_PITCH, vi_un_OnField := un_F_PATTERN, vi_dn_Value := dn_PATTERN_LANES);
+fb_MachineParam.m_SetVisibleWhen(vi_un_Field := un_F_SCATTER_X, vi_un_OnField := un_F_PATTERN, vi_dn_Value := dn_PATTERN_SCATTERED);
+fb_MachineParam.m_SetVisibleWhen(vi_un_Field := un_F_SCATTER_Y, vi_un_OnField := un_F_PATTERN, vi_dn_Value := dn_PATTERN_SCATTERED);
+fb_MachineParam.m_SetVisibleWhen(vi_un_Field := un_F_SCATTER_RZ, vi_un_OnField := un_F_PATTERN, vi_dn_Value := dn_PATTERN_SCATTERED);]]></ST>
       </Implementation>
     </Method>
   </POU>

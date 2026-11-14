@@ -302,7 +302,7 @@ A recipe saved by the Simulator as `<name>.rpp-sim.json`: the values of every re
 _Avoid_: draft (the configurator's file), recording
 
 **Recipe field**:
-One value of a recipe as the application declares it: name, group (a component or the whole machine), type, unit, min, max and program value.
+One value of a recipe as the application declares it: name, group (a component or the whole machine), type, unit, min, max and program value; since config protocol 4 also a label and a description (shown by the Simulator, the name stays the key) and a visibility condition: the field applies only while another field has a value, and the Simulator hides it otherwise (it keeps its value and is written all the same).
 _Avoid_: recipe parameter, setting
 
 **Machine FB**:

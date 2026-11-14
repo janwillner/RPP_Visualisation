@@ -4,7 +4,8 @@
     <Declaration><![CDATA[TYPE ST_ConfigRecipeField :
 STRUCT
 	(* One field of the machine's recipe as the application declares it with _FB_ConfigMachine.m_DeclareField
-	   (config protocol 3, ADR 0022). The gateway reads the declarations once at discovery. *)
+	   (config protocol 3, ADR 0022), m_SetText and m_SetVisibleWhen (config protocol 4, #49). The gateway reads the
+	   declarations once at discovery. *)
 	sName : STRING(31); // unique in the recipe, e.g. 'BeltSpeed'
 	nGroup : UDINT; // manifest id of the Syn_Visu component the field belongs to, 0 = the whole machine
 	eType : E_ConfigFieldType;
@@ -14,6 +15,10 @@ STRUCT
 	fProgramValue : LREAL; // the application's own value, which applies while no recipe is active
 	nChoiceCount : UINT; // named values of a CHOICE field
 	aChoices : ARRAY[0..CONFIG_GlobalConst_Param.CONFIG_un_MAX_CHOICES - 1] OF STRING(31); // their names, from value 0
+	sLabel : STRING(40); // what the Simulator calls the field, '' = its name put into words
+	sDescription : STRING(160); // what the field is for, shown in its tooltip, '' = none
+	nVisibleField : UINT; // the field (from 1) it applies only with, 0 = always
+	nVisibleValue : DINT; // the value nVisibleField must have: a SWITCH's 0 / 1, a CHOICE's number, a whole number
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

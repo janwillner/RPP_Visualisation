@@ -134,7 +134,9 @@ a component's configuration its application runs with (a conveyor's pose and pro
 A PLC whose application has Syn_Config's machine FB (config protocol 3, ADR 0022) also has a **recipe**: the process
 values its application declares (belt speed, picks per cycle, the product pattern, ...). Then `parameters` carries
 `recipe` (its `fields` with name, `group` (component id, 0 = the machine), `type` (`number`, `integer`, `switch`,
-`choice`), unit, min, max, program value and choices; the status like a parameter FB's; the effective `values` by field
+`choice`), unit, min, max, program value and choices, and from config protocol 4 a `label`, a `description` and a
+`visibleWhen` condition (`field` by name and `value`; the field applies only while that field has that value, and only
+while that field applies itself; null = always); the status like a parameter FB's; the effective `values` by field
 name) and `machineCommand` (the application's answer to the last command).
 
 - **`writeRecipe`** (`baseVersion`, `values` by field name; a field left out keeps its value) and **`resetRecipe`**:
