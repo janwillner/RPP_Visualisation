@@ -32,7 +32,7 @@ import {
 import { MANIFEST_PATH, PLC_MACHINE_TYPE, enumValue, machinePath, type ST_VisuManifest } from "./plc-contract";
 import { mapPlc, UnknownEntryError, type EntryMemory } from "./plc-mapping";
 import { recipeWrites } from "./recipe-access";
-import { SymbolNotFoundError, type SymbolAccess } from "./symbol-access";
+import { SymbolNotFoundError, isExpectedType, type SymbolAccess } from "./symbol-access";
 
 export interface GatewayOptions {
   plc: SymbolAccess;
@@ -443,7 +443,3 @@ function productMarks(manifest: ST_VisuManifest): ProductMark[] {
     .filter((mark) => mark.name !== "");
 }
 
-/** Library types may be reported with their namespace, e.g. `SynVisu.ST_VisuDelta`. */
-function isExpectedType(actual: string | undefined, expected: string): boolean {
-  return actual === expected || (actual?.endsWith(`.${expected}`) ?? false);
-}

@@ -19,8 +19,9 @@ for the shared types (pose, zone, product type, areas); Syn_Visu does not know i
   active set while one is valid, else the defaults; the application reads them through getters and passes them on to
   its own logic and to Syn_Visu (`fb_Infeed.m_Configure(vi_Pose := fb_InfeedParam.m_Pose(), …)`).
 - **Staging.** The gateway writes a proposed set into `vo_Config.stStaged` and `vo_Config.stStaging` (base version,
-  stage id, `bReset`): every value in one ADS sum-write, then `bStaged` (or `bReset`) in a second request only when
-  none of the others failed, so a set is never taken over half written, and no checksum is needed. The FB checks a staged set when allowed (counts within the arrays,
+  stage id, `bReset`): every value in one ADS sum-write, a set still waiting withdrawn first (`bStaged := FALSE`) and
+  `bStaged` (or `bReset`) last in the same sum-write, so a set is never taken over half written, and no checksum is
+  needed (`apps/gateway/src/staging.ts`). The FB checks a staged set when allowed (counts within the arrays,
   zones on conveyors the application knows) and takes it over or rejects it with a reason; `stStatus` tells the active
   version, the last stage id handled, the result and its message; `stActive` the effective values. `bReset` makes the
   active set invalid: the program values apply again.

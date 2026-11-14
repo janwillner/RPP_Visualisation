@@ -55,3 +55,8 @@ export interface SymbolWrite {
   path: string;
   value: number | boolean | string;
 }
+
+/** Whether a symbol's PLC type is `expected`: library types may be reported with their namespace, e.g. `SynVisu.ST_VisuDelta`. */
+export function isExpectedType(actual: string | undefined, expected: string): boolean {
+  return actual === expected || (actual?.endsWith(`.${expected}`) ?? false);
+}

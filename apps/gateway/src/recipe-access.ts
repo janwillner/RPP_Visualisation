@@ -4,7 +4,6 @@ import {
   invalidRecipeValue,
   recipeProgramValue,
   MachineCommandStatusSchema,
-  ParameterResultSchema,
   RecipeFieldSchema,
   type MachineCommand,
   type MachineCommandStatus,
@@ -17,6 +16,7 @@ import {
 } from "@rpp/protocol";
 import { E_ConfigCommand } from "./config-contract";
 import { mapPlc } from "./plc-mapping";
+import { resetWrites, staleBase, stageWrites, stagingStatus } from "./staging";
 import type { SymbolWrite } from "./symbol-access";
 
 /**
@@ -47,13 +47,6 @@ const TextDeclarationSchema = z.object({
       visibleValue: z.number().int(),
     }),
   ),
-});
-
-const StatusSchema = z.object({
-  activeVersion: z.number().int(),
-  handledStageId: z.number().int(),
-  result: ParameterResultSchema,
-  message: z.string(),
 });
 
 /**
@@ -140,7 +133,7 @@ export function machineParameters(
     }),
   );
   return {
-    recipe: { fields: m.fields, ...mapPlc(StatusSchema, status), values },
+    recipe: { fields: m.fields, ...stagingStatus(status), values },
     machineCommand: mapPlc(MachineCommandStatusSchema, commandStatus),
   };
 }
@@ -176,15 +169,9 @@ export function recipeWrites(
 
   const recipe = current?.recipe;
   if (!recipe) return { error: "The recipe has not been read yet." };
-  if (recipe.activeVersion !== command.baseVersion) {
-    return { error: `The recipe has version ${recipe.activeVersion} active, not ${command.baseVersion}: reconcile again before writing.` };
-  }
-  const staging = `${machine.path}.stStaging`;
-  const head: SymbolWrite[] = [
-    { path: `${staging}.nBaseVersion`, value: command.baseVersion },
-    { path: `${staging}.nStageId`, value: id },
-  ];
-  if (command.kind === "resetRecipe") return { writes: [...head, { path: `${staging}.bReset`, value: true }] };
+  const stale = staleBase("The recipe has version", recipe.activeVersion, command.baseVersion);
+  if (stale) return { error: stale };
+  if (command.kind === "resetRecipe") return { writes: resetWrites(machine.path, command.baseVersion, id) };
 
   const unknown = Object.keys(command.values).find((name) => !machine.fields.some((f) => f.name === name));
   if (unknown !== undefined) return { error: `The recipe has no field ${unknown}.` };
@@ -199,14 +186,5 @@ export function recipeWrites(
     const value = sent ?? recipe.values[field.name] ?? recipeProgramValue(field);
     staged.push({ path: `${machine.path}.aStaged[${i}]`, value: typeof value === "boolean" ? Number(value) : value });
   }
-  // A recipe still waiting to be allowed is withdrawn first, so it is never taken over half overwritten.
-  return {
-    writes: [
-      { path: `${staging}.bStaged`, value: false },
-      ...staged,
-      ...head,
-      { path: `${staging}.bReset`, value: false },
-      { path: `${staging}.bStaged`, value: true },
-    ],
-  };
+  return { writes: stageWrites(machine.path, command.baseVersion, id, staged) };
 }

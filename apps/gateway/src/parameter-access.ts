@@ -1,9 +1,7 @@
-import { z } from "zod";
 import {
   CONFIG_PROTOCOL_VERSION,
   MIN_CONFIG_PROTOCOL_VERSION,
   PARAMETER_SCHEMAS,
-  ParameterResultSchema,
   type ComponentParameters,
   type DiscoveryError,
   type ParametersMessage,
@@ -18,7 +16,8 @@ import { E_VisuComponentType, enumValue } from "./plc-contract";
 import { mapPlc, type EntryMemory } from "./plc-mapping";
 import { plcLeaves } from "./plc-writing";
 import { machineFbEntry, machineParameters, machineReadPaths, type MachineFbEntry } from "./recipe-access";
-import { SymbolNotFoundError, type SymbolAccess, type SymbolWrite } from "./symbol-access";
+import { resetWrites, staleBase, stageWrites, stagingStatus } from "./staging";
+import { SymbolNotFoundError, isExpectedType, type SymbolAccess, type SymbolWrite } from "./symbol-access";
 
 /**
  * One source's parameter sets (library Syn_Config, ADR 0017): which parameter FBs its config manifest lists, their
@@ -50,14 +49,6 @@ export interface ParameterDiscovery {
   machine: MachineFbEntry | undefined;
 }
 
-/** Status of a parameter FB as the gateway reads it from `stStatus`. */
-const StatusSchema = z.object({
-  activeVersion: z.number().int(),
-  handledStageId: z.number().int(),
-  result: ParameterResultSchema,
-  message: z.string(),
-});
-
 export const NOT_ALLOWED = "The gateway does not allow writing; start it with --allow-write.";
 
 /** A source without parameter FBs that cannot be written, for `reason`; `present`: it has Syn_Config all the same. */
@@ -76,7 +67,7 @@ export async function discoverParameters(
   if (type === undefined) {
     return none(`The PLC has no Syn_Config (${manifestPath} not found): its components cannot be written.`, false);
   }
-  if (type !== PLC_CONFIG_MANIFEST_TYPE && !type.endsWith(`.${PLC_CONFIG_MANIFEST_TYPE}`)) {
+  if (!isExpectedType(type, PLC_CONFIG_MANIFEST_TYPE)) {
     return none(`${manifestPath} is a ${type}, not Syn_Config's ${PLC_CONFIG_MANIFEST_TYPE}: nothing can be written.`);
   }
   const manifest = (await plc.read(manifestPath)) as ST_ConfigManifest;
@@ -93,7 +84,7 @@ export async function discoverParameters(
     // The machine FB: id 0, type NONE (config protocol 3 or later).
     if (e.nId === 0 && enumValue(e.eType) === E_VisuComponentType.NONE) {
       const actual = await plc.typeOf(e.sPath);
-      if (actual !== PLC_CONFIG_MACHINE_TYPE && !actual?.endsWith(`.${PLC_CONFIG_MACHINE_TYPE}`)) {
+      if (!isExpectedType(actual, PLC_CONFIG_MACHINE_TYPE)) {
         errors.push({ path: e.sPath, message: `Symbol has expected type ${PLC_CONFIG_MACHINE_TYPE} but is ${actual ?? "missing"}` });
         continue;
       }
@@ -115,7 +106,7 @@ export async function discoverParameters(
     }
     const actual = await plc.typeOf(e.sPath);
     const expected = PLC_CONFIG_TYPES[type];
-    if (actual !== expected && !actual?.endsWith(`.${expected}`)) {
+    if (!isExpectedType(actual, expected)) {
       errors.push({ componentId: e.nId, path: e.sPath, message: `Symbol has expected type ${expected} but is ${actual ?? "missing"}` });
       continue;
     }
@@ -148,7 +139,7 @@ export function parametersMessage(sourceId: string, d: ParameterDiscovery, raws:
   let machine: ReturnType<typeof machineParameters> | undefined;
   try {
     components = d.entries.map((e, i): ComponentParameters => {
-      const status = mapPlc(StatusSchema, raws[2 * i]);
+      const status = stagingStatus(raws[2 * i]);
       const parameters = mapPlc(PARAMETER_SCHEMAS[e.type], raws[2 * i + 1], {}, e.memory);
       return { id: e.id, ...status, set: { type: e.type, parameters } as TypedParameters };
     });
@@ -183,25 +174,13 @@ export function commandWrites(
   if (!entry) return { error: `Component ${command.componentId} has no parameter FB in the PLC's config manifest.` };
   const active = current?.components.find((c) => c.id === entry.id)?.activeVersion;
   if (active === undefined) return { error: `The parameter status of component ${entry.id} has not been read yet.` };
-  if (active !== command.baseVersion) {
-    return {
-      error: `Component ${entry.id} has parameter version ${active} active, not ${command.baseVersion}: reconcile again before writing.`,
-    };
-  }
-  const staging = `${entry.path}.stStaging`;
-  const head: SymbolWrite[] = [
-    { path: `${staging}.nBaseVersion`, value: command.baseVersion },
-    { path: `${staging}.nStageId`, value: stageId },
-  ];
-  if (command.kind === "resetParameters") return { writes: [...head, { path: `${staging}.bReset`, value: true }] };
+  const stale = staleBase(`Component ${entry.id} has parameter version`, active, command.baseVersion);
+  if (stale) return { error: stale };
+  if (command.kind === "resetParameters") return { writes: resetWrites(entry.path, command.baseVersion, stageId) };
   if (command.set.type !== entry.type) {
     return { error: `Component ${entry.id} is a ${entry.type} in the PLC, not a ${command.set.type}.` };
   }
   const set = plcLeaves(PARAMETER_SCHEMAS[entry.type], command.set.parameters, `${entry.path}.stStaged`);
-  // A set still waiting to be allowed is withdrawn first, so it is never taken over half overwritten.
-  const withdraw: SymbolWrite = { path: `${staging}.bStaged`, value: false };
-  return {
-    writes: [withdraw, ...set, ...head, { path: `${staging}.bReset`, value: false }, { path: `${staging}.bStaged`, value: true }],
-  };
+  return { writes: stageWrites(entry.path, command.baseVersion, stageId, set) };
 }
 
