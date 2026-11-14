@@ -68,6 +68,28 @@ test("shows the demo's recipe grouped by component, its run state and the comman
   await expect(page.getByRole("button", { name: "Reset", exact: true })).toBeDisabled();
 });
 
+test("shows only the fields of the chosen product pattern, labelled and described as the demo declares them", async ({ page }) => {
+  await openAtProgramValues(page);
+  const field = (label: string) => recipe(page).getByLabel(label, { exact: true });
+  // Scattered, the program value: its scatter fields, no lane fields.
+  await expect(field("Pattern")).toHaveValue("0");
+  await expect(field("Scatter across")).toBeVisible();
+  await expect(field("Lanes")).toHaveCount(0);
+
+  await field("Pattern").selectOption({ label: "Lanes" });
+  await expect(field("Lanes")).toBeVisible();
+  await expect(field("Lane pitch")).toBeVisible();
+  await expect(field("Scatter across")).toHaveCount(0);
+  await expect(recipe(page).locator("label.property", { hasText: "Rate" })).toHaveAttribute(
+    "title",
+    /^Places the generator fills a minute at the belt speed of the recipe\nRange: 1 to 120 1\/min\nActive: 60 1\/min$/,
+  );
+
+  page.once("dialog", (dialog) => void dialog.accept());
+  await recipe(page).getByRole("button", { name: "Discard" }).click();
+  await expect(field("Scatter across")).toBeVisible();
+});
+
 test("writes a new belt speed and feed rate, which the demo applies, and returns to its program values", async ({ page }) => {
   await openAtProgramValues(page);
   const belt = recipe(page).getByLabel("Belt speed", { exact: true });

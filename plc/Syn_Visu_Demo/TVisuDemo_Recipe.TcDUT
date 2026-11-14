@@ -11,7 +11,7 @@ STRUCT
 	lr_RobotAccel						: LREAL;	// [%] Delta 1, of its maximum TCP acceleration
 	dn_PicksPerCycle					: DINT;	// [-] Delta 1 picks this many products before it places them: 1 or 2
 	lr_Rate								: LREAL;	// [1/min] places the generator fills per minute at the recipe's belt speed
-	dn_Lanes							: DINT;	// [-] lanes across the belt, 1..4; each product goes into one at random
+	dn_Lanes							: DINT;	// [-] pattern Lanes: lanes across the belt, 1..4; each product goes into one at random
 	lr_LanePitch						: LREAL;	// [mm] between the lanes, centred on the belt
 	dn_TypeMix							: DINT;	// [-] 0 = every type, 1 = boxes, 2 = round (can, oval)
 	lr_ScatterX							: LREAL;	// [mm] at most along the belt, either way
@@ -20,6 +20,7 @@ STRUCT
 	lr_GapShare							: LREAL;	// [%] of the generator's places left empty
 	dn_Seed								: DINT;	// [-] of the generator's pseudo-random numbers: the same seed gives the same products
 	b_Feed								: BOOL;	// TRUE: the generator feeds products
+	b_Lanes								: BOOL;	// TRUE: pattern Lanes (dn_Lanes, lr_LanePitch, unscattered); FALSE: Scattered (one lane, lr_Scatter*)
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>

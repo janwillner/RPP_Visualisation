@@ -696,8 +696,9 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 The product generator on Infeed 1 before Vision 1, from the recipe's product pattern: a place every so many mm of<br>
 belt travel (the rate at the recipe's belt speed, so the pattern keeps its spacing while the belt ramps or stands),<br>
-a share of the places left empty, each product in one of the lanes at random, of a type of the type mix, scattered<br>
-along and across the belt (never off it) and turned. It makes up a raw detection as a vision system would report<br>
+a share of the places left empty, each product of a type of the type mix and, by the pattern, in one of the lanes<br>
+at random (Lanes) or in the one lane, scattered along and across the belt (never off it) and turned (Scattered).<br>
+It makes up a raw detection as a vision system would report<br>
 it: the product's pose, the belt position at that moment, its type; m_Track latches it. A new seed, or a reset,<br>
 starts the numbers again: the same seed gives the same products.<br>
 *****************************************************************************************************<br>
@@ -713,6 +714,7 @@ VAR
 	dn_TempLanes						: DINT;	// [-]
 	lr_TempY							: LREAL;	// [mm] across the belt from its middle
 	lr_TempHalfWidth					: LREAL;	// [mm] how far from the middle a product may lie
+	lr_TempScatter						: LREAL;	// [-] 1: the pattern scatters (Scattered), 0: not (Lanes)
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[m_Generate := FALSE;
@@ -738,10 +740,18 @@ IF m_Random() * 100.0 < DEMO_GlobalVar.DEMO_Recipe.lr_GapShare THEN
 	RETURN;	// a gap
 END_IF
 
-(* Its lane, type and scatter, on the belt. *)
-dn_TempLanes := LIMIT(1, DEMO_GlobalVar.DEMO_Recipe.dn_Lanes, 4);
+(* Its lane, type and scatter, on the belt: the pattern Lanes puts it into one of its lanes unscattered, Scattered
+   into the one lane, scattered. Both draw the same numbers, so a seed gives the same products in either. *)
+IF DEMO_GlobalVar.DEMO_Recipe.b_Lanes THEN
+	dn_TempLanes := LIMIT(1, DEMO_GlobalVar.DEMO_Recipe.dn_Lanes, 4);
+	lr_TempScatter := 0;
+ELSE
+	dn_TempLanes := 1;
+	lr_TempScatter := 1;
+END_IF
 lr_TempY := (DINT_TO_LREAL(m_RandomIndex(vi_dn_Count := dn_TempLanes)) - DINT_TO_LREAL(dn_TempLanes - 1) / 2.0)
-	* DEMO_GlobalVar.DEMO_Recipe.lr_LanePitch + (m_Random() * 2.0 - 1.0) * DEMO_GlobalVar.DEMO_Recipe.lr_ScatterY;
+	* DEMO_GlobalVar.DEMO_Recipe.lr_LanePitch
+	+ (m_Random() * 2.0 - 1.0) * DEMO_GlobalVar.DEMO_Recipe.lr_ScatterY * lr_TempScatter;
 lr_TempHalfWidth := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH / 2.0 - 50.0;
 CASE DEMO_GlobalVar.DEMO_Recipe.dn_TypeMix OF
 	1: vo_Detection.udn_ProductType := 1 + DINT_TO_UDINT(m_RandomIndex(vi_dn_Count := 2));	// boxes: 1, 2
@@ -750,10 +760,10 @@ ELSE
 	vo_Detection.udn_ProductType := 1 + DINT_TO_UDINT(m_RandomIndex(vi_dn_Count := UDINT_TO_DINT(udn_TYPE_COUNT)));
 END_CASE
 vo_Detection.Pose.fX := fb_Vision1Param.vo_Config.stActive.stPose.fX
-	+ (m_Random() * 2.0 - 1.0) * DEMO_GlobalVar.DEMO_Recipe.lr_ScatterX;
+	+ (m_Random() * 2.0 - 1.0) * DEMO_GlobalVar.DEMO_Recipe.lr_ScatterX * lr_TempScatter;
 vo_Detection.Pose.fY := fb_Infeed1.vo_Visu.stConfig.stPose.fY + LIMIT(-lr_TempHalfWidth, lr_TempY, lr_TempHalfWidth);
 vo_Detection.Pose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
-vo_Detection.Pose.fRz := (m_Random() * 2.0 - 1.0) * DEMO_GlobalVar.DEMO_Recipe.lr_ScatterRz;
+vo_Detection.Pose.fRz := (m_Random() * 2.0 - 1.0) * DEMO_GlobalVar.DEMO_Recipe.lr_ScatterRz * lr_TempScatter;
 vo_Detection.lr_BeltPosition := lr_BeltPosition[0];
 m_Generate := TRUE;]]></ST>
       </Implementation>

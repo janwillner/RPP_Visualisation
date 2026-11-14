@@ -85,6 +85,9 @@ const field = (f: Partial<RecipeField> & Pick<RecipeField, "name">): RecipeField
   max: 100,
   programValue: 0,
   choices: [],
+  label: "",
+  description: "",
+  visibleWhen: null,
   ...f,
 });
 

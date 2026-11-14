@@ -23,8 +23,11 @@ import {
  * fields, so a draft's component gives its parameter set by picking them.
  */
 
-/** Version of the Syn_Config contract the gateway writes (3: recipe fields and machine commands, ADR 0022). */
-export const CONFIG_PROTOCOL_VERSION = 3;
+/**
+ * Version of the Syn_Config contract the gateway writes (3: recipe fields and machine commands, ADR 0022; 4: their
+ * labels, descriptions and visibility conditions, #49).
+ */
+export const CONFIG_PROTOCOL_VERSION = 4;
 
 /** The oldest Syn_Config protocol the gateway still writes parameter sets to; it has no recipe and no commands. */
 export const MIN_CONFIG_PROTOCOL_VERSION = 2;
@@ -148,6 +151,15 @@ export const RecipeFieldTypeSchema = z
   );
 export type RecipeFieldType = z.infer<typeof RecipeFieldTypeSchema>;
 
+/** When a recipe field applies: while another field has a value (#49). */
+export const RecipeConditionSchema = z
+  .object({
+    field: z.string().describe("Name of the field the condition reads: a `switch`, `integer` or `choice` field."),
+    value: int("The value it must have: a switch's 0 / 1, a choice's number, a whole number."),
+  })
+  .describe("A recipe field's visibility condition: it applies only while `field` has `value`.");
+export type RecipeCondition = z.infer<typeof RecipeConditionSchema>;
+
 /** One value of a recipe as the application declares it (ADR 0022). */
 export const RecipeFieldSchema = z
   .object({
@@ -161,6 +173,14 @@ export const RecipeFieldSchema = z
       .number()
       .describe("The application's own value, which applies while no recipe is active (a switch: 1 = on)."),
     choices: z.array(z.string()).describe("The names of a `choice` field's values, from value 0; empty otherwise."),
+    label: z
+      .string()
+      .describe("What the field is called on the page, in the application's words; empty: its name put into words."),
+    description: z.string().describe("What the field is for, in the application's words; empty for none."),
+    visibleWhen: RecipeConditionSchema.nullable().describe(
+      "The field applies only while another field has a value (config protocol 4); null: always. A field whose " +
+        "condition's field does not apply does not apply either.",
+    ),
   })
   .describe("One field of the recipe, as the application declares it.");
 export type RecipeField = z.infer<typeof RecipeFieldSchema>;
@@ -242,7 +262,7 @@ export const ParametersMessageSchema = z
     reason: z.string().describe("Why the source is not writable; absent when it is.").optional(),
     components: z.array(ComponentParametersSchema).describe("Every parameter FB of the source's config manifest."),
     recipe: RecipeSchema.describe(
-      "The machine's recipe (Syn_Config config protocol 3, ADR 0022); absent without a machine FB.",
+      "The machine's recipe (Syn_Config config protocol 3 or later, ADR 0022); absent without a machine FB.",
     ).optional(),
     machineCommand: MachineCommandStatusSchema.describe(
       "The application's answer to the last machine command; absent without a machine FB.",

@@ -229,6 +229,7 @@ function RecipePanel({ simulator, snapshot }: { simulator: Simulator; snapshot: 
   const { recipe, form } = snapshot;
   const plan = simulator.writePlan();
   const count = plan.changes.length;
+  const hidden = plan.changes.filter((c) => c.hidden).length;
   return (
     <section className="recipe">
       <h3>Recipe</h3>
@@ -276,7 +277,7 @@ function RecipePanel({ simulator, snapshot }: { simulator: Simulator; snapshot: 
           <div className="group">
             <button
               disabled={plan.blocked !== undefined || count === 0}
-              title={plan.blocked ?? (count === 0 ? "Nothing changed." : plan.changes.map((c) => `${c.label}: ${c.from} → ${c.to}`).join("\n"))}
+              title={plan.blocked ?? (count === 0 ? "Nothing changed." : plan.changes.map((c) => `${c.label}: ${c.from} → ${c.to}${c.hidden ? " (hidden)" : ""}`).join("\n"))}
               onClick={() => void simulator.write()}
             >
               {count === 0 ? "Write" : `Write ${count} change${count === 1 ? "" : "s"}`}
@@ -294,6 +295,11 @@ function RecipePanel({ simulator, snapshot }: { simulator: Simulator; snapshot: 
               Program values
             </button>
           </div>
+          {hidden > 0 && (
+            <p className="muted">
+              {hidden === count ? "Every change is" : `${hidden} of the changes are`} in fields hidden now; they are written too.
+            </p>
+          )}
           {plan.blocked && count > 0 && <p className="bad">{plan.blocked}</p>}
           {snapshot.write && <WriteStatus write={snapshot.write} />}
         </>
@@ -302,16 +308,21 @@ function RecipePanel({ simulator, snapshot }: { simulator: Simulator; snapshot: 
   );
 }
 
-/** A component's recipe fields; the group of the selected component is marked and scrolled into view. */
+/**
+ * A component's recipe fields that apply now (a group none of whose fields applies is left out); the group of the
+ * selected component is marked and scrolled into view.
+ */
 function RecipeGroup({ group, simulator }: { group: RecipeFormGroup; simulator: Simulator }) {
   const ref = useRef<HTMLFieldSetElement>(null);
+  const fields = group.fields.filter((f) => f.visible);
   useEffect(() => {
     if (group.selected) ref.current?.scrollIntoView({ block: "nearest" });
   }, [group.selected]);
+  if (fields.length === 0) return null;
   return (
     <fieldset ref={ref} className={group.selected ? "selected" : undefined}>
       <legend>{group.name}</legend>
-      {group.fields.map((f) => (
+      {fields.map((f) => (
         <RecipeInput key={f.field.name} field={f} onCommit={(value) => simulator.edit(f.field.name, value)} />
       ))}
     </fieldset>
@@ -322,9 +333,17 @@ function RecipeInput({ field: f, onCommit }: { field: RecipeFormField; onCommit:
   const { field } = f;
   const label = field.unit ? `${f.label} [${field.unit}]` : f.label;
   const range = field.type === "number" || field.type === "integer" ? `${field.min} to ${field.max}` : undefined;
+  // The tooltip: what the field is for, in the application's words, its range and the value the machine runs with.
+  const tooltip = [
+    field.description,
+    range && `Range: ${range}${field.unit ? ` ${field.unit}` : ""}`,
+    f.active !== undefined && `Active: ${shownValue(field, f.active)}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
   return (
     <div className={f.changed ? "recipe-field changed" : "recipe-field"}>
-      <label className="property" title={range}>
+      <label className="property" title={tooltip || undefined}>
         <span>{label}</span>
         {(field.type === "number" || field.type === "integer") && (
           <NumberInput

@@ -12,7 +12,7 @@ Global constants of the Syn_Config library.<br>
 {attribute 'qualified_only'}
 VAR_GLOBAL CONSTANT
 	(* Version of the Syn_Config <-> gateway contract (ADR 0017). The gateway writes nothing to a PLC whose config
-	   manifest reports a version it does not know (it knows 2 and 3). Bump together with CONFIG_PROTOCOL_VERSION in
+	   manifest reports a version it does not know (it knows 2 to 4). Bump together with CONFIG_PROTOCOL_VERSION in
 	   the gateway.
 	   1: conveyor (pose, origin shift, product types) and Delta (pose, origin shift, zones, working, limit and
 	      TCP limit area); since library 1.1.0 also XTS gantry, XTS loop, Cartesian, vision, sensor and station
@@ -21,11 +21,13 @@ VAR_GLOBAL CONSTANT
 	      the XTS gantry and loop and the Cartesian robot (library 2.0.0, ADR 0018).
 	   3: the machine FB _FB_ConfigMachine (id 0, type NONE in the manifest): recipe fields the application declares,
 	      their staging, and machine commands (library 2.1.0, ADR 0022). A PLC of version 2 still gets its parameter
-	      sets written, but no recipe and no commands. *)
-	CONFIG_un_PROTOCOL_VERSION			: UINT := 3;
+	      sets written, but no recipe and no commands.
+	   4: a recipe field's label, description and visibility condition (sLabel, sDescription, nVisibleField,
+	      nVisibleValue; library 2.2.0, #49). A gateway reads the fields of version 3 without them. *)
+	CONFIG_un_PROTOCOL_VERSION			: UINT := 4;
 	(* Version of this library (config manifest sLibraryVersion). Bump together with _FC_GetVersionSynConfig and the
 	   project version. *)
-	CONFIG_str_LIBRARY_VERSION			: STRING(15) := '2.1.0';
+	CONFIG_str_LIBRARY_VERSION			: STRING(15) := '2.2.0';
 END_VAR]]></Declaration>
   </GVL>
 </TcPlcObject>

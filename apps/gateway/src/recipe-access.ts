@@ -1,6 +1,5 @@
 import { z } from "zod";
 import {
-  CONFIG_PROTOCOL_VERSION,
   invalidRecipeValue,
   recipeProgramValue,
   MachineCommandStatusSchema,
@@ -21,10 +20,16 @@ import { mapPlc } from "./plc-mapping";
 import type { SymbolWrite } from "./symbol-access";
 
 /**
- * The machine's recipe and its commands (library Syn_Config, config protocol 3, ADR 0022): the declared fields of the
- * application's machine FB, its status and effective values as part of the `parameters` message, and the leaf values
- * that stage a recipe, a reset or a machine command.
+ * The machine's recipe and its commands (library Syn_Config, config protocol 3, ADR 0022; labels, descriptions and
+ * visibility conditions from config protocol 4, #49): the declared fields of the application's machine FB, its status
+ * and effective values as part of the `parameters` message, and the leaf values that stage a recipe, a reset or a
+ * machine command.
  */
+
+/** The first config protocol with a machine FB: recipe fields and machine commands. */
+const RECIPE_CONFIG_PROTOCOL_VERSION = 3;
+/** The first config protocol whose recipe fields have a label, a description and a visibility condition. */
+const FIELD_TEXT_CONFIG_PROTOCOL_VERSION = 4;
 
 /** The machine FB found in the config manifest (id 0, type NONE). */
 export interface MachineFbEntry {
@@ -34,7 +39,20 @@ export interface MachineFbEntry {
   fields: RecipeField[];
 }
 
-const DeclarationSchema = z.object({ fields: z.array(RecipeFieldSchema) });
+const DeclaredFieldSchema = RecipeFieldSchema.omit({ label: true, description: true, visibleWhen: true });
+/** A field as config protocol 3 declares it. */
+const DeclarationSchema = z.object({ fields: z.array(DeclaredFieldSchema) });
+/** A field as config protocol 4 declares it: with its texts and its condition by field number (0 = always). */
+const TextDeclarationSchema = z.object({
+  fields: z.array(
+    DeclaredFieldSchema.extend({
+      label: z.string(),
+      description: z.string(),
+      visibleField: z.number().int(),
+      visibleValue: z.number().int(),
+    }),
+  ),
+});
 
 const StatusSchema = z.object({
   activeVersion: z.number().int(),
@@ -44,16 +62,59 @@ const StatusSchema = z.object({
 });
 
 /**
- * Reads the fields the application declares. A layout the gateway does not know, or a field without a name or with
- * the name of another (the recipe is written by name), throws a TypeError, which discovery reports.
+ * Reads the fields the application declares, of its config protocol. A layout the gateway does not know, or a field
+ * without a name or with the name of another (the recipe is written by name), throws a TypeError, which discovery
+ * reports. A visibility condition that cannot hold (`conditionProblems`) is left out and named in `errors`, so the
+ * field is always shown.
  */
-export function machineFbEntry(path: string, raw: unknown): MachineFbEntry {
-  const fields = mapPlc(DeclarationSchema, raw).fields.map((f) => ({ ...f, name: f.name.trim() }));
-  for (const [i, f] of fields.entries()) {
+export function machineFbEntry(path: string, raw: unknown, protocolVersion: number): { entry: MachineFbEntry; errors: string[] } {
+  const declared =
+    protocolVersion >= FIELD_TEXT_CONFIG_PROTOCOL_VERSION
+      ? mapPlc(TextDeclarationSchema, raw).fields
+      : mapPlc(DeclarationSchema, raw).fields.map((f) => ({ ...f, label: "", description: "", visibleField: 0, visibleValue: 0 }));
+  const named = declared.map((f) => ({ ...f, name: f.name.trim(), label: f.label.trim(), description: f.description.trim() }));
+  for (const [i, f] of named.entries()) {
     if (f.name === "") throw new TypeError(`recipe field ${i + 1} has no name`);
-    if (fields.findIndex((other) => other.name === f.name) < i) throw new TypeError(`recipe field ${f.name} is declared twice`);
+    if (named.findIndex((other) => other.name === f.name) < i) throw new TypeError(`recipe field ${f.name} is declared twice`);
   }
-  return { path, fields };
+  const problems = conditionProblems(named);
+  const fields = named.map(({ visibleField, visibleValue, ...f }, i): RecipeField => ({
+    ...f,
+    visibleWhen: visibleField === 0 || problems.has(i) ? null : { field: named[visibleField - 1]!.name, value: visibleValue },
+  }));
+  return { entry: { path, fields }, errors: [...problems.values()] };
+}
+
+/**
+ * The visibility conditions that cannot hold, by field index, with why: one on a field not declared, on the field
+ * itself, on a number field (a condition compares whole numbers), or in a ring of fields depending on each other.
+ */
+function conditionProblems(fields: readonly { name: string; type: RecipeField["type"]; visibleField: number }[]): Map<number, string> {
+  const problems = new Map<number, string>();
+  const say = (i: number, why: string) => problems.set(i, `Recipe field ${fields[i]!.name} ${why}; it is always shown.`);
+  for (const [i, f] of fields.entries()) {
+    const on = f.visibleField;
+    if (on === 0) continue;
+    if (on < 0 || on > fields.length) say(i, `is shown only with field ${on}, which is not declared`);
+    else if (on === i + 1) say(i, "depends on itself");
+    else if (fields[on - 1]!.type === "number") say(i, `depends on ${fields[on - 1]!.name}, but ${fields[on - 1]!.name} is a number field`);
+  }
+  // A ring: following the conditions from a field comes back to it.
+  for (const i of fields.keys()) {
+    const seen: number[] = [];
+    let at = i;
+    while (!problems.has(at) && fields[at]!.visibleField !== 0 && !seen.includes(at)) {
+      seen.push(at);
+      at = fields[at]!.visibleField - 1;
+    }
+    if (at === i && seen.length > 1) {
+      for (const j of seen) {
+        const others = seen.filter((k) => k !== j).map((k) => fields[k]!.name);
+        say(j, `and ${others.join(", ")} depend on each other`);
+      }
+    }
+  }
+  return problems;
 }
 
 /** What the cyclic sum-read reads of the machine FB: the recipe's status, its effective values and the command answer. */
@@ -105,9 +166,9 @@ export function recipeWrites(
   id: number,
 ): { error: string } | { writes: SymbolWrite[] } {
   if (discovery.reason !== undefined) return { error: discovery.reason };
-  if (discovery.protocolVersion < CONFIG_PROTOCOL_VERSION) {
+  if (discovery.protocolVersion < RECIPE_CONFIG_PROTOCOL_VERSION) {
     return {
-      error: `The PLC's Syn_Config has config protocol ${discovery.protocolVersion}: recipes and machine commands need ${CONFIG_PROTOCOL_VERSION}.`,
+      error: `The PLC's Syn_Config has config protocol ${discovery.protocolVersion}: recipes and machine commands need ${RECIPE_CONFIG_PROTOCOL_VERSION}.`,
     };
   }
   const machine = discovery.machine;

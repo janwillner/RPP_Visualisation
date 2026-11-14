@@ -18,8 +18,9 @@ The gateway reaches the demo through the local AMS router, AmsNetId `127.0.0.1.1
 
 ## The machine and its recipe
 
-`P_VisuDemoMachine` is the demo's minimal sequence control of Infeed 1 and Delta 1 (ADR 0022): a recipe of 15 fields
-(belt, robot, product pattern of the generator before Vision 1, seed), Start, Stop and Reset through Syn_Config's
+`P_VisuDemoMachine` is the demo's minimal sequence control of Infeed 1 and Delta 1 (ADR 0022): a recipe of 16 fields
+(belt, robot, product pattern of the generator before Vision 1, seed; the pattern Scattered shows only the scatter
+fields, Lanes only the lane fields, and every field has a description), Start, Stop and Reset through Syn_Config's
 machine FB, the run state and the machine messages "Reject bin almost full" and "Product missed" through Syn_Visu. It
 starts running with the program values, which give the product pattern the demo had before its recipe (one lane, 60
 products a minute, every type, scattered), though not the same products: the generator draws its own random numbers

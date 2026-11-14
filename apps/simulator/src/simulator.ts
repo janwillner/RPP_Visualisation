@@ -51,7 +51,13 @@ export interface SimulatorLive {
 /** One field of the recipe form. */
 export interface RecipeFormField {
   field: RecipeField;
+  /** The application's label, else the field's name put into words. */
   label: string;
+  /**
+   * The field applies: it has no visibility condition, or its condition's field is visible and has the condition's
+   * value in the form (#49). A hidden field keeps its edit, which is written; the page leaves it out.
+   */
+  visible: boolean;
   /** The value the application runs with; undefined until the PLC reports it. */
   active: RecipeValue | undefined;
   /** What the form shows: the edited value, else the active one. */
@@ -88,6 +94,8 @@ export interface RecipeChange {
   label: string;
   from: string;
   to: string;
+  /** The field does not apply in the form now (its condition does not hold); it is written all the same. */
+  hidden: boolean;
 }
 
 export interface WritePlan {
@@ -164,6 +172,22 @@ const COMMAND_RUN_STATES: Record<MachineCommandKind, { states: readonly RunState
   stop: { states: ["starting", "running"], reason: "The machine is not running." },
   reset: { states: ["stopped", "fault"], reason: "Stop the machine first." },
 };
+
+/**
+ * The fields that apply with these values (#49): a field without a visibility condition, or one whose condition's
+ * field applies and has the condition's value (a switch as 0 / 1). A condition the gateway let through that cannot be
+ * followed (an unknown field, a ring) does not hide its field.
+ */
+function visibleFields(fields: readonly RecipeField[], valueOf: (field: RecipeField) => RecipeValue): Set<string> {
+  const byName = new Map(fields.map((f) => [f.name, f]));
+  const applies = (field: RecipeField, depth: number): boolean => {
+    const condition = field.visibleWhen;
+    const on = condition ? byName.get(condition.field) : undefined;
+    if (!condition || !on || depth > fields.length) return true;
+    return Number(valueOf(on)) === condition.value && applies(on, depth + 1);
+  };
+  return new Set(fields.filter((f) => applies(f, 0)).map((f) => f.name));
+}
 
 /** A field's value as the form shows it: on / off, a choice's name, a number with its unit. */
 export function shownValue(field: RecipeField, value: RecipeValue | undefined): string {
@@ -287,7 +311,13 @@ export class Simulator {
     const changes = this.snapshot.form.flatMap((g) =>
       g.fields
         .filter((f) => f.changed)
-        .map((f) => ({ name: f.field.name, label: f.label, from: shownValue(f.field, f.active), to: shownValue(f.field, f.value) })),
+        .map((f) => ({
+          name: f.field.name,
+          label: f.label,
+          from: shownValue(f.field, f.active),
+          to: shownValue(f.field, f.value),
+          hidden: !f.visible,
+        })),
     );
     const blocked = this.snapshot.blocked;
     if (blocked) return { blocked, changes };
@@ -562,6 +592,8 @@ export class Simulator {
     const groups: RecipeFormGroup[] = [];
     const edits = this.edits[source.sourceId] ?? {};
     const warnings = this.fieldWarnings[source.sourceId] ?? {};
+    const valueOf = (field: RecipeField) => edits[field.name] ?? recipe.values[field.name] ?? recipeProgramValue(field);
+    const visible = visibleFields(recipe.fields, valueOf);
     for (const field of recipe.fields) {
       let group = groups.find((g) => g.group === field.group);
       if (!group) {
@@ -573,12 +605,13 @@ export class Simulator {
         groups.push(group);
       }
       const active = recipe.values[field.name];
-      const value = edits[field.name] ?? active ?? recipeProgramValue(field);
+      const value = valueOf(field);
       const error = invalidRecipeValue(field, value);
       const warning = warnings[field.name];
       group.fields.push({
         field,
-        label: fieldLabel(field.name),
+        label: field.label || fieldLabel(field.name),
+        visible: visible.has(field.name),
         active,
         value,
         changed: edits[field.name] !== undefined && edits[field.name] !== active,

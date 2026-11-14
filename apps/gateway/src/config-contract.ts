@@ -60,6 +60,14 @@ export interface ST_ConfigRecipeField {
   nChoiceCount: number;
   /** STRING(31) each: the names of a choice field's values, from value 0. */
   aChoices: string[];
+  /** STRING(40), config protocol 4 (`m_SetText`): the field's label; empty = its name put into words. */
+  sLabel?: string;
+  /** STRING(160), config protocol 4: what the field is for. */
+  sDescription?: string;
+  /** Config protocol 4 (`m_SetVisibleWhen`): the field (from 1) it applies only with; 0 = always. */
+  nVisibleField?: number;
+  /** Config protocol 4: the value `nVisibleField` must have. */
+  nVisibleValue?: number;
 }
 
 /** Written by the gateway, `bRequested` last; the machine FB clears it once the application answered. */

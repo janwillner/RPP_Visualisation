@@ -772,6 +772,8 @@ marks a message appearing on the timeline; a click on a message about a componen
 | `m_Register(vio_Manifest, vi_udn_Id)` | Lists the machine FB in `GVL_Config.stManifest`; always with `vi_udn_Id := 0` |
 | `m_DeclareField(vi_un_Field, vi_str_Name, vi_udn_Group, vi_e_Type, vi_str_Unit, vi_lr_Min, vi_lr_Max, vi_lr_ProgramValue)` | Declares recipe field 1, 2, ...: `vi_udn_Group` the component it belongs to (0 = the machine), `vi_e_Type` `E_ConfigFieldType` NUMBER, INTEGER, SWITCH or CHOICE. Declare every field from the start and keep their order |
 | `m_SetChoice(vi_un_Field, vi_un_Value, vi_str_Text)` | Names value 0, 1, ... of a CHOICE field |
+| `m_SetText(vi_un_Field, vi_str_Label, vi_str_Description)` | Since 2.2.0: the label the Simulator shows (`''` = the name put into words) and a description for the field's tooltip, in your operators' language |
+| `m_SetVisibleWhen(vi_un_Field, vi_un_OnField, vi_dn_Value)` | Since 2.2.0: the Simulator shows the field only while field `vi_un_OnField` (SWITCH 0 / 1, CHOICE or INTEGER) has this value, e.g. a lane count only for the pattern Lanes; a hidden field keeps its value |
 | `m_Cycle(vio_Set, vi_b_ApplyAllowed)` | Takes a written recipe over while allowed and gives the effective values; `vio_Set` is your `VAR PERSISTENT` `ST_ConfigRecipeSet` |
 | `m_Value(vi_un_Field)`, `m_Integer`, `m_Switch` | A field's effective value: the recipe's, else the program value |
 | `m_Command()`, `m_AnswerCommand(vi_b_Accepted, vi_str_Reason)` | The waiting command (START, STOP, RESET; NONE while none waits) and your answer to it: you alone decide whether it is carried out |
