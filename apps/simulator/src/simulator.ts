@@ -7,13 +7,13 @@ import {
   type Machine,
   type MachineCommandKind,
   type MessageSeverity,
-  type ParametersMessage,
   type Recipe,
   type RecipeField,
   type RecipeFile,
   type RecipeValue,
   type RunState,
   recipeProgramValue,
+  writeBlockedReason,
 } from "@rpp/protocol";
 import {
   activeMachineMessages,
@@ -483,12 +483,12 @@ export class Simulator {
     const { sources, parameters } = this.live.getSnapshot();
     const source = sources.find((s) => s.sourceId === sourceId);
     if (!source) return "The gateway reads no PLC.";
-    if (!isOnline(source)) return "The PLC is not connected.";
-    const params: ParametersMessage | undefined = parameters[source.sourceId];
-    if (!params?.recipe) return "The PLC has no machine FB (Syn_Config 2.1 or later): it has no recipe and takes no commands.";
-    if (!params.writable) return params.reason ?? "The PLC cannot be written.";
-    if (!source.machine?.simulation) return "The machine does not report simulation mode: the Simulator writes nothing to a real machine.";
-    return undefined;
+    // Recipes and machine commands are blocked for the same reasons.
+    return writeBlockedReason("recipe", {
+      online: isOnline(source),
+      parameters: parameters[source.sourceId],
+      simulation: source.machine?.simulation === true,
+    });
   }
 
   /**

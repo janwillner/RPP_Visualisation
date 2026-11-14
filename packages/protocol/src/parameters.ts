@@ -212,6 +212,44 @@ export const RecipeSchema = z
   .describe("The machine's recipe: the process values its application declares and runs with.");
 export type Recipe = z.infer<typeof RecipeSchema>;
 
+/** What a write sets: a component's parameter set, the machine's recipe, or a machine command (Start, Stop, Reset). */
+export type WriteKind = "parameters" | "recipe" | "machineCommand";
+
+/** What decides whether a source can be written now, as the gateway and the pages both know it. */
+export interface WriteFacts {
+  /** The PLC is connected. */
+  online: boolean;
+  /**
+   * Its Syn_Config as the `parameters` message reports it: whether the gateway writes to it and why not, and the
+   * recipe while the application has a machine FB. Undefined for a PLC without Syn_Config.
+   */
+  parameters: { writable: boolean; reason?: string | undefined; recipe?: unknown } | undefined;
+  /** The machine entry reports simulation mode (protocol 22): recipes and machine commands go only to such a machine. */
+  simulation: boolean;
+}
+
+export const NOT_CONNECTED = "The PLC is not connected.";
+export const NO_MACHINE_FB =
+  "The PLC's application has no machine FB (Syn_Config 2.1 or later, _FB_ConfigMachine): no recipe and no machine commands.";
+export const NOT_SIMULATED =
+  "The PLC is not in simulation mode: recipes and machine commands go only to a machine that runs without real hardware.";
+
+/**
+ * Why a write of `kind` cannot go to a source now; undefined when it can. The one rule the gateway refuses commands by
+ * and the configurator and the Simulator block their writes by: the PLC connected, Syn_Config, the gateway allowed to
+ * write, and for a recipe or a machine command also a machine FB and simulation mode.
+ */
+export function writeBlockedReason(kind: WriteKind, facts: WriteFacts): string | undefined {
+  const { online, parameters, simulation } = facts;
+  if (!online) return NOT_CONNECTED;
+  if (!parameters) return kind === "parameters" ? "The PLC has no Syn_Config: its components cannot be written." : NO_MACHINE_FB;
+  if (!parameters.writable) return parameters.reason ?? "The PLC cannot be written.";
+  if (kind === "parameters") return undefined;
+  if (!parameters.recipe) return NO_MACHINE_FB;
+  if (!simulation) return NOT_SIMULATED;
+  return undefined;
+}
+
 /** The value a field has while no recipe is active: its program value, a switch's as on / off. */
 export function recipeProgramValue(field: RecipeField): RecipeValue {
   return field.type === "switch" ? field.programValue !== 0 : field.programValue;

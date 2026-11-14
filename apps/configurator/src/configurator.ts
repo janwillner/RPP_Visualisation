@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, PROTOCOL_VERSION, emptyDraft, type TrackModuleKind, type ComponentConfig, type ConfigMessage, type ParametersMessage, type ConveyorConfig, type ConveyorState, type Draft, type ProductType, type StateMessage, type Zone } from "@rpp/protocol";
 import {
   componentKey,
+  isOnline,
   type ComponentKey,
   type GatewayLive,
   type LiveCommand,
@@ -146,8 +147,9 @@ export class Configurator {
 
   /** What writing the draft to `sourceId`'s PLC would change, or why it cannot be written. */
   writePlan(sourceId: string): WritePlan {
-    const { draft, issues, plcParameters } = this.snapshot;
-    return writePlan(draft, issues, plcParameters, this.reconciliation.plc, sourceId);
+    const { draft, issues, plcParameters, plcSources } = this.snapshot;
+    const source = plcSources.find((s) => s.sourceId === sourceId);
+    return writePlan(draft, issues, plcParameters, this.reconciliation.plc, sourceId, source !== undefined && isOnline(source));
   }
 
   /**

@@ -2,7 +2,10 @@ import {
   MachineSchema,
   MAX_MARKS,
   MIN_PROTOCOL_VERSION,
+  NO_MACHINE_FB,
   PROTOCOL_VERSION,
+  RECIPE_CONFIG_PROTOCOL_VERSION,
+  writeBlockedReason,
   type ClientMessage,
   type ComponentConfig,
   type ComponentState,
@@ -13,6 +16,7 @@ import {
   type MachineReport,
   type ParametersMessage,
   type ProductMark,
+  type WriteKind,
 } from "@rpp/protocol";
 import { AcquisitionStatsRecorder } from "./acquisition-stats";
 import { COMPONENTS, componentKind, mapConfig, mapState as mapComponentState } from "./components";
@@ -369,18 +373,34 @@ export function createGateway({
     async command(command) {
       if (command.sourceId !== sourceId) return { ok: false, error: `Unknown source ${command.sourceId}` };
       const current = discovery;
-      if (!current || !status.plcConnected) return { ok: false, error: "The PLC is not connected." };
+      const d = current?.parameters;
+      const kind: WriteKind =
+        command.kind === "writeParameters" || command.kind === "resetParameters"
+          ? "parameters"
+          : command.kind === "machineCommand"
+            ? "machineCommand"
+            : "recipe";
+      const blocked = writeBlockedReason(kind, {
+        online: current !== undefined && status.plcConnected,
+        parameters: d && { writable: d.reason === undefined, reason: d.reason, recipe: d.machine },
+        // Simulation mode as the application reports it in the machine entry (protocol 22, ADR 0021).
+        simulation: machine?.simulation === true,
+      });
+      if (blocked !== undefined) {
+        // An older Syn_Config has no machine FB to have: said so.
+        const older = blocked === NO_MACHINE_FB && d !== undefined && d.protocolVersion < RECIPE_CONFIG_PROTOCOL_VERSION;
+        return {
+          ok: false,
+          error: older
+            ? `The PLC's Syn_Config has config protocol ${d.protocolVersion}: recipes and machine commands need ${RECIPE_CONFIG_PROTOCOL_VERSION}.`
+            : blocked,
+        };
+      }
       const id = (stageId += 1);
       const planned =
         command.kind === "writeParameters" || command.kind === "resetParameters"
-          ? commandWrites(command, current.parameters, parameters, id)
-          : recipeWrites(
-              command,
-              current.parameters,
-              // Simulation mode as the application reports it in the machine entry (protocol 22, ADR 0021).
-              { simulation: machine?.simulation === true, current: parameters },
-              id,
-            );
+          ? commandWrites(command, d!, parameters, id)
+          : recipeWrites(command, d!.machine!, parameters, id);
       if ("error" in planned) return { ok: false, error: planned.error };
       try {
         await plc.sumWrite(planned.writes);

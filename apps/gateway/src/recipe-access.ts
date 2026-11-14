@@ -1,7 +1,6 @@
 import { z } from "zod";
 import {
   FIELD_TEXT_CONFIG_PROTOCOL_VERSION,
-  RECIPE_CONFIG_PROTOCOL_VERSION,
   invalidRecipeValue,
   recipeProgramValue,
   MachineCommandStatusSchema,
@@ -17,7 +16,6 @@ import {
   type WriteRecipeCommand,
 } from "@rpp/protocol";
 import { E_ConfigCommand } from "./config-contract";
-import type { ParameterDiscovery } from "./parameter-access";
 import { mapPlc } from "./plc-mapping";
 import type { SymbolWrite } from "./symbol-access";
 
@@ -149,42 +147,20 @@ export function machineParameters(
 
 export type RecipeCommand = WriteRecipeCommand | ResetRecipeCommand | MachineCommand;
 
-/** What a recipe command needs to know about the source besides its Syn_Config discovery. */
-export interface RecipeContext {
-  /** The PLC reports simulation mode (machine entry, protocol 22). */
-  simulation: boolean;
-  /** The last `parameters` message: the active recipe. */
-  current: ParametersMessage | undefined;
-}
-
-export const NOT_SIMULATED =
-  "The PLC is not in simulation mode: recipes and machine commands go only to a machine that runs without real hardware.";
-
 const COMMAND_VALUES = { start: E_ConfigCommand.START, stop: E_ConfigCommand.STOP, reset: E_ConfigCommand.RESET } as const;
 
 /**
- * Why a recipe command cannot be carried out, or the leaf values that carry it out in the order of one sum-write: a
+ * The leaf values that carry out a recipe command in the order of one sum-write, or why its content cannot be: a
  * recipe's every value and its staging with `bStaged` last (a waiting one withdrawn first), a reset with `bReset` last,
- * a machine command with `bRequested` last. `id` is the stage or command id.
+ * a machine command with `bRequested` last. `id` is the stage or command id; `current` the last `parameters` message
+ * with the active recipe. Whether the source takes recipe commands at all is `writeBlockedReason`'s, asked before.
  */
 export function recipeWrites(
   command: RecipeCommand,
-  discovery: Pick<ParameterDiscovery, "reason" | "protocolVersion" | "machine">,
-  ctx: RecipeContext,
+  machine: MachineFbEntry,
+  current: ParametersMessage | undefined,
   id: number,
 ): { error: string } | { writes: SymbolWrite[] } {
-  if (discovery.reason !== undefined) return { error: discovery.reason };
-  if (discovery.protocolVersion < RECIPE_CONFIG_PROTOCOL_VERSION) {
-    return {
-      error: `The PLC's Syn_Config has config protocol ${discovery.protocolVersion}: recipes and machine commands need ${RECIPE_CONFIG_PROTOCOL_VERSION}.`,
-    };
-  }
-  const machine = discovery.machine;
-  if (!machine) {
-    return { error: "The PLC's application has no machine FB (Syn_Config _FB_ConfigMachine): no recipe and no machine commands." };
-  }
-  if (!ctx.simulation) return { error: NOT_SIMULATED };
-
   if (command.kind === "machineCommand") {
     const at = `${machine.path}.stCommand`;
     // A command still waiting is withdrawn first, so the application never takes the new id with the old command.
@@ -198,7 +174,7 @@ export function recipeWrites(
     };
   }
 
-  const recipe = ctx.current?.recipe;
+  const recipe = current?.recipe;
   if (!recipe) return { error: "The recipe has not been read yet." };
   if (recipe.activeVersion !== command.baseVersion) {
     return { error: `The recipe has version ${recipe.activeVersion} active, not ${command.baseVersion}: reconcile again before writing.` };

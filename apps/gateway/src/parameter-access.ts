@@ -179,7 +179,6 @@ export function commandWrites(
   current: ParametersMessage | undefined,
   stageId: number,
 ): { error: string } | { writes: SymbolWrite[] } {
-  if (d.reason !== undefined) return { error: d.reason };
   const entry = d.entries.find((e) => e.id === command.componentId);
   if (!entry) return { error: `Component ${command.componentId} has no parameter FB in the PLC's config manifest.` };
   const active = current?.components.find((c) => c.id === entry.id)?.activeVersion;

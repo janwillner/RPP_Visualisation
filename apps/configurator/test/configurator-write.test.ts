@@ -48,6 +48,13 @@ function line() {
 }
 
 describe("Configurator writing to a PLC (ADR 0017)", () => {
+  it("is blocked while the PLC is offline", () => {
+    const { c, live } = line();
+    c.set(`${A}#1`, ["pose", "y"], 30);
+    live.send({ kind: "status", sourceId: A, sourceName: "Line PLC", status: { plcConnected: false } });
+    expect(c.writePlan(A).blocked).toMatch(/PLC is not connected/);
+  });
+
   it("plans a write as the parameter values that change, component by component; hardware is not among them", () => {
     const { c } = line();
     c.set(`${A}#2`, ["zones", "0", "end"], 1400);

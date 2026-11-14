@@ -5,6 +5,7 @@ import {
   type ParametersMessage,
   type ParameterType,
   type TypedParameters,
+  writeBlockedReason,
 } from "@rpp/protocol";
 import { componentKey, type ComponentKey, type SourceInfo } from "@rpp/machine-view";
 import { keyOf } from "./edits";
@@ -98,22 +99,32 @@ export function unwritableHints(
   }));
 }
 
-/** What writing `sourceId` would change, or why it cannot be written; `plc` holds the PLCs' components by key. */
+/**
+ * What writing `sourceId` would change, or why it cannot be written (`writeBlockedReason`, then errors of its
+ * components); `plc` holds the PLCs' components by key, `online` whether its PLC is connected.
+ */
 export function writePlan(
   draft: Draft,
   issues: readonly Issue[],
   parameters: Readonly<Record<string, ParametersMessage>>,
   plc: ReadonlyMap<ComponentKey, ComponentConfig>,
   sourceId: string,
+  online: boolean,
 ): WritePlan {
   const unwritable = unwritableComponents(draft, plc, parameters)
     .filter((c) => c.sourceId === sourceId)
     .map((c) => c.name);
-  const plan = planWrite(draft, issues, parameters[sourceId], sourceId);
+  const plan = planWrite(draft, issues, parameters[sourceId], sourceId, online);
   return unwritable.length > 0 ? { ...plan, unwritable } : plan;
 }
 
-function planWrite(draft: Draft, issues: readonly Issue[], parameters: ParametersMessage | undefined, sourceId: string): WritePlan {
+function planWrite(
+  draft: Draft,
+  issues: readonly Issue[],
+  parameters: ParametersMessage | undefined,
+  sourceId: string,
+  online: boolean,
+): WritePlan {
   const changes: ComponentChange[] = [];
   for (const c of draft.components) {
     if (c.sourceId !== sourceId) continue;
@@ -123,8 +134,8 @@ function planWrite(draft: Draft, issues: readonly Issue[], parameters: Parameter
     const fields = leafChanges(theirs.set.parameters, ours.parameters);
     if (fields.length > 0) changes.push({ key: keyOf(c), name: c.name, fields });
   }
-  if (!parameters) return { blocked: "The PLC has no Syn_Config: its components cannot be written.", changes };
-  if (!parameters.writable) return { blocked: parameters.reason ?? "The PLC cannot be written.", changes };
+  const blocked = writeBlockedReason("parameters", { online, parameters, simulation: false });
+  if (blocked) return { blocked, changes };
   const keys = new Set(draft.components.filter((c) => c.sourceId === sourceId).map(keyOf));
   const errors = issues.filter((i) => i.severity === "error" && keys.has(i.key));
   if (errors.length > 0) {
