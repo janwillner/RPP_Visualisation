@@ -9,7 +9,6 @@ import {
   MAX_RECIPE_FIELDS,
   PLC_CONFIG_MACHINE_TYPE,
   PLC_CONFIG_MANIFEST_TYPE,
-  PLC_CONFIG_TYPES,
   type ST_ConfigComponent,
   type ST_ConfigMachine,
   type ST_ConfigManifest,
@@ -144,7 +143,7 @@ export class ConfigEmulation {
         stStatus: { nActiveVersion: 0, nHandledStageId: 0, eResult: E_ConfigResult.NONE, sMessage: "" },
         stActive: structuredClone(defaults),
       };
-      plc.define(entry.path, PLC_CONFIG_TYPES[entry.kind], fb);
+      plc.define(entry.path, COMPONENTS[entry.kind].plcConfigType, fb);
       return { entry, defaults, persistent: { bValid: false, nVersion: 0, stParam: structuredClone(defaults) }, lastVersion: 0 };
     });
   }

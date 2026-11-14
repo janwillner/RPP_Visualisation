@@ -84,9 +84,11 @@ Every type also needs its place in the configurator (ADR 0016) and a parameter s
 compiler asks for most of these entries (`satisfies` over every `ComponentType`), and a test checks that the
 palette offers every type of `COMPONENT_SCHEMAS`.
 
-1. **Protocol** (`packages/protocol/src/parameters.ts`): its fields in `PARAMETER_FIELDS` (pose, origin shift and what
-   the application sets up per machine: zones, product types, track modules, gripper fingers, areas; never hardware), its schema in
-   `PARAMETER_SCHEMAS` and `typed("<type>")` in `TypedParametersSchema`.
+1. **Protocol** (`packages/protocol/src/model.ts`): its type's `COMPONENT_SCHEMAS` entry lists its `parameters` (pose,
+   origin shift and what the application sets up per machine: zones, product types, track modules, gripper fingers,
+   areas; never hardware) and its `hardware` (what a draft assumes: lengths, arm geometry, strokes, bodies); the
+   compiler checks both are fields of its config. `PARAMETER_FIELDS`, `PARAMETER_SCHEMAS`, `TypedParametersSchema` and
+   `HARDWARE_FIELDS` follow from it.
 2. **Syn_Config** (`plc/Syn_Config`, through the TwinCAT MCP tools): `ST_Config<Type>Param` with exactly those members
    (named as in its Syn_Visu config), `ST_Config<Type>Set`, `ST_Config<Type>` (`vo_Config`), and
    `_FB_Config<Type> EXTENDS _FB_ConfigComponent` with `m_ComponentType`, `m_Cycle` (as the other FBs),
@@ -94,10 +96,10 @@ palette offers every type of `COMPONENT_SCHEMAS`.
    helpers (`m_InvalidZones`, `m_PassOnZones`, ...). A component drawn from bodies derives from
    `_FB_ConfigBodyComponent` and only adds `m_ComponentType` and `m_PassOn`. Bump the library's minor version and
    export it; `docs/config-contract.md` lists the structures.
-3. **Gateway**: the structure's mirror and its `PLC_CONFIG_TYPES` entry in `config-contract.ts`; discovery, writing
-   and the emulation follow the naming convention without code.
+3. **Gateway**: its `plcConfigType` (the `vo_Config` structure's name) in its `COMPONENTS` entry (`components.ts`);
+   discovery, writing and the emulation follow the naming convention without code.
 4. **Configurator** (`apps/configurator`): its `PALETTE_TYPES` and `PALETTE_LABELS` entry, its `defaultComponent`
-   with assumed hardware and its `HARDWARE_FIELDS` (`component-defaults.ts`); a new kind of list needs its `AddEntry`
+   with assumed hardware (`component-defaults.ts`; which fields are hardware comes from the protocol); a new kind of list needs its `AddEntry`
    and a command that starts an entry (like `addModule`, `addBody`, `addFinger`), an optional area its `defaultArea`. A
    robot with fingers needs its rest state in `rest-states.ts` (where the draft draws its flange, ADR 0018); its kit
    passes the flange frame its fingers' offsets count from to `addGripper`.

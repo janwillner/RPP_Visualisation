@@ -10,8 +10,8 @@ import {
   type TypedParameters,
   type WriteParametersCommand,
 } from "@rpp/protocol";
-import { componentKind } from "./components";
-import { PLC_CONFIG_MACHINE_TYPE, PLC_CONFIG_MANIFEST_TYPE, PLC_CONFIG_TYPES, type ST_ConfigManifest } from "./config-contract";
+import { COMPONENTS, componentKind } from "./components";
+import { PLC_CONFIG_MACHINE_TYPE, PLC_CONFIG_MANIFEST_TYPE, type ST_ConfigManifest } from "./config-contract";
 import { E_VisuComponentType, enumValue } from "./plc-contract";
 import { mapPlc, type EntryMemory } from "./plc-mapping";
 import { plcLeaves } from "./plc-writing";
@@ -106,7 +106,7 @@ export async function discoverParameters(
       continue;
     }
     const actual = await plc.typeOf(e.sPath);
-    const expected = PLC_CONFIG_TYPES[type];
+    const expected = COMPONENTS[type].plcConfigType;
     if (!isExpectedType(actual, expected)) {
       errors.push({ componentId: e.nId, path: e.sPath, message: `Symbol has expected type ${expected} but is ${actual ?? "missing"}` });
       continue;

@@ -1,16 +1,9 @@
 import { z } from "zod";
 import {
+  COMPONENT_SCHEMAS,
+  COMPONENT_TYPES,
   ConfigMessageSchema,
-  CartesianConfigSchema,
-  ConveyorConfigSchema,
-  DeltaConfigSchema,
-  SensorConfigSchema,
   SourceIdSchema,
-  StationConfigSchema,
-  VisionConfigSchema,
-  XtsGantryConfigSchema,
-  XtsLoopConfigSchema,
-  type ComponentConfig,
   type ComponentType,
   StateMessageSchema,
   StatusMessageSchema,
@@ -39,91 +32,49 @@ export const FIELD_TEXT_CONFIG_PROTOCOL_VERSION = 4;
 export const MIN_CONFIG_PROTOCOL_VERSION = 2;
 
 /**
- * The configuration fields of each component type that a parameter set holds; hardware (lengths, arm geometry, strokes,
- * bodies) is never among them. An XTS track's modules and a gripper's fingers are: they are set up per machine (ADR 0016,
- * ADR 0018).
+ * The configuration fields of each component type that a parameter set holds (`COMPONENT_SCHEMAS`' `parameters`):
+ * hardware (lengths, arm geometry, strokes, bodies) is never among them. An XTS track's modules and a gripper's fingers
+ * are: they are set up per machine (ADR 0016, ADR 0018).
  */
-export const PARAMETER_FIELDS = {
-  conveyor: ["pose", "originShift", "productTypes"],
-  delta: ["pose", "originShift", "zones", "fingers", "workingArea", "limitArea", "tcpLimitArea"],
-  xtsGantry: ["pose", "originShift", "modules", "zones", "fingers", "limitArea", "tcpLimitArea"],
-  xtsLoop: ["pose", "originShift", "modules", "zones", "fingers"],
-  cartesian: ["pose", "originShift", "zones", "fingers", "limitArea", "tcpLimitArea"],
-  vision: ["pose", "originShift", "zones"],
-  sensor: ["pose", "originShift", "zones"],
-  station: ["pose", "originShift", "zones"],
-} as const satisfies { [T in ComponentType]: readonly (keyof Extract<ComponentConfig, { type: T }>)[] };
-export type ParameterType = keyof typeof PARAMETER_FIELDS;
+export const PARAMETER_FIELDS = Object.fromEntries(COMPONENT_TYPES.map((t) => [t, COMPONENT_SCHEMAS[t].parameters])) as {
+  readonly [T in ComponentType]: (typeof COMPONENT_SCHEMAS)[T]["parameters"];
+};
+/** Every component type has a parameter set. */
+export type ParameterType = ComponentType;
 
-const base = { pose: true, originShift: true } as const;
-const robot = { ...base, zones: true, fingers: true, limitArea: true, tcpLimitArea: true } as const;
-const areas = "limit area and TCP limit area";
+/** A component type's parameter set: its config schema cut to its parameter fields. */
+type ConfigShape<T extends ComponentType> = (typeof COMPONENT_SCHEMAS)[T]["config"]["shape"];
+type ParameterShape<T extends ComponentType> = {
+  [K in Extract<(typeof COMPONENT_SCHEMAS)[T]["parameters"][number], keyof ConfigShape<T>>]: ConfigShape<T>[K];
+};
+type ParameterSchema<T extends ComponentType> = z.ZodObject<ParameterShape<T> extends z.ZodRawShape ? ParameterShape<T> : never>;
 
-export const ConveyorParametersSchema = ConveyorConfigSchema.pick({ ...base, productTypes: true }).describe(
-  "A conveyor's parameter set: its pose, origin shift and product types.",
-);
-export type ConveyorParameters = z.infer<typeof ConveyorParametersSchema>;
+function parameterSchema(type: ComponentType): z.AnyZodObject {
+  const { config, parameters } = COMPONENT_SCHEMAS[type];
+  const fields = Object.fromEntries(parameters.map((f) => [f, true as const]));
+  const listed = parameters.map((f) => `\`${f}\``).join(", ");
+  return (config as unknown as z.AnyZodObject).pick(fields).describe(`The parameter set of a \`${type}\`: its config fields ${listed}.`);
+}
 
-export const DeltaParametersSchema = DeltaConfigSchema.pick({ ...robot, workingArea: true }).describe(
-  `A Delta robot's parameter set: its pose, origin shift, zones, gripper fingers, working area, ${areas}.`,
-);
-export type DeltaParameters = z.infer<typeof DeltaParametersSchema>;
-
-export const XtsGantryParametersSchema = XtsGantryConfigSchema.pick({ ...robot, modules: true }).describe(
-  `An XTS gantry's parameter set: its pose, origin shift, track modules, zones, gripper fingers, ${areas}.`,
-);
-export const XtsLoopParametersSchema = XtsLoopConfigSchema.pick({ ...base, modules: true, zones: true, fingers: true }).describe(
-  "An XTS loop's parameter set: its pose, origin shift, track modules, zones and gripper fingers.",
-);
-export const CartesianParametersSchema = CartesianConfigSchema.pick(robot).describe(
-  `A Cartesian robot's parameter set: its pose, origin shift, zones, gripper fingers, ${areas}.`,
-);
-export const VisionParametersSchema = VisionConfigSchema.pick({ ...base, zones: true }).describe(
-  "A vision system's parameter set: its pose, origin shift and zones.",
-);
-export const SensorParametersSchema = SensorConfigSchema.pick({ ...base, zones: true }).describe(
-  "A product sensor's parameter set: its pose, origin shift and zones.",
-);
-export const StationParametersSchema = StationConfigSchema.pick({ ...base, zones: true }).describe(
-  "A station's parameter set: its pose, origin shift and zones.",
-);
-
-/** Each parameter type's schema, keyed like `PARAMETER_FIELDS`. */
-export const PARAMETER_SCHEMAS = {
-  conveyor: ConveyorParametersSchema,
-  delta: DeltaParametersSchema,
-  xtsGantry: XtsGantryParametersSchema,
-  xtsLoop: XtsLoopParametersSchema,
-  cartesian: CartesianParametersSchema,
-  vision: VisionParametersSchema,
-  sensor: SensorParametersSchema,
-  station: StationParametersSchema,
-} as const;
-
-const typed = <T extends ParameterType>(type: T) =>
-  z.object({
-    type: z.literal(type).describe(`Component type: always \`${type}\`.`),
-    parameters: PARAMETER_SCHEMAS[type],
-  });
+/** Each component type's parameter schema, keyed like `COMPONENT_SCHEMAS`. */
+export const PARAMETER_SCHEMAS = Object.fromEntries(COMPONENT_TYPES.map((t) => [t, parameterSchema(t)])) as {
+  readonly [T in ComponentType]: ParameterSchema<T>;
+};
 
 /** A parameter set with the type of the component it is for. */
-export const TypedParametersSchema = z
-  .discriminatedUnion("type", [
-    typed("conveyor"),
-    typed("delta"),
-    typed("xtsGantry"),
-    typed("xtsLoop"),
-    typed("cartesian"),
-    typed("vision"),
-    typed("sensor"),
-    typed("station"),
-  ])
-  .describe("A parameter set with the type of its component.");
-export type TypedParameters = z.infer<typeof TypedParametersSchema>;
+export type TypedParameters = {
+  [T in ComponentType]: { type: T; parameters: z.infer<ParameterSchema<T>> };
+}[ComponentType];
 
-/** Every parameter type is one option of `TypedParametersSchema`: a type left out of it does not compile. */
-const everyTypeTyped: [Exclude<ParameterType, TypedParameters["type"]>] extends [never] ? true : never = true;
-void everyTypeTyped;
+const typed = (type: ComponentType) =>
+  z.object({
+    type: z.literal(type).describe(`Component type: always \`${type}\`.`),
+    parameters: PARAMETER_SCHEMAS[type] as z.AnyZodObject,
+  });
+
+export const TypedParametersSchema = z
+  .discriminatedUnion("type", COMPONENT_TYPES.map(typed) as [ReturnType<typeof typed>, ...ReturnType<typeof typed>[]])
+  .describe("A parameter set with the type of its component.") as unknown as z.ZodType<TypedParameters>;
 
 export const ParameterResultSchema = z
   .enum(["none", "pending", "applied", "rejected"])

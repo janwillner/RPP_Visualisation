@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, PROTOCOL_VERSION, emptyDraft, type TrackModuleKind, type ComponentConfig, type ConfigMessage, type ParametersMessage, type ConveyorConfig, type ConveyorState, type Draft, type ProductType, type StateMessage, type Zone } from "@rpp/protocol";
+import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, HARDWARE_FIELDS, PROTOCOL_VERSION, emptyDraft, type TrackModuleKind, type ComponentConfig, type ConfigMessage, type ParametersMessage, type ConveyorConfig, type ConveyorState, type Draft, type ProductType, type StateMessage, type Zone } from "@rpp/protocol";
 import {
   componentKey,
   isOnline,
@@ -12,7 +12,7 @@ import {
   zoneSides,
 } from "@rpp/machine-view";
 import { beltRange, mcsToBelt } from "./belt-coordinates";
-import { defaultArea, defaultComponent, newBody, newFinger, HARDWARE_FIELDS, PALETTE_LABELS, XTS_MODULE_LENGTH, type AreaField, type PaletteType } from "./component-defaults";
+import { defaultArea, defaultComponent, newBody, newFinger, PALETTE_LABELS, XTS_MODULE_LENGTH, type AreaField, type PaletteType } from "./component-defaults";
 import { applyEdit, keyOf, type Edit } from "./edits";
 import { hardwareHints, reconcile, type Match, type Reconciliation } from "./reconciliation";
 import { validateDraft, type Issue } from "./validation";

@@ -8,6 +8,8 @@ interface PlcComponentType {
   plcValue: number;
   /** PLC data type of the component's contract structure, checked during discovery. */
   plcType: string;
+  /** PLC data type of its Syn_Config parameter FB's `vo_Config` (ADR 0017), checked during discovery. */
+  plcConfigType: string;
 }
 
 /**
@@ -16,14 +18,15 @@ interface PlcComponentType {
  * `plc-mapping.ts`, and one entry here; the compiler asks for it.
  */
 export const COMPONENTS: Record<ComponentType, PlcComponentType> = {
-  conveyor: { plcValue: E_VisuComponentType.CONVEYOR, plcType: "ST_VisuConveyor" },
-  delta: { plcValue: E_VisuComponentType.DELTA, plcType: "ST_VisuDelta" },
-  xtsGantry: { plcValue: E_VisuComponentType.XTS_GANTRY, plcType: "ST_VisuXtsGantry" },
-  xtsLoop: { plcValue: E_VisuComponentType.XTS_LOOP, plcType: "ST_VisuXtsLoop" },
-  cartesian: { plcValue: E_VisuComponentType.CARTESIAN, plcType: "ST_VisuCartesian" },
-  vision: { plcValue: E_VisuComponentType.VISION, plcType: "ST_VisuDetector" },
-  sensor: { plcValue: E_VisuComponentType.SENSOR, plcType: "ST_VisuDetector" },
-  station: { plcValue: E_VisuComponentType.STATION, plcType: "ST_VisuStation" },
+  conveyor: { plcValue: E_VisuComponentType.CONVEYOR, plcType: "ST_VisuConveyor", plcConfigType: "ST_ConfigConveyor" },
+  delta: { plcValue: E_VisuComponentType.DELTA, plcType: "ST_VisuDelta", plcConfigType: "ST_ConfigDelta" },
+  xtsGantry: { plcValue: E_VisuComponentType.XTS_GANTRY, plcType: "ST_VisuXtsGantry", plcConfigType: "ST_ConfigXtsGantry" },
+  xtsLoop: { plcValue: E_VisuComponentType.XTS_LOOP, plcType: "ST_VisuXtsLoop", plcConfigType: "ST_ConfigXtsLoop" },
+  cartesian: { plcValue: E_VisuComponentType.CARTESIAN, plcType: "ST_VisuCartesian", plcConfigType: "ST_ConfigCartesian" },
+  // Vision system, product sensor and station share one parameter structure: their bodies are hardware.
+  vision: { plcValue: E_VisuComponentType.VISION, plcType: "ST_VisuDetector", plcConfigType: "ST_ConfigBodyComponent" },
+  sensor: { plcValue: E_VisuComponentType.SENSOR, plcType: "ST_VisuDetector", plcConfigType: "ST_ConfigBodyComponent" },
+  station: { plcValue: E_VisuComponentType.STATION, plcType: "ST_VisuStation", plcConfigType: "ST_ConfigBodyComponent" },
 };
 
 /** The component type of a manifest entry's `eType`, undefined when unknown. */
