@@ -5,6 +5,7 @@ import {
   type ParametersMessage,
   type ParameterType,
   type TypedParameters,
+  writeBlockedReason,
 } from "@rpp/protocol";
 import { componentKey, type ComponentKey, type SourceInfo } from "@rpp/machine-view";
 import { keyOf } from "./edits";
@@ -12,8 +13,8 @@ import { sameConfig } from "./reconciliation";
 import type { Issue } from "./validation";
 
 /**
- * Writing a draft to its PLCs (ADR 0017): which parameter values would change, whether a source can be written, how a
- * write fares until the PLC handled it, and whether an application passes its parameters on to Syn_Visu.
+ * Writing a draft to its PLCs (ADR 0017): which parameter values would change, whether a source can be written, and
+ * whether an application passes its parameters on to Syn_Visu. How a write fares follows `GatewayLive`.
  */
 
 /** A component's parameter set: its parameter fields (`PARAMETER_FIELDS`); undefined for a type without one yet. */
@@ -48,14 +49,6 @@ export interface WritePlan {
    */
   unwritable?: string[];
 }
-
-/** How a component's last write fares. */
-export type WriteState =
-  | { state: "staged"; stageId: number }
-  | { state: "waiting"; stageId: number }
-  | { state: "applied"; stageId: number }
-  | { state: "rejected"; stageId: number; message: string }
-  | { state: "failed"; message: string };
 
 const shown = (v: unknown) => (v === undefined ? "—" : v === null ? "none" : typeof v === "object" ? JSON.stringify(v) : String(v));
 
@@ -106,22 +99,32 @@ export function unwritableHints(
   }));
 }
 
-/** What writing `sourceId` would change, or why it cannot be written; `plc` holds the PLCs' components by key. */
+/**
+ * What writing `sourceId` would change, or why it cannot be written (`writeBlockedReason`, then errors of its
+ * components); `plc` holds the PLCs' components by key, `online` whether its PLC is connected.
+ */
 export function writePlan(
   draft: Draft,
   issues: readonly Issue[],
   parameters: Readonly<Record<string, ParametersMessage>>,
   plc: ReadonlyMap<ComponentKey, ComponentConfig>,
   sourceId: string,
+  online: boolean,
 ): WritePlan {
   const unwritable = unwritableComponents(draft, plc, parameters)
     .filter((c) => c.sourceId === sourceId)
     .map((c) => c.name);
-  const plan = planWrite(draft, issues, parameters[sourceId], sourceId);
+  const plan = planWrite(draft, issues, parameters[sourceId], sourceId, online);
   return unwritable.length > 0 ? { ...plan, unwritable } : plan;
 }
 
-function planWrite(draft: Draft, issues: readonly Issue[], parameters: ParametersMessage | undefined, sourceId: string): WritePlan {
+function planWrite(
+  draft: Draft,
+  issues: readonly Issue[],
+  parameters: ParametersMessage | undefined,
+  sourceId: string,
+  online: boolean,
+): WritePlan {
   const changes: ComponentChange[] = [];
   for (const c of draft.components) {
     if (c.sourceId !== sourceId) continue;
@@ -131,39 +134,14 @@ function planWrite(draft: Draft, issues: readonly Issue[], parameters: Parameter
     const fields = leafChanges(theirs.set.parameters, ours.parameters);
     if (fields.length > 0) changes.push({ key: keyOf(c), name: c.name, fields });
   }
-  if (!parameters) return { blocked: "The PLC has no Syn_Config: its components cannot be written.", changes };
-  if (!parameters.writable) return { blocked: parameters.reason ?? "The PLC cannot be written.", changes };
+  const blocked = writeBlockedReason("parameters", { online, parameters, simulation: false });
+  if (blocked) return { blocked, changes };
   const keys = new Set(draft.components.filter((c) => c.sourceId === sourceId).map(keyOf));
   const errors = issues.filter((i) => i.severity === "error" && keys.has(i.key));
   if (errors.length > 0) {
     return { blocked: `Fix the errors of this PLC's components first: ${errors.map((e) => e.message).join("; ")}`, changes };
   }
   return { changes };
-}
-
-/** The write states after a new `parameters` message: a write the PLC handled is applied or rejected. */
-export function followWrites(
-  writes: Readonly<Record<ComponentKey, WriteState>>,
-  parameters: Readonly<Record<string, ParametersMessage>>,
-): Record<ComponentKey, WriteState> {
-  const next: Record<ComponentKey, WriteState> = {};
-  for (const [key, write] of Object.entries(writes)) {
-    next[key] = write;
-    if (write.state !== "staged" && write.state !== "waiting") continue;
-    const sourceId = key.slice(0, key.lastIndexOf("#"));
-    const id = Number(key.slice(key.lastIndexOf("#") + 1));
-    const status = parameters[sourceId]?.components.find((c) => c.id === id);
-    if (!status) continue;
-    if (status.handledStageId === write.stageId) {
-      next[key] =
-        status.result === "rejected"
-          ? { state: "rejected", stageId: write.stageId, message: status.message }
-          : { state: "applied", stageId: write.stageId };
-    } else if (status.result === "pending") {
-      next[key] = { state: "waiting", stageId: write.stageId };
-    }
-  }
-  return next;
 }
 
 /**

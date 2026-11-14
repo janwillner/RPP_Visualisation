@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { download } from "@rpp/machine-view";
+import { download, useLeaveGuard } from "@rpp/machine-view";
 import { usePlayer, type Player, type PlayerSnapshot } from "./player";
 import { SPEEDS, type TimelineEvent } from "./recording";
 import { useViewer, type Viewer, type ViewerSnapshot } from "./viewer";
@@ -27,16 +27,7 @@ export function useRecordingControls(viewer: Viewer): RecordingControls {
 
   // An unsaved recording is lost with the page: let the browser ask first.
   const unsaved = view.recorder !== undefined || (!view.saved && view.player !== undefined);
-  useEffect(() => {
-    if (!unsaved) return;
-    const warn = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      // Older browsers, e.g. some HMI browser controls, ask only with a return value.
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [unsaved]);
+  useLeaveGuard(unsaved);
 
   return {
     ...view,

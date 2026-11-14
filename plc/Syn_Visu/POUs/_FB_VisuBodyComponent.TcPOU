@@ -15,6 +15,7 @@ tells where these lie in its contract structure through m_Parts. Not used direct
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 6.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New: body handling of _FB_VisuDetector, shared with stations<br>
+Syn_Visu 10.0.0 ¦ 2026-11-14 ¦ J.Willner ¦ m_SetPose moved to _FB_VisuComponent (public); m_Pose for it<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK ABSTRACT _FB_VisuBodyComponent EXTENDS _FB_VisuZoneComponent]]></Declaration>
     <Implementation>
@@ -83,6 +84,34 @@ VAR_OUTPUT
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Pose" Id="{89e8c2b1-da1d-430c-af56-b18fe65471b4}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The pose in the derived FB's contract structure (m_Parts), for m_SetPose.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_Pose : BOOL
+VAR_OUTPUT
+	vo_p_Pose							: POINTER TO ST_VisuPose;
+END_VAR
+VAR
+	p_TempShift							: POINTER TO ST_VisuPosition;
+	p_TempCount							: POINTER TO UINT;
+	p_TempBodies						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBody;
+	p_TempStates						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBodyState;
+	p_TempTimestamp						: POINTER TO ULINT;
+	p_TempFault							: POINTER TO ST_VisuFault;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Parts(vo_p_Pose => vo_p_Pose, vo_p_OriginShift => p_TempShift, vo_p_BodyCount => p_TempCount,
+	vo_p_Bodies => p_TempBodies, vo_p_BodyStates => p_TempStates, vo_p_Timestamp => p_TempTimestamp,
+	vo_p_Fault => p_TempFault);
+m_Pose := vo_p_Pose <> 0;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_Register" Id="{421b7a7d-27c2-47e0-9fef-8cbd38e20148}">
@@ -319,44 +348,6 @@ IF m_SetOriginShift THEN
 	p_TempShift^.fX := vi_lr_X;
 	p_TempShift^.fY := vi_lr_Y;
 	p_TempShift^.fZ := vi_lr_Z;
-	m_NotifyConfigChanged();
-END_IF]]></ST>
-      </Implementation>
-    </Method>
-    <Method Name="m_SetPose" Id="{aeb25358-814b-4c79-bac0-9a9ebd94f4e0}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-Sets the component's pose, for m_Configure of the derived FB. TRUE if it changed.<br>
-****************************************************************************************************)
-METHOD PROTECTED m_SetPose : BOOL
-VAR_INPUT
-	vi_Pose								: ST_VisuPose;	// MCS
-END_VAR
-VAR
-	p_TempPose							: POINTER TO ST_VisuPose;
-	p_TempShift							: POINTER TO ST_VisuPosition;
-	p_TempCount							: POINTER TO UINT;
-	p_TempBodies						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBody;
-	p_TempStates						: POINTER TO ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_BODIES - 1] OF ST_VisuBodyState;
-	p_TempTimestamp						: POINTER TO ULINT;
-	p_TempFault							: POINTER TO ST_VisuFault;
-END_VAR]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[m_SetPose := FALSE;
-m_Parts(vo_p_Pose => p_TempPose, vo_p_OriginShift => p_TempShift, vo_p_BodyCount => p_TempCount,
-	vo_p_Bodies => p_TempBodies, vo_p_BodyStates => p_TempStates, vo_p_Timestamp => p_TempTimestamp,
-	vo_p_Fault => p_TempFault);
-IF p_TempPose = 0 THEN
-	RETURN;
-END_IF
-(* ST_VisuPose holds LREALs only, so a memory compare sees no padding. *)
-m_SetPose := Tc2_System.MEMCMP(ADR(vi_Pose), p_TempPose, SIZEOF(vi_Pose)) <> 0;
-IF m_SetPose THEN
-	p_TempPose^ := vi_Pose;
 	m_NotifyConfigChanged();
 END_IF]]></ST>
       </Implementation>

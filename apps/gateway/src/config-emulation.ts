@@ -9,12 +9,13 @@ import {
   MAX_RECIPE_FIELDS,
   PLC_CONFIG_MACHINE_TYPE,
   PLC_CONFIG_MANIFEST_TYPE,
-  PLC_CONFIG_TYPES,
   type ST_ConfigComponent,
   type ST_ConfigMachine,
   type ST_ConfigManifest,
   type ST_ConfigManifestEntry,
   type ST_ConfigRecipeField,
+  type ST_ConfigStaging,
+  type ST_ConfigStatus,
 } from "./config-contract";
 import { E_VisuComponentType, enumValue } from "./plc-contract";
 import type { InMemoryPlc } from "./in-memory-plc";
@@ -142,7 +143,7 @@ export class ConfigEmulation {
         stStatus: { nActiveVersion: 0, nHandledStageId: 0, eResult: E_ConfigResult.NONE, sMessage: "" },
         stActive: structuredClone(defaults),
       };
-      plc.define(entry.path, PLC_CONFIG_TYPES[entry.kind], fb);
+      plc.define(entry.path, COMPONENTS[entry.kind].plcConfigType, fb);
       return { entry, defaults, persistent: { bValid: false, nVersion: 0, stParam: structuredClone(defaults) }, lastVersion: 0 };
     });
   }
@@ -153,33 +154,18 @@ export class ConfigEmulation {
   step(): void {
     for (const fb of this.fbs) {
       const vo = this.plc.get<ST_ConfigComponent<Param>>(fb.entry.path);
-      const { stStaging: staging, stStatus: status } = vo;
       const active = () => (fb.persistent.bValid ? fb.persistent.nVersion : 0);
-      if (staging.bReset) {
-        fb.persistent.bValid = false;
-        Object.assign(status, { nHandledStageId: staging.nStageId, eResult: E_ConfigResult.APPLIED, sMessage: "" });
-        // As m_Handled does: a set still waiting is dropped with the reset.
-        staging.bReset = false;
-        staging.bStaged = false;
-      } else if (staging.bStaged) {
-        if (!this.applyAllowed) {
-          status.eResult = E_ConfigResult.PENDING;
-        } else {
-          const reason =
-            staging.nBaseVersion !== active()
-              ? `Based on version ${staging.nBaseVersion}, but version ${active()} is active`
-              : this.invalid(vo.stStaged);
-          if (reason) {
-            Object.assign(status, { nHandledStageId: staging.nStageId, eResult: E_ConfigResult.REJECTED, sMessage: reason });
-          } else {
-            fb.lastVersion += 1;
-            fb.persistent = { bValid: true, nVersion: fb.lastVersion, stParam: structuredClone(vo.stStaged) };
-            Object.assign(status, { nHandledStageId: staging.nStageId, eResult: E_ConfigResult.APPLIED, sMessage: "" });
-          }
-          staging.bStaged = false;
-        }
-      }
-      status.nActiveVersion = active();
+      stagingCycle(vo, this.applyAllowed, active(), {
+        invalid: () => this.invalid(vo.stStaged) ?? "",
+        apply: () => {
+          fb.lastVersion += 1;
+          fb.persistent = { bValid: true, nVersion: fb.lastVersion, stParam: structuredClone(vo.stStaged) };
+        },
+        reset: () => {
+          fb.persistent.bValid = false;
+        },
+      });
+      vo.stStatus.nActiveVersion = active();
       vo.stActive = structuredClone(fb.persistent.bValid ? fb.persistent.stParam : fb.defaults);
       this.passOn(fb.entry, vo.stActive);
     }
@@ -191,34 +177,18 @@ export class ConfigEmulation {
     const vo = this.plc.get<ST_ConfigMachine>(m.path);
     // As the library: the fields as declared in vo_Config.
     const fields = vo.aFields.slice(0, vo.nFieldCount);
-    const { stStaging: staging, stStatus: status } = vo;
     const active = () => (this.recipe.bValid ? this.recipe.nVersion : 0);
-    const handled = (reason: string) => {
-      Object.assign(status, {
-        nHandledStageId: staging.nStageId,
-        eResult: reason ? E_ConfigResult.REJECTED : E_ConfigResult.APPLIED,
-        sMessage: reason,
-      });
-      staging.bStaged = false;
-      staging.bReset = false;
-    };
-    if (staging.bReset) {
-      this.recipe.bValid = false;
-      handled("");
-    } else if (staging.bStaged) {
-      if (!this.applyAllowed) status.eResult = E_ConfigResult.PENDING;
-      else if (staging.nBaseVersion !== active()) {
-        handled(`Based on version ${staging.nBaseVersion}, but version ${active()} is active`);
-      } else {
-        const reason = invalidRecipe(fields, vo.aStaged);
-        if (!reason) {
-          this.recipe.nLastVersion += 1;
-          this.recipe = { ...this.recipe, bValid: true, nVersion: this.recipe.nLastVersion, aValues: [...vo.aStaged] };
-        }
-        handled(reason);
-      }
-    }
-    status.nActiveVersion = active();
+    stagingCycle(vo, this.applyAllowed, active(), {
+      invalid: () => invalidRecipe(fields, vo.aStaged),
+      apply: () => {
+        this.recipe.nLastVersion += 1;
+        this.recipe = { ...this.recipe, bValid: true, nVersion: this.recipe.nLastVersion, aValues: [...vo.aStaged] };
+      },
+      reset: () => {
+        this.recipe.bValid = false;
+      },
+    });
+    vo.stStatus.nActiveVersion = active();
     vo.aActive = fields.map((f, i) => (this.recipe.bValid ? this.recipe.aValues[i]! : f.fProgramValue)).concat(vo.aActive.slice(fields.length));
 
     const command = vo.stCommand;
@@ -234,7 +204,7 @@ export class ConfigEmulation {
   }
 
   /**
-   * Why a staged set cannot be taken over, as the library's m_Invalid says it: a count past its array, a product type
+   * Why a staged set cannot be taken over, as the library's m_InvalidStaged says it: a count past its array, a product type
    * without a number or twice, a track without modules or a module without a length (checked before the zones, as
    * the XTS parameter FBs do), a zone on no conveyor, a finger without a diameter or height.
    */
@@ -275,13 +245,45 @@ export class ConfigEmulation {
   }
 }
 
+/**
+ * What Syn_Config's staging (`m_HandleStaging`) does in one cycle, for a parameter FB and the machine FB alike: a
+ * reset makes the active set invalid; a staged set waits while not allowed, else it is rejected when based on another
+ * version than `active` or invalid, or taken over. Either way the staging is handled: a set still waiting is dropped
+ * with a reset.
+ */
+function stagingCycle(
+  vo: { stStaging: ST_ConfigStaging; stStatus: ST_ConfigStatus },
+  applyAllowed: boolean,
+  active: number,
+  set: { invalid(): string; apply(): void; reset(): void },
+): void {
+  const { stStaging: staging, stStatus: status } = vo;
+  const handled = (reason: string) => {
+    Object.assign(status, { nHandledStageId: staging.nStageId, eResult: reason ? E_ConfigResult.REJECTED : E_ConfigResult.APPLIED, sMessage: reason });
+    staging.bStaged = false;
+    staging.bReset = false;
+  };
+  if (staging.bReset) {
+    set.reset();
+    handled("");
+  } else if (staging.bStaged) {
+    if (!applyAllowed) status.eResult = E_ConfigResult.PENDING;
+    else if (staging.nBaseVersion !== active) handled(`Based on version ${staging.nBaseVersion}, but version ${active} is active`);
+    else {
+      const reason = set.invalid();
+      if (!reason) set.apply();
+      handled(reason);
+    }
+  }
+}
+
 /** The parameter fields of a Syn_Visu config: what Syn_Config holds of it, by the naming convention. */
 function paramOf(kind: ParameterType, config: Record<string, unknown>): Param {
   return structuredClone(Object.fromEntries(plcMembers(PARAMETER_SCHEMAS[kind]).map((m) => [m, config[m]])));
 }
 
 /**
- * Why staged recipe values cannot be taken over, in the order the library's m_Invalid checks them (the range first, a
+ * Why staged recipe values cannot be taken over, in the order the library's m_InvalidStaged checks them (the range first, a
  * switch 0 to 1; then a whole number for every type but NUMBER); '' when they can.
  */
 function invalidRecipe(fields: readonly ST_ConfigRecipeField[], staged: readonly number[]): string {

@@ -8,10 +8,12 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 TcUnit test suite of _FB_VisuConveyor's config and belt position: the config version only changes when a<br>
-value does, product types, the body flag and the unwrapping of a modulo belt position.<br>
+value does, product types, the body flag, the unwrapping of a modulo belt position and the conversion between<br>
+the MCS and the conveyor's coordinate system.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 9.4.0  ¦ 2026-11-09 ¦ J.Willner ¦ Unit tests<br>
+Syn_Visu 10.0.0 ¦ 2026-11-14 ¦ J.Willner ¦ m_SetPose; m_BeltToMcs and m_McsToBelt<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_TestConveyor EXTENDS TcUnit.FB_TestSuite
 ]]></Declaration>
@@ -21,8 +23,95 @@ m_SetProductTypeAddsAndUpdates();
 m_SetProductTypeRejectsFullList();
 m_SetBodyVisible();
 m_SetModuloBeltPosition();
+m_BeltAndMcsConvert();
 ]]></ST>
     </Implementation>
+    <Method Name="m_BeltAndMcsConvert" Id="{e1536a9b-ed25-4b95-a204-32f6453b7920}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+m_BeltToMcs places a pose of the conveyor's coordinate system in the MCS as the visualisation does (the pose's<br>
+rotation turns the origin shift and the position, fRz adds up), and m_McsToBelt is its inverse, also on a<br>
+tilted conveyor.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_BeltAndMcsConvert
+VAR_INST
+	fb_TempConveyor						: _FB_VisuConveyor;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	TempPose							: ST_VisuPose;	// of the conveyor
+	TempBelt							: ST_VisuPlanarPose;	// conveyor coordinate system
+	TempMcs								: ST_VisuPlanarPose;
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('BeltAndMcsConvert');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+
+(****************************************************************************************************
+A CONVEYOR TURNED BY 90 DEGREES
+****************************************************************************************************)
+TempPose.fX := 1000;
+TempPose.fY := 500;
+TempPose.fZ := 800;
+TempPose.fRz := 90;
+fb_TempConveyor.m_SetPose(vi_Pose := TempPose);
+fb_TempConveyor.m_SetOriginShift(vi_lr_X := 100, vi_lr_Y := 0, vi_lr_Z := 0);
+
+(* Its coordinate system lies 100 mm along the belt, i.e. along the MCS +Y. *)
+TempMcs := fb_TempConveyor.m_BeltToMcs(vi_Pose := TempBelt);
+AssertEquals_LREAL(Expected := 1000, Actual := TempMcs.fX, Delta := 0.001, Message := 'origin X');
+AssertEquals_LREAL(Expected := 600, Actual := TempMcs.fY, Delta := 0.001, Message := 'origin Y');
+AssertEquals_LREAL(Expected := 800, Actual := TempMcs.fZ, Delta := 0.001, Message := 'origin Z');
+AssertEquals_LREAL(Expected := 90, Actual := TempMcs.fRz, Delta := 0.001, Message := 'origin Rz');
+
+TempBelt.fX := 50;
+TempBelt.fY := 20;
+TempBelt.fZ := 10;
+TempBelt.fRz := 15;
+TempMcs := fb_TempConveyor.m_BeltToMcs(vi_Pose := TempBelt);
+AssertEquals_LREAL(Expected := 980, Actual := TempMcs.fX, Delta := 0.001, Message := 'belt Y runs along MCS -X');
+AssertEquals_LREAL(Expected := 650, Actual := TempMcs.fY, Delta := 0.001, Message := 'belt X runs along MCS +Y');
+AssertEquals_LREAL(Expected := 810, Actual := TempMcs.fZ, Delta := 0.001, Message := 'Z');
+AssertEquals_LREAL(Expected := 105, Actual := TempMcs.fRz, Delta := 0.001, Message := 'Rz adds up');
+
+TempBelt := fb_TempConveyor.m_McsToBelt(vi_Pose := TempMcs);
+AssertEquals_LREAL(Expected := 50, Actual := TempBelt.fX, Delta := 0.001, Message := 'back: X');
+AssertEquals_LREAL(Expected := 20, Actual := TempBelt.fY, Delta := 0.001, Message := 'back: Y');
+AssertEquals_LREAL(Expected := 10, Actual := TempBelt.fZ, Delta := 0.001, Message := 'back: Z');
+AssertEquals_LREAL(Expected := 15, Actual := TempBelt.fRz, Delta := 0.001, Message := 'back: Rz');
+
+
+(****************************************************************************************************
+A TILTED CONVEYOR: THERE AND BACK
+****************************************************************************************************)
+TempPose.fRx := 5;
+TempPose.fRy := -3;
+TempPose.fRz := 30;
+fb_TempConveyor.m_SetPose(vi_Pose := TempPose);
+fb_TempConveyor.m_SetOriginShift(vi_lr_X := 100, vi_lr_Y := -40, vi_lr_Z := 25);
+TempBelt.fX := 321;
+TempBelt.fY := -45;
+TempBelt.fZ := 12;
+TempBelt.fRz := 7;
+TempBelt := fb_TempConveyor.m_McsToBelt(vi_Pose := fb_TempConveyor.m_BeltToMcs(vi_Pose := TempBelt));
+AssertEquals_LREAL(Expected := 321, Actual := TempBelt.fX, Delta := 0.001, Message := 'tilted: X');
+AssertEquals_LREAL(Expected := -45, Actual := TempBelt.fY, Delta := 0.001, Message := 'tilted: Y');
+AssertEquals_LREAL(Expected := 12, Actual := TempBelt.fZ, Delta := 0.001, Message := 'tilted: Z');
+AssertEquals_LREAL(Expected := 7, Actual := TempBelt.fRz, Delta := 0.001, Message := 'tilted: Rz');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_ConfigureChangesVersionOnce" Id="{7f54833f-274c-4e56-bc49-747c37ff0306}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -30,7 +119,7 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-m_Configure may be called every cycle: only a changed value raises the manifest's config version.<br>
+m_SetPose and m_Configure may be called every cycle: only a changed value raises the manifest's config version.<br>
 ****************************************************************************************************)
 METHOD PRIVATE m_ConfigureChangesVersionOnce
 VAR_INST
@@ -38,6 +127,9 @@ VAR_INST
 	TempManifest						: ST_VisuManifest;
 	TempPose							: ST_VisuPose;
 	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	udn_TempVersion						: UDINT;	// [-] config version after m_Register
 END_VAR
 ]]></Declaration>
       <Implementation>
@@ -48,20 +140,24 @@ END_IF
 b_TempDone := TRUE;
 
 fb_TempConveyor.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed');
+udn_TempVersion := TempManifest.nConfigVersion;
 TempPose.fX := 100;
-AssertTrue(Condition := fb_TempConveyor.m_Configure(vi_Pose := TempPose, vi_lr_Length := 3000, vi_lr_Width := 400),
+AssertTrue(Condition := fb_TempConveyor.m_SetPose(vi_Pose := TempPose), Message := 'first m_SetPose changes the config');
+AssertTrue(Condition := fb_TempConveyor.m_Configure(vi_lr_Length := 3000, vi_lr_Width := 400),
 	Message := 'first m_Configure changes the config');
-AssertEquals_UDINT(Expected := 3, Actual := TempManifest.nConfigVersion, Message := 'config version raised once');
-AssertFalse(Condition := fb_TempConveyor.m_Configure(vi_Pose := TempPose, vi_lr_Length := 3000, vi_lr_Width := 400),
+AssertEquals_UDINT(Expected := udn_TempVersion + 2, Actual := TempManifest.nConfigVersion,
+	Message := 'config version raised once by each');
+AssertFalse(Condition := fb_TempConveyor.m_SetPose(vi_Pose := TempPose), Message := 'same pose: no change');
+AssertFalse(Condition := fb_TempConveyor.m_Configure(vi_lr_Length := 3000, vi_lr_Width := 400),
 	Message := 'same values: no change');
-AssertEquals_UDINT(Expected := 3, Actual := TempManifest.nConfigVersion, Message := 'config version unchanged');
-AssertTrue(Condition := fb_TempConveyor.m_Configure(vi_Pose := TempPose, vi_lr_Length := 3500, vi_lr_Width := 400),
+AssertEquals_UDINT(Expected := udn_TempVersion + 2, Actual := TempManifest.nConfigVersion, Message := 'config version unchanged');
+AssertTrue(Condition := fb_TempConveyor.m_Configure(vi_lr_Length := 3500, vi_lr_Width := 400),
 	Message := 'new length changes the config');
-AssertEquals_UDINT(Expected := 4, Actual := TempManifest.nConfigVersion, Message := 'config version raised again');
+AssertEquals_UDINT(Expected := udn_TempVersion + 3, Actual := TempManifest.nConfigVersion, Message := 'config version raised again');
 AssertEquals_LREAL(Expected := 3500, Actual := fb_TempConveyor.vo_Visu.stConfig.fLength, Delta := 0.001,
 	Message := 'length taken over');
 AssertEquals_LREAL(Expected := 100, Actual := fb_TempConveyor.vo_Visu.stConfig.stPose.fX, Delta := 0.001,
-	Message := 'pose taken over');
+	Message := 'pose kept by m_Configure');
 
 TEST_FINISHED();
 ]]></ST>

@@ -33,6 +33,7 @@ it discovers the PLC: declare every field from the start and keep their order.<b
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 2.1.0 ¦ 2026-11-14 ¦ J.Willner ¦ Created: recipe fields and machine commands (protocol 3)<br>
 Syn_Config 2.2.0 ¦ 2026-11-14 ¦ J.Willner ¦ m_SetText, m_SetVisibleWhen (protocol 4, #49)<br>
+Syn_Config 2.3.0 ¦ 2026-11-14 ¦ J.Willner ¦ m_Cycle through m_HandleStaging<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_ConfigMachine EXTENDS _FB_ConfigComponent
 VAR_OUTPUT
@@ -111,28 +112,16 @@ VAR_INPUT
 	vi_b_ApplyAllowed					: BOOL;	// [-] a staged recipe may be taken over now, e.g. while the machine stands
 END_VAR
 VAR
-	str_TempRejection					: STRING(80);
+	b_TempTakeOver						: BOOL;	// the staged recipe was taken over: copy it
 	un_TempIndex						: UINT;
 END_VAR]]></Declaration>
       <Implementation>
-        <ST><![CDATA[m_Cycle := FALSE;
-CASE m_Staging(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_b_ApplyAllowed := vi_b_ApplyAllowed,
-	vi_udn_ActiveVersion := SEL(vio_Set.bValid, 0, vio_Set.nVersion)) OF
-	E_ConfigAction.RESET:
-		vio_Set.bValid := FALSE;
-		m_Handled(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_str_Rejection := '');
-		m_Cycle := TRUE;
-	E_ConfigAction.TAKE_OVER:
-		str_TempRejection := m_Invalid();
-		IF str_TempRejection = '' THEN
-			vio_Set.nLastVersion := vio_Set.nLastVersion + 1;
-			vio_Set.nVersion := vio_Set.nLastVersion;
-			vio_Set.aValues := vo_Config.aStaged;
-			vio_Set.bValid := TRUE;
-			m_Cycle := TRUE;
-		END_IF
-		m_Handled(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_str_Rejection := str_TempRejection);
-END_CASE
+        <ST><![CDATA[m_Cycle := m_HandleStaging(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vio_b_Valid := vio_Set.bValid,
+	vio_udn_Version := vio_Set.nVersion, vio_udn_LastVersion := vio_Set.nLastVersion, vi_b_ApplyAllowed := vi_b_ApplyAllowed,
+	vo_b_TakeOver => b_TempTakeOver);
+IF b_TempTakeOver THEN
+	vio_Set.aValues := vo_Config.aStaged;
+END_IF
 
 
 (****************************************************************************************************
@@ -143,8 +132,7 @@ WHILE un_TempIndex < vo_Config.nFieldCount AND un_TempIndex < CONFIG_GlobalConst
 	vo_Config.aActive[un_TempIndex] := SEL(vio_Set.bValid, vo_Config.aFields[un_TempIndex].fProgramValue,
 		vio_Set.aValues[un_TempIndex]);
 	un_TempIndex := un_TempIndex + 1;
-END_WHILE
-vo_Config.stStatus.nActiveVersion := SEL(vio_Set.bValid, 0, vio_Set.nVersion);]]></ST>
+END_WHILE]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_DeclareField" Id="{238781a9-49bc-4e4a-88f6-8824213fd48c}">
@@ -207,7 +195,7 @@ END_VAR]]></Declaration>
         <ST><![CDATA[m_Integer := LREAL_TO_DINT(m_Value(vi_un_Field := vi_un_Field));]]></ST>
       </Implementation>
     </Method>
-    <Method Name="m_Invalid" Id="{4d9ed3a9-dd6e-499c-9328-15ad9af9729c}">
+    <Method Name="m_InvalidStaged" Id="{4d9ed3a9-dd6e-499c-9328-15ad9af9729c}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -217,7 +205,7 @@ DESCRIPTION:<br>
 Why the staged recipe cannot be taken over; '' when it can: a value outside its field's range (NUMBER, INTEGER),<br>
 not one of its choices (CHOICE), not a whole number (INTEGER, CHOICE) or not 0 or 1 (SWITCH).<br>
 ****************************************************************************************************)
-METHOD PRIVATE m_Invalid : STRING(80)
+METHOD PROTECTED m_InvalidStaged : STRING(80)
 VAR
 	un_TempIndex						: UINT;
 	lr_TempValue						: LREAL;
@@ -225,7 +213,7 @@ VAR
 	lr_TempMax							: LREAL;
 END_VAR]]></Declaration>
       <Implementation>
-        <ST><![CDATA[m_Invalid := '';
+        <ST><![CDATA[m_InvalidStaged := '';
 un_TempIndex := 0;
 WHILE un_TempIndex < vo_Config.nFieldCount AND un_TempIndex < CONFIG_GlobalConst_Param.CONFIG_un_MAX_RECIPE_FIELDS DO
 	lr_TempValue := vo_Config.aStaged[un_TempIndex];
@@ -242,14 +230,14 @@ WHILE un_TempIndex < vo_Config.nFieldCount AND un_TempIndex < CONFIG_GlobalConst
 	END_CASE
 	(* The range first: only a value in range is turned into a whole number. NaN equals nothing, not even itself. *)
 	IF lr_TempValue <> lr_TempValue OR lr_TempValue < lr_TempMin OR lr_TempValue > lr_TempMax THEN
-		m_Invalid := CONCAT(CONCAT('Field ', vo_Config.aFields[un_TempIndex].sName), CONCAT(': ', CONCAT(LREAL_TO_STRING(lr_TempValue),
+		m_InvalidStaged := CONCAT(CONCAT('Field ', vo_Config.aFields[un_TempIndex].sName), CONCAT(': ', CONCAT(LREAL_TO_STRING(lr_TempValue),
 			CONCAT(' is outside ', CONCAT(LREAL_TO_STRING(lr_TempMin), CONCAT(' to ', LREAL_TO_STRING(lr_TempMax)))))));
 		RETURN;
 	END_IF
 	IF vo_Config.aFields[un_TempIndex].eType <> E_ConfigFieldType.NUMBER
 		AND LINT_TO_LREAL(LREAL_TO_LINT(lr_TempValue)) <> lr_TempValue
 	THEN
-		m_Invalid := CONCAT(CONCAT('Field ', vo_Config.aFields[un_TempIndex].sName), CONCAT(': ',
+		m_InvalidStaged := CONCAT(CONCAT('Field ', vo_Config.aFields[un_TempIndex].sName), CONCAT(': ',
 			CONCAT(LREAL_TO_STRING(lr_TempValue), ' is not a value of its type')));
 		RETURN;
 	END_IF

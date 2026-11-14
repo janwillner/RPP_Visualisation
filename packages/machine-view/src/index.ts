@@ -21,7 +21,7 @@ export {
 export { GATEWAY_LOST, RENDER_DELAY_MS, Sources, isOnline, type SourceInfo } from "./sources";
 // The live machine with its product history, and the parameter sets and recipes with the commands on them.
 export { LiveMachine } from "./live-machine";
-export { GatewayLive, type LiveSnapshot } from "./gateway-live";
+export { GatewayLive, writeKey, type LiveCommand, type LiveConnection, type LiveSnapshot, type TrackedWrite } from "./gateway-live";
 
 // The machine scene and its 3D view.
 export {
@@ -48,6 +48,7 @@ export {
   type Selection,
 } from "./scene/SceneView";
 export { ViewControls } from "./ViewControls";
+export { useLeaveGuard, useMachineView, type CameraRequest, type MachineView } from "./view-settings";
 export { LayerToggles } from "./LayerToggles";
 export { SidePanelControls, sidePanelsLayout, useSidePanel, type SidePanel } from "./SidePanels";
 export { pickOnScreen, type Projection } from "./scene/picking";

@@ -36,7 +36,7 @@ describe("Simulator: source and recipe form", () => {
 
   it("starts before the gateway reports any source, and shows the first one once it does", () => {
     const live = new FakeLive();
-    const sim = new Simulator(live, () => true);
+    const sim = new Simulator(live.gateway, () => true);
     sim.start();
     expect(sim.getSnapshot()).toMatchObject({ sourceId: undefined, form: [], blocked: "The gateway reads no PLC." });
     live.plc(A, [infeed(1)]);
@@ -49,7 +49,7 @@ describe("Simulator: source and recipe form", () => {
   it("has no form for a source without a recipe", () => {
     const live = new FakeLive();
     live.plc(A, [infeed(1)]);
-    const sim = new Simulator(live, () => true);
+    const sim = new Simulator(live.gateway, () => true);
     sim.start();
     expect(sim.getSnapshot().sourceId).toBe(A);
     expect(sim.getSnapshot().form).toEqual([]);
@@ -107,7 +107,8 @@ describe("Simulator: writing the recipe", () => {
   it.each([
     ["no write allowed", (live: FakeLive) => live.recipe(A, {}, { writable: false, reason: "The gateway does not allow writing." }), /does not allow writing/],
     ["no simulation mode", (live: FakeLive) => live.machine(A, { simulation: false }), /simulation mode/],
-    ["no machine entry", (live: FakeLive) => live.plc(A, [infeed(1)]), /simulation mode/],
+    // A new configuration comes without the machine entry; the parameter sets come again after it.
+    ["no machine entry", (live: FakeLive) => (live.plc(A, [infeed(1)]), live.recipe(A)), /simulation mode/],
     ["an offline PLC", (live: FakeLive) => live.send({ kind: "status", sourceId: A, sourceName: "Line PLC", status: { plcConnected: false } }), /not connected/],
   ])("is blocked with %s", (_, given, reason) => {
     const { live, sim } = simulator();

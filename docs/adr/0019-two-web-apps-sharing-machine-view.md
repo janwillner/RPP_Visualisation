@@ -42,7 +42,7 @@ So there are two apps and one library:
 - The panel PCs load no configurator code and no write commands; the configurator loads no product history or
   recording code. Each app's bundle includes the shared code once; the libraries (three.js, React) are split into the
   same chunks in both.
-- A new component type is drawn by both apps through `machine-view` (`docs/adding-a-component.md`); the configurator's
+- A new component type is drawn by both apps through `machine-view` (`.claude/docs/adding-a-component.md`); the configurator's
   palette and defaults stay in `apps/configurator`.
 - `pnpm dev:visualisation` and `pnpm dev:configurator` start one Vite dev server each; `pnpm build` and `pnpm test:e2e`
   run both.

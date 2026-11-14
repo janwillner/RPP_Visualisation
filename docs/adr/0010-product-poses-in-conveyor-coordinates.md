@@ -14,3 +14,12 @@ From protocol 14 the latch pose is given in the conveyor's coordinate system: fr
 
 - Protocol 14 and library 7.0.0 break every application: every `vi_LatchPose` and `m_MoveProduct` pose, and every pose read with `m_GetProduct`, changes its frame. Recordings of protocol 13 cannot be played back.
 - A product's latch pose no longer changes when the conveyor's pose does; moving a conveyor in the config moves its products with it.
+
+## Amendment (Syn_Visu 10.0.0)
+
+The conversion method left out above was needed after all: every demo application converted (29 calls of
+`_FC_DemoMcsToBelt` / `_FC_DemoBeltToMcs`), read the conveyor's contract structure for it, and ignored the conveyor's
+rotation that the web app applies, so a conveyor turned by its parameter set would have been tracked in one place
+and drawn in another. `_FB_VisuConveyor.m_McsToBelt` and `m_BeltToMcs` now convert as the web app places products:
+the position through the conveyor's whole rotation, Rz about the MCS Z (exact for a level conveyor). No protocol
+change; the demo's functions are gone.

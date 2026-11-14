@@ -19,7 +19,7 @@
     <Company>Syntegon Group</Company>
     <Released>false</Released>
     <Title>SynVisu</Title>
-    <ProjectVersion>9.7.0.0</ProjectVersion>
+    <ProjectVersion>10.0.0.0</ProjectVersion>
     <DefaultNamespace>SynVisu</DefaultNamespace>
   </PropertyGroup>
   <ItemGroup>
@@ -242,6 +242,9 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\_FC_VisuSetMarkName.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FC_VisuSymbolPath.TcPOU">
       <SubType>Code</SubType>
     </Compile>
   </ItemGroup>

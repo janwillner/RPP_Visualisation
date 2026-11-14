@@ -1,18 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LAYERS, parseViewSettings, serializeViewSettings } from "../src/view-settings";
+import type { Layers } from "../src/scene/SceneView";
+import { parseViewSettings as parse, serializeViewSettings } from "../src/view-settings";
 
-describe("view settings", () => {
-  it("start with every layer on but the coordinate systems, nothing hidden, and the machine framed when nothing is stored", () => {
+/** The visualisation's defaults: every layer on but the coordinate systems. */
+const DEFAULT_LAYERS: Layers = {
+  workingAreas: true,
+  limitAreas: true,
+  zones: true,
+  tcpMarkers: true,
+  faultLabels: true,
+  origins: false,
+  marks: true,
+};
+const parseViewSettings = (raw: string | null) => parse(raw, DEFAULT_LAYERS);
+
+describe("view settings, remembered per app and device", () => {
+  it("start with the app's layers, nothing hidden, and the machine framed when nothing is stored", () => {
     expect(parseViewSettings(null)).toEqual({ layers: DEFAULT_LAYERS, hidden: [], camera: undefined });
-    expect(DEFAULT_LAYERS).toEqual({
-      workingAreas: true,
-      limitAreas: true,
-      zones: true,
-      tcpMarkers: true,
-      faultLabels: true,
-      origins: false,
-      marks: true,
-    });
+    // Another app's defaults, e.g. the configurator's with the coordinate systems on.
+    expect(parse(null, { ...DEFAULT_LAYERS, origins: true }).layers.origins).toBe(true);
   });
 
   it("show product marks to someone whose settings were saved before marks existed", () => {

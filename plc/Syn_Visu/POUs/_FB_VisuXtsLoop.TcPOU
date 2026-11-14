@@ -11,7 +11,8 @@ One visualised XTS loop (e.g. Fxx): movers circulating on a closed track of XTS 
 straights joined at each end by two CURVE_LEFT modules, standing in the local X-Z plane.<br>
 Typical cycle:<br>
   fb_Fxx.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 20, vi_str_Name := 'Fxx');<br>
-  fb_Fxx.m_Configure(vi_Pose := LoopPose, vi_lr_ToolOffset := 120, vi_lr_MoverLength := 100,<br>
+  fb_Fxx.m_SetPose(vi_Pose := LoopPose);<br>
+  fb_Fxx.m_Configure(vi_lr_ToolOffset := 120, vi_lr_MoverLength := 100,<br>
       vi_lr_MoverWidth := 60);<br>
   fb_Fxx.m_SetModule(vi_un_Module := 1, vi_e_Kind := E_VisuModuleKind.STRAIGHT,<br>
       vi_lr_Length := VISU_GlobalConst.VISU_lr_XTS_MODULE_LENGTH); and so on, in order<br>
@@ -31,6 +32,7 @@ VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Zones and fingers from _FB_VisuRobot; m_SetZone by index, no kind<br>
 Syn_Visu 5.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Track of modules from _FB_VisuXtsTrack; m_Perimeter is m_TrackLength<br>
+Syn_Visu 10.0.0 ¦ 2026-11-14 ¦ J.Willner ¦ Pose by m_SetPose, not m_Configure<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_VisuXtsLoop EXTENDS _FB_VisuXtsTrack
 VAR_OUTPUT
@@ -81,11 +83,11 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Sets pose, tool offset and mover size; the track comes from m_SetModule. TRUE if anything changed.<br>
+Sets tool offset and mover size; its pose (m_SetPose) is the start of module 1, the loop standing in the local<br>
+X-Z plane, the track comes from m_SetModule. TRUE if anything changed.<br>
 ****************************************************************************************************)
 METHOD m_Configure : BOOL
 VAR_INPUT
-	vi_Pose								: ST_VisuPose;	// MCS, start of module 1; the loop stands in the local X-Z plane
 	vi_lr_ToolOffset					: LREAL;	// [mm] tool point outwards from the track
 	vi_lr_MoverLength					: LREAL;	// [mm] along the track
 	vi_lr_MoverWidth					: LREAL;	// [mm]
@@ -95,7 +97,6 @@ VAR
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[TempNew := vo_Visu.stConfig;
-TempNew.stPose := vi_Pose;
 TempNew.fToolOffset := vi_lr_ToolOffset;
 TempNew.fMoverLength := vi_lr_MoverLength;
 TempNew.fMoverWidth := vi_lr_MoverWidth;
@@ -168,6 +169,24 @@ END_VAR
 vo_p_Modules := ADR(vo_Visu.stConfig.aModules);
 vo_p_States := ADR(vo_Visu.stState.aModuleStates);
 m_Modules := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Pose" Id="{33e4b6ae-d102-4ec5-832a-c6fb1585c097}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The pose in vo_Visu, for m_SetPose.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_Pose : BOOL
+VAR_OUTPUT
+	vo_p_Pose							: POINTER TO ST_VisuPose;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_p_Pose := ADR(vo_Visu.stConfig.stPose);
+m_Pose := TRUE;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_SetFault" Id="{dfe3503c-b1b7-448b-9e2d-61007f8c2ff9}">

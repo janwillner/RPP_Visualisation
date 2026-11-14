@@ -1,16 +1,9 @@
 import { z } from "zod";
 import {
+  COMPONENT_SCHEMAS,
+  COMPONENT_TYPES,
   ConfigMessageSchema,
-  CartesianConfigSchema,
-  ConveyorConfigSchema,
-  DeltaConfigSchema,
-  SensorConfigSchema,
   SourceIdSchema,
-  StationConfigSchema,
-  VisionConfigSchema,
-  XtsGantryConfigSchema,
-  XtsLoopConfigSchema,
-  type ComponentConfig,
   type ComponentType,
   StateMessageSchema,
   StatusMessageSchema,
@@ -39,91 +32,48 @@ export const FIELD_TEXT_CONFIG_PROTOCOL_VERSION = 4;
 export const MIN_CONFIG_PROTOCOL_VERSION = 2;
 
 /**
- * The configuration fields of each component type that a parameter set holds; hardware (lengths, arm geometry, strokes,
- * bodies) is never among them. An XTS track's modules and a gripper's fingers are: they are set up per machine (ADR 0016,
- * ADR 0018).
+ * The configuration fields of each component type that a parameter set holds (`COMPONENT_SCHEMAS`' `parameters`):
+ * hardware (lengths, arm geometry, strokes, bodies) is never among them. An XTS track's modules and a gripper's fingers
+ * are: they are set up per machine (ADR 0016, ADR 0018).
  */
-export const PARAMETER_FIELDS = {
-  conveyor: ["pose", "originShift", "productTypes"],
-  delta: ["pose", "originShift", "zones", "fingers", "workingArea", "limitArea", "tcpLimitArea"],
-  xtsGantry: ["pose", "originShift", "modules", "zones", "fingers", "limitArea", "tcpLimitArea"],
-  xtsLoop: ["pose", "originShift", "modules", "zones", "fingers"],
-  cartesian: ["pose", "originShift", "zones", "fingers", "limitArea", "tcpLimitArea"],
-  vision: ["pose", "originShift", "zones"],
-  sensor: ["pose", "originShift", "zones"],
-  station: ["pose", "originShift", "zones"],
-} as const satisfies { [T in ComponentType]: readonly (keyof Extract<ComponentConfig, { type: T }>)[] };
-export type ParameterType = keyof typeof PARAMETER_FIELDS;
+export const PARAMETER_FIELDS = Object.fromEntries(COMPONENT_TYPES.map((t) => [t, COMPONENT_SCHEMAS[t].parameters])) as {
+  readonly [T in ComponentType]: (typeof COMPONENT_SCHEMAS)[T]["parameters"];
+};
+/** Every component type has a parameter set. */
+export type ParameterType = ComponentType;
 
-const base = { pose: true, originShift: true } as const;
-const robot = { ...base, zones: true, fingers: true, limitArea: true, tcpLimitArea: true } as const;
-const areas = "limit area and TCP limit area";
+/** A component type's parameter set: its config schema cut to its parameter fields. */
+type ConfigShape<T extends ComponentType> = (typeof COMPONENT_SCHEMAS)[T]["config"]["shape"];
+type ParameterShape<T extends ComponentType> = {
+  [K in Extract<(typeof COMPONENT_SCHEMAS)[T]["parameters"][number], keyof ConfigShape<T>>]: ConfigShape<T>[K];
+};
+type ParameterSchema<T extends ComponentType> = z.ZodObject<ParameterShape<T> extends z.ZodRawShape ? ParameterShape<T> : never>;
 
-export const ConveyorParametersSchema = ConveyorConfigSchema.pick({ ...base, productTypes: true }).describe(
-  "A conveyor's parameter set: its pose, origin shift and product types.",
-);
-export type ConveyorParameters = z.infer<typeof ConveyorParametersSchema>;
+function parameterSchema(type: ComponentType): z.AnyZodObject {
+  const { config, parameters, parameterDescription } = COMPONENT_SCHEMAS[type];
+  const fields = Object.fromEntries(parameters.map((f) => [f, true as const]));
+  return (config as unknown as z.AnyZodObject).pick(fields).describe(parameterDescription);
+}
 
-export const DeltaParametersSchema = DeltaConfigSchema.pick({ ...robot, workingArea: true }).describe(
-  `A Delta robot's parameter set: its pose, origin shift, zones, gripper fingers, working area, ${areas}.`,
-);
-export type DeltaParameters = z.infer<typeof DeltaParametersSchema>;
-
-export const XtsGantryParametersSchema = XtsGantryConfigSchema.pick({ ...robot, modules: true }).describe(
-  `An XTS gantry's parameter set: its pose, origin shift, track modules, zones, gripper fingers, ${areas}.`,
-);
-export const XtsLoopParametersSchema = XtsLoopConfigSchema.pick({ ...base, modules: true, zones: true, fingers: true }).describe(
-  "An XTS loop's parameter set: its pose, origin shift, track modules, zones and gripper fingers.",
-);
-export const CartesianParametersSchema = CartesianConfigSchema.pick(robot).describe(
-  `A Cartesian robot's parameter set: its pose, origin shift, zones, gripper fingers, ${areas}.`,
-);
-export const VisionParametersSchema = VisionConfigSchema.pick({ ...base, zones: true }).describe(
-  "A vision system's parameter set: its pose, origin shift and zones.",
-);
-export const SensorParametersSchema = SensorConfigSchema.pick({ ...base, zones: true }).describe(
-  "A product sensor's parameter set: its pose, origin shift and zones.",
-);
-export const StationParametersSchema = StationConfigSchema.pick({ ...base, zones: true }).describe(
-  "A station's parameter set: its pose, origin shift and zones.",
-);
-
-/** Each parameter type's schema, keyed like `PARAMETER_FIELDS`. */
-export const PARAMETER_SCHEMAS = {
-  conveyor: ConveyorParametersSchema,
-  delta: DeltaParametersSchema,
-  xtsGantry: XtsGantryParametersSchema,
-  xtsLoop: XtsLoopParametersSchema,
-  cartesian: CartesianParametersSchema,
-  vision: VisionParametersSchema,
-  sensor: SensorParametersSchema,
-  station: StationParametersSchema,
-} as const;
-
-const typed = <T extends ParameterType>(type: T) =>
-  z.object({
-    type: z.literal(type).describe(`Component type: always \`${type}\`.`),
-    parameters: PARAMETER_SCHEMAS[type],
-  });
+/** Each component type's parameter schema, keyed like `COMPONENT_SCHEMAS`. */
+export const PARAMETER_SCHEMAS = Object.fromEntries(COMPONENT_TYPES.map((t) => [t, parameterSchema(t)])) as {
+  readonly [T in ComponentType]: ParameterSchema<T>;
+};
 
 /** A parameter set with the type of the component it is for. */
-export const TypedParametersSchema = z
-  .discriminatedUnion("type", [
-    typed("conveyor"),
-    typed("delta"),
-    typed("xtsGantry"),
-    typed("xtsLoop"),
-    typed("cartesian"),
-    typed("vision"),
-    typed("sensor"),
-    typed("station"),
-  ])
-  .describe("A parameter set with the type of its component.");
-export type TypedParameters = z.infer<typeof TypedParametersSchema>;
+export type TypedParameters = {
+  [T in ComponentType]: { type: T; parameters: z.infer<ParameterSchema<T>> };
+}[ComponentType];
 
-/** Every parameter type is one option of `TypedParametersSchema`: a type left out of it does not compile. */
-const everyTypeTyped: [Exclude<ParameterType, TypedParameters["type"]>] extends [never] ? true : never = true;
-void everyTypeTyped;
+const typed = (type: ComponentType) =>
+  z.object({
+    type: z.literal(type).describe(`Component type: always \`${type}\`.`),
+    parameters: PARAMETER_SCHEMAS[type] as z.AnyZodObject,
+  });
+
+export const TypedParametersSchema = z
+  .discriminatedUnion("type", COMPONENT_TYPES.map(typed) as [ReturnType<typeof typed>, ...ReturnType<typeof typed>[]])
+  .describe("A parameter set with the type of its component.") as unknown as z.ZodType<TypedParameters>;
 
 export const ParameterResultSchema = z
   .enum(["none", "pending", "applied", "rejected"])
@@ -211,6 +161,60 @@ export const RecipeSchema = z
   })
   .describe("The machine's recipe: the process values its application declares and runs with.");
 export type Recipe = z.infer<typeof RecipeSchema>;
+
+/** What a write sets: a component's parameter set, the machine's recipe, or a machine command (Start, Stop, Reset). */
+export type WriteKind = "parameters" | "recipe" | "machineCommand";
+
+/** What a client command writes: its parameter set, the recipe (written or reset) or a machine command. */
+export function writeKindOf(
+  commandKind: "writeParameters" | "resetParameters" | "writeRecipe" | "resetRecipe" | "machineCommand",
+): WriteKind {
+  switch (commandKind) {
+    case "writeParameters":
+    case "resetParameters":
+      return "parameters";
+    case "writeRecipe":
+    case "resetRecipe":
+      return "recipe";
+    case "machineCommand":
+      return "machineCommand";
+  }
+}
+
+/** What decides whether a source can be written now, as the gateway and the pages both know it. */
+export interface WriteFacts {
+  /** The PLC is connected. */
+  online: boolean;
+  /**
+   * Its Syn_Config as the `parameters` message reports it: whether the gateway writes to it and why not, and the
+   * recipe while the application has a machine FB. Undefined for a PLC without Syn_Config.
+   */
+  parameters: { writable: boolean; reason?: string | undefined; recipe?: unknown } | undefined;
+  /** The machine entry reports simulation mode (protocol 22): recipes and machine commands go only to such a machine. */
+  simulation: boolean;
+}
+
+export const NOT_CONNECTED = "The PLC is not connected.";
+export const NO_MACHINE_FB =
+  "The PLC's application has no machine FB (Syn_Config 2.1 or later, _FB_ConfigMachine): no recipe and no machine commands.";
+export const NOT_SIMULATED =
+  "The PLC is not in simulation mode: recipes and machine commands go only to a machine that runs without real hardware.";
+
+/**
+ * Why a write of `kind` cannot go to a source now; undefined when it can. The one rule the gateway refuses commands by
+ * and the configurator and the Simulator block their writes by: the PLC connected, Syn_Config, the gateway allowed to
+ * write, and for a recipe or a machine command also a machine FB and simulation mode.
+ */
+export function writeBlockedReason(kind: WriteKind, facts: WriteFacts): string | undefined {
+  const { online, parameters, simulation } = facts;
+  if (!online) return NOT_CONNECTED;
+  if (!parameters) return kind === "parameters" ? "The PLC has no Syn_Config: its components cannot be written." : NO_MACHINE_FB;
+  if (!parameters.writable) return parameters.reason ?? "The PLC cannot be written.";
+  if (kind === "parameters") return undefined;
+  if (!parameters.recipe) return NO_MACHINE_FB;
+  if (!simulation) return NOT_SIMULATED;
+  return undefined;
+}
 
 /** The value a field has while no recipe is active: its program value, a switch's as on / off. */
 export function recipeProgramValue(field: RecipeField): RecipeValue {

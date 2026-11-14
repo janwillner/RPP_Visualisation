@@ -45,13 +45,15 @@ RobotPose.fX := lr_CART_AXES_X;
 RobotPose.fY := lr_CART_XZ_Y;
 RobotPose.fZ := lr_CART_AXES_Z;
 (* No Y axis: the Y stroke is ignored, a fixed beam along X carries the carriage. *)
-fb_CartXz.m_Configure(vi_Pose := RobotPose, vi_lr_XMin := 0, vi_lr_XMax := 1200, vi_lr_YMin := 0, vi_lr_YMax := 0,
+fb_CartXz.m_SetPose(vi_Pose := RobotPose);
+fb_CartXz.m_Configure(vi_lr_XMin := 0, vi_lr_XMax := 1200, vi_lr_YMin := 0, vi_lr_YMax := 0,
 	vi_lr_ZMin := -600, vi_lr_ZMax := 0, vi_lr_RailHeight := lr_CART_AXES_RAIL_HEIGHT);
 fb_CartXz.m_SetKinematics(vi_e_Axes := E_VisuCartesianAxes.XZ);
 
 RobotPose.fY := lr_CART_XY_Y;
 (* No Z axis: Z max is ignored, the flange stays at Z min. *)
-fb_CartXy.m_Configure(vi_Pose := RobotPose, vi_lr_XMin := 0, vi_lr_XMax := 1200, vi_lr_YMin := 0, vi_lr_YMax := 800,
+fb_CartXy.m_SetPose(vi_Pose := RobotPose);
+fb_CartXy.m_Configure(vi_lr_XMin := 0, vi_lr_XMax := 1200, vi_lr_YMin := 0, vi_lr_YMax := 800,
 	vi_lr_ZMin := -500, vi_lr_ZMax := -500, vi_lr_RailHeight := lr_CART_AXES_RAIL_HEIGHT);
 fb_CartXy.m_SetKinematics(vi_e_Axes := E_VisuCartesianAxes.XY);
 

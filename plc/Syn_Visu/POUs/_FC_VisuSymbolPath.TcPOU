@@ -1,0 +1,70 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <POU Name="_FC_VisuSymbolPath" Id="{c76d8d11-53fb-4d29-b3a1-e7464762cb1d}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The symbol path the gateway reads over ADS for an FB's contract structure, from the FB's instance path: without<br>
+the leading VISU_un_INSTANCE_PATH_SKIP segments (TwinCAT project and PLC project), with vi_str_Member appended.<br>
+'RPP_Visu.Syn_Visu_Demo.P_VisuDemoDelta.fb_Infeed1' and '.vo_Visu' give 'P_VisuDemoDelta.fb_Infeed1.vo_Visu'.<br>
+An instance path with fewer segments is kept whole. Used by the manifests of Syn_Visu and Syn_Config.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+The symbol path, cut at 255 bytes.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 10.0.0 ¦ 2026-11-14 ¦ J.Willner ¦ Created: one rule for both manifests<br>
+****************************************************************************************************)
+FUNCTION _FC_VisuSymbolPath : STRING(255)
+VAR_IN_OUT CONSTANT
+	vio_str_InstancePath				: STRING(255);	// the FB's {attribute 'instance-path'} variable
+END_VAR
+VAR_INPUT
+	vi_str_Member						: STRING(15);	// the contract structure, e.g. '.vo_Visu'
+END_VAR
+VAR
+	un_TempRead							: UINT;	// [-] byte index in vio_str_InstancePath
+	un_TempWrite						: UINT;	// [-] byte index in the result
+	un_TempDots							: UINT;	// [-] dots passed
+END_VAR
+VAR CONSTANT
+	un_MAX_INDEX						: UINT := 255;	// [-] last byte of a STRING(255), its terminating zero
+	by_DOT								: BYTE := 16#2E;	// '.'
+	un_MAX_MEMBER_INDEX					: UINT := 15;	// [-] last byte of vi_str_Member, a STRING(15)
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(* Skip the leading segments, up to and including the VISU_un_INSTANCE_PATH_SKIP-th dot. *)
+un_TempRead := 0;
+un_TempDots := 0;
+WHILE un_TempDots < VISU_GlobalConst_Param.VISU_un_INSTANCE_PATH_SKIP AND un_TempRead < un_MAX_INDEX
+	AND vio_str_InstancePath[un_TempRead] <> 0
+DO
+	IF vio_str_InstancePath[un_TempRead] = by_DOT THEN
+		un_TempDots := un_TempDots + 1;
+	END_IF
+	un_TempRead := un_TempRead + 1;
+END_WHILE
+IF un_TempDots < VISU_GlobalConst_Param.VISU_un_INSTANCE_PATH_SKIP THEN
+	un_TempRead := 0;
+END_IF
+
+(* The rest of the instance path, then the contract structure. *)
+un_TempWrite := 0;
+WHILE un_TempRead < un_MAX_INDEX AND vio_str_InstancePath[un_TempRead] <> 0 AND un_TempWrite < un_MAX_INDEX DO
+	_FC_VisuSymbolPath[un_TempWrite] := vio_str_InstancePath[un_TempRead];
+	un_TempRead := un_TempRead + 1;
+	un_TempWrite := un_TempWrite + 1;
+END_WHILE
+un_TempRead := 0;
+WHILE un_TempRead < un_MAX_MEMBER_INDEX AND vi_str_Member[un_TempRead] <> 0 AND un_TempWrite < un_MAX_INDEX DO
+	_FC_VisuSymbolPath[un_TempWrite] := vi_str_Member[un_TempRead];
+	un_TempRead := un_TempRead + 1;
+	un_TempWrite := un_TempWrite + 1;
+END_WHILE
+_FC_VisuSymbolPath[un_TempWrite] := 0;]]></ST>
+    </Implementation>
+  </POU>
+</TcPlcObject>

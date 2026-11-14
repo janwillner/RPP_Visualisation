@@ -4,7 +4,7 @@ This is the PLC side of the contract the gateway reads. It is implemented by the
 `plc/Syn_Visu` (solution `plc/RPP_Visu.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
 and the gateway maps it to the neutral model in `packages/protocol`. Change all three together, and bump
 `VISU_GlobalConst.VISU_un_PROTOCOL_VERSION` / `PROTOCOL_VERSION` on any breaking change. Adding a component type:
-`docs/adding-a-component.md`. How to use the library in a machine project, task by task, with the reference of every method: `docs/plc-library-guide.md`
+`.claude/docs/adding-a-component.md`. How to use the library in a machine project, task by task, with the reference of every method: `docs/plc-library-guide.md`
 (served by the gateway at `/docs`, ADR 0014).
 
 The library follows the company guideline in `docs/plc-coding-guidelines.md` (`_FB_`, `m_`, `vi_`/`vo_`/`vio_`

@@ -11,6 +11,7 @@ Parameter set of one product sensor (ADR 0017): its pose, origin shift and zones
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ New<br>
+Syn_Config 2.3.0 ¦ 2026-11-14 ¦ J.Willner ¦ m_PassOn passes the pose on<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_ConfigSensor EXTENDS _FB_ConfigBodyComponent]]></Declaration>
     <Implementation>
@@ -37,9 +38,8 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Passes the effective origin shift and zones on to the sensor's Syn_Visu FB. The pose goes with the<br>
-application's own m_Configure call (with the beam length, hardware): vi_Pose := m_Pose(). Call it after<br>
-m_Cycle, every cycle.<br>
+Passes the effective pose, origin shift and zones on to the sensor's Syn_Visu FB; the beam length (hardware)<br>
+stays with the application's m_Configure call. Call it after m_Cycle, every cycle.<br>
 ****************************************************************************************************)
 METHOD m_PassOn : BOOL
 VAR_IN_OUT

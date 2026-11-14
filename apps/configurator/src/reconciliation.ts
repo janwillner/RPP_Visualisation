@@ -1,6 +1,5 @@
-import type { ComponentConfig, Draft } from "@rpp/protocol";
+import { HARDWARE_FIELDS, type ComponentConfig, type Draft } from "@rpp/protocol";
 import { type ComponentKey, fieldLabel, type SourceInfo } from "@rpp/machine-view";
-import { HARDWARE_FIELDS } from "./component-defaults";
 import { keyOf } from "./edits";
 import type { Issue } from "./validation";
 

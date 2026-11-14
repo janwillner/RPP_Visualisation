@@ -649,10 +649,22 @@ export type SensorState = z.infer<typeof SensorStateSchema>;
 export const StationStateSchema = componentState("station", bodyComponentState(), "Live state of a station.");
 export type StationState = z.infer<typeof StationStateSchema>;
 
-/** A component type's two schemas, whose `type` is the key they are listed under. */
+/**
+ * A component type's two schemas, whose `type` is the key they are listed under, and which of its config fields are
+ * its parameter set and which its hardware.
+ */
 type SchemasOfType<K> = {
   config: z.ZodTypeAny & { shape: { type: z.ZodLiteral<K> } };
   state: z.ZodTypeAny & { shape: { type: z.ZodLiteral<K> } };
+  /**
+   * The config fields its parameter set holds (ADR 0017): what is set up per machine, never hardware. An XTS track's
+   * modules and a gripper's fingers are among them (ADR 0016, 0018).
+   */
+  parameters: readonly string[];
+  /** The config fields that describe its hardware (lengths, arm geometry, strokes, bodies): assumed by a draft. */
+  hardware: readonly string[];
+  /** What its parameter set is, for `/docs/schema.json` (ADR 0012). */
+  parameterDescription: string;
 };
 
 /** The table of component types, checked by the compiler: a schema listed under another type's key does not compile. */
@@ -661,20 +673,87 @@ function componentSchemas<T extends { [K in keyof T]: SchemasOfType<K> }>(table:
 }
 
 /**
- * Every component type with its config and state schema, keyed by its `type`: the one list of component types. Both
- * unions below, the gateway's registry and the scene's kits follow from it; a new type needs one entry here.
+ * Every component type with its config and state schema, its parameter fields and its hardware fields, keyed by its
+ * `type`: the one list of component types. Both unions below, the parameter sets, the gateway's registry and the
+ * scene's kits follow from it; a new type needs one entry here.
  */
 export const COMPONENT_SCHEMAS = componentSchemas({
-  conveyor: { config: ConveyorConfigSchema, state: ConveyorStateSchema },
-  delta: { config: DeltaConfigSchema, state: DeltaStateSchema },
-  xtsGantry: { config: XtsGantryConfigSchema, state: XtsGantryStateSchema },
-  xtsLoop: { config: XtsLoopConfigSchema, state: XtsLoopStateSchema },
-  cartesian: { config: CartesianConfigSchema, state: CartesianStateSchema },
-  vision: { config: VisionConfigSchema, state: VisionStateSchema },
-  sensor: { config: SensorConfigSchema, state: SensorStateSchema },
-  station: { config: StationConfigSchema, state: StationStateSchema },
+  conveyor: {
+    config: ConveyorConfigSchema,
+    state: ConveyorStateSchema,
+    parameters: ["pose", "originShift", "productTypes"] as const,
+    hardware: ["length", "width"] as const,
+    parameterDescription: "A conveyor's parameter set: its pose, origin shift and product types.",
+  },
+  delta: {
+    config: DeltaConfigSchema,
+    state: DeltaStateSchema,
+    parameters: ["pose", "originShift", "zones", "fingers", "workingArea", "limitArea", "tcpLimitArea"] as const,
+    hardware: ["baseRadius", "effectorRadius", "upperArmLength", "lowerArmLength"] as const,
+    parameterDescription: "A Delta robot's parameter set: its pose, origin shift, zones, gripper fingers, working area, limit area and TCP limit area.",
+  },
+  xtsGantry: {
+    config: XtsGantryConfigSchema,
+    state: XtsGantryStateSchema,
+    parameters: ["pose", "originShift", "modules", "zones", "fingers", "limitArea", "tcpLimitArea"] as const,
+    hardware: ["xMin", "xMax", "zMin", "zMax", "toolOffsetX", "toolOffsetZ", "moverLength", "moverWidth"] as const,
+    parameterDescription: "An XTS gantry's parameter set: its pose, origin shift, track modules, zones, gripper fingers, limit area and TCP limit area.",
+  },
+  xtsLoop: {
+    config: XtsLoopConfigSchema,
+    state: XtsLoopStateSchema,
+    parameters: ["pose", "originShift", "modules", "zones", "fingers"] as const,
+    hardware: ["toolOffset", "moverLength", "moverWidth"] as const,
+    parameterDescription: "An XTS loop's parameter set: its pose, origin shift, track modules, zones and gripper fingers.",
+  },
+  cartesian: {
+    config: CartesianConfigSchema,
+    state: CartesianStateSchema,
+    parameters: ["pose", "originShift", "zones", "fingers", "limitArea", "tcpLimitArea"] as const,
+    hardware: ["axes", "xMin", "xMax", "yMin", "yMax", "zMin", "zMax", "railHeight"] as const,
+    parameterDescription: "A Cartesian robot's parameter set: its pose, origin shift, zones, gripper fingers, limit area and TCP limit area.",
+  },
+  vision: {
+    config: VisionConfigSchema,
+    state: VisionStateSchema,
+    parameters: ["pose", "originShift", "zones"] as const,
+    hardware: ["bodies"] as const,
+    parameterDescription: "A vision system's parameter set: its pose, origin shift and zones.",
+  },
+  sensor: {
+    config: SensorConfigSchema,
+    state: SensorStateSchema,
+    parameters: ["pose", "originShift", "zones"] as const,
+    hardware: ["bodies"] as const,
+    parameterDescription: "A product sensor's parameter set: its pose, origin shift and zones.",
+  },
+  station: {
+    config: StationConfigSchema,
+    state: StationStateSchema,
+    parameters: ["pose", "originShift", "zones"] as const,
+    hardware: ["bodies"] as const,
+    parameterDescription: "A station's parameter set: its pose, origin shift and zones.",
+  },
 });
 export type ComponentType = keyof typeof COMPONENT_SCHEMAS;
+
+/** Every parameter and hardware field is a field of its type's config: a misspelt one does not compile. */
+type UnknownField = {
+  [T in ComponentType]: Exclude<
+    (typeof COMPONENT_SCHEMAS)[T]["parameters" | "hardware"][number],
+    keyof (typeof COMPONENT_SCHEMAS)[T]["config"]["shape"]
+  >;
+}[ComponentType];
+const everyFieldKnown: [UnknownField] extends [never] ? true : never = true;
+void everyFieldKnown;
+
+/** Every component type, in the order of `COMPONENT_SCHEMAS`. */
+export const COMPONENT_TYPES = Object.keys(COMPONENT_SCHEMAS) as ComponentType[];
+
+/** The hardware fields of each component type (`COMPONENT_SCHEMAS`): what a draft assumes and its PLC knows. */
+export const HARDWARE_FIELDS = Object.fromEntries(COMPONENT_TYPES.map((t) => [t, COMPONENT_SCHEMAS[t].hardware])) as {
+  readonly [T in ComponentType]: (typeof COMPONENT_SCHEMAS)[T]["hardware"];
+};
 
 type ComponentSchemas = (typeof COMPONENT_SCHEMAS)[ComponentType];
 

@@ -2,7 +2,11 @@ import {
   MachineSchema,
   MAX_MARKS,
   MIN_PROTOCOL_VERSION,
+  NO_MACHINE_FB,
   PROTOCOL_VERSION,
+  RECIPE_CONFIG_PROTOCOL_VERSION,
+  writeBlockedReason,
+  writeKindOf,
   type ClientMessage,
   type ComponentConfig,
   type ComponentState,
@@ -21,14 +25,14 @@ import {
   commandWrites,
   discoverParameters,
   noParameters,
-  parameterReadPaths,
-  parametersMessage,
+  parametersPart,
   type ParameterDiscovery,
 } from "./parameter-access";
 import { MANIFEST_PATH, PLC_MACHINE_TYPE, enumValue, machinePath, type ST_VisuManifest } from "./plc-contract";
 import { mapPlc, UnknownEntryError, type EntryMemory } from "./plc-mapping";
 import { recipeWrites } from "./recipe-access";
-import { SymbolNotFoundError, type SymbolAccess } from "./symbol-access";
+import { splitByPart, type ReadPart } from "./read-parts";
+import { SymbolNotFoundError, isExpectedType, type SymbolAccess } from "./symbol-access";
 
 export interface GatewayOptions {
   plc: SymbolAccess;
@@ -252,9 +256,35 @@ export function createGateway({
   /** Starts a new session: the next read gives every entry, mapped afresh. */
   function restartChanges(current: Discovery): void {
     session += 1;
-    for (const a of current.active) a.memory.clear();
-    for (const e of current.parameters.entries) e.memory.clear();
-    current.machine?.memory.clear();
+    const { states, params, machineEntry } = readParts(current);
+    for (const part of [states, params, machineEntry]) part?.restart();
+  }
+
+  /**
+   * The parts of the cyclic sum-read of a discovery: the component states, the source's Syn_Config (while it has
+   * one) and its machine entry (while it has one).
+   */
+  function readParts(current: Discovery): {
+    states: ReadPart<ComponentState[]>;
+    params: ReadPart<ParametersMessage> | undefined;
+    machineEntry: ReadPart<MachineReport> | undefined;
+  } {
+    const entry = current.machine;
+    return {
+      states: {
+        paths: current.active.map((a) => a.statePath),
+        map: (raws) => current.active.map((a, i) => mapState(a, raws[i])),
+        restart: () => {
+          for (const a of current.active) a.memory.clear();
+        },
+      },
+      params: current.parameters.present ? parametersPart(sourceId, current.parameters) : undefined,
+      machineEntry: entry && {
+        paths: [entry.path],
+        map: (raws) => ({ kind: "machine", sourceId, ...mapPlc(MachineSchema, raws[0], {}, entry.memory) }),
+        restart: () => entry.memory.clear(),
+      },
+    };
   }
 
   /**
@@ -263,30 +293,26 @@ export function createGateway({
    */
   async function publishSnapshot(current: Discovery, retry = true): Promise<boolean> {
     const readStart = performance.now();
-    const paramPaths = parameterReadPaths(current.parameters);
-    const machinePaths = current.machine ? [current.machine.path] : [];
+    const { states, params: paramsPart, machineEntry } = readParts(current);
+    const parts: ReadPart<unknown>[] = [states];
+    if (paramsPart) parts.push(paramsPart);
+    if (machineEntry) parts.push(machineEntry);
     const [protocolVersion, configVersion, ...rest] = await plc.sumRead(
-      [protocolVersionPath, configVersionPath, ...current.active.map((a) => a.statePath), ...paramPaths, ...machinePaths],
+      [protocolVersionPath, configVersionPath, ...parts.flatMap((p) => p.paths)],
       { changes: changesSession() },
     );
     if (protocolVersion !== current.config.protocolVersion || configVersion !== current.config.configVersion) {
       return false;
     }
-    const raws = rest.slice(0, current.active.length);
-    /** Where the machine entry is in `rest`: after the states and the parameter sets. */
-    const machineAt = current.active.length + paramPaths.length;
+    const values = splitByPart(parts, rest);
     const mapStart = performance.now();
     let components: ComponentState[];
     let params: ParametersMessage | undefined;
     let report: MachineReport | undefined;
     try {
-      components = current.active.map((a, i) => mapState(a, raws[i]));
-      if (current.parameters.present) {
-        params = parametersMessage(sourceId, current.parameters, rest.slice(current.active.length, machineAt));
-      }
-      if (current.machine) {
-        report = { kind: "machine", sourceId, ...mapPlc(MachineSchema, rest[machineAt], {}, current.machine.memory) };
-      }
+      components = states.map(values.get(states)!);
+      params = paramsPart?.map(values.get(paramsPart)!);
+      report = machineEntry?.map(values.get(machineEntry)!);
     } catch (error) {
       // Out of step with the PLC access (e.g. a restarted ADS bridge): read again with every entry.
       if (!(error instanceof UnknownEntryError) || !retry) throw error;
@@ -369,18 +395,28 @@ export function createGateway({
     async command(command) {
       if (command.sourceId !== sourceId) return { ok: false, error: `Unknown source ${command.sourceId}` };
       const current = discovery;
-      if (!current || !status.plcConnected) return { ok: false, error: "The PLC is not connected." };
+      const d = current?.parameters;
+      const blocked = writeBlockedReason(writeKindOf(command.kind), {
+        online: current !== undefined && status.plcConnected,
+        parameters: d && { writable: d.reason === undefined, reason: d.reason, recipe: d.machine },
+        // Simulation mode as the application reports it in the machine entry (protocol 22, ADR 0021).
+        simulation: machine?.simulation === true,
+      });
+      if (blocked !== undefined) {
+        // An older Syn_Config has no machine FB to have: said so.
+        const older = blocked === NO_MACHINE_FB && d !== undefined && d.protocolVersion < RECIPE_CONFIG_PROTOCOL_VERSION;
+        return {
+          ok: false,
+          error: older
+            ? `The PLC's Syn_Config has config protocol ${d.protocolVersion}: recipes and machine commands need ${RECIPE_CONFIG_PROTOCOL_VERSION}.`
+            : blocked,
+        };
+      }
       const id = (stageId += 1);
       const planned =
         command.kind === "writeParameters" || command.kind === "resetParameters"
-          ? commandWrites(command, current.parameters, parameters, id)
-          : recipeWrites(
-              command,
-              current.parameters,
-              // Simulation mode as the application reports it in the machine entry (protocol 22, ADR 0021).
-              { simulation: machine?.simulation === true, current: parameters },
-              id,
-            );
+          ? commandWrites(command, d!, parameters, id)
+          : recipeWrites(command, d!.machine!, parameters, id);
       if ("error" in planned) return { ok: false, error: planned.error };
       try {
         await plc.sumWrite(planned.writes);
@@ -423,7 +459,3 @@ function productMarks(manifest: ST_VisuManifest): ProductMark[] {
     .filter((mark) => mark.name !== "");
 }
 
-/** Library types may be reported with their namespace, e.g. `SynVisu.ST_VisuDelta`. */
-function isExpectedType(actual: string | undefined, expected: string): boolean {
-  return actual === expected || (actual?.endsWith(`.${expected}`) ?? false);
-}

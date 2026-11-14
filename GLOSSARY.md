@@ -29,7 +29,7 @@ What the visualisation always keeps of the last minute it received, from the pag
 _Avoid_: ring buffer, instant replay, last-minute recording
 
 **Timeline event**:
-A moment of a recording worth finding again, marked on its timeline: a fault appears, a source goes offline or comes back, a product is missed.
+A moment of a recording worth finding again, marked on its timeline: a fault or a machine message appears, a limit violation starts, a source goes offline or comes back, a product is missed.
 _Avoid_: alarm, bookmark
 
 **Product history**:
@@ -208,11 +208,7 @@ A TCP limit area that overlaps another robot's limit area or another TCP limit a
 _Avoid_: collision, limit fault, limit error
 
 **Zone**:
-A stretch of a conveyor, measured along the conveying direction, that belongs to a component: where a robot may pick or place products, where a detector detects them. A zone of length 0 is a line across the belt.
-_Avoid_: window, tracking window
-
-**Pick zone** / **Place zone**:
-A robot's zone in which it picks products from a conveyor or places them onto it. The visualisation does not tell them apart.
+A stretch of a conveyor, measured along the conveying direction, that belongs to a component: where a robot may pick or place products (a **pick zone** or **place zone**, which the visualisation does not tell apart), where a detector detects them. A zone of length 0 is a line across the belt.
 _Avoid_: window, tracking window
 
 **Allocation area**:
@@ -256,7 +252,7 @@ The second web app (`/configurator`, `apps/configurator`): the machine's compone
 _Avoid_: editor, designer, RPP_Configurator (the product name, not a term)
 
 **Machine view**:
-What the visualisation and the configurator share (`@rpp/machine-view`, ADR 0019): the gateway connection with its sources, the machine scene and its 3D view, the rules about the machine both apply, and the shared look. Neither app's own parts are in it.
+What the three web apps share (`@rpp/machine-view`, ADR 0019): the gateway connection with its sources and live data, the machine scene and its 3D view, the shared panels, the rules about the machine they all apply, and the shared look. No app's own parts are in it.
 _Avoid_: shared code, common library
 
 **Draft**:
@@ -302,7 +298,7 @@ A recipe saved by the Simulator as `<name>.rpp-sim.json`: the values of every re
 _Avoid_: draft (the configurator's file), recording
 
 **Recipe field**:
-One value of a recipe as the application declares it: name, group (a component or the whole machine), type, unit, min, max and program value; since config protocol 4 also a label and a description (shown by the Simulator, the name stays the key) and a visibility condition: the field applies only while another field has a value, and the Simulator hides it otherwise (it keeps its value and is written all the same).
+One value of a recipe as the application declares it: name, group (a component or the whole machine), type, unit, min, max, program value, and optionally a label, a description and a visibility condition (it applies only while another field has a value; the Simulator hides it otherwise, and it keeps its value). The name is its key.
 _Avoid_: recipe parameter, setting
 
 **Machine FB**:

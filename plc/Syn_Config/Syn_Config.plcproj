@@ -18,7 +18,7 @@
     <LibraryReferences>{4aaf00a1-38c8-4cd5-b616-5f1157d1ccbb}</LibraryReferences>
     <Company>Syntegon Group</Company>
     <Title>SynConfig</Title>
-    <ProjectVersion>2.2.0.0</ProjectVersion>
+    <ProjectVersion>2.3.0.0</ProjectVersion>
     <DefaultNamespace>SynConfig</DefaultNamespace>
     <Description>Parameter sets the RPP configurator writes and the application takes over (ADR 0017).</Description>
   </PropertyGroup>
@@ -33,9 +33,6 @@
     <Folder Include="POUs" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="DUTs\E_ConfigAction.TcDUT">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="DUTs\E_ConfigCommand.TcDUT">
       <SubType>Code</SubType>
     </Compile>

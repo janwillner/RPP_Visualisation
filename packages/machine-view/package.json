@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./styles.css": "./src/styles.css",
-    "./palette": "./src/palette.ts"
+    "./palette": "./src/palette.ts",
+    "./testing": "./src/testing.ts"
   },
   "scripts": { "typecheck": "tsc -p tsconfig.json" },
   "dependencies": {

@@ -63,7 +63,7 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 A product sensor's m_Configure describes its head (body 1) and beam (body 2, as long as the beam), gives TRUE<br>
-only on a change; m_SetSignal lights the beam up.<br>
+only on a change; m_SetPose places the head; m_SetSignal lights the beam up.<br>
 ****************************************************************************************************)
 METHOD PRIVATE m_SensorConfigure
 VAR_INST
@@ -82,7 +82,8 @@ b_TempDone := TRUE;
 
 fb_TempSensor.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 61, vi_str_Name := 'Sensor');
 TempPose.fX := 500;
-AssertTrue(Condition := fb_TempSensor.m_Configure(vi_Pose := TempPose, vi_lr_BeamLength := 450), Message := 'configured');
+AssertTrue(Condition := fb_TempSensor.m_SetPose(vi_Pose := TempPose), Message := 'pose set');
+AssertTrue(Condition := fb_TempSensor.m_Configure(vi_lr_BeamLength := 450), Message := 'configured');
 AssertEquals_UINT(Expected := 2, Actual := fb_TempSensor.vo_Visu.stConfig.nBodyCount, Message := 'head and beam');
 AssertTrue(Condition := fb_TempSensor.vo_Visu.stConfig.aBodies[1].eShape = E_VisuBodyShape.CYLINDER, Message := 'beam is a cylinder');
 AssertTrue(Condition := fb_TempSensor.vo_Visu.stConfig.aBodies[1].eRole = E_VisuBodyRole.BEAM, Message := 'beam role');
@@ -90,7 +91,8 @@ AssertEquals_LREAL(Expected := 450, Actual := fb_TempSensor.vo_Visu.stConfig.aBo
 	Message := 'beam as long as configured');
 AssertEquals_LREAL(Expected := 500, Actual := fb_TempSensor.vo_Visu.stConfig.stPose.fX, Delta := 0.001, Message := 'pose taken over');
 
-AssertFalse(Condition := fb_TempSensor.m_Configure(vi_Pose := TempPose, vi_lr_BeamLength := 450), Message := 'same values: no change');
+AssertFalse(Condition := fb_TempSensor.m_SetPose(vi_Pose := TempPose), Message := 'same pose: no change');
+AssertFalse(Condition := fb_TempSensor.m_Configure(vi_lr_BeamLength := 450), Message := 'same values: no change');
 
 AssertTrue(Condition := fb_TempSensor.m_SetSignal(vi_b_Signal := TRUE), Message := 'signal reported');
 AssertTrue(Condition := fb_TempSensor.vo_Visu.stState.aBodyStates[1].bActive, Message := 'beam lit up');
@@ -177,7 +179,6 @@ distance; a negative working distance gives a flat field of view at the lens.<br
 METHOD PRIVATE m_VisionConfigure
 VAR_INST
 	fb_TempVision						: _FB_VisuVision;
-	TempPose							: ST_VisuPose;
 	b_TempDone							: BOOL;	// the test ran
 END_VAR
 ]]></Declaration>
@@ -188,7 +189,7 @@ IF b_TempDone THEN
 END_IF
 b_TempDone := TRUE;
 
-AssertTrue(Condition := fb_TempVision.m_Configure(vi_Pose := TempPose, vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300,
+AssertTrue(Condition := fb_TempVision.m_Configure(vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300,
 	vi_lr_WorkingDistance := 800), Message := 'configured');
 AssertEquals_UINT(Expected := 3, Actual := fb_TempVision.vo_Visu.stConfig.nBodyCount, Message := 'housing, lens, field of view');
 AssertTrue(Condition := fb_TempVision.vo_Visu.stConfig.aBodies[2].eShape = E_VisuBodyShape.FRUSTUM,
@@ -201,7 +202,7 @@ AssertEquals_LREAL(Expected := -800, Actual := fb_TempVision.vo_Visu.stConfig.aB
 AssertEquals_LREAL(Expected := 400, Actual := fb_TempVision.vo_Visu.stConfig.aBodies[2].fLength, Delta := 0.001,
 	Message := 'field length at the bottom');
 
-fb_TempVision.m_Configure(vi_Pose := TempPose, vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300, vi_lr_WorkingDistance := -50);
+fb_TempVision.m_Configure(vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300, vi_lr_WorkingDistance := -50);
 AssertEquals_LREAL(Expected := 0, Actual := fb_TempVision.vo_Visu.stConfig.aBodies[2].fHeight, Delta := 0.001,
 	Message := 'negative working distance: flat field of view');
 

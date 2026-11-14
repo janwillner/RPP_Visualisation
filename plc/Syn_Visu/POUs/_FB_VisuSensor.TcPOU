@@ -9,7 +9,8 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 One visualised product sensor, e.g. a light barrier at the side of a conveyor. Typical cycle:<br>
   fb_Sensor.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 61, vi_str_Name := 'Sensor 1');<br>
-  fb_Sensor.m_Configure(vi_Pose := HeadPose, vi_lr_BeamLength := 500);<br>
+  fb_Sensor.m_SetPose(vi_Pose := HeadPose);<br>
+  fb_Sensor.m_Configure(vi_lr_BeamLength := 500);<br>
   fb_Sensor.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 1, vi_lr_Start := 500, vi_lr_End := 500,<br>
       vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 500, vi_lr_StartY := 0, vi_lr_EndY := 0);<br>
   fb_Sensor.m_SetSignal(vi_b_Signal := b_BeamInterrupted);<br>
@@ -18,6 +19,7 @@ body 2 (beam); further bodies may be added with m_SetBody.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New<br>
+Syn_Visu 10.0.0 ¦ 2026-11-14 ¦ J.Willner ¦ Pose by m_SetPose, not m_Configure<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_VisuSensor EXTENDS _FB_VisuDetector
 ]]></Declaration>
@@ -46,12 +48,11 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Sets the head pose and describes body 1, the head, and body 2, the beam: a thin cylinder from the head<br>
+Describes body 1, the head, whose pose m_SetPose sets, and body 2, the beam: a thin cylinder from the head<br>
 along its local +Y, vi_lr_BeamLength long. TRUE if anything changed.<br>
 ****************************************************************************************************)
 METHOD m_Configure : BOOL
 VAR_INPUT
-	vi_Pose								: ST_VisuPose;	// MCS, centre of the head; the beam runs along its local +Y
 	vi_lr_BeamLength					: LREAL;	// [mm] e.g. across the belt to the reflector
 END_VAR
 VAR
@@ -67,7 +68,6 @@ END_VAR
 ]]></Declaration>
       <Implementation>
         <ST><![CDATA[TempBefore := vo_Visu.stConfig;
-m_SetPose(vi_Pose);
 TempPose.fZ := -lr_HEAD_HEIGHT / 2;
 m_SetBody(vi_un_Body := 1, vi_e_Shape := E_VisuBodyShape.BOX, vi_e_Role := E_VisuBodyRole.SENSOR, vi_Pose := TempPose,
 	vi_lr_Length := lr_HEAD_LENGTH, vi_lr_Width := lr_HEAD_WIDTH, vi_lr_Height := lr_HEAD_HEIGHT, vi_lr_TopLength := 0,

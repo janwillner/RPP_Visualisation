@@ -10,7 +10,8 @@ DESCRIPTION:<br>
 One visualised XTS gantry (e.g. IDH): a straight track of XTS motor modules on a common Z axis, each mover<br>
 with an X axis and a gripper flange at its end. Typical cycle:<br>
   fb_Idh.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 30, vi_str_Name := 'IDH');<br>
-  fb_Idh.m_Configure(vi_Pose := TrackPose, vi_lr_XMin := 0, vi_lr_XMax := 700, vi_lr_ZMin := -100, vi_lr_ZMax := 0, vi_lr_ToolOffsetX := 150, vi_lr_ToolOffsetZ := -350,<br>
+  fb_Idh.m_SetPose(vi_Pose := TrackPose);<br>
+  fb_Idh.m_Configure(vi_lr_XMin := 0, vi_lr_XMax := 700, vi_lr_ZMin := -100, vi_lr_ZMax := 0, vi_lr_ToolOffsetX := 150, vi_lr_ToolOffsetZ := -350,<br>
       vi_lr_MoverLength := 155, vi_lr_MoverWidth := 80);<br>
   FOR un_Module := 1 TO 6 DO<br>
       fb_Idh.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := E_VisuModuleKind.STRAIGHT,<br>
@@ -33,6 +34,7 @@ VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Zones and fingers from _FB_VisuRobot; m_SetZone by index, no kind<br>
 Syn_Visu 5.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Track of modules from _FB_VisuXtsTrack (m_SetModule)<br>
+Syn_Visu 10.0.0 ¦ 2026-11-14 ¦ J.Willner ¦ Pose by m_SetPose, not m_Configure<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_VisuXtsGantry EXTENDS _FB_VisuXtsTrack
 VAR_OUTPUT
@@ -83,11 +85,11 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Sets pose, strokes, gripper offsets and mover size; the track comes from m_SetModule. TRUE if anything changed.<br>
+Sets strokes, gripper offsets and mover size; its pose (m_SetPose) is the track start on top of the movers<br>
+with Z = 0, the track comes from m_SetModule. TRUE if anything changed.<br>
 ****************************************************************************************************)
 METHOD m_Configure : BOOL
 VAR_INPUT
-	vi_Pose								: ST_VisuPose;	// MCS, track start on top of the movers with Z = 0
 	vi_lr_XMin							: LREAL;	// [mm]
 	vi_lr_XMax							: LREAL;	// [mm]
 	vi_lr_ZMin							: LREAL;	// [mm]
@@ -102,7 +104,6 @@ VAR
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[TempNew := vo_Visu.stConfig;
-TempNew.stPose := vi_Pose;
 TempNew.fXMin := vi_lr_XMin;
 TempNew.fXMax := vi_lr_XMax;
 TempNew.fZMin := vi_lr_ZMin;
@@ -179,6 +180,24 @@ END_VAR
 vo_p_Modules := ADR(vo_Visu.stConfig.aModules);
 vo_p_States := ADR(vo_Visu.stState.aModuleStates);
 m_Modules := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Pose" Id="{1e0a6dbf-3b4e-4847-88e9-5fbe46e54a11}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The pose in vo_Visu, for m_SetPose.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_Pose : BOOL
+VAR_OUTPUT
+	vo_p_Pose							: POINTER TO ST_VisuPose;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_p_Pose := ADR(vo_Visu.stConfig.stPose);
+m_Pose := TRUE;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_SetFault" Id="{a224315d-90cd-4fab-ba72-581b61a07fcb}">

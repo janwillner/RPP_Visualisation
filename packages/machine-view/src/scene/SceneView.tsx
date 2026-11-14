@@ -101,6 +101,10 @@ export interface MeasurePoint {
   local: SnapPoint["local"];
 }
 
+const NO_MEASURE = () => {};
+const NO_POINTS: MeasurePoint[] = [];
+const NOTHING_HIDDEN: ReadonlySet<string> = new Set();
+
 export interface SceneViewProps {
   /**
    * Every source as the machine scene takes it, at `now` (performance.now()), each drawn on its own; called once per
@@ -118,15 +122,15 @@ export interface SceneViewProps {
   onCameraChange?: (pose: CameraPose) => void;
   /** Receives the machine scene every frame, e.g. for the inspector. */
   modelRef: MutableRefObject<MachineScene | undefined>;
-  /** Measure mode: origins and snap points are shown, a click on a snap point measures instead of selecting. */
-  measureMode: boolean;
+  /** Measure mode: origins and snap points are shown, a click on a snap point measures instead of selecting. Off unless given. */
+  measureMode?: boolean;
   /** Called with the snap point under the pointer when it is clicked in measure mode. */
-  onMeasure: (point: SnapPoint) => void;
-  measurePoints: MeasurePoint[];
-  /** Component keys and source ids hidden by the user. */
-  hidden: ReadonlySet<string>;
+  onMeasure?: (point: SnapPoint) => void;
+  measurePoints?: MeasurePoint[];
+  /** Component keys and source ids hidden by the user; none unless given. */
+  hidden?: ReadonlySet<string>;
   /** Called whenever the set of active faults changes (hidden components included). */
-  onFaults: (faults: SourcedFaults[]) => void;
+  onFaults?: (faults: SourcedFaults[]) => void;
   /** Drawn inside the 3D view, e.g. the configurator's handles; they may use the canvas, camera and controls. */
   children?: ReactNode;
 }
@@ -203,7 +207,8 @@ const sameSources = (drawn: readonly DrawnSource[], now: readonly SceneSource[])
   drawn.length === now.length && drawn.every((d, i) => d.sourceId === now[i]!.sourceId && d.config === now[i]!.config);
 
 function SceneContent(props: SceneViewProps) {
-  const { frame, layers, selection, modelRef, measureMode, onMeasure, measurePoints, hidden, onFaults } = props;
+  const { frame, layers, selection, modelRef, measureMode = false, onMeasure = NO_MEASURE, measurePoints = NO_POINTS } = props;
+  const { hidden = NOTHING_HIDDEN, onFaults } = props;
   // In measure mode a click measures; selecting works only through the component tree.
   const onSelect = measureMode ? () => {} : props.onSelect;
   const machine = useMemo(() => new MachineFrame(), []);
@@ -224,7 +229,7 @@ function SceneContent(props: SceneViewProps) {
     modelRef.current = model;
     const changes = machine.next(model);
     if (changes.structure) setStructure(model);
-    if (changes.faults) onFaults(model.faults);
+    if (changes.faults) onFaults?.(model.faults);
   }, -1);
 
   const bounds = useMemo(() => boundsOf(structure), [structure]);

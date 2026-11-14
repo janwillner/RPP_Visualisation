@@ -10,7 +10,8 @@ DESCRIPTION:<br>
 One visualised Cartesian robot: linear X, Y, Z axes ending at a gripper flange; m_SetKinematics leaves out the<br>
 Y axis (XZ, a fixed beam) or the Z axis (XY). Typical cycle:<br>
   fb_Cartesian.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 40, vi_str_Name := 'Cartesian');<br>
-  fb_Cartesian.m_Configure(vi_Pose := RobotPose, vi_lr_XMin := 0, vi_lr_XMax := 1200, vi_lr_YMin := 0,<br>
+  fb_Cartesian.m_SetPose(vi_Pose := RobotPose);<br>
+  fb_Cartesian.m_Configure(vi_lr_XMin := 0, vi_lr_XMax := 1200, vi_lr_YMin := 0,<br>
       vi_lr_YMax := 1000, vi_lr_ZMin := -600, vi_lr_ZMax := 0, vi_lr_RailHeight := 1200);<br>
   fb_Cartesian.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 40);<br>
   fb_Cartesian.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 7, vi_lr_Start := 1000, vi_lr_End := 2000,<br>
@@ -27,6 +28,7 @@ VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Zones and fingers from _FB_VisuRobot; m_SetZone by index, no kind<br>
 Syn_Visu 9.2.0  ¦ 2026-11-07 ¦ J.Willner ¦ m_SetKinematics: without Y axis (XZ) or Z axis (XY)<br>
+Syn_Visu 10.0.0 ¦ 2026-11-14 ¦ J.Willner ¦ Pose by m_SetPose, not m_Configure<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_VisuCartesian EXTENDS _FB_VisuRobot
 VAR_OUTPUT
@@ -77,11 +79,11 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Sets pose, strokes and rail height. TRUE if anything changed.<br>
+Sets strokes and rail height; its pose (m_SetPose) is the axis origin X = Y = 0 with Z up. TRUE if anything<br>
+changed.<br>
 ****************************************************************************************************)
 METHOD m_Configure : BOOL
 VAR_INPUT
-	vi_Pose								: ST_VisuPose;	// MCS, axis origin X = Y = 0 with Z up
 	vi_lr_XMin							: LREAL;	// [mm]
 	vi_lr_XMax							: LREAL;	// [mm]
 	vi_lr_YMin							: LREAL;	// [mm]
@@ -95,7 +97,6 @@ VAR
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[TempNew := vo_Visu.stConfig;
-TempNew.stPose := vi_Pose;
 TempNew.fXMin := vi_lr_XMin;
 TempNew.fXMax := vi_lr_XMax;
 TempNew.fYMin := vi_lr_YMin;
@@ -148,6 +149,24 @@ END_VAR
 vo_p_TcpLimitArea := ADR(vo_Visu.stConfig.stTcpLimitArea);
 m_LimitArea := TRUE;
 ]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Pose" Id="{e11d7e2a-7d7b-4eaa-8453-f936b04c4c29}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The pose in vo_Visu, for m_SetPose.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_Pose : BOOL
+VAR_OUTPUT
+	vo_p_Pose							: POINTER TO ST_VisuPose;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_p_Pose := ADR(vo_Visu.stConfig.stPose);
+m_Pose := TRUE;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_SetAxes" Id="{38bc9b44-0eb3-4b11-ad7d-22f4053b9b0e}">

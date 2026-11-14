@@ -1,45 +1,20 @@
 import {
   PROTOCOL_VERSION,
-  type ClientMessage,
   type ComponentConfig,
-  type GatewayMessage,
   type Machine,
   type MachineMessage,
   type ParametersMessage,
   type Recipe,
   type RecipeField,
-  type WriteResultMessage,
 } from "@rpp/protocol";
-import { Sources, type LiveSnapshot } from "@rpp/machine-view";
-import { Simulator, type SimulatorLive } from "../src/simulator";
+import { FakeGateway } from "@rpp/machine-view/testing";
+import { Simulator } from "../src/simulator";
 
 export const A = "ads:5.1.2.3.1.1:851";
 export const B = "ads:5.1.2.4.1.1:851";
 
-/** The gateway as the Simulator sees it: messages sent here reach it like the live ones. */
-export class FakeLive implements SimulatorLive {
-  private readonly sources = new Sources();
-  private readonly listeners = new Set<() => void>();
-  private snapshot: LiveSnapshot = { sources: this.sources.all, parameters: {} };
-  /** Every command a Simulator sent. */
-  readonly commands: ClientMessage[] = [];
-  /** How the gateway answers a command; by default it takes it under the next stage id. */
-  answer: (command: ClientMessage) => Omit<WriteResultMessage, "kind" | "requestId"> = () => ({
-    ok: true,
-    stageId: 100 + this.commands.length,
-  });
-
-  send(message: GatewayMessage | ParametersMessage): void {
-    if (message.kind === "parameters") {
-      this.snapshot = { ...this.snapshot, parameters: { ...this.snapshot.parameters, [message.sourceId]: message } };
-    } else {
-      this.sources.apply(0, message);
-      if (this.snapshot.sources === this.sources.all) return;
-      this.snapshot = { ...this.snapshot, sources: this.sources.all };
-    }
-    for (const l of this.listeners) l();
-  }
-
+/** The gateway as the Simulator sees it: the real `GatewayLive` over a fake connection. */
+export class FakeLive extends FakeGateway {
   /** A connected source with these components. */
   plc(sourceId: string, components: ComponentConfig[], name = "Line PLC"): void {
     this.send({ kind: "status", sourceId, sourceName: name, status: { plcConnected: true } });
@@ -62,18 +37,6 @@ export class FakeLive implements SimulatorLive {
       machineCommand: { handledCommandId: 0, result: "none", message: "" },
       ...more,
     });
-  }
-
-  subscribe = (listener: () => void) => {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  };
-
-  getSnapshot = () => this.snapshot;
-
-  async command(command: ClientMessage): Promise<WriteResultMessage> {
-    this.commands.push(command);
-    return { kind: "writeResult", requestId: command.requestId, ...this.answer(command) };
   }
 }
 
@@ -136,7 +99,7 @@ export function simulator(live = new FakeLive(), confirm: () => boolean = () => 
   live.plc(A, [infeed(1), { ...infeed(10), name: "Delta 1" } as ComponentConfig]);
   live.machine(A);
   live.recipe(A);
-  const sim = new Simulator(live, confirm);
+  const sim = new Simulator(live.gateway, confirm);
   sim.start();
   return { live, sim };
 }

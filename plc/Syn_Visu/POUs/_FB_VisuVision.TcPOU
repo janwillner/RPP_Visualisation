@@ -9,7 +9,8 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 One visualised vision system: a camera over a conveyor. Typical cycle:<br>
   fb_Vision.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 60, vi_str_Name := 'Vision 1');<br>
-  fb_Vision.m_Configure(vi_Pose := LensPose, vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300,<br>
+  fb_Vision.m_SetPose(vi_Pose := LensPose);<br>
+  fb_Vision.m_Configure(vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300,<br>
       vi_lr_WorkingDistance := 800);<br>
   fb_Vision.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 1, vi_lr_Start := 800, vi_lr_End := 1200,<br>
       vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 1000, vi_lr_StartY := 0, vi_lr_EndY := 0);<br>
@@ -19,6 +20,7 @@ field of view down to the working distance); further bodies may be added with m_
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New<br>
+Syn_Visu 10.0.0 ¦ 2026-11-14 ¦ J.Willner ¦ Pose by m_SetPose, not m_Configure<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_VisuVision EXTENDS _FB_VisuDetector
 ]]></Declaration>
@@ -47,13 +49,13 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Sets the lens pose and describes bodies 1 to 3: the housing above the lens, the lens and the field of<br>
-view, a frustum from the lens down to the working distance, vi_lr_FieldLength x vi_lr_FieldWidth there.<br>
+Describes bodies 1 to 3 around the lens, whose pose m_SetPose sets (looking along its local -Z): the housing<br>
+above the lens, the lens and the field of view, a frustum from the lens down to the working distance,<br>
+vi_lr_FieldLength x vi_lr_FieldWidth there.<br>
 TRUE if anything changed.<br>
 ****************************************************************************************************)
 METHOD m_Configure : BOOL
 VAR_INPUT
-	vi_Pose								: ST_VisuPose;	// MCS, the lens looking along its local -Z
 	vi_lr_FieldLength					: LREAL;	// [mm] field of view at the working distance, along the local X
 	vi_lr_FieldWidth					: LREAL;	// [mm] field of view at the working distance, along the local Y
 	vi_lr_WorkingDistance				: LREAL;	// [mm] from the lens to the field of view, e.g. the belt surface
@@ -74,7 +76,6 @@ END_VAR
       <Implementation>
         <ST><![CDATA[TempBefore := vo_Visu.stConfig;
 lr_TempDistance := MAX(vi_lr_WorkingDistance, 0);
-m_SetPose(vi_Pose);
 TempPose.fZ := lr_LENS_LENGTH;
 m_SetBody(vi_un_Body := 1, vi_e_Shape := E_VisuBodyShape.BOX, vi_e_Role := E_VisuBodyRole.STRUCTURE, vi_Pose := TempPose,
 	vi_lr_Length := lr_HOUSING_LENGTH, vi_lr_Width := lr_HOUSING_WIDTH, vi_lr_Height := lr_HOUSING_HEIGHT,
