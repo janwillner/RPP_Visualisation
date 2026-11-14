@@ -6,6 +6,7 @@ import {
   PROTOCOL_VERSION,
   RECIPE_CONFIG_PROTOCOL_VERSION,
   writeBlockedReason,
+  writeKindOf,
   type ClientMessage,
   type ComponentConfig,
   type ComponentState,
@@ -16,7 +17,6 @@ import {
   type MachineReport,
   type ParametersMessage,
   type ProductMark,
-  type WriteKind,
 } from "@rpp/protocol";
 import { AcquisitionStatsRecorder } from "./acquisition-stats";
 import { COMPONENTS, componentKind, mapConfig, mapState as mapComponentState } from "./components";
@@ -396,13 +396,7 @@ export function createGateway({
       if (command.sourceId !== sourceId) return { ok: false, error: `Unknown source ${command.sourceId}` };
       const current = discovery;
       const d = current?.parameters;
-      const kind: WriteKind =
-        command.kind === "writeParameters" || command.kind === "resetParameters"
-          ? "parameters"
-          : command.kind === "machineCommand"
-            ? "machineCommand"
-            : "recipe";
-      const blocked = writeBlockedReason(kind, {
+      const blocked = writeBlockedReason(writeKindOf(command.kind), {
         online: current !== undefined && status.plcConnected,
         parameters: d && { writable: d.reason === undefined, reason: d.reason, recipe: d.machine },
         // Simulation mode as the application reports it in the machine entry (protocol 22, ADR 0021).

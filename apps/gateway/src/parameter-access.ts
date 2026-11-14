@@ -15,8 +15,8 @@ import { PLC_CONFIG_MACHINE_TYPE, PLC_CONFIG_MANIFEST_TYPE, type ST_ConfigManife
 import { E_VisuComponentType, enumValue } from "./plc-contract";
 import { mapPlc, type EntryMemory } from "./plc-mapping";
 import { plcLeaves } from "./plc-writing";
-import type { ReadPart } from "./read-parts";
-import { machineFbEntry, machineParameters, machineReadPaths, type MachineFbEntry } from "./recipe-access";
+import { splitByPart, type ReadPart } from "./read-parts";
+import { machineFbEntry, machineFbPart, type MachineFbEntry } from "./recipe-access";
 import { resetWrites, staleBase, stageWrites, stagingStatus } from "./staging";
 import { SymbolNotFoundError, isExpectedType, type SymbolAccess, type SymbolWrite } from "./symbol-access";
 
@@ -128,41 +128,48 @@ export async function discoverParameters(
  * the machine FB its recipe status, effective values and command answer; mapped into the `parameters` message.
  */
 export function parametersPart(sourceId: string, d: ParameterDiscovery): ReadPart<ParametersMessage> {
+  const fbs = d.entries.map(parameterFbPart);
+  const machine = d.machine && machineFbPart(d.machine);
+  const parts: ReadPart<unknown>[] = machine ? [...fbs, machine] : fbs;
   return {
-    paths: [...d.entries.flatMap((e) => [`${e.path}.stStatus`, `${e.path}.stActive`]), ...(d.machine ? machineReadPaths(d.machine) : [])],
-    map: (raws) => parametersMessage(sourceId, d, raws),
+    paths: parts.flatMap((p) => p.paths),
+    map: (raws) => {
+      const values = splitByPart(parts, raws);
+      let components: ComponentParameters[];
+      let recipe: ReturnType<NonNullable<typeof machine>["map"]> | undefined;
+      try {
+        components = fbs.map((p) => p.map(values.get(p)!));
+        recipe = machine?.map(values.get(machine)!);
+      } catch (error) {
+        if (!(error instanceof TypeError)) throw error;
+        const reason = `Cannot read the parameter sets: ${error.message}. Does the gateway match the PLC's Syn_Config?`;
+        return { kind: "parameters", sourceId, writable: false, reason, components: [] };
+      }
+      return {
+        kind: "parameters",
+        sourceId,
+        writable: d.reason === undefined,
+        ...(d.reason ? { reason: d.reason } : {}),
+        components,
+        ...recipe,
+      };
+    },
     restart: () => {
-      for (const e of d.entries) e.memory.clear();
+      for (const p of parts) p.restart();
     },
   };
 }
 
-/**
- * The `parameters` message from the values read at `parametersPart`'s paths. A parameter FB of another layout (e.g.
- * another Syn_Config version) leaves the source read-only with the reason; it never stops the visualisation.
- */
-function parametersMessage(sourceId: string, d: ParameterDiscovery, raws: readonly unknown[]): ParametersMessage {
-  let components: ComponentParameters[];
-  let machine: ReturnType<typeof machineParameters> | undefined;
-  try {
-    components = d.entries.map((e, i): ComponentParameters => {
-      const status = stagingStatus(raws[2 * i]);
-      const parameters = mapPlc(PARAMETER_SCHEMAS[e.type], raws[2 * i + 1], {}, e.memory);
-      return { id: e.id, ...status, set: { type: e.type, parameters } as TypedParameters };
-    });
-    if (d.machine) machine = machineParameters(d.machine, raws.slice(2 * d.entries.length));
-  } catch (error) {
-    if (!(error instanceof TypeError)) throw error;
-    const reason = `Cannot read the parameter sets: ${error.message}. Does the gateway match the PLC's Syn_Config?`;
-    return { kind: "parameters", sourceId, writable: false, reason, components: [] };
-  }
+/** A parameter FB in the cyclic sum-read: its status and effective values. */
+function parameterFbPart(e: ParameterEntry): ReadPart<ComponentParameters> {
   return {
-    kind: "parameters",
-    sourceId,
-    writable: d.reason === undefined,
-    ...(d.reason ? { reason: d.reason } : {}),
-    components,
-    ...machine,
+    paths: [`${e.path}.stStatus`, `${e.path}.stActive`],
+    map: ([status, active]) => ({
+      id: e.id,
+      ...stagingStatus(status),
+      set: { type: e.type, parameters: mapPlc(PARAMETER_SCHEMAS[e.type], active, {}, e.memory) } as TypedParameters,
+    }),
+    restart: () => e.memory.clear(),
   };
 }
 

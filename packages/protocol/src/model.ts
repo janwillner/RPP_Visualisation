@@ -663,6 +663,8 @@ type SchemasOfType<K> = {
   parameters: readonly string[];
   /** The config fields that describe its hardware (lengths, arm geometry, strokes, bodies): assumed by a draft. */
   hardware: readonly string[];
+  /** What its parameter set is, for `/docs/schema.json` (ADR 0012). */
+  parameterDescription: string;
 };
 
 /** The table of component types, checked by the compiler: a schema listed under another type's key does not compile. */
@@ -681,34 +683,57 @@ export const COMPONENT_SCHEMAS = componentSchemas({
     state: ConveyorStateSchema,
     parameters: ["pose", "originShift", "productTypes"] as const,
     hardware: ["length", "width"] as const,
+    parameterDescription: "A conveyor's parameter set: its pose, origin shift and product types.",
   },
   delta: {
     config: DeltaConfigSchema,
     state: DeltaStateSchema,
     parameters: ["pose", "originShift", "zones", "fingers", "workingArea", "limitArea", "tcpLimitArea"] as const,
     hardware: ["baseRadius", "effectorRadius", "upperArmLength", "lowerArmLength"] as const,
+    parameterDescription: "A Delta robot's parameter set: its pose, origin shift, zones, gripper fingers, working area, limit area and TCP limit area.",
   },
   xtsGantry: {
     config: XtsGantryConfigSchema,
     state: XtsGantryStateSchema,
     parameters: ["pose", "originShift", "modules", "zones", "fingers", "limitArea", "tcpLimitArea"] as const,
     hardware: ["xMin", "xMax", "zMin", "zMax", "toolOffsetX", "toolOffsetZ", "moverLength", "moverWidth"] as const,
+    parameterDescription: "An XTS gantry's parameter set: its pose, origin shift, track modules, zones, gripper fingers, limit area and TCP limit area.",
   },
   xtsLoop: {
     config: XtsLoopConfigSchema,
     state: XtsLoopStateSchema,
     parameters: ["pose", "originShift", "modules", "zones", "fingers"] as const,
     hardware: ["toolOffset", "moverLength", "moverWidth"] as const,
+    parameterDescription: "An XTS loop's parameter set: its pose, origin shift, track modules, zones and gripper fingers.",
   },
   cartesian: {
     config: CartesianConfigSchema,
     state: CartesianStateSchema,
     parameters: ["pose", "originShift", "zones", "fingers", "limitArea", "tcpLimitArea"] as const,
     hardware: ["axes", "xMin", "xMax", "yMin", "yMax", "zMin", "zMax", "railHeight"] as const,
+    parameterDescription: "A Cartesian robot's parameter set: its pose, origin shift, zones, gripper fingers, limit area and TCP limit area.",
   },
-  vision: { config: VisionConfigSchema, state: VisionStateSchema, parameters: ["pose", "originShift", "zones"] as const, hardware: ["bodies"] as const },
-  sensor: { config: SensorConfigSchema, state: SensorStateSchema, parameters: ["pose", "originShift", "zones"] as const, hardware: ["bodies"] as const },
-  station: { config: StationConfigSchema, state: StationStateSchema, parameters: ["pose", "originShift", "zones"] as const, hardware: ["bodies"] as const },
+  vision: {
+    config: VisionConfigSchema,
+    state: VisionStateSchema,
+    parameters: ["pose", "originShift", "zones"] as const,
+    hardware: ["bodies"] as const,
+    parameterDescription: "A vision system's parameter set: its pose, origin shift and zones.",
+  },
+  sensor: {
+    config: SensorConfigSchema,
+    state: SensorStateSchema,
+    parameters: ["pose", "originShift", "zones"] as const,
+    hardware: ["bodies"] as const,
+    parameterDescription: "A product sensor's parameter set: its pose, origin shift and zones.",
+  },
+  station: {
+    config: StationConfigSchema,
+    state: StationStateSchema,
+    parameters: ["pose", "originShift", "zones"] as const,
+    hardware: ["bodies"] as const,
+    parameterDescription: "A station's parameter set: its pose, origin shift and zones.",
+  },
 });
 export type ComponentType = keyof typeof COMPONENT_SCHEMAS;
 

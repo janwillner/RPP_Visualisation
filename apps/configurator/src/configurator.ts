@@ -1,11 +1,10 @@
 import { useSyncExternalStore } from "react";
-import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, HARDWARE_FIELDS, PROTOCOL_VERSION, emptyDraft, type TrackModuleKind, type ComponentConfig, type ConfigMessage, type ParametersMessage, type ConveyorConfig, type ConveyorState, type Draft, type ProductType, type StateMessage, type Zone } from "@rpp/protocol";
+import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, HARDWARE_FIELDS, writeKindOf, PROTOCOL_VERSION, emptyDraft, type TrackModuleKind, type ComponentConfig, type ConfigMessage, type ParametersMessage, type ConveyorConfig, type ConveyorState, type Draft, type ProductType, type StateMessage, type Zone } from "@rpp/protocol";
 import {
   componentKey,
   isOnline,
   type ComponentKey,
   type GatewayLive,
-  type LiveCommand,
   type SceneSource,
   type SourceInfo,
   type TrackedWrite,
@@ -78,7 +77,7 @@ export interface ConfiguratorSnapshot {
 /** The writes of parameter sets among the gateway's writes, by component key. */
 function parameterWrites(writes: Readonly<Record<string, TrackedWrite>>): Record<ComponentKey, TrackedWrite> {
   return Object.fromEntries(
-    Object.entries(writes).filter(([, w]) => w.kind === "writeParameters" || w.kind === "resetParameters"),
+    Object.entries(writes).filter(([, w]) => writeKindOf(w.kind) === "parameters"),
   );
 }
 
@@ -166,7 +165,7 @@ export class Configurator {
         const set = c && parameterSetOf(c);
         const baseVersion = status.components.find((p) => p.id === c?.id)?.activeVersion;
         if (!c || !set || baseVersion === undefined) return;
-        await this.send({ kind: "writeParameters", sourceId, componentId: c.id, baseVersion, set });
+        await this.live?.stage({ kind: "writeParameters", sourceId, componentId: c.id, baseVersion, set });
       }),
     );
   }
@@ -176,12 +175,7 @@ export class Configurator {
     const c = this.component(key);
     const baseVersion = c && this.snapshot.plcParameters[c.sourceId]?.components.find((p) => p.id === c.id)?.activeVersion;
     if (!c || baseVersion === undefined) return;
-    await this.send({ kind: "resetParameters", sourceId: c.sourceId, componentId: c.id, baseVersion });
-  }
-
-  /** Stages a write through the gateway, which follows it in its `writes`. */
-  private async send(command: LiveCommand): Promise<void> {
-    await this.live?.stage(command);
+    await this.live?.stage({ kind: "resetParameters", sourceId: c.sourceId, componentId: c.id, baseVersion });
   }
 
   /** Takes a matched component's hardware (`HARDWARE_FIELDS`) from its PLC: one step for undo. */

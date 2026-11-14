@@ -1,6 +1,6 @@
 import type { ClientMessage, GatewayMessage, WriteResultMessage } from "@rpp/protocol";
 import type { ParameterMessage, SocketState } from "./gateway-connection";
-import type { LiveConnection } from "./gateway-live";
+import { GatewayLive, type LiveConnection } from "./gateway-live";
 import type { SceneSource } from "./scene/scene-model";
 import { Sources, type SourceInfo } from "./sources";
 
@@ -75,5 +75,37 @@ export class FakeConnection implements LiveConnection {
   private update(patch: Partial<typeof this.snapshot>): void {
     this.snapshot = { ...this.snapshot, ...patch };
     for (const l of this.listeners) l();
+  }
+}
+
+/**
+ * The gateway as an app's tests drive it: the real `GatewayLive` (`gateway`, what an app's seam takes) over a
+ * `FakeConnection`. Messages sent here reach it like the live ones; the commands it sends are recorded and answered.
+ */
+export class FakeGateway {
+  readonly connection = new FakeConnection();
+  readonly gateway = new GatewayLive(this.connection);
+
+  /** When messages arrive, on the performance.now() axis. */
+  get now(): number {
+    return this.connection.now;
+  }
+  set now(now: number) {
+    this.connection.now = now;
+  }
+
+  /** Every command sent to the gateway. */
+  get commands(): readonly ClientMessage[] {
+    return this.connection.sent;
+  }
+
+  /** How the gateway answers a command; by default it takes it under the next stage id. */
+  set answer(answer: (command: ClientMessage) => Omit<WriteResultMessage, "kind" | "requestId">) {
+    this.connection.answer = answer;
+  }
+
+  /** A message from the gateway. */
+  send(message: GatewayMessage | ParameterMessage): void {
+    this.connection.deliver(message);
   }
 }

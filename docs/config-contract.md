@@ -3,8 +3,11 @@
 The library `Syn_Config` (ADR 0017) holds the parameter sets the configurator writes and the application takes over:
 the part of a component's configuration the machine runs with, never its hardware. It is the PLC project
 `plc/Syn_Config` in `plc/RPP_Visu.sln` (title `SynConfig`, namespace `SynConfig`, company `Syntegon Group`); it
-references `Syn_Visu` for the shared types. The TypeScript mirror is `apps/gateway/src/config-contract.ts`, the
-neutral model `packages/protocol/src/parameters.ts`. Change the three together, and bump
+references `Syn_Visu` for the shared types. The TypeScript side: the manifest, staging, status and machine FB
+structures in `apps/gateway/src/config-contract.ts`; a parameter set's fields are its component type's `parameters`
+in `COMPONENT_SCHEMAS` (`packages/protocol/src/model.ts`), mapped to the `ST_Config<Type>Param` members by the naming
+convention, its PLC structure's name `plcConfigType` in the gateway's `COMPONENTS`; the messages in
+`packages/protocol/src/parameters.ts`. Change them together, and bump
 `CONFIG_GlobalConst.CONFIG_un_PROTOCOL_VERSION` / `CONFIG_PROTOCOL_VERSION` on any breaking change. Exported releases
 are `plc/library/Syn_Config_<version>.library` and `.compiled-library`; the package ships the newest compiled one.
 Its unit tests are the TcUnit suites `_FB_TestConfig*` in `plc/Syn_Visu_Test`, run against the installed library

@@ -1,4 +1,4 @@
-import type { ClientMessage, GatewayMessage, ParametersMessage, WriteResultMessage } from "@rpp/protocol";
+import { writeKindOf, type ClientMessage, type GatewayMessage, type ParametersMessage, type WriteResultMessage } from "@rpp/protocol";
 import type { ConnectionSnapshot, ParameterMessage } from "./gateway-connection";
 import { componentKey, type SceneSource } from "./scene/scene-model";
 import type { SourceInfo } from "./sources";
@@ -39,12 +39,10 @@ const COMMAND_TIMEOUT_MS = 10_000;
  * key), a source's recipe (write and reset alike) or a source's machine commands.
  */
 export function writeKey(target: { kind: LiveCommand["kind"]; sourceId: string; componentId?: number }): string {
-  switch (target.kind) {
-    case "writeParameters":
-    case "resetParameters":
+  switch (writeKindOf(target.kind)) {
+    case "parameters":
       return componentKey(target.sourceId, target.componentId ?? 0);
-    case "writeRecipe":
-    case "resetRecipe":
+    case "recipe":
       return `${target.sourceId}#recipe`;
     case "machineCommand":
       return `${target.sourceId}#command`;
@@ -194,14 +192,12 @@ function statusOf(
 ): { handled: number; result: string; message: string } | undefined {
   const at = key.lastIndexOf("#");
   const message = parameters[key.slice(0, at)];
-  switch (kind) {
-    case "writeParameters":
-    case "resetParameters": {
+  switch (writeKindOf(kind)) {
+    case "parameters": {
       const status = message?.components.find((c) => c.id === Number(key.slice(at + 1)));
       return status && { handled: status.handledStageId, result: status.result, message: status.message };
     }
-    case "writeRecipe":
-    case "resetRecipe":
+    case "recipe":
       return message?.recipe && { handled: message.recipe.handledStageId, result: message.recipe.result, message: message.recipe.message };
     case "machineCommand":
       return (

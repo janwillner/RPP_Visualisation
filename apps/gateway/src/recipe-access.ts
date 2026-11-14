@@ -16,6 +16,7 @@ import {
 } from "@rpp/protocol";
 import { E_ConfigCommand } from "./config-contract";
 import { mapPlc } from "./plc-mapping";
+import type { ReadPart } from "./read-parts";
 import { resetWrites, staleBase, stageWrites, stagingStatus } from "./staging";
 import type { SymbolWrite } from "./symbol-access";
 
@@ -117,12 +118,16 @@ function conditionValue(field: Pick<RecipeField, "type">, value: number): Recipe
 }
 
 /** What the cyclic sum-read reads of the machine FB: the recipe's status, its effective values and the command answer. */
-export function machineReadPaths(m: MachineFbEntry): string[] {
-  return [`${m.path}.stStatus`, `${m.path}.aActive`, `${m.path}.stCommandStatus`];
+export function machineFbPart(m: MachineFbEntry): ReadPart<{ recipe: Recipe; machineCommand: MachineCommandStatus }> {
+  return {
+    paths: [`${m.path}.stStatus`, `${m.path}.aActive`, `${m.path}.stCommandStatus`],
+    map: (raws) => machineParameters(m, raws),
+    restart: () => {},
+  };
 }
 
-/** The recipe and the command answer from the values read at `machineReadPaths`. */
-export function machineParameters(
+/** The recipe and the command answer from the values read at `machineFbPart`'s paths. */
+function machineParameters(
   m: MachineFbEntry,
   [status, active, commandStatus]: readonly unknown[],
 ): { recipe: Recipe; machineCommand: MachineCommandStatus } {

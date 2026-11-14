@@ -50,10 +50,9 @@ type ParameterShape<T extends ComponentType> = {
 type ParameterSchema<T extends ComponentType> = z.ZodObject<ParameterShape<T> extends z.ZodRawShape ? ParameterShape<T> : never>;
 
 function parameterSchema(type: ComponentType): z.AnyZodObject {
-  const { config, parameters } = COMPONENT_SCHEMAS[type];
+  const { config, parameters, parameterDescription } = COMPONENT_SCHEMAS[type];
   const fields = Object.fromEntries(parameters.map((f) => [f, true as const]));
-  const listed = parameters.map((f) => `\`${f}\``).join(", ");
-  return (config as unknown as z.AnyZodObject).pick(fields).describe(`The parameter set of a \`${type}\`: its config fields ${listed}.`);
+  return (config as unknown as z.AnyZodObject).pick(fields).describe(parameterDescription);
 }
 
 /** Each component type's parameter schema, keyed like `COMPONENT_SCHEMAS`. */
@@ -165,6 +164,22 @@ export type Recipe = z.infer<typeof RecipeSchema>;
 
 /** What a write sets: a component's parameter set, the machine's recipe, or a machine command (Start, Stop, Reset). */
 export type WriteKind = "parameters" | "recipe" | "machineCommand";
+
+/** What a client command writes: its parameter set, the recipe (written or reset) or a machine command. */
+export function writeKindOf(
+  commandKind: "writeParameters" | "resetParameters" | "writeRecipe" | "resetRecipe" | "machineCommand",
+): WriteKind {
+  switch (commandKind) {
+    case "writeParameters":
+    case "resetParameters":
+      return "parameters";
+    case "writeRecipe":
+    case "resetRecipe":
+      return "recipe";
+    case "machineCommand":
+      return "machineCommand";
+  }
+}
 
 /** What decides whether a source can be written now, as the gateway and the pages both know it. */
 export interface WriteFacts {
