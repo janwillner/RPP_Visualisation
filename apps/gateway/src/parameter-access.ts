@@ -15,6 +15,7 @@ import { PLC_CONFIG_MACHINE_TYPE, PLC_CONFIG_MANIFEST_TYPE, PLC_CONFIG_TYPES, ty
 import { E_VisuComponentType, enumValue } from "./plc-contract";
 import { mapPlc, type EntryMemory } from "./plc-mapping";
 import { plcLeaves } from "./plc-writing";
+import type { ReadPart } from "./read-parts";
 import { machineFbEntry, machineParameters, machineReadPaths, type MachineFbEntry } from "./recipe-access";
 import { resetWrites, staleBase, stageWrites, stagingStatus } from "./staging";
 import { SymbolNotFoundError, isExpectedType, type SymbolAccess, type SymbolWrite } from "./symbol-access";
@@ -123,18 +124,24 @@ export async function discoverParameters(
 }
 
 /**
- * What the cyclic sum-read reads: of every parameter FB two paths, status and effective values; then of the machine FB
- * its recipe status, effective values and command answer.
+ * The source's Syn_Config in the cyclic sum-read: of every parameter FB two paths, status and effective values; then of
+ * the machine FB its recipe status, effective values and command answer; mapped into the `parameters` message.
  */
-export function parameterReadPaths(d: ParameterDiscovery): string[] {
-  return [...d.entries.flatMap((e) => [`${e.path}.stStatus`, `${e.path}.stActive`]), ...(d.machine ? machineReadPaths(d.machine) : [])];
+export function parametersPart(sourceId: string, d: ParameterDiscovery): ReadPart<ParametersMessage> {
+  return {
+    paths: [...d.entries.flatMap((e) => [`${e.path}.stStatus`, `${e.path}.stActive`]), ...(d.machine ? machineReadPaths(d.machine) : [])],
+    map: (raws) => parametersMessage(sourceId, d, raws),
+    restart: () => {
+      for (const e of d.entries) e.memory.clear();
+    },
+  };
 }
 
 /**
- * The `parameters` message from the values read at `parameterReadPaths`. A parameter FB of another layout (e.g. another
- * Syn_Config version) leaves the source read-only with the reason; it never stops the visualisation.
+ * The `parameters` message from the values read at `parametersPart`'s paths. A parameter FB of another layout (e.g.
+ * another Syn_Config version) leaves the source read-only with the reason; it never stops the visualisation.
  */
-export function parametersMessage(sourceId: string, d: ParameterDiscovery, raws: readonly unknown[]): ParametersMessage {
+function parametersMessage(sourceId: string, d: ParameterDiscovery, raws: readonly unknown[]): ParametersMessage {
   let components: ComponentParameters[];
   let machine: ReturnType<typeof machineParameters> | undefined;
   try {
