@@ -59,12 +59,6 @@
     <Compile Include="POUs\_FC_DemoApproach.TcPOU">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="POUs\_FC_DemoBeltToMcs.TcPOU">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="POUs\_FC_DemoMcsToBelt.TcPOU">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="TVisuDemo_Detection.TcDUT">
       <SubType>Code</SubType>
     </Compile>
@@ -81,10 +75,10 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <LibraryReference Include="SynConfig,2.2.0.0,Syntegon Group">
+    <LibraryReference Include="SynConfig,2.3.0.0,Syntegon Group">
       <Namespace>SynConfig</Namespace>
     </LibraryReference>
-    <LibraryReference Include="SynVisu,9.7.0.0,Syntegon Group">
+    <LibraryReference Include="SynVisu,10.0.0.0,Syntegon Group">
       <Namespace>SynVisu</Namespace>
     </LibraryReference>
     <LibraryReference Include="Tc3_Module,3.4.5.0,Beckhoff Automation GmbH">

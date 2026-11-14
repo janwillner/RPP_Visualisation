@@ -95,7 +95,7 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-m_PassOn hands a Delta's effective origin shift, working area, limit areas, zones and fingers with their offsets<br>
+m_PassOn hands a Delta's effective pose, origin shift, working area, limit areas, zones and fingers with their offsets<br>
 on to its Syn_Visu FB. Called every cycle with the same values, it leaves Syn_Visu's config version alone.<br>
 ****************************************************************************************************)
 METHOD PRIVATE m_DeltaPassOn
@@ -122,6 +122,9 @@ fb_TempVisu.m_Register(vio_Manifest := TempVisuManifest, vi_udn_Id := 10, vi_str
 TempDefault := m_DeltaSet(vi_un_Zones := 2, vi_un_Fingers := 3);
 fb_TempParam.m_Cycle(vio_Default := TempDefault, vio_Set := TempSet, vi_b_ApplyAllowed := TRUE);
 AssertTrue(Condition := fb_TempParam.m_PassOn(vio_Visu := fb_TempVisu), Message := 'passed on');
+
+AssertEquals_LREAL(Expected := 1000, Actual := fb_TempVisu.vo_Visu.stConfig.stPose.fX, Delta := 0.001, Message := 'pose X');
+AssertEquals_LREAL(Expected := 1900, Actual := fb_TempVisu.vo_Visu.stConfig.stPose.fZ, Delta := 0.001, Message := 'pose Z');
 
 AssertEquals_LREAL(Expected := 20, Actual := fb_TempVisu.vo_Visu.stConfig.stOriginShift.fY, Delta := 0.001,
 	Message := 'origin shift');

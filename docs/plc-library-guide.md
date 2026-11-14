@@ -70,6 +70,7 @@ one before (22 and 21); it refuses a PLC with any other and says so in its statu
 
 | Library `SynVisu` | Protocol version | Gateway |
 | --- | --- | --- |
+| 10.0.x | 22 | releases from protocol 22 on; the pose leaves `m_Configure`: remove `vi_Pose` from every `m_Configure` call and call `m_SetPose(vi_Pose := …)` instead (`_FB_VisuStation` has no `m_Configure` any more); with `SynConfig` take 2.3.0, whose `m_PassOn` sets the pose. New: `m_McsToBelt` and `m_BeltToMcs` of the conveyor (section 4) |
 | 9.7.x | 22 | releases from protocol 22 on; `_FB_VisuMachine` reports the machine's run state, simulation mode and machine messages in `GVL_Visu.stMachine` (section 14.1); no change to existing calls, and an application without `stMachine` works as before |
 | 9.6.x | 21 | releases from protocol 21 on; `m_SetProductMark` and `_FC_VisuSetMarkName` mark products to single them out (section 5.5); no change to existing calls. With `SynConfig`, use 2.0.1 or newer: it takes `SynVisu` through a placeholder, so both use the same version |
 | 9.5.x | 20 | releases from protocol 20 on; `m_SetFingerOffset` places a finger on the gripper flange, drawn there while its pose is not reported (section 7); no change to existing calls |
@@ -125,8 +126,8 @@ cost is small: a few method calls per component, no ADS traffic from the PLC sid
 Every component is one FB instance. Each cycle you call, in this order:
 
 1. **Register:** `m_Register(...)` adds the component to the manifest.
-2. **Configure:** `m_Configure(...)` and the other configuration methods (`m_SetZone`, `m_SetFinger`,
-   `m_SetModule`, ...).
+2. **Configure:** `m_SetPose(...)` (where the component stands), `m_Configure(...)` (its hardware) and the other
+   configuration methods (`m_SetZone`, `m_SetFinger`, `m_SetModule`, ...).
 3. **Report:** the state methods (`m_SetBeltPosition`, `m_SetTcp`, `m_SetMover`, ...).
 
 ![Register, configure, report](images/cycle.svg "The three steps, every PLC cycle.")
@@ -146,7 +147,8 @@ END_VAR
 fb_Infeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed');
 
 (* 2. Configure *)
-fb_Infeed.m_Configure(vi_Pose := InfeedPose, vi_lr_Length := 3000, vi_lr_Width := 400);
+fb_Infeed.m_SetPose(vi_Pose := InfeedPose);
+fb_Infeed.m_Configure(vi_lr_Length := 3000, vi_lr_Width := 400);
 fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40,
 	vi_e_Shape := SynVisu.E_VisuProductShape.BOX, vi_lr_CornerRadius := 0);
 
@@ -196,7 +198,7 @@ standard XTS module is `vi_lr_Length := SynVisu.VISU_GlobalConst.VISU_lr_XTS_MOD
 ## 4. Coordinates
 
 - **MCS (machine coordinate system):** millimetres and degrees, right-handed, Z up, X in the product flow
-  direction. Every pose you pass to `m_Configure` is in the MCS.
+  direction. Every pose you pass to `m_SetPose` is in the MCS.
 - **Poses:** `ST_VisuPose` (`fX`, `fY`, `fZ`, `fRx`, `fRy`, `fRz`). Rotation order R = Rz · Ry · Rx. Most components
   only need `fRz` (turned about the vertical).
 - **Local frames:** each component type defines where its pose lies and how its axes run; see its section below.
@@ -205,6 +207,10 @@ standard XTS module is `vi_lr_Length := SynVisu.VISU_GlobalConst.VISU_lr_XTS_MOD
   its origin shift (below), not in the MCS.
 - **Product poses** (latch pose, `m_GetProduct`, `m_MoveProduct`) are in the conveyor's coordinate system: from its
   pose moved by its origin shift, X along the belt, Y across it, Z up from the belt surface, Rz from the belt's X.
+  The conveyor converts for you, exactly as the web app places the products: `m_McsToBelt(vi_Pose)` turns an MCS
+  pose (where a camera saw a product, where a robot puts one down) into its coordinate system, `m_BeltToMcs(vi_Pose)`
+  the other way (e.g. a product of `m_GetProduct` for a robot). Both take the conveyor's whole rotation for the
+  position; Rz is about the MCS Z, exact for a level conveyor.
 - **Absolute values:** finger poses and the Delta's TCP are absolute in the MCS.
 - **Origin shift:** `m_SetOriginShift(vi_lr_X, vi_lr_Y, vi_lr_Z)` moves the component's shown coordinate system away
   from its pose (mm in the component's local frame). The origin triad (layer "Coordinate systems", always shown while
@@ -225,7 +231,8 @@ on it (up to `VISU_un_MAX_PRODUCTS`, 4800).
 
 | Call | Meaning |
 | --- | --- |
-| `m_Configure(vi_Pose, vi_lr_Length, vi_lr_Width)` | `vi_Pose` is the centre of the belt start on the belt surface; local +X is the conveying direction, local Z the belt normal |
+| `m_SetPose(vi_Pose)` | The centre of the belt start on the belt surface; local +X is the conveying direction, local Z the belt normal |
+| `m_Configure(vi_lr_Length, vi_lr_Width)` | The belt's size |
 | `m_SetBodyVisible(vi_b_Visible)` | TRUE (default) draws the belt as a body. FALSE for a conveyor without one, e.g. products pushed along by XTS movers: only its products, zones and axis are drawn. Length and width still bound the belt coordinates. |
 | `m_SetProductType(vi_udn_Id, vi_lr_Length, vi_lr_Width, vi_lr_Height, vi_e_Shape, vi_lr_CornerRadius)` | One per product type on this belt (up to 8) |
 
@@ -277,9 +284,9 @@ Rules:
 - **Missed products:** a product that passes the belt end while still `DETECTED` or `ASSIGNED` is flagged as missed
   in the web app (red, counted in the metrics, marked on the recording's timeline). `PLACED` and `REJECTED`
   products pass the end on purpose.
-- **Placing:** a robot works in the MCS (finger poses), so convert where its finger puts the product down into the
-  outfeed's coordinate system, and set `fRz` to the finger's MCS rotation about Z minus the outfeed's, so the product
-  keeps its orientation. For a belt along MCS +X: `fX = x − (pose.fX + shift.fX)`, `fY = y − (pose.fY + shift.fY)`.
+- **Placing:** a robot works in the MCS (finger poses), so convert where its finger puts the product down, with the
+  finger's MCS rotation about Z as `fRz`, into the outfeed's coordinate system: `fb_Outfeed.m_McsToBelt(vi_Pose :=
+  PlacePose)`. The product keeps its orientation.
 - **The client:** every call that latches or changes a product names the client that does it in `vi_udn_ClientId`:
   the vision system, sensor or station that latched it, the robot that is assigned to, picks, places or releases it,
   the station that rejects it. The product keeps it as `nLastClientId`, with the state before the change as
@@ -295,7 +302,8 @@ Rules:
 
 ```st
 (* Configuration *)
-fb_Infeed.m_Configure(vi_Pose := InfeedPose, vi_lr_Length := 3000, vi_lr_Width := 400);
+fb_Infeed.m_SetPose(vi_Pose := InfeedPose);
+fb_Infeed.m_Configure(vi_lr_Length := 3000, vi_lr_Width := 400);
 fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40,
 	vi_e_Shape := SynVisu.E_VisuProductShape.BOX, vi_lr_CornerRadius := 0);
 fb_Infeed.m_SetProductType(vi_udn_Id := 2, vi_lr_Length := 80, vi_lr_Width := 80, vi_lr_Height := 40,
@@ -429,7 +437,8 @@ FB: `SynVisu._FB_VisuDelta`. The PLC reports only the TCP; the web app computes 
 
 | Call | Meaning |
 | --- | --- |
-| `m_Configure(vi_Pose, vi_lr_BaseRadius, vi_lr_EffectorRadius, vi_lr_UpperArmLength, vi_lr_LowerArmLength)` | `vi_Pose` is the base centre in the MCS. Arm 1 lies along the base's local +X, arms 2 and 3 follow counter-clockwise (from above) at 120°. |
+| `m_SetPose(vi_Pose)` | The base centre in the MCS. Arm 1 lies along the base's local +X, arms 2 and 3 follow counter-clockwise (from above) at 120°. |
+| `m_Configure(vi_lr_BaseRadius, vi_lr_EffectorRadius, vi_lr_UpperArmLength, vi_lr_LowerArmLength)` | The arm geometry |
 | `m_SetWorkingArea(vi_lr_Radius, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ConeHeight, vi_lr_ConeBottomRadius)` | Vertical cylinder in the robot frame (Z negative below the base), optionally with a cone at the bottom |
 | `m_SetLimitArea(vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax)`, `m_ClearLimitArea()` | Optional box in the robot frame that further restricts the working area, e.g. against a neighbouring robot; equal bounds make a flat box. The XTS gantry and the Cartesian robot have it too. |
 | `m_SetTcpLimitArea(vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax)`, `m_ClearTcpLimitArea()` | Optional box around the TCP, bounds relative to the TCP along the robot frame's axes (see below). The XTS gantry (around every mover's gripper flange) and the Cartesian robot (around its flange) have it too. |
@@ -469,7 +478,8 @@ section.
 
 | Call | Meaning |
 | --- | --- |
-| `m_Configure(vi_Pose, vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_RailHeight)` | `vi_Pose` is the axis origin (X = Y = 0); the strokes are the flange's; the rails' top lies at `vi_lr_RailHeight` above the origin |
+| `m_SetPose(vi_Pose)` | The axis origin (X = Y = 0) in the MCS |
+| `m_Configure(vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_RailHeight)` | The strokes are the flange's; the rails' top lies at `vi_lr_RailHeight` above the origin |
 | once: `m_SetKinematics(vi_e_Axes)` | Which axes the robot has; leave it out for X, Y, Z (see below) |
 | `m_SetLimitArea(...)`, `m_ClearLimitArea()` | Optional box in the robot frame (the frame of the strokes, so in flange coordinates) that further restricts the working area |
 | `m_SetTcpLimitArea(...)`, `m_ClearTcpLimitArea()` | Optional box around the flange, relative to it ([section 8.1](#81-tcp-limit-area)) |
@@ -487,10 +497,11 @@ A Cartesian robot with only two axes is the same FB with `m_SetKinematics` (`Syn
 | `XZ` | no Y axis | a fixed beam along local X at `vi_lr_RailHeight` (no supports), carriage, column; Y is 0 | `vi_lr_YMin`, `vi_lr_YMax`, `m_SetAxes` `vi_lr_Y` |
 | `XY` | no Z axis | rails, bridge, carriage and a column of fixed length; the flange stays at `vi_lr_ZMin` | `vi_lr_ZMax`, `m_SetAxes` `vi_lr_Z` |
 
-Turn the robot with the yaw of `vi_Pose` so its X axis runs where the machine's does (along or across the belt).
+Turn the robot with the yaw of its pose so its X axis runs where the machine's does (along or across the belt).
 
 ```st
-fb_Pusher.m_Configure(vi_Pose := PusherPose, vi_lr_XMin := 0, vi_lr_XMax := 800, vi_lr_YMin := 0, vi_lr_YMax := 0,
+fb_Pusher.m_SetPose(vi_Pose := PusherPose);
+fb_Pusher.m_Configure(vi_lr_XMin := 0, vi_lr_XMax := 800, vi_lr_YMin := 0, vi_lr_YMax := 0,
 	vi_lr_ZMin := -400, vi_lr_ZMax := 0, vi_lr_RailHeight := 600);
 fb_Pusher.m_SetKinematics(vi_e_Axes := SynVisu.E_VisuCartesianAxes.XZ);
 fb_Pusher.m_SetAxes(vi_lr_X := ax_X.NcToPlc.ActPos, vi_lr_Y := 0, vi_lr_Z := ax_Z.NcToPlc.ActPos, vi_b_GripperActive := b_Vacuum);
@@ -562,7 +573,8 @@ in the machine.
 
 | Call | Meaning |
 | --- | --- |
-| `m_Configure(vi_Pose, vi_lr_XMin, vi_lr_XMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ToolOffsetX, vi_lr_ToolOffsetZ, vi_lr_MoverLength, vi_lr_MoverWidth)` | Strokes of the X axes and the Z axis; the gripper flange relative to the mover at X = 0 (ahead along +X, below the mover top negative); mover size |
+| `m_SetPose(vi_Pose)` | The local frame's origin in the MCS (above) |
+| `m_Configure(vi_lr_XMin, vi_lr_XMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ToolOffsetX, vi_lr_ToolOffsetZ, vi_lr_MoverLength, vi_lr_MoverWidth)` | Strokes of the X axes and the Z axis; the gripper flange relative to the mover at X = 0 (ahead along +X, below the mover top negative); mover size |
 | `m_SetModule(...)` | The track, [section 10](#10-xts-tracks-and-their-motor-modules) |
 | `m_SetFinger(...)`, `m_SetFingerOffset(...)`, `m_SetZone(...)` | As for all robots ([section 7](#7-grippers-and-fingers)) |
 | `m_SetLimitArea(...)`, `m_ClearLimitArea()` | Optional box in the robot frame (local, from the track start) that further restricts the working area |
@@ -572,7 +584,8 @@ in the machine.
 | each cycle, per mover: `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_lr_X, vi_b_GripperActive, vi_FingerStates, vi_b_Fault, vi_str_FaultMessage)` | `vi_un_Index` 0-based entry, `vi_udn_Id` the mover id (> 0, used by products' `nMoverId`), track position, X axis, finger states in the MCS, mover fault |
 
 ```st
-fb_Idh.m_Configure(vi_Pose := IdhPose, vi_lr_XMin := 0, vi_lr_XMax := 700, vi_lr_ZMin := -100, vi_lr_ZMax := 0,
+fb_Idh.m_SetPose(vi_Pose := IdhPose);
+fb_Idh.m_Configure(vi_lr_XMin := 0, vi_lr_XMax := 700, vi_lr_ZMin := -100, vi_lr_ZMax := 0,
 	vi_lr_ToolOffsetX := 150, vi_lr_ToolOffsetZ := -350, vi_lr_MoverLength := 155, vi_lr_MoverWidth := 80);
 FOR un_Module := 1 TO 6 DO
 	fb_Idh.m_SetModule(vi_un_Module := un_Module, vi_e_Kind := SynVisu.E_VisuModuleKind.STRAIGHT,
@@ -607,7 +620,8 @@ the start:
 
 ```st
 (* Fxx: 2 x 10 straight modules (2500 mm each way) and four curve modules; perimeter 6000 mm *)
-fb_Fxx.m_Configure(vi_Pose := LoopPose, vi_lr_ToolOffset := 70, vi_lr_MoverLength := 100, vi_lr_MoverWidth := 60);
+fb_Fxx.m_SetPose(vi_Pose := LoopPose);
+fb_Fxx.m_Configure(vi_lr_ToolOffset := 70, vi_lr_MoverLength := 100, vi_lr_MoverWidth := 60);
 FOR un_Module := 1 TO 2 * (10 + 2) DO
 	IF (un_Module - 1) MOD (10 + 2) < 10 THEN
 		e_ModuleKind := SynVisu.E_VisuModuleKind.STRAIGHT;
@@ -651,13 +665,13 @@ FB: `SynVisu._FB_VisuVision`.
 LensPose.fX := 1000;
 LensPose.fY := 0;
 LensPose.fZ := InfeedPose.fZ + 800;
-fb_Vision1.m_Configure(vi_Pose := LensPose, vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300,
-	vi_lr_WorkingDistance := 800);
+fb_Vision1.m_SetPose(vi_Pose := LensPose);
+fb_Vision1.m_Configure(vi_lr_FieldLength := 400, vi_lr_FieldWidth := 300, vi_lr_WorkingDistance := 800);
 fb_Vision1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(), vi_lr_Start := 800, vi_lr_End := 1200,
 	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 1000, vi_lr_StartY := 0, vi_lr_EndY := 0);
 ```
 
-`vi_Pose` is the lens, looking along its local −Z. `m_Configure` draws a housing, the lens and the field of view as a
+The pose is the lens, looking along its local −Z. `m_Configure` draws a housing, the lens and the field of view as a
 frustum down to the working distance.
 
 ![A vision system](images/vision.svg "The lens pose, its field of view down to the working distance, and its zone on the belt.")
@@ -668,7 +682,8 @@ FB: `SynVisu._FB_VisuSensor`.
 
 ```st
 (* Head at the belt side, the beam across the belt (local +Y) *)
-fb_Barrier1.m_Configure(vi_Pose := HeadPose, vi_lr_BeamLength := 500);
+fb_Barrier1.m_SetPose(vi_Pose := HeadPose);
+fb_Barrier1.m_Configure(vi_lr_BeamLength := 500);
 fb_Barrier1.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := fb_Infeed.m_Id(), vi_lr_Start := 300, vi_lr_End := 300,
 	vi_lr_AllocationOffset := 0, vi_lr_CcsOffset := 300, vi_lr_StartY := 0, vi_lr_EndY := 0);
 fb_Barrier1.m_SetSignal(b_BeamInterrupted);	// every cycle: the beam lights up while TRUE
@@ -700,7 +715,7 @@ product off the belt.
 StationPose.fX := 4500;
 StationPose.fY := OutfeedPose.fY - 230;
 StationPose.fZ := 0;
-fb_RejectUnit.m_Configure(vi_Pose := StationPose);
+fb_RejectUnit.m_SetPose(vi_Pose := StationPose);
 BodyPose.fY := -70;	// housing beside the belt, up to 120 mm above the belt surface
 fb_RejectUnit.m_SetBody(vi_un_Body := 1, vi_e_Shape := SynVisu.E_VisuBodyShape.BOX,
 	vi_e_Role := SynVisu.E_VisuBodyRole.STRUCTURE, vi_Pose := BodyPose, vi_lr_Length := 160, vi_lr_Width := 140,
@@ -891,7 +906,7 @@ Use the component FBs. The structures underneath are what the gateway reads; the
 | `_FB_VisuSensor` | One product sensor, e.g. a light barrier |
 | `_FB_VisuStation` | One station, e.g. a reject unit, a labeller, a printer |
 | `_FB_VisuMachine` | The machine: run state, simulation mode and machine messages ([section 14.1](#141-the-machine-run-state-and-machine-messages)); not a component |
-| `_FB_VisuComponent` | Abstract base of all: `m_Register`, `m_Id`, `m_SetFault`, `m_SetOriginShift` |
+| `_FB_VisuComponent` | Abstract base of all: `m_Register`, `m_Id`, `m_SetPose`, `m_SetFault`, `m_SetOriginShift` |
 | `_FB_VisuZoneComponent` | Abstract base of every component with zones: `m_SetZone`, `m_ClearZones` |
 | `_FB_VisuRobot` | Abstract base of the robots: zones plus fingers, limit area and TCP limit area |
 | `_FB_VisuXtsTrack` | Abstract base of the XTS kinematics: a robot plus its track of modules |
@@ -907,6 +922,7 @@ Use the component FBs. The structures underneath are what the gateway reads; the
 | `VISU_GlobalConst_Param` | The array sizes ([section 16](#16-limits)) and `VISU_un_INSTANCE_PATH_SKIP` |
 | `_FC_GetVersionSynVisu` | The library version at runtime |
 | `_FC_VisuSetMarkName(vio_Manifest, vi_un_Mark, vi_str_Name)` | Names a product mark for the whole PLC; TRUE when the name changed ([section 5.5](#55-product-marks)) |
+| `_FC_VisuSymbolPath(vio_str_InstancePath, vi_str_Member)` | The symbol path of an instance's contract structure, as both manifests (`SynVisu`, `SynConfig`) build it ([section 3.2](#32-the-symbol-path)) |
 
 ### 19.2 Methods
 
@@ -921,6 +937,7 @@ All component FBs:
 | --- | --- |
 | `m_Register(vio_Manifest, vi_udn_Id, vi_str_Name)` | Adds the component to the manifest with the symbol path of its `vo_Visu`. Call it every cycle. |
 | `m_Id()` | The id given to `m_Register`, 0 before |
+| `m_SetPose(vi_Pose)` | Where the component stands in the MCS; each type's section says which point of it the pose is. With `SynConfig`, its parameter FB's `m_PassOn` sets it |
 | `m_SetFault(vi_b_Active, vi_str_Message)` | Sets or clears the component's fault; it stays until cleared with `m_SetFault(FALSE, '')` |
 | `m_SetOriginShift(vi_lr_X, vi_lr_Y, vi_lr_Z)` | Moves the component's coordinate system from its pose (local frame, mm); for a conveyor the belt coordinates count from there |
 
@@ -963,7 +980,8 @@ Detectors and stations (`_FB_VisuBodyComponent`):
 
 | Method | Purpose |
 | --- | --- |
-| `m_Configure(vi_Pose, vi_lr_Length, vi_lr_Width)` | Pose of the belt start (centre, on the belt surface) and size |
+| `m_Configure(vi_lr_Length, vi_lr_Width)` | Size; the pose (`m_SetPose`) is the belt start (centre, on the belt surface) |
+| `m_McsToBelt(vi_Pose)`, `m_BeltToMcs(vi_Pose)` | Turn an `ST_VisuPlanarPose` from the MCS into the conveyor's coordinate system and back ([section 4](#4-coordinates)) |
 | `m_SetBodyVisible(vi_b_Visible)` | Whether the belt is drawn as a body (default TRUE) |
 | `m_SetProductType(vi_udn_Id, vi_lr_Length, vi_lr_Width, vi_lr_Height, vi_e_Shape, vi_lr_CornerRadius)` | Adds or updates a product type |
 | `m_SetBeltPosition(vi_lr_Position)` | Belt position (continuous, mm) and state timestamp; once per cycle |
@@ -981,17 +999,17 @@ Detectors and stations (`_FB_VisuBodyComponent`):
 
 | Method | Purpose |
 | --- | --- |
-| `m_Configure(vi_Pose, vi_lr_BaseRadius, vi_lr_EffectorRadius, vi_lr_UpperArmLength, vi_lr_LowerArmLength)` | Base pose and geometry |
+| `m_Configure(vi_lr_BaseRadius, vi_lr_EffectorRadius, vi_lr_UpperArmLength, vi_lr_LowerArmLength)` | Geometry; the pose (`m_SetPose`) is the base centre |
 | `m_SetWorkingArea(vi_lr_Radius, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ConeHeight, vi_lr_ConeBottomRadius)` | Working area |
 | `m_SetTcp(vi_ActualTcp, vi_SetpointTcp)` | TCP (positions in the MCS) and state timestamp; once per cycle |
 | `m_SetFingerState(vi_un_Finger, vi_Pose, vi_b_Active)` | One finger's MCS pose and grip state; once per cycle per finger |
-| `m_BasePose()` | The base pose last configured |
+| `m_BasePose()` | The base pose last set |
 
 `_FB_VisuXtsGantry`:
 
 | Method | Purpose |
 | --- | --- |
-| `m_Configure(vi_Pose, vi_lr_XMin, vi_lr_XMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ToolOffsetX, vi_lr_ToolOffsetZ, vi_lr_MoverLength, vi_lr_MoverWidth)` | Pose, strokes, gripper offsets, mover size; the track from `m_SetModule` |
+| `m_Configure(vi_lr_XMin, vi_lr_XMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_ToolOffsetX, vi_lr_ToolOffsetZ, vi_lr_MoverLength, vi_lr_MoverWidth)` | Strokes, gripper offsets, mover size; the track from `m_SetModule` |
 | `m_SetZPosition(vi_lr_Z)` | Common Z axis and state timestamp; once per cycle |
 | `m_SetMoverCount(vi_un_Count)` | Number of mover entries evaluated; entries beyond are invalidated |
 | `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_lr_X, vi_b_GripperActive, vi_FingerStates, vi_b_Fault, vi_str_FaultMessage)` | One mover's actual values, finger states and fault |
@@ -1000,7 +1018,7 @@ Detectors and stations (`_FB_VisuBodyComponent`):
 
 | Method | Purpose |
 | --- | --- |
-| `m_Configure(vi_Pose, vi_lr_ToolOffset, vi_lr_MoverLength, vi_lr_MoverWidth)` | Pose, tool offset, mover size; the track from `m_SetModule` |
+| `m_Configure(vi_lr_ToolOffset, vi_lr_MoverLength, vi_lr_MoverWidth)` | Tool offset, mover size; the track from `m_SetModule` |
 | `m_SetMoverCount(vi_un_Count)` | Number of mover entries evaluated; entries beyond are invalidated |
 | `m_SetMover(vi_un_Index, vi_udn_Id, vi_lr_Position, vi_FingerStates, vi_b_Fault, vi_str_FaultMessage)` | One mover's position along the loop, finger states and fault |
 
@@ -1008,7 +1026,7 @@ Detectors and stations (`_FB_VisuBodyComponent`):
 
 | Method | Purpose |
 | --- | --- |
-| `m_Configure(vi_Pose, vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_RailHeight)` | Pose, strokes, rail height |
+| `m_Configure(vi_lr_XMin, vi_lr_XMax, vi_lr_YMin, vi_lr_YMax, vi_lr_ZMin, vi_lr_ZMax, vi_lr_RailHeight)` | Strokes, rail height |
 | `m_SetKinematics(vi_e_Axes)` | Which axes the robot has; `XYZ` when never called |
 | `m_SetAxes(vi_lr_X, vi_lr_Y, vi_lr_Z, vi_b_GripperActive)` | Actual axis values (the flange), gripper and state timestamp; once per cycle |
 | `m_SetFingerState(vi_un_Finger, vi_Pose, vi_b_Active)` | As for the Delta |
@@ -1017,10 +1035,10 @@ Detectors and stations (`_FB_VisuBodyComponent`):
 
 | Method | Purpose |
 | --- | --- |
-| `_FB_VisuVision.m_Configure(vi_Pose, vi_lr_FieldLength, vi_lr_FieldWidth, vi_lr_WorkingDistance)` | Lens pose (looking along its local −Z); bodies 1 to 3: housing, lens, field of view |
-| `_FB_VisuSensor.m_Configure(vi_Pose, vi_lr_BeamLength)` | Head pose; body 1 the head, body 2 the beam along the local +Y |
+| `_FB_VisuVision.m_Configure(vi_lr_FieldLength, vi_lr_FieldWidth, vi_lr_WorkingDistance)` | Bodies 1 to 3: housing, lens, field of view; the pose (`m_SetPose`) is the lens, looking along its local −Z |
+| `_FB_VisuSensor.m_Configure(vi_lr_BeamLength)` | Body 1 the head, body 2 the beam along the local +Y; the pose (`m_SetPose`) is the head |
 | `_FB_VisuSensor.m_SetSignal(vi_b_Signal)` | The beam lights up while TRUE; once per cycle |
-| `_FB_VisuStation.m_Configure(vi_Pose)` | Pose of the station's origin; its bodies follow from `m_SetBody` |
+| `_FB_VisuStation` | No `m_Configure`: its pose (`m_SetPose`) is its origin, its bodies follow from `m_SetBody` |
 
 `_FB_VisuMachine` ([section 14.1](#141-the-machine-run-state-and-machine-messages)), every cycle:
 

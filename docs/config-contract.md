@@ -59,12 +59,14 @@ bound; Syn_Config's arrays start at 0 anyway).
 | Vision system, product sensor, station (`_FB_ConfigVision`, `_FB_ConfigSensor`, `_FB_ConfigStation`; one structure `ST_ConfigBodyComponentParam`, `vo_Config : ST_ConfigBodyComponent`) | `stPose`, `stOriginShift`, `nZoneCount`, `aZones` | bodies |
 
 An XTS track's module chain and a gripper's fingers with their places on the flange (ADR 0018) are parameters, not
-hardware: they are set up per machine (ADR 0016). The base `_FB_ConfigComponent` has the shared helpers every
-parameter FB uses (`m_InvalidZones`, `m_InvalidModules`, `m_InvalidFingers`, `m_PassOnZones`, `m_PassOnModules`,
-`m_PassOnFingers`, `m_PassOnLimitAreas`).
+hardware: they are set up per machine (ADR 0016). The base `_FB_ConfigComponent` runs the staging of every
+parameter FB and the machine FB (`m_HandleStaging`, below); a derived FB names only its own checks
+(`m_InvalidStaged`) and copies its set. It also has the shared helpers every parameter FB uses (`m_InvalidZones`,
+`m_InvalidModules`, `m_InvalidFingers`, `m_PassOnZones`, `m_PassOnModules`, `m_PassOnFingers`, `m_PassOnLimitAreas`).
 
 | Library | Config protocol | Change |
 | --- | --- | --- |
+| 2.3.0 | 4 | Needs `SynVisu` 10.0.0: `m_PassOn` passes the pose on too (`m_SetPose`), the application's `m_Configure` keeps only the hardware. One staging lifecycle for every FB (`m_HandleStaging`); the symbol path from `SynVisu._FC_VisuSymbolPath`. Structures and persistent sets unchanged |
 | 2.2.0 | 4 | A recipe field's label, description and visibility condition (`sLabel`, `sDescription`, `nVisibleField`, `nVisibleValue`; `m_SetText`, `m_SetVisibleWhen`; #49). `m_DeclareField` and the persistent `ST_ConfigRecipeSet` are unchanged; the gateway still reads config protocol 3, its fields without them |
 | 2.1.0 | 3 | The machine FB `_FB_ConfigMachine`: recipe fields the application declares, their staging, machine commands (ADR 0022). No change to the parameter FBs; the gateway still writes parameter sets to a PLC of config protocol 2 |
 | 2.0.1 | 2 | References `SynVisu` through a placeholder (default: the newest installed) instead of a fixed version, so an application uses one SynVisu for both libraries; redirect the placeholder in the application's library manager when it pins SynVisu. No change to the structures |
@@ -100,15 +102,17 @@ END_VAR
 
 fb_InfeedParam.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Infeed.m_Id());
 fb_InfeedParam.m_Cycle(vio_Default := InfeedDefault, vio_Set := InfeedSet, vi_b_ApplyAllowed := b_MachineStopped);
-fb_Infeed.m_Configure(vi_Pose := fb_InfeedParam.m_Pose(), vi_lr_Length := 3000, vi_lr_Width := 400);
-fb_InfeedParam.m_PassOn(vio_Visu := fb_Infeed);	// origin shift and product types to Syn_Visu
+fb_Infeed.m_Configure(vi_lr_Length := 3000, vi_lr_Width := 400);	// hardware only
+fb_InfeedParam.m_PassOn(vio_Visu := fb_Infeed);	// pose, origin shift and product types to Syn_Visu
 ```
 
 - Declare `GVL_Config` with `stManifest : SynConfig.ST_ConfigManifest` and start the gateway with `--allow-write`.
 - The machine logic reads the effective values (`m_Pose`, `m_Zone`, `m_ZoneCount`, `m_Active`), not its constants;
   the demo's Delta 1 allocates in the pick zone of its parameter set.
-- `m_PassOn` passes the effective values on to Syn_Visu, so the visualisation shows what the machine uses; the
-  configurator warns when they differ ("does the application pass them on?").
+- `m_PassOn` passes the effective values on to Syn_Visu, the pose included, so the visualisation shows what the
+  machine uses; the configurator warns when they differ ("does the application pass them on?"). Do not also call
+  `m_SetPose` on that Syn_Visu FB.
+- **Upgrading to 2.3:** take `SynVisu` 10.0.0 and remove `vi_Pose := …m_Pose()` from the Syn_Visu `m_Configure` call.
 - **Upgrading to 2.0:** a robot's gripper fingers come with its parameter set. Put them into its program values
   (`nFingerCount`, `aFingers` with their `stOffset`) and remove the robot's own `m_SetFinger` calls: `m_PassOn` would
   clear the fingers the set does not have every cycle, and the visualisation's config version would change every

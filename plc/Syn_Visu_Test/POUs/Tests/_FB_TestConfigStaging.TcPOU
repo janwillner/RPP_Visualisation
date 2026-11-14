@@ -14,6 +14,7 @@ stStaging and stStaged as the gateway does over ADS.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 2.0.0 ¦ 2026-11-11 ¦ J.Willner ¦ Unit tests<br>
+Syn_Config 2.3.0 ¦ 2026-11-14 ¦ J.Willner ¦ The lifecycle of every parameter FB type<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_TestConfigStaging EXTENDS TcUnit.FB_TestSuite
 ]]></Declaration>
@@ -24,8 +25,183 @@ m_StagedSetWaitsUntilAllowed();
 m_StagedSetOnOtherVersionRejected();
 m_ResetReturnsToProgramValues();
 m_InvalidProductTypesRejected();
+m_EveryTypeRunsTheLifecycle();
 ]]></ST>
     </Implementation>
+    <Method Name="m_EveryTypeRunsTheLifecycle" Id="{98d7e76b-db1d-4f02-9bf1-fe0eb3da25fc}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Every parameter FB type runs the same staging lifecycle as the conveyor: a set staged on version 0 is taken over<br>
+as version 1, a set staged on version 0 again is rejected (version 1 is active), and a reset returns to the<br>
+program values under version 0. The machine FB's recipe has its own suite (_FB_TestConfigMachine).<br>
+****************************************************************************************************)
+METHOD PRIVATE m_EveryTypeRunsTheLifecycle
+VAR_INST
+	fb_TempDelta						: SynConfig._FB_ConfigDelta;
+	TempDeltaDefault					: SynConfig.ST_ConfigDeltaParam;
+	TempDeltaStaged						: SynConfig.ST_ConfigDeltaParam;
+	TempDeltaSet						: SynConfig.ST_ConfigDeltaSet;
+	fb_TempGantry						: SynConfig._FB_ConfigXtsGantry;
+	TempGantryDefault					: SynConfig.ST_ConfigXtsGantryParam;
+	TempGantryStaged					: SynConfig.ST_ConfigXtsGantryParam;
+	TempGantrySet						: SynConfig.ST_ConfigXtsGantrySet;
+	fb_TempLoop							: SynConfig._FB_ConfigXtsLoop;
+	TempLoopDefault						: SynConfig.ST_ConfigXtsLoopParam;
+	TempLoopStaged						: SynConfig.ST_ConfigXtsLoopParam;
+	TempLoopSet							: SynConfig.ST_ConfigXtsLoopSet;
+	fb_TempCartesian					: SynConfig._FB_ConfigCartesian;
+	TempCartesianDefault				: SynConfig.ST_ConfigCartesianParam;
+	TempCartesianStaged					: SynConfig.ST_ConfigCartesianParam;
+	TempCartesianSet					: SynConfig.ST_ConfigCartesianSet;
+	fb_TempVision						: SynConfig._FB_ConfigVision;
+	TempVisionDefault					: SynConfig.ST_ConfigBodyComponentParam;
+	TempVisionStaged					: SynConfig.ST_ConfigBodyComponentParam;
+	TempVisionSet						: SynConfig.ST_ConfigBodyComponentSet;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	b_TempChanged						: ARRAY[1..5, 1..3] OF BOOL;	// per type and step: m_Cycle's result
+	e_TempResult						: ARRAY[1..5, 1..3] OF SynConfig.E_ConfigResult;	// per type and step: stStatus.eResult
+	udn_TempVersion						: ARRAY[1..5, 1..3] OF UDINT;	// [-] per type and step: stStatus.nActiveVersion
+	lr_TempX							: ARRAY[1..5, 1..3] OF LREAL;	// [mm] per type and step: X of the effective pose
+	TempPose							: ST_VisuPose;
+	un_TempStep							: UINT;	// [-] 1 = take-over, 2 = stale version, 3 = reset
+	un_TempType							: UINT;
+	p_TempDelta							: POINTER TO SynConfig.ST_ConfigDeltaParam;
+	p_TempGantry						: POINTER TO SynConfig.ST_ConfigXtsGantryParam;
+	p_TempLoop							: POINTER TO SynConfig.ST_ConfigXtsLoopParam;
+	p_TempCartesian						: POINTER TO SynConfig.ST_ConfigCartesianParam;
+	p_TempVision						: POINTER TO SynConfig.ST_ConfigBodyComponentParam;
+END_VAR
+VAR CONSTANT
+	str_TYPE_NAMES						: ARRAY[1..5] OF STRING(20) := ['Delta', 'XTS gantry', 'XTS loop', 'Cartesian', 'Vision'];
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigEveryTypeRunsTheLifecycle');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+
+(****************************************************************************************************
+THREE STEPS PER TYPE: TAKE-OVER, STALE VERSION, RESET
+****************************************************************************************************)
+(* Delta *)
+TempDeltaDefault.stPose.fX := 100;
+TempDeltaStaged.stPose.fX := 250;
+p_TempDelta := ADR(fb_TempDelta.vo_Config.stStaged);
+FOR un_TempStep := 1 TO 3 DO
+	p_TempDelta^ := TempDeltaStaged;
+	_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempDelta.vo_Config.stStaging), vi_udn_BaseVersion := 0,
+		vi_udn_StageId := UINT_TO_UDINT(un_TempStep), vi_b_Reset := un_TempStep = 3);
+	b_TempChanged[1, un_TempStep] := fb_TempDelta.m_Cycle(vio_Default := TempDeltaDefault, vio_Set := TempDeltaSet,
+		vi_b_ApplyAllowed := TRUE);
+	e_TempResult[1, un_TempStep] := fb_TempDelta.vo_Config.stStatus.eResult;
+	udn_TempVersion[1, un_TempStep] := fb_TempDelta.vo_Config.stStatus.nActiveVersion;
+	TempPose := fb_TempDelta.m_Pose();
+	lr_TempX[1, un_TempStep] := TempPose.fX;
+END_FOR
+
+(* XTS gantry: a track needs a module *)
+TempGantryDefault.stPose.fX := 100;
+TempGantryStaged.stPose.fX := 250;
+TempGantryStaged.nModuleCount := 1;
+TempGantryStaged.aModules[0].fLength := 250;
+p_TempGantry := ADR(fb_TempGantry.vo_Config.stStaged);
+FOR un_TempStep := 1 TO 3 DO
+	p_TempGantry^ := TempGantryStaged;
+	_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempGantry.vo_Config.stStaging), vi_udn_BaseVersion := 0,
+		vi_udn_StageId := UINT_TO_UDINT(un_TempStep), vi_b_Reset := un_TempStep = 3);
+	b_TempChanged[2, un_TempStep] := fb_TempGantry.m_Cycle(vio_Default := TempGantryDefault, vio_Set := TempGantrySet,
+		vi_b_ApplyAllowed := TRUE);
+	e_TempResult[2, un_TempStep] := fb_TempGantry.vo_Config.stStatus.eResult;
+	udn_TempVersion[2, un_TempStep] := fb_TempGantry.vo_Config.stStatus.nActiveVersion;
+	TempPose := fb_TempGantry.m_Pose();
+	lr_TempX[2, un_TempStep] := TempPose.fX;
+END_FOR
+
+(* XTS loop: a track needs a module *)
+TempLoopDefault.stPose.fX := 100;
+TempLoopStaged.stPose.fX := 250;
+TempLoopStaged.nModuleCount := 1;
+TempLoopStaged.aModules[0].fLength := 250;
+p_TempLoop := ADR(fb_TempLoop.vo_Config.stStaged);
+FOR un_TempStep := 1 TO 3 DO
+	p_TempLoop^ := TempLoopStaged;
+	_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempLoop.vo_Config.stStaging), vi_udn_BaseVersion := 0,
+		vi_udn_StageId := UINT_TO_UDINT(un_TempStep), vi_b_Reset := un_TempStep = 3);
+	b_TempChanged[3, un_TempStep] := fb_TempLoop.m_Cycle(vio_Default := TempLoopDefault, vio_Set := TempLoopSet,
+		vi_b_ApplyAllowed := TRUE);
+	e_TempResult[3, un_TempStep] := fb_TempLoop.vo_Config.stStatus.eResult;
+	udn_TempVersion[3, un_TempStep] := fb_TempLoop.vo_Config.stStatus.nActiveVersion;
+	TempPose := fb_TempLoop.m_Pose();
+	lr_TempX[3, un_TempStep] := TempPose.fX;
+END_FOR
+
+(* Cartesian *)
+TempCartesianDefault.stPose.fX := 100;
+TempCartesianStaged.stPose.fX := 250;
+p_TempCartesian := ADR(fb_TempCartesian.vo_Config.stStaged);
+FOR un_TempStep := 1 TO 3 DO
+	p_TempCartesian^ := TempCartesianStaged;
+	_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempCartesian.vo_Config.stStaging), vi_udn_BaseVersion := 0,
+		vi_udn_StageId := UINT_TO_UDINT(un_TempStep), vi_b_Reset := un_TempStep = 3);
+	b_TempChanged[4, un_TempStep] := fb_TempCartesian.m_Cycle(vio_Default := TempCartesianDefault,
+		vio_Set := TempCartesianSet, vi_b_ApplyAllowed := TRUE);
+	e_TempResult[4, un_TempStep] := fb_TempCartesian.vo_Config.stStatus.eResult;
+	udn_TempVersion[4, un_TempStep] := fb_TempCartesian.vo_Config.stStatus.nActiveVersion;
+	TempPose := fb_TempCartesian.m_Pose();
+	lr_TempX[4, un_TempStep] := TempPose.fX;
+END_FOR
+
+(* Vision system, for the body components *)
+TempVisionDefault.stPose.fX := 100;
+TempVisionStaged.stPose.fX := 250;
+p_TempVision := ADR(fb_TempVision.vo_Config.stStaged);
+FOR un_TempStep := 1 TO 3 DO
+	p_TempVision^ := TempVisionStaged;
+	_FC_TestConfigStage(vi_p_Staging := ADR(fb_TempVision.vo_Config.stStaging), vi_udn_BaseVersion := 0,
+		vi_udn_StageId := UINT_TO_UDINT(un_TempStep), vi_b_Reset := un_TempStep = 3);
+	b_TempChanged[5, un_TempStep] := fb_TempVision.m_Cycle(vio_Default := TempVisionDefault, vio_Set := TempVisionSet,
+		vi_b_ApplyAllowed := TRUE);
+	e_TempResult[5, un_TempStep] := fb_TempVision.vo_Config.stStatus.eResult;
+	udn_TempVersion[5, un_TempStep] := fb_TempVision.vo_Config.stStatus.nActiveVersion;
+	TempPose := fb_TempVision.m_Pose();
+	lr_TempX[5, un_TempStep] := TempPose.fX;
+END_FOR
+
+
+(****************************************************************************************************
+THE SAME RESULTS FOR EVERY TYPE
+****************************************************************************************************)
+FOR un_TempType := 1 TO 5 DO
+	AssertTrue(Condition := b_TempChanged[un_TempType, 1], Message := CONCAT(str_TYPE_NAMES[un_TempType], ': taken over'));
+	AssertEquals_UDINT(Expected := 1, Actual := udn_TempVersion[un_TempType, 1],
+		Message := CONCAT(str_TYPE_NAMES[un_TempType], ': version 1 active'));
+	AssertEquals_LREAL(Expected := 250, Actual := lr_TempX[un_TempType, 1], Delta := 0.001,
+		Message := CONCAT(str_TYPE_NAMES[un_TempType], ': staged pose effective'));
+	AssertFalse(Condition := b_TempChanged[un_TempType, 2],
+		Message := CONCAT(str_TYPE_NAMES[un_TempType], ': stale version not taken over'));
+	AssertTrue(Condition := e_TempResult[un_TempType, 2] = SynConfig.E_ConfigResult.REJECTED,
+		Message := CONCAT(str_TYPE_NAMES[un_TempType], ': stale version rejected'));
+	AssertEquals_UDINT(Expected := 1, Actual := udn_TempVersion[un_TempType, 2],
+		Message := CONCAT(str_TYPE_NAMES[un_TempType], ': version 1 stays'));
+	AssertTrue(Condition := b_TempChanged[un_TempType, 3], Message := CONCAT(str_TYPE_NAMES[un_TempType], ': reset'));
+	AssertEquals_UDINT(Expected := 0, Actual := udn_TempVersion[un_TempType, 3],
+		Message := CONCAT(str_TYPE_NAMES[un_TempType], ': version 0 after the reset'));
+	AssertEquals_LREAL(Expected := 100, Actual := lr_TempX[un_TempType, 3], Delta := 0.001,
+		Message := CONCAT(str_TYPE_NAMES[un_TempType], ': program pose again'));
+END_FOR
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_InvalidProductTypesRejected" Id="{5b5ed334-7115-4d9e-9594-25e6249f4a24}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>

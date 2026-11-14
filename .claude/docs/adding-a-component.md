@@ -27,7 +27,7 @@ PLC steps go through the TwinCAT MCP tools. The compiler asks for most table ent
 1. **Syn_Visu**: the `E_VisuComponentType` value; contract structures `ST_Visu<Name>` with `stConfig` and `stState`,
    named as `docs/plc-contract.md` requires so the gateway maps them without code; an FB `EXTENDS _FB_VisuRobot`
    (zones and fingers come with it), `_FB_VisuXtsTrack` (modules and their faults), `_FB_VisuZoneComponent` or
-   `_FB_VisuComponent`.
+   `_FB_VisuComponent`; its `m_Pose` names where `m_SetPose` writes, `m_Configure` takes only hardware.
 2. **Protocol**: config and state schemas (`robotConfig` / `componentConfig`, `componentState`) and their
    `COMPONENT_SCHEMAS` entry. Field names are the PLC members without their prefix; every field gets `.describe()`.
 3. **Gateway**: the TypeScript mirror in `plc-contract.ts`, the `COMPONENTS` entry, a builder and `PlcStructures`
@@ -47,9 +47,10 @@ PLC steps go through the TwinCAT MCP tools. The compiler asks for most table ent
    machine: zones, product types, track modules, fingers, areas), its `hardware` (lengths, arm geometry, strokes,
    bodies) and its `parameterDescription`.
 2. **Syn_Config**: `ST_Config<Type>Param` with exactly those members, `ST_Config<Type>Set`, `ST_Config<Type>`
-   (`vo_Config`) and `_FB_Config<Type> EXTENDS _FB_ConfigComponent` (`m_ComponentType`, `m_Cycle`, `m_Invalid`,
-   `m_PassOn`, `m_Pose`, `m_Active`; zones, areas and modules through the base's helpers). A body component derives
-   from `_FB_ConfigBodyComponent` and adds only `m_ComponentType` and `m_PassOn`. Bump the minor version, export it.
+   (`vo_Config`) and `_FB_Config<Type> EXTENDS _FB_ConfigComponent` (`m_ComponentType`, `m_Cycle` through
+   `m_HandleStaging`, `m_InvalidStaged`, `m_PassOn` with the pose, `m_Pose`, `m_Active`; zones, areas and modules
+   through the base's helpers). A body component derives from `_FB_ConfigBodyComponent` and adds only
+   `m_ComponentType` and `m_PassOn`. Bump the minor version, export it.
 3. **Gateway**: `plcConfigType` in its `COMPONENTS` entry; discovery, writing and emulation need no code.
 4. **Configurator**: `PALETTE_TYPES`, `PALETTE_LABELS` and `defaultComponent` with assumed hardware
    (`component-defaults.ts`); a new kind of list needs its `AddEntry` and an add command; an optional area its

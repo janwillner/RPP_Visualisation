@@ -9,14 +9,17 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 One visualised conveyor. Typical cycle:<br>
   fb_Infeed.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 1, vi_str_Name := 'Infeed');<br>
-  fb_Infeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := 5000, vi_lr_Width := 400);<br>
+  fb_Infeed.m_SetPose(vi_Pose := BeltPose);<br>
+  fb_Infeed.m_Configure(vi_lr_Length := 5000, vi_lr_Width := 400);<br>
   fb_Infeed.m_SetProductType(vi_udn_Id := 1, vi_lr_Length := 120, vi_lr_Width := 80, vi_lr_Height := 40,<br>
       vi_e_Shape := E_VisuProductShape.BOX, vi_lr_CornerRadius := 0);<br>
   fb_Infeed.m_SetBeltPosition(lr_AxisPosition);  // or m_SetModuloBeltPosition for a modulo axis<br>
   IF b_Latched THEN fb_Infeed.m_LatchProduct(vi_udn_Id := udn_NextId, vi_LatchPose := LatchPose, vi_udn_ProductType := 1,<br>
       vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE, vi_e_State := E_VisuProductState.DETECTED,<br>
       vi_udn_ClientId := 0); END_IF<br>
-m_Configure and m_SetProductType may be called every cycle; the config version only changes when a value does.<br>
+m_SetPose, m_Configure and m_SetProductType may be called every cycle; the config version only changes when a<br>
+value does. m_McsToBelt and m_BeltToMcs turn a pose between the MCS and the conveyor's coordinate system, in<br>
+which m_LatchProduct, m_MoveProduct and m_GetProduct work.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
 vo_Visu is the contract structure the gateway reads at the path given to m_Register. Do not write it.<br>
@@ -27,6 +30,7 @@ Syn_Visu 3.4.0  ¦ 2026-11-01 ¦ J.Willner ¦ m_LatchProduct: product state and 
 Syn_Visu 3.5.0  ¦ 2026-11-01 ¦ J.Willner ¦ m_SetProductType: shape and corner radius (protocol 10)<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ m_LatchProduct: detector that latched the product (protocol 11)<br>
 Syn_Visu 7.2.0  ¦ 2026-11-05 ¦ J.Willner ¦ Product index by id; registers rearranged with MEMMOVE<br>
+Syn_Visu 10.0.0 ¦ 2026-11-14 ¦ J.Willner ¦ Pose by m_SetPose, not m_Configure; m_McsToBelt, m_BeltToMcs<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_VisuConveyor EXTENDS _FB_VisuComponent
 VAR_OUTPUT
@@ -80,6 +84,41 @@ METHOD m_BeltPosition : LREAL]]></Declaration>
         <ST><![CDATA[m_BeltPosition := vo_Visu.stState.fBeltPosition;]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_BeltToMcs" Id="{09e0dd49-b7cd-459a-82c6-4e94f9b7994d}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A pose in the conveyor's coordinate system (from its pose moved by its origin shift, as m_GetProduct gives it)<br>
+in the MCS, as the visualisation places it: the position through the conveyor's pose with its whole rotation,<br>
+fRz about the MCS Z (exact for a level conveyor, fRx = fRy = 0). The inverse of m_McsToBelt.<br>
+****************************************************************************************************)
+METHOD m_BeltToMcs : ST_VisuPlanarPose
+VAR_INPUT
+	vi_Pose								: ST_VisuPlanarPose;	// conveyor coordinate system
+END_VAR
+VAR
+	lr_TempRotation						: ARRAY[0..8] OF LREAL;	// [-] of the conveyor's pose, row by row
+	lr_TempX							: LREAL;	// [mm] from the belt start, along the belt's local X
+	lr_TempY							: LREAL;	// [mm] from the belt start, along the belt's local Y
+	lr_TempZ							: LREAL;	// [mm] from the belt start, along the belt's local Z
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Rotation(vo_lr_Rotation => lr_TempRotation);
+lr_TempX := vo_Visu.stConfig.stOriginShift.fX + vi_Pose.fX;
+lr_TempY := vo_Visu.stConfig.stOriginShift.fY + vi_Pose.fY;
+lr_TempZ := vo_Visu.stConfig.stOriginShift.fZ + vi_Pose.fZ;
+m_BeltToMcs.fX := vo_Visu.stConfig.stPose.fX
+				+ lr_TempRotation[0] * lr_TempX + lr_TempRotation[1] * lr_TempY + lr_TempRotation[2] * lr_TempZ;
+m_BeltToMcs.fY := vo_Visu.stConfig.stPose.fY
+				+ lr_TempRotation[3] * lr_TempX + lr_TempRotation[4] * lr_TempY + lr_TempRotation[5] * lr_TempZ;
+m_BeltToMcs.fZ := vo_Visu.stConfig.stPose.fZ
+				+ lr_TempRotation[6] * lr_TempX + lr_TempRotation[7] * lr_TempY + lr_TempRotation[8] * lr_TempZ;
+m_BeltToMcs.fRz := vo_Visu.stConfig.stPose.fRz + vi_Pose.fRz;]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_ComponentType" Id="{7fffd466-f705-4090-93d1-33703f89d45d}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -101,11 +140,11 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Sets pose and size. TRUE if anything changed.<br>
+Sets the belt's size; its pose (m_SetPose) is the belt start on the belt surface, local +X the conveying<br>
+direction. TRUE if anything changed.<br>
 ****************************************************************************************************)
 METHOD m_Configure : BOOL
 VAR_INPUT
-	vi_Pose								: ST_VisuPose;	// MCS, belt start on the belt surface; local +X = conveying direction
 	vi_lr_Length						: LREAL;	// [mm]
 	vi_lr_Width							: LREAL;	// [mm]
 END_VAR
@@ -114,7 +153,6 @@ VAR
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[TempNew := vo_Visu.stConfig;
-TempNew.stPose := vi_Pose;
 TempNew.fLength := vi_lr_Length;
 TempNew.fWidth := vi_lr_Width;
 m_Configure := m_ApplyConfig(TempNew);]]></ST>
@@ -357,6 +395,43 @@ vo_Visu.stState.nTimestamp := m_DcTime();
 m_LatchProduct := TRUE;]]></ST>
       </Implementation>
     </Method>
+    <Method Name="m_McsToBelt" Id="{9b088823-aa51-43ec-86db-4638b5fbb157}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+An MCS pose in the conveyor's coordinate system (from its pose moved by its origin shift), as m_LatchProduct and<br>
+m_MoveProduct take it, e.g. where a camera saw a product or a robot puts one down: the position through the<br>
+conveyor's pose with its whole rotation, fRz about the MCS Z (exact for a level conveyor, fRx = fRy = 0). The<br>
+inverse of m_BeltToMcs.<br>
+****************************************************************************************************)
+METHOD m_McsToBelt : ST_VisuPlanarPose
+VAR_INPUT
+	vi_Pose								: ST_VisuPlanarPose;	// MCS
+END_VAR
+VAR
+	lr_TempRotation						: ARRAY[0..8] OF LREAL;	// [-] of the conveyor's pose, row by row
+	lr_TempX							: LREAL;	// [mm] from the conveyor's pose, along the MCS X
+	lr_TempY							: LREAL;	// [mm] from the conveyor's pose, along the MCS Y
+	lr_TempZ							: LREAL;	// [mm] from the conveyor's pose, along the MCS Z
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Rotation(vo_lr_Rotation => lr_TempRotation);
+lr_TempX := vi_Pose.fX - vo_Visu.stConfig.stPose.fX;
+lr_TempY := vi_Pose.fY - vo_Visu.stConfig.stPose.fY;
+lr_TempZ := vi_Pose.fZ - vo_Visu.stConfig.stPose.fZ;
+(* The transposed rotation turns the MCS offset into the belt's local frame. *)
+m_McsToBelt.fX := lr_TempRotation[0] * lr_TempX + lr_TempRotation[3] * lr_TempY + lr_TempRotation[6] * lr_TempZ
+				- vo_Visu.stConfig.stOriginShift.fX;
+m_McsToBelt.fY := lr_TempRotation[1] * lr_TempX + lr_TempRotation[4] * lr_TempY + lr_TempRotation[7] * lr_TempZ
+				- vo_Visu.stConfig.stOriginShift.fY;
+m_McsToBelt.fZ := lr_TempRotation[2] * lr_TempX + lr_TempRotation[5] * lr_TempY + lr_TempRotation[8] * lr_TempZ
+				- vo_Visu.stConfig.stOriginShift.fZ;
+m_McsToBelt.fRz := vi_Pose.fRz - vo_Visu.stConfig.stPose.fRz;]]></ST>
+      </Implementation>
+    </Method>
     <Method Name="m_MoveProduct" Id="{02f7a869-c82b-433e-ad49-b7303567daa7}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
@@ -386,6 +461,24 @@ IF m_MoveProduct THEN
 	vo_Visu.stState.aProducts[n_TempIndex].fLatchBeltPosition := vo_Visu.stState.fBeltPosition;
 	vo_Visu.stState.nTimestamp := m_DcTime();
 END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Pose" Id="{968be42d-685f-4486-9c5d-f248aa985d0a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The pose in vo_Visu, for m_SetPose.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_Pose : BOOL
+VAR_OUTPUT
+	vo_p_Pose							: POINTER TO ST_VisuPose;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_p_Pose := ADR(vo_Visu.stConfig.stPose);
+m_Pose := TRUE;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_ProductCount" Id="{cee0e139-fe59-4b22-b8cb-ec43b92b63f9}">
@@ -526,6 +619,47 @@ IF un_TempWrite < un_TempCount THEN
 	vo_Visu.stState.nTimestamp := m_DcTime();
 	b_IndexValid := FALSE;
 END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Rotation" Id="{9e749464-81fd-48dd-86d6-6c1fce8e0a5d}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The rotation of the conveyor's pose as a row-major 3x3 matrix, R = Rz(fRz) * Ry(fRy) * Rx(fRx) as the contract<br>
+defines it (ST_VisuPose) and the visualisation applies it, for m_BeltToMcs and m_McsToBelt.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Rotation : BOOL
+VAR_OUTPUT
+	vo_lr_Rotation						: ARRAY[0..8] OF LREAL;	// [-] row by row
+END_VAR
+VAR
+	lr_TempCx							: LREAL;
+	lr_TempSx							: LREAL;
+	lr_TempCy							: LREAL;
+	lr_TempSy							: LREAL;
+	lr_TempCz							: LREAL;
+	lr_TempSz							: LREAL;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[lr_TempCx := COS(vo_Visu.stConfig.stPose.fRx * VISU_GlobalConst.VISU_lr_DEG_TO_RAD);
+lr_TempSx := SIN(vo_Visu.stConfig.stPose.fRx * VISU_GlobalConst.VISU_lr_DEG_TO_RAD);
+lr_TempCy := COS(vo_Visu.stConfig.stPose.fRy * VISU_GlobalConst.VISU_lr_DEG_TO_RAD);
+lr_TempSy := SIN(vo_Visu.stConfig.stPose.fRy * VISU_GlobalConst.VISU_lr_DEG_TO_RAD);
+lr_TempCz := COS(vo_Visu.stConfig.stPose.fRz * VISU_GlobalConst.VISU_lr_DEG_TO_RAD);
+lr_TempSz := SIN(vo_Visu.stConfig.stPose.fRz * VISU_GlobalConst.VISU_lr_DEG_TO_RAD);
+vo_lr_Rotation[0] := lr_TempCz * lr_TempCy;
+vo_lr_Rotation[1] := lr_TempCz * lr_TempSy * lr_TempSx - lr_TempSz * lr_TempCx;
+vo_lr_Rotation[2] := lr_TempCz * lr_TempSy * lr_TempCx + lr_TempSz * lr_TempSx;
+vo_lr_Rotation[3] := lr_TempSz * lr_TempCy;
+vo_lr_Rotation[4] := lr_TempSz * lr_TempSy * lr_TempSx + lr_TempCz * lr_TempCx;
+vo_lr_Rotation[5] := lr_TempSz * lr_TempSy * lr_TempCx - lr_TempCz * lr_TempSx;
+vo_lr_Rotation[6] := -lr_TempSy;
+vo_lr_Rotation[7] := lr_TempCy * lr_TempSx;
+vo_lr_Rotation[8] := lr_TempCy * lr_TempCx;
+m_Rotation := TRUE;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_SetBeltPosition" Id="{5b54c4bc-508c-49cf-b448-746ae37d7948}">

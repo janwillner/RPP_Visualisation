@@ -9,7 +9,8 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 One visualised Delta robot. Typical cycle:<br>
   fb_Delta.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 10, vi_str_Name := 'Delta 1');<br>
-  fb_Delta.m_Configure(vi_Pose := BasePose, vi_lr_BaseRadius := 200, vi_lr_EffectorRadius := 50,<br>
+  fb_Delta.m_SetPose(vi_Pose := BasePose);<br>
+  fb_Delta.m_Configure(vi_lr_BaseRadius := 200, vi_lr_EffectorRadius := 50,<br>
       vi_lr_UpperArmLength := 400, vi_lr_LowerArmLength := 1000);<br>
   fb_Delta.m_SetFinger(vi_un_Finger := 1, vi_lr_Diameter := 40, vi_lr_Height := 50);<br>
   fb_Delta.m_SetWorkingArea(vi_lr_Radius := 750, vi_lr_ZMin := -1300, vi_lr_ZMax := -700, vi_lr_ConeHeight := 200,<br>
@@ -30,6 +31,7 @@ vo_Visu is the contract structure the gateway reads at the path given to m_Regis
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 3.0.0  ¦ 2026-10-31 ¦ J.Willner ¦ Naming and layout after the TCAT programming guideline<br>
 Syn_Visu 4.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ Zones and fingers from _FB_VisuRobot; m_SetZone by index, no kind<br>
+Syn_Visu 10.0.0 ¦ 2026-11-14 ¦ J.Willner ¦ Pose by m_SetPose, not m_Configure<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_VisuDelta EXTENDS _FB_VisuRobot
 VAR_OUTPUT
@@ -66,7 +68,7 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Base pose last set by m_Configure, MCS.<br>
+Base pose last set by m_SetPose, MCS.<br>
 ****************************************************************************************************)
 METHOD m_BasePose : ST_VisuPose]]></Declaration>
       <Implementation>
@@ -94,12 +96,11 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Sets base pose and geometry. Arm 1 lies along the base's local +X; arms 2 and 3 follow<br>
+Sets the geometry; its pose (m_SetPose) is the base centre. Arm 1 lies along the base's local +X; arms 2 and 3 follow<br>
 counter-clockwise (seen from above) at 120 deg each. TRUE if anything changed.<br>
 ****************************************************************************************************)
 METHOD m_Configure : BOOL
 VAR_INPUT
-	vi_Pose								: ST_VisuPose;	// MCS, base centre
 	vi_lr_BaseRadius					: LREAL;	// [mm] base centre to shoulder joint
 	vi_lr_EffectorRadius				: LREAL;	// [mm] effector centre to lower-arm joint
 	vi_lr_UpperArmLength				: LREAL;	// [mm]
@@ -110,7 +111,6 @@ VAR
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[TempNew := vo_Visu.stConfig;
-TempNew.stPose := vi_Pose;
 TempNew.fBaseRadius := vi_lr_BaseRadius;
 TempNew.fEffectorRadius := vi_lr_EffectorRadius;
 TempNew.fUpperArmLength := vi_lr_UpperArmLength;
@@ -160,6 +160,24 @@ END_VAR
 vo_p_TcpLimitArea := ADR(vo_Visu.stConfig.stTcpLimitArea);
 m_LimitArea := TRUE;
 ]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Pose" Id="{ac0f16c0-53a9-40d8-986a-505b7a0c5deb}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The pose in vo_Visu, for m_SetPose.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_Pose : BOOL
+VAR_OUTPUT
+	vo_p_Pose							: POINTER TO ST_VisuPose;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_p_Pose := ADR(vo_Visu.stConfig.stPose);
+m_Pose := TRUE;]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_SetFault" Id="{ffbdfca2-f936-4a97-9e98-c78fb12b7c8e}">

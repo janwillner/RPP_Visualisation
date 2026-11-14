@@ -204,7 +204,7 @@ export class ConfigEmulation {
   }
 
   /**
-   * Why a staged set cannot be taken over, as the library's m_Invalid says it: a count past its array, a product type
+   * Why a staged set cannot be taken over, as the library's m_InvalidStaged says it: a count past its array, a product type
    * without a number or twice, a track without modules or a module without a length (checked before the zones, as
    * the XTS parameter FBs do), a zone on no conveyor, a finger without a diameter or height.
    */
@@ -246,7 +246,7 @@ export class ConfigEmulation {
 }
 
 /**
- * What Syn_Config's staging (`m_Staging`, `m_Handled`) does in one cycle, for a parameter FB and the machine FB alike: a
+ * What Syn_Config's staging (`m_HandleStaging`) does in one cycle, for a parameter FB and the machine FB alike: a
  * reset makes the active set invalid; a staged set waits while not allowed, else it is rejected when based on another
  * version than `active` or invalid, or taken over. Either way the staging is handled: a set still waiting is dropped
  * with a reset.
@@ -283,7 +283,7 @@ function paramOf(kind: ParameterType, config: Record<string, unknown>): Param {
 }
 
 /**
- * Why staged recipe values cannot be taken over, in the order the library's m_Invalid checks them (the range first, a
+ * Why staged recipe values cannot be taken over, in the order the library's m_InvalidStaged checks them (the range first, a
  * switch 0 to 1; then a whole number for every type but NUMBER); '' when they can.
  */
 function invalidRecipe(fields: readonly ST_ConfigRecipeField[], staged: readonly number[]): string {

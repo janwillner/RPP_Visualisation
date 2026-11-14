@@ -38,7 +38,7 @@ VAR_GLOBAL CONSTANT
 	VISU_un_PROTOCOL_VERSION			: UINT := 22;
 	(* Version of this library as the visualisation shows it (manifest sLibraryVersion). Bump together with
 	   _FC_GetVersionSynVisu and the project version. *)
-	VISU_str_LIBRARY_VERSION			: STRING(15) := '9.7.0';
+	VISU_str_LIBRARY_VERSION			: STRING(15) := '10.0.0';
 	(* Product marks 1..VISU_un_MAX_MARKS a product can carry (nMark); the visualisation has a colour for each, so it
 	   is part of the contract, not a library parameter. *)
 	VISU_un_MAX_MARKS					: UINT := 4;	// [-] product marks

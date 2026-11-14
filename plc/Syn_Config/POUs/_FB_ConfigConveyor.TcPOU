@@ -11,7 +11,7 @@ Parameter set of one conveyor (ADR 0017): its pose, origin shift and product typ
 taken over when the application allows it. Typical cycle, before the Syn_Visu calls of the conveyor:<br>
   fb_InfeedParam.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := fb_Infeed.m_Id());<br>
   fb_InfeedParam.m_Cycle(vio_Default := InfeedDefault, vio_Set := InfeedSet, vi_b_ApplyAllowed := b_Stopped);<br>
-  fb_Infeed.m_Configure(vi_Pose := fb_InfeedParam.m_Pose(), vi_lr_Length := 3000, vi_lr_Width := 400);<br>
+  fb_Infeed.m_Configure(vi_lr_Length := 3000, vi_lr_Width := 400);<br>
   fb_InfeedParam.m_PassOn(vio_Visu := fb_Infeed);<br>
 InfeedSet is the application's VAR PERSISTENT ST_ConfigConveyorSet; InfeedDefault its program values.<br>
 *****************************************************************************************************<br>
@@ -20,6 +20,7 @@ vo_Config is the contract structure the gateway reads and writes at the path in 
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 1.0.0 ¦ 2026-11-10 ¦ J.Willner ¦ First version<br>
+Syn_Config 2.3.0 ¦ 2026-11-14 ¦ J.Willner ¦ m_Cycle through m_HandleStaging; m_PassOn passes the pose on<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_ConfigConveyor EXTENDS _FB_ConfigComponent
 VAR_OUTPUT
@@ -81,27 +82,15 @@ VAR_INPUT
 	vi_b_ApplyAllowed					: BOOL;	// [-] a staged set may be taken over now, e.g. while the machine stands
 END_VAR
 VAR
-	str_TempRejection					: STRING(80);
+	b_TempTakeOver						: BOOL;	// the staged set was taken over: copy it
 END_VAR]]></Declaration>
       <Implementation>
-        <ST><![CDATA[m_Cycle := FALSE;
-CASE m_Staging(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_b_ApplyAllowed := vi_b_ApplyAllowed,
-	vi_udn_ActiveVersion := SEL(vio_Set.bValid, 0, vio_Set.nVersion)) OF
-	E_ConfigAction.RESET:
-		vio_Set.bValid := FALSE;
-		m_Handled(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_str_Rejection := '');
-		m_Cycle := TRUE;
-	E_ConfigAction.TAKE_OVER:
-		str_TempRejection := m_Invalid(vio_Param := vo_Config.stStaged);
-		IF str_TempRejection = '' THEN
-			vio_Set.nLastVersion := vio_Set.nLastVersion + 1;
-			vio_Set.nVersion := vio_Set.nLastVersion;
-			vio_Set.stParam := vo_Config.stStaged;
-			vio_Set.bValid := TRUE;
-			m_Cycle := TRUE;
-		END_IF
-		m_Handled(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vi_str_Rejection := str_TempRejection);
-END_CASE
+        <ST><![CDATA[m_Cycle := m_HandleStaging(vio_Staging := vo_Config.stStaging, vio_Status := vo_Config.stStatus, vio_b_Valid := vio_Set.bValid,
+	vio_udn_Version := vio_Set.nVersion, vio_udn_LastVersion := vio_Set.nLastVersion, vi_b_ApplyAllowed := vi_b_ApplyAllowed,
+	vo_b_TakeOver => b_TempTakeOver);
+IF b_TempTakeOver THEN
+	vio_Set.stParam := vo_Config.stStaged;
+END_IF
 
 
 (****************************************************************************************************
@@ -109,14 +98,12 @@ EFFECTIVE VALUES
 ****************************************************************************************************)
 IF vio_Set.bValid THEN
 	vo_Config.stActive := vio_Set.stParam;
-	vo_Config.stStatus.nActiveVersion := vio_Set.nVersion;
 ELSE
 	vo_Config.stActive := vio_Default;
-	vo_Config.stStatus.nActiveVersion := 0;
 END_IF]]></ST>
       </Implementation>
     </Method>
-    <Method Name="m_Invalid" Id="{eff486d8-462d-4d6e-b70b-5fd052067ef0}">
+    <Method Name="m_InvalidStaged" Id="{eff486d8-462d-4d6e-b70b-5fd052067ef0}">
       <Declaration><![CDATA[(****************************************************************************************************<br>
 © Syntegon Group.<br>
 All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
@@ -126,30 +113,28 @@ DESCRIPTION:<br>
 Why a staged set cannot be taken over; '' when it can: more product types than the list holds, a product type<br>
 without a number or a number used twice.<br>
 ****************************************************************************************************)
-METHOD PRIVATE m_Invalid : STRING(80)
-VAR_IN_OUT CONSTANT
-	vio_Param							: ST_ConfigConveyorParam;	// the staged set
-END_VAR
+METHOD PROTECTED m_InvalidStaged : STRING(80)
 VAR
 	un_TempIndex						: UINT;
 	un_TempOther						: UINT;
 END_VAR]]></Declaration>
       <Implementation>
-        <ST><![CDATA[m_Invalid := '';
-IF vio_Param.nProductTypeCount > SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES THEN
-	m_Invalid := CONCAT('More than ', CONCAT(UINT_TO_STRING(SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES), ' product types'));
+        <ST><![CDATA[m_InvalidStaged := '';
+IF vo_Config.stStaged.nProductTypeCount > SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES THEN
+	m_InvalidStaged := CONCAT('More than ', CONCAT(UINT_TO_STRING(SynVisu.VISU_GlobalConst_Param.VISU_un_MAX_PRODUCT_TYPES), ' product types'));
 	RETURN;
 END_IF
 un_TempIndex := 0;
-WHILE un_TempIndex < vio_Param.nProductTypeCount DO
-	IF vio_Param.aProductTypes[un_TempIndex].nId = 0 THEN
-		m_Invalid := 'A product type without a number';
+WHILE un_TempIndex < vo_Config.stStaged.nProductTypeCount DO
+	IF vo_Config.stStaged.aProductTypes[un_TempIndex].nId = 0 THEN
+		m_InvalidStaged := 'A product type without a number';
 		RETURN;
 	END_IF
 	un_TempOther := 0;
 	WHILE un_TempOther < un_TempIndex DO
-		IF vio_Param.aProductTypes[un_TempOther].nId = vio_Param.aProductTypes[un_TempIndex].nId THEN
-			m_Invalid := CONCAT('Product type ', CONCAT(UDINT_TO_STRING(vio_Param.aProductTypes[un_TempIndex].nId), ' is defined twice'));
+		IF vo_Config.stStaged.aProductTypes[un_TempOther].nId = vo_Config.stStaged.aProductTypes[un_TempIndex].nId THEN
+			m_InvalidStaged := CONCAT('Product type ',
+				CONCAT(UDINT_TO_STRING(vo_Config.stStaged.aProductTypes[un_TempIndex].nId), ' is defined twice'));
 			RETURN;
 		END_IF
 		un_TempOther := un_TempOther + 1;
@@ -165,10 +150,9 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Passes the effective origin shift and product types on to the conveyor's Syn_Visu FB, so the visualisation shows<br>
-what the machine uses. The pose goes with the application's own m_Configure call (with the belt's length and<br>
-width, hardware): vi_Pose := m_Pose(). Call it after m_Cycle, every cycle; Syn_Visu's config version only<br>
-changes when a value does.<br>
+Passes the effective pose, origin shift and product types on to the conveyor's Syn_Visu FB, so the<br>
+visualisation shows what the machine uses; the belt's length and width (hardware) stay with the application's<br>
+m_Configure call. Call it after m_Cycle, every cycle; Syn_Visu's config version only changes when a value does.<br>
 *****************************************************************************************************<br>
 LIMITS:<br>
 Syn_Visu cannot remove a product type: one the set no longer has stays in the visualisation until the<br>
@@ -183,6 +167,7 @@ VAR
 END_VAR]]></Declaration>
       <Implementation>
         <ST><![CDATA[m_PassOn := TRUE;
+vio_Visu.m_SetPose(vi_Pose := vo_Config.stActive.stPose);
 vio_Visu.m_SetOriginShift(vi_lr_X := vo_Config.stActive.stOriginShift.fX, vi_lr_Y := vo_Config.stActive.stOriginShift.fY,
 	vi_lr_Z := vo_Config.stActive.stOriginShift.fZ);
 un_TempIndex := 0;
@@ -206,7 +191,7 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Effective pose of the belt start (MCS), for the application's logic and its Syn_Visu m_Configure call.<br>
+Effective pose of the belt start (MCS), for the application's logic.<br>
 ****************************************************************************************************)
 METHOD m_Pose : SynVisu.ST_VisuPose]]></Declaration>
       <Implementation>

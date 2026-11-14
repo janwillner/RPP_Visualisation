@@ -11,7 +11,7 @@ One visualised station: a client at a conveyor that works on the products in its
 unit, a labeller, a printer or a check weigher. It is drawn only from the bodies it describes. Typical cycle<br>
 of a reject unit:<br>
   fb_Reject.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 70, vi_str_Name := 'Reject unit');<br>
-  fb_Reject.m_Configure(vi_Pose := StationPose);<br>
+  fb_Reject.m_SetPose(vi_Pose := StationPose);<br>
   fb_Reject.m_SetBody(vi_un_Body := 1, ...);   // housing<br>
   fb_Reject.m_SetBody(vi_un_Body := 2, ...);   // pusher<br>
   fb_Reject.m_SetZone(vi_un_Zone := 1, vi_udn_ConveyorId := 2, vi_lr_Start := 2400, vi_lr_End := 2400,<br>
@@ -27,6 +27,7 @@ vo_Visu is the contract structure the gateway reads at the path given to m_Regis
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 6.0.0  ¦ 2026-11-01 ¦ J.Willner ¦ New<br>
+Syn_Visu 10.0.0 ¦ 2026-11-14 ¦ J.Willner ¦ Pose by m_SetPose; m_Configure removed<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_VisuStation EXTENDS _FB_VisuBodyComponent
 VAR_OUTPUT
@@ -47,23 +48,6 @@ Manifest type: station.<br>
 METHOD PROTECTED m_ComponentType : E_VisuComponentType]]></Declaration>
       <Implementation>
         <ST><![CDATA[m_ComponentType := E_VisuComponentType.STATION;]]></ST>
-      </Implementation>
-    </Method>
-    <Method Name="m_Configure" Id="{5cb050e2-520e-4dfe-8158-3dde48150c06}">
-      <Declaration><![CDATA[(****************************************************************************************************<br>
-© Syntegon Group.<br>
-All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
-as well as in the event of applications for industrial property rights.<br>
-*****************************************************************************************************<br>
-DESCRIPTION:<br>
-Sets the station's pose; its bodies (m_SetBody) are placed relative to it. TRUE if it changed.<br>
-****************************************************************************************************)
-METHOD m_Configure : BOOL
-VAR_INPUT
-	vi_Pose								: ST_VisuPose;	// MCS, the station's origin, e.g. at the belt side on the floor
-END_VAR]]></Declaration>
-      <Implementation>
-        <ST><![CDATA[m_Configure := m_SetPose(vi_Pose);]]></ST>
       </Implementation>
     </Method>
     <Method Name="m_Parts" Id="{5b03d293-5683-4f61-819f-4032dba30448}">

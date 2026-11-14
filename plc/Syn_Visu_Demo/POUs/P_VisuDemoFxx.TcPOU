@@ -80,12 +80,14 @@ fb_Fxx.m_Register(vio_Manifest := GVL_Visu.stManifest, vi_udn_Id := 20, vi_str_N
 BeltPose.fX := 0;
 BeltPose.fY := lr_FXX_Y;
 BeltPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
-fb_FxxInfeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_FXX_INFEED_LENGTH,
+fb_FxxInfeed.m_SetPose(vi_Pose := BeltPose);
+fb_FxxInfeed.m_Configure(vi_lr_Length := lr_FXX_INFEED_LENGTH,
 	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
 BeltPose.fX := lr_FXX_OUTFEED_X;
 (* The outfeed's coordinate system lies on its right edge (seen in the conveying direction). *)
 fb_FxxOutfeed.m_SetOriginShift(vi_lr_X := 0, vi_lr_Y := -DEMO_GlobalConst.DEMO_lr_BELT_WIDTH / 2, vi_lr_Z := 0);
-fb_FxxOutfeed.m_Configure(vi_Pose := BeltPose, vi_lr_Length := lr_FXX_OUTFEED_LENGTH,
+fb_FxxOutfeed.m_SetPose(vi_Pose := BeltPose);
+fb_FxxOutfeed.m_Configure(vi_lr_Length := lr_FXX_OUTFEED_LENGTH,
 	vi_lr_Width := DEMO_GlobalConst.DEMO_lr_BELT_WIDTH);
 (* A conveyor without a body: only its products, zones and axis (from the shifted origin) are drawn. *)
 fb_FxxOutfeed.m_SetBodyVisible(vi_b_Visible := FALSE);
@@ -116,7 +118,7 @@ IF lr_SinceSpawn >= lr_SpawnInterval THEN
 	LatchPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 	LatchPose.fRz := 0;
 	IF fb_FxxInfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
-		vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_FxxInfeed.vo_Visu.stConfig, vi_Pose := LatchPose),
+		vi_LatchPose := fb_FxxInfeed.m_McsToBelt(vi_Pose := LatchPose),
 		vi_udn_ProductType := 1, vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE,
 		vi_e_State := E_VisuProductState.DETECTED, vi_udn_ClientId := 0)
 	THEN
@@ -133,7 +135,8 @@ XtsPose.fY := lr_FXX_Y;
 XtsPose.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z + DEMO_GlobalConst.DEMO_lr_PRODUCT_HEIGHT + lr_LOOP_TOOL_OFFSET;
 XtsPose.fRz := 0;
 (* The flange sits one cup height closer to the track, so the cup's grip point is at the products' tops. *)
-fb_Fxx.m_Configure(vi_Pose := XtsPose, vi_lr_ToolOffset := lr_LOOP_TOOL_OFFSET - DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT,
+fb_Fxx.m_SetPose(vi_Pose := XtsPose);
+fb_Fxx.m_Configure(vi_lr_ToolOffset := lr_LOOP_TOOL_OFFSET - DEMO_GlobalConst.DEMO_lr_CUP_HEIGHT,
 	vi_lr_MoverLength := 100, vi_lr_MoverWidth := 60);
 (* Track: per side the straight modules, then two left curve modules turning up and back. *)
 FOR un_Module := 1 TO 2 * (un_LOOP_STRAIGHT_MODULES + 2) DO
@@ -251,7 +254,7 @@ IF b_TempHeadReady THEN
 	un_TempIndex := 0;
 	WHILE n_LoopMode[n_TempHead] = n_LOOP_QUEUE AND un_TempIndex < fb_FxxInfeed.m_ProductCount() DO
 		fb_FxxInfeed.m_GetProduct(vi_un_Index := un_TempIndex, vo_Product => TempProduct, vo_Pose => TempPose);
-		TempPose := _FC_DemoBeltToMcs(vio_Config := fb_FxxInfeed.vo_Visu.stConfig, vi_Pose := TempPose);
+		TempPose := fb_FxxInfeed.m_BeltToMcs(vi_Pose := TempPose);
 		lr_TempX := TempPose.fX - lr_LOOP_X;
 		IF TempProduct.eState = E_VisuProductState.DETECTED AND lr_TempX >= 0 AND lr_TempX < lr_LOOP_GRIP
 		AND lr_TempMinTrack - lr_TempX >= lr_LOOP_SLOT
@@ -279,7 +282,7 @@ FOR n_TempI := 0 TO n_LOOP_MOVERS - 1 DO
 				n_LoopMode[n_TempI] := n_LOOP_RETURN;
 			ELSE
 				fb_FxxInfeed.m_GetProduct(vi_un_Index := INT_TO_UINT(n_TempIdx), vo_Product => TempProduct, vo_Pose => TempPose);
-				TempPose := _FC_DemoBeltToMcs(vio_Config := fb_FxxInfeed.vo_Visu.stConfig, vi_Pose := TempPose);
+				TempPose := fb_FxxInfeed.m_BeltToMcs(vi_Pose := TempPose);
 				lr_LoopS[n_TempI] := TempPose.fX - lr_LOOP_X;
 				IF lr_LoopS[n_TempI] >= lr_LOOP_GRIP AND TempProduct.eState = E_VisuProductState.ASSIGNED THEN
 					fb_FxxInfeed.m_SetProductState(vi_udn_Id := TempProduct.nId, vi_e_State := E_VisuProductState.PICKED,
@@ -306,7 +309,7 @@ FOR n_TempI := 0 TO n_LOOP_MOVERS - 1 DO
 				TempLatch.fZ := DEMO_GlobalConst.DEMO_lr_BELT_Z;
 				TempLatch.fRz := lr_TempRz;
 				IF fb_FxxOutfeed.m_LatchProduct(vi_udn_Id := DEMO_GlobalVar.DEMO_udn_NextId,
-					vi_LatchPose := _FC_DemoMcsToBelt(vio_Config := fb_FxxOutfeed.vo_Visu.stConfig, vi_Pose := TempLatch),
+					vi_LatchPose := fb_FxxOutfeed.m_McsToBelt(vi_Pose := TempLatch),
 					vi_udn_ProductType := 1, vi_lr_LatchBeltPosition := 0, vi_b_UseLatchBeltPosition := FALSE,
 					vi_e_State := E_VisuProductState.PLACED, vi_udn_ClientId := fb_Fxx.m_Id())
 				THEN

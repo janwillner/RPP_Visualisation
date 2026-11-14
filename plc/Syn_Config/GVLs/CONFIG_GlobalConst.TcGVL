@@ -27,7 +27,7 @@ VAR_GLOBAL CONSTANT
 	CONFIG_un_PROTOCOL_VERSION			: UINT := 4;
 	(* Version of this library (config manifest sLibraryVersion). Bump together with _FC_GetVersionSynConfig and the
 	   project version. *)
-	CONFIG_str_LIBRARY_VERSION			: STRING(15) := '2.2.0';
+	CONFIG_str_LIBRARY_VERSION			: STRING(15) := '2.3.0';
 END_VAR]]></Declaration>
   </GVL>
 </TcPlcObject>

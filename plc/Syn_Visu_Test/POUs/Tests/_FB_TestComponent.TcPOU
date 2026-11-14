@@ -12,6 +12,7 @@ taken from the instance path, and the library version reported to the gateway.<b
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Visu 9.4.0  ¦ 2026-11-09 ¦ J.Willner ¦ Unit tests<br>
+Syn_Visu 10.0.0 ¦ 2026-11-14 ¦ J.Willner ¦ _FC_VisuSymbolPath<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_TestComponent EXTENDS TcUnit.FB_TestSuite
 VAR
@@ -25,6 +26,7 @@ m_RegisterRejectsIdZero();
 m_RegisterRejectsUsedId();
 m_RegisterRejectsFullManifest();
 m_RegisterSymbolPath();
+m_SymbolPathFromInstancePath();
 m_VersionMatchesConstant();
 ]]></ST>
     </Implementation>
@@ -239,6 +241,42 @@ b_TempDone := TRUE;
 fb_PathConveyor.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 1, vi_str_Name := 'Path');
 AssertEquals_STRING(Expected := 'P_TestRun.fb_TestComponent.fb_PathConveyor.vo_Visu', Actual := TempManifest.aEntries[0].sPath,
 	Message := 'symbol path of vo_Visu without TwinCAT and PLC project');
+
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SymbolPathFromInstancePath" Id="{2a046f5a-5096-4248-a02b-39fb0c731a58}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+_FC_VisuSymbolPath, the rule both manifests use: the instance path without TwinCAT project and PLC project,<br>
+plus the contract structure; a path with fewer segments is kept whole.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_SymbolPathFromInstancePath
+VAR_INST
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('SymbolPathFromInstancePath');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertEquals_STRING(Expected := 'P_VisuDemoDelta.fb_Infeed1.vo_Visu',
+	Actual := _FC_VisuSymbolPath(vio_str_InstancePath := 'RPP_Visu.Syn_Visu_Demo.P_VisuDemoDelta.fb_Infeed1',
+		vi_str_Member := '.vo_Visu'), Message := 'TwinCAT and PLC project left out');
+AssertEquals_STRING(Expected := 'P_A.fb_B.vo_Config',
+	Actual := _FC_VisuSymbolPath(vio_str_InstancePath := 'Tc.Plc.P_A.fb_B', vi_str_Member := '.vo_Config'),
+	Message := 'another contract structure');
+AssertEquals_STRING(Expected := 'MAIN.fb_A.vo_Visu',
+	Actual := _FC_VisuSymbolPath(vio_str_InstancePath := 'MAIN.fb_A', vi_str_Member := '.vo_Visu'),
+	Message := 'fewer segments: kept whole');
 
 TEST_FINISHED();
 ]]></ST>

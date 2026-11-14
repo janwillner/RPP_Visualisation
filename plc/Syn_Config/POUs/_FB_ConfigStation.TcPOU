@@ -12,6 +12,7 @@ _FB_ConfigBodyComponent.<br>
 *****************************************************************************************************<br>
 VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
 Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ New<br>
+Syn_Config 2.3.0 ¦ 2026-11-14 ¦ J.Willner ¦ m_PassOn passes the pose on<br>
 ****************************************************************************************************)
 FUNCTION_BLOCK _FB_ConfigStation EXTENDS _FB_ConfigBodyComponent]]></Declaration>
     <Implementation>
@@ -38,9 +39,8 @@ All rights reserved, also regarding any disposal, exploitation, reproduction, ed
 as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
-Passes the effective origin shift and zones on to the station's Syn_Visu FB. The pose goes with the<br>
-application's own m_Configure call: vi_Pose := m_Pose(); its bodies stay the application's (hardware). Call it<br>
-after m_Cycle, every cycle.<br>
+Passes the effective pose, origin shift and zones on to the station's Syn_Visu FB; its bodies stay the<br>
+application's (hardware). Call it after m_Cycle, every cycle.<br>
 ****************************************************************************************************)
 METHOD m_PassOn : BOOL
 VAR_IN_OUT

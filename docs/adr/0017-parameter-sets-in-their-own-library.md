@@ -53,3 +53,11 @@ for the shared types (pose, zone, product type, areas); Syn_Visu does not know i
   Cartesian robot, and vision system, product sensor and station (one parameter structure for the three). Hardware
   (lengths, arm geometry, strokes, bodies) is never written (ADR 0016).
 - Two libraries with their own versions; Syn_Config names the Syn_Visu version it needs.
+
+## Amendment (Syn_Visu 10.0.0, Syn_Config 2.3.0)
+
+Passing the pose on through the application's `m_Configure(vi_Pose := fb_Param.m_Pose(), …)` made it the one
+parameter on a separate route, and an application that passed another pose there made the config version change
+every cycle. Syn_Visu now sets the pose with `m_SetPose` and `m_Configure` holds only hardware, so `m_PassOn` passes
+the whole effective set on, the pose included. The staging above runs once, in `_FB_ConfigComponent.m_HandleStaging`,
+for every parameter FB and the machine FB; the structures and the persistent sets did not change.

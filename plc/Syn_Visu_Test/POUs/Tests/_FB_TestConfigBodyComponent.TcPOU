@@ -118,7 +118,7 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 A vision system's staged set with a pose, an origin shift and two zones is taken over; m_Pose gives the pose and<br>
-m_PassOn hands origin shift and zones on to the Syn_Visu FB.<br>
+m_PassOn hands pose, origin shift and zones on to the Syn_Visu FB.<br>
 ****************************************************************************************************)
 METHOD PRIVATE m_VisionZonesTakenOverAndPassedOn
 VAR_INST
@@ -163,6 +163,7 @@ TempPose := fb_TempParam.m_Pose();
 AssertEquals_LREAL(Expected := 1500, Actual := TempPose.fX, Delta := 0.001, Message := 'staged pose effective');
 
 AssertTrue(Condition := fb_TempParam.m_PassOn(vio_Visu := fb_TempVisu), Message := 'passed on');
+AssertEquals_LREAL(Expected := 1500, Actual := fb_TempVisu.vo_Visu.stConfig.stPose.fX, Delta := 0.001, Message := 'pose');
 AssertEquals_LREAL(Expected := -800, Actual := fb_TempVisu.vo_Visu.stConfig.stOriginShift.fZ, Delta := 0.001,
 	Message := 'origin shift');
 AssertEquals_UINT(Expected := 2, Actual := fb_TempVisu.vo_Visu.stConfig.nZoneCount, Message := 'two zones');
