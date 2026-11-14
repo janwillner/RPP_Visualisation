@@ -12,8 +12,8 @@ import { sameConfig } from "./reconciliation";
 import type { Issue } from "./validation";
 
 /**
- * Writing a draft to its PLCs (ADR 0017): which parameter values would change, whether a source can be written, how a
- * write fares until the PLC handled it, and whether an application passes its parameters on to Syn_Visu.
+ * Writing a draft to its PLCs (ADR 0017): which parameter values would change, whether a source can be written, and
+ * whether an application passes its parameters on to Syn_Visu. How a write fares follows `GatewayLive`.
  */
 
 /** A component's parameter set: its parameter fields (`PARAMETER_FIELDS`); undefined for a type without one yet. */
@@ -48,14 +48,6 @@ export interface WritePlan {
    */
   unwritable?: string[];
 }
-
-/** How a component's last write fares. */
-export type WriteState =
-  | { state: "staged"; stageId: number }
-  | { state: "waiting"; stageId: number }
-  | { state: "applied"; stageId: number }
-  | { state: "rejected"; stageId: number; message: string }
-  | { state: "failed"; message: string };
 
 const shown = (v: unknown) => (v === undefined ? "—" : v === null ? "none" : typeof v === "object" ? JSON.stringify(v) : String(v));
 
@@ -139,31 +131,6 @@ function planWrite(draft: Draft, issues: readonly Issue[], parameters: Parameter
     return { blocked: `Fix the errors of this PLC's components first: ${errors.map((e) => e.message).join("; ")}`, changes };
   }
   return { changes };
-}
-
-/** The write states after a new `parameters` message: a write the PLC handled is applied or rejected. */
-export function followWrites(
-  writes: Readonly<Record<ComponentKey, WriteState>>,
-  parameters: Readonly<Record<string, ParametersMessage>>,
-): Record<ComponentKey, WriteState> {
-  const next: Record<ComponentKey, WriteState> = {};
-  for (const [key, write] of Object.entries(writes)) {
-    next[key] = write;
-    if (write.state !== "staged" && write.state !== "waiting") continue;
-    const sourceId = key.slice(0, key.lastIndexOf("#"));
-    const id = Number(key.slice(key.lastIndexOf("#") + 1));
-    const status = parameters[sourceId]?.components.find((c) => c.id === id);
-    if (!status) continue;
-    if (status.handledStageId === write.stageId) {
-      next[key] =
-        status.result === "rejected"
-          ? { state: "rejected", stageId: write.stageId, message: status.message }
-          : { state: "applied", stageId: write.stageId };
-    } else if (status.result === "pending") {
-      next[key] = { state: "waiting", stageId: write.stageId };
-    }
-  }
-  return next;
 }
 
 /**

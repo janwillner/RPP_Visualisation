@@ -88,7 +88,7 @@ describe("Configurator writing to a PLC (ADR 0017)", () => {
       expect.objectContaining({ kind: "writeParameters", sourceId: A, componentId: 1, baseVersion: 0, set: setOf(c.getSnapshot().draft.components[0]!) }),
       expect.objectContaining({ kind: "writeParameters", sourceId: A, componentId: 2, baseVersion: 0, set: setOf(c.getSnapshot().draft.components[1]!) }),
     ]);
-    expect(c.getSnapshot().writes).toEqual({ [`${A}#1`]: { state: "staged", stageId: 101 }, [`${A}#2`]: { state: "staged", stageId: 102 } });
+    expect(c.getSnapshot().writes).toEqual({ [`${A}#1`]: { kind: "writeParameters", state: "staged", stageId: 101 }, [`${A}#2`]: { kind: "writeParameters", state: "staged", stageId: 102 } });
 
     // The PLC takes the belt's over and rejects the Delta's.
     const belt = { ...conveyor(1), pose: { ...conveyor(1).pose, y: 30 } };
@@ -100,8 +100,8 @@ describe("Configurator writing to a PLC (ADR 0017)", () => {
       ],
     });
     expect(c.getSnapshot().writes).toEqual({
-      [`${A}#1`]: { state: "applied", stageId: 101 },
-      [`${A}#2`]: { state: "rejected", stageId: 102, message: "Zone too long" },
+      [`${A}#1`]: { kind: "writeParameters", state: "applied", stageId: 101 },
+      [`${A}#2`]: { kind: "writeParameters", state: "rejected", stageId: 102, message: "Zone too long" },
     });
   });
 
@@ -110,11 +110,12 @@ describe("Configurator writing to a PLC (ADR 0017)", () => {
     c.set(`${A}#2`, ["zones", "0", "end"], 1400);
     await c.write(A);
     live.send(parameters([conveyor(1), robot], { result: "pending" }));
-    expect(c.getSnapshot().writes[`${A}#2`]).toEqual({ state: "waiting", stageId: 101 });
+    expect(c.getSnapshot().writes[`${A}#2`]).toEqual({ kind: "writeParameters", state: "waiting", stageId: 101 });
 
     live.answer = () => ({ ok: false, error: "Component 2 has parameter version 3 active, not 0: reconcile again before writing." });
     await c.write(A);
     expect(c.getSnapshot().writes[`${A}#2`]).toEqual({
+      kind: "writeParameters",
       state: "failed",
       message: "Component 2 has parameter version 3 active, not 0: reconcile again before writing.",
     });

@@ -20,6 +20,7 @@ import {
   StatusList,
   TextInput,
   TopBar,
+  type TrackedWrite,
   useSidePanel,
   useStore,
   ViewControls,
@@ -31,7 +32,6 @@ import { FingerLayout } from "./FingerLayout";
 import { keyOf } from "./edits";
 import type { Match } from "./reconciliation";
 import type { Issue } from "./validation";
-import type { WriteState } from "./writing";
 import { properties, type PropertyField, type PropertyGroup } from "./property-fields";
 
 /** Every overlay of the draft is shown: zones, areas and markers are what is being configured. */
@@ -654,7 +654,7 @@ function WriteDialog(props: { configurator: Configurator; sourceId: string; sour
   );
 }
 
-const WRITE_LABELS: Record<WriteState["state"], string> = {
+const WRITE_LABELS: Record<TrackedWrite["state"], string> = {
   staged: "sent",
   waiting: "waiting for PLC",
   applied: "written",
@@ -662,7 +662,7 @@ const WRITE_LABELS: Record<WriteState["state"], string> = {
   failed: "not sent",
 };
 
-function WriteBadge({ write }: { write: WriteState | undefined }) {
+function WriteBadge({ write }: { write: TrackedWrite | undefined }) {
   if (!write) return null;
   const message = "message" in write ? write.message : undefined;
   return (

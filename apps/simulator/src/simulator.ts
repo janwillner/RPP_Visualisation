@@ -4,7 +4,6 @@ import {
   RECIPE_FILE_FORMAT_VERSION,
   RecipeFileSchema,
   invalidRecipeValue,
-  type ClientMessage,
   type Machine,
   type MachineCommandKind,
   type MessageSeverity,
@@ -14,7 +13,6 @@ import {
   type RecipeFile,
   type RecipeValue,
   type RunState,
-  type WriteResultMessage,
   recipeProgramValue,
 } from "@rpp/protocol";
 import {
@@ -25,10 +23,12 @@ import {
   isOnline,
   machineMessagePlace,
   machineMessageText,
-  type LiveSnapshot,
+  writeKey,
+  type GatewayLive,
   type Selection,
   type SourcedFaults,
   type SourceInfo,
+  type TrackedWrite,
 } from "@rpp/machine-view";
 
 /**
@@ -40,13 +40,6 @@ import {
 
 export const RECIPE_FILE_EXTENSION = ".rpp-sim.json";
 
-/** The gateway as the Simulator reads it: `GatewayLive` of `@rpp/machine-view`, a fake in tests. */
-export interface SimulatorLive {
-  getSnapshot(): LiveSnapshot;
-  subscribe(listener: () => void): () => void;
-  /** Sends a command to the gateway and gives its answer. */
-  command(command: ClientMessage): Promise<WriteResultMessage>;
-}
 
 /** One field of the recipe form. */
 export interface RecipeFormField {
@@ -191,6 +184,29 @@ function visibleFields(fields: readonly RecipeField[], valueOf: (field: RecipeFi
   return new Set(fields.filter((f) => applies(f, 0)).map((f) => f.name));
 }
 
+/** A recipe write or reset as the page shows it. */
+function recipeWrite(write: TrackedWrite | undefined): RecipeWrite | undefined {
+  if (!write) return undefined;
+  const { kind, ...state } = write;
+  return { kind: kind === "resetRecipe" ? "reset" : "write", ...state };
+}
+
+/** A machine command as the page shows it: sent until the application answered, then accepted or rejected. */
+function commandState(write: TrackedWrite | undefined, command: MachineCommandKind | undefined): CommandState | undefined {
+  if (!write || !command) return undefined;
+  switch (write.state) {
+    case "staged":
+    case "waiting":
+      return { command, state: "sent", commandId: write.stageId };
+    case "applied":
+      return { command, state: "accepted", commandId: write.stageId };
+    case "rejected":
+      return { command, state: "rejected", commandId: write.stageId, message: write.message };
+    case "failed":
+      return { command, state: "failed", message: write.message };
+  }
+}
+
 /** A field's value as the form shows it: on / off, a choice's name, a number with its unit. */
 export function shownValue(field: RecipeField, value: RecipeValue | undefined): string {
   if (value === undefined) return "—";
@@ -210,19 +226,18 @@ export class Simulator {
   /** Per source and field, what the opened file says about it. */
   private fieldWarnings: Record<string, Record<string, string>> = {};
   private fileWarnings: string[] = [];
-  private writes: Record<string, RecipeWrite> = {};
-  /** The values a write sent, by source: dropped from the edits once the PLC applied them. */
-  private writtenValues: Record<string, Values> = {};
-  private commandStates: Record<string, CommandState> = {};
+  /** The values the last recipe write of a source sent, with its stage id: dropped from the edits once applied. */
+  private writtenValues: Record<string, { stageId: number; values: Values }> = {};
+  /** The last machine command sent to each source. */
+  private lastCommand: Record<string, MachineCommandKind> = {};
   private faults: readonly SourcedFaults[] = [];
   private selection: Selection = undefined;
   private name = "Recipe";
   private notice: string | undefined;
-  private nextRequest = 1;
   private snapshot: SimulatorSnapshot;
 
   constructor(
-    private readonly live: SimulatorLive,
+    private readonly live: GatewayLive,
     /** Asks whether edits that were not saved may be discarded. */
     private readonly confirmDiscard: () => boolean,
   ) {
@@ -334,18 +349,20 @@ export class Simulator {
     const plan = this.writePlan();
     if (!sourceId || !recipe || plan.blocked || plan.changes.length === 0) return;
     const values = Object.fromEntries(plan.changes.map((c) => [c.name, this.edits[sourceId]![c.name]!]));
-    const answer = await this.send({ kind: "writeRecipe", requestId: 0, sourceId, baseVersion: recipe.activeVersion, values });
-    this.writtenValues = { ...this.writtenValues, [sourceId]: values };
-    this.track(sourceId, "write", answer);
+    const write = await this.live.stage({ kind: "writeRecipe", sourceId, baseVersion: recipe.activeVersion, values });
+    if ("stageId" in write) this.writtenValues = { ...this.writtenValues, [sourceId]: { stageId: write.stageId, values } };
+    this.followAnswers();
+    this.changed();
   }
 
   /** Makes the active recipe invalid, so the application runs with its program values again. */
   async resetRecipe(): Promise<void> {
     const { sourceId, recipe } = this.snapshot;
     if (!sourceId || !recipe || this.snapshot.blocked) return;
-    const answer = await this.send({ kind: "resetRecipe", requestId: 0, sourceId, baseVersion: recipe.activeVersion });
-    this.writtenValues = { ...this.writtenValues, [sourceId]: {} };
-    this.track(sourceId, "reset", answer);
+    const { [sourceId]: _written, ...written } = this.writtenValues;
+    this.writtenValues = written;
+    await this.live.stage({ kind: "resetRecipe", sourceId, baseVersion: recipe.activeVersion });
+    this.changed();
   }
 
   // Machine commands.
@@ -354,15 +371,8 @@ export class Simulator {
   async command(command: MachineCommandKind): Promise<void> {
     const sourceId = this.snapshot.sourceId;
     if (!sourceId || !this.snapshot.commands[command].enabled) return;
-    const answer = await this.send({ kind: "machineCommand", requestId: 0, sourceId, command });
-    this.commandStates = {
-      ...this.commandStates,
-      [sourceId]:
-        answer.ok && answer.stageId !== undefined
-          ? { command, state: "sent", commandId: answer.stageId }
-          : { command, state: "failed", message: answer.error ?? "The gateway refused the command." },
-    };
-    this.followAnswers();
+    this.lastCommand = { ...this.lastCommand, [sourceId]: command };
+    await this.live.stage({ kind: "machineCommand", sourceId, command });
     this.changed();
   }
 
@@ -481,59 +491,21 @@ export class Simulator {
     return undefined;
   }
 
-  private async send(command: ClientMessage): Promise<WriteResultMessage> {
-    return this.live.command({ ...command, requestId: this.nextRequest++ });
-  }
-
-  private track(sourceId: string, kind: "write" | "reset", answer: WriteResultMessage): void {
-    this.writes = {
-      ...this.writes,
-      [sourceId]:
-        answer.ok && answer.stageId !== undefined
-          ? { kind, state: "staged", stageId: answer.stageId }
-          : { kind, state: "failed", message: answer.error ?? "The gateway refused the write." },
-    };
-    this.followAnswers();
-    this.changed();
-  }
-
-  /** Writes and commands the PLC has answered since. */
+  /**
+   * The edits a recipe write sent stop being edits once the PLC applied the write (they are the active values now); a
+   * write rejected or failed keeps them. `GatewayLive` follows the write.
+   */
   private followAnswers(): void {
-    const parameters = this.live.getSnapshot().parameters;
-    for (const [sourceId, write] of Object.entries(this.writes)) {
-      const recipe = parameters[sourceId]?.recipe;
-      if (!recipe || (write.state !== "staged" && write.state !== "waiting")) continue;
-      if (recipe.handledStageId === write.stageId) {
-        this.writes = {
-          ...this.writes,
-          [sourceId]:
-            recipe.result === "rejected"
-              ? { kind: write.kind, state: "rejected", stageId: write.stageId, message: recipe.message }
-              : { kind: write.kind, state: "applied", stageId: write.stageId },
-        };
-        if (recipe.result !== "rejected") this.dropWritten(sourceId);
-      } else if (recipe.result === "pending" && write.state === "staged") {
-        this.writes = { ...this.writes, [sourceId]: { ...write, state: "waiting" } };
-      }
+    const writes = this.live.getSnapshot().writes;
+    for (const [sourceId, { stageId, values }] of Object.entries(this.writtenValues)) {
+      const write = writes[writeKey({ kind: "writeRecipe", sourceId })];
+      if (write?.state === "staged" || write?.state === "waiting") continue;
+      const { [sourceId]: _handled, ...rest } = this.writtenValues;
+      this.writtenValues = rest;
+      if (write?.state !== "applied" || write.stageId !== stageId) continue;
+      const edits = Object.entries(this.edits[sourceId] ?? {}).filter(([name, value]) => values[name] !== value);
+      this.edits = { ...this.edits, [sourceId]: Object.fromEntries(edits) };
     }
-    for (const [sourceId, state] of Object.entries(this.commandStates)) {
-      const answer = parameters[sourceId]?.machineCommand;
-      if (state.state !== "sent" || answer?.handledCommandId !== state.commandId) continue;
-      this.commandStates = {
-        ...this.commandStates,
-        [sourceId]:
-          answer.result === "rejected"
-            ? { command: state.command, state: "rejected", commandId: state.commandId, message: answer.message }
-            : { command: state.command, state: "accepted", commandId: state.commandId },
-      };
-    }
-  }
-
-  /** The edits a write sent, once the PLC applied them: they are the active values now. */
-  private dropWritten(sourceId: string): void {
-    const sent = this.writtenValues[sourceId] ?? {};
-    const edits = Object.entries(this.edits[sourceId] ?? {}).filter(([name, value]) => sent[name] !== value);
-    this.edits = { ...this.edits, [sourceId]: Object.fromEntries(edits) };
   }
 
   private changed(): void {
@@ -542,7 +514,7 @@ export class Simulator {
   }
 
   private build(): SimulatorSnapshot {
-    const { sources, parameters } = this.live.getSnapshot();
+    const { sources, parameters, writes } = this.live.getSnapshot();
     const sourceId =
       sources.find((s) => s.sourceId === this.chosenSource)?.sourceId ??
       sources.find((s) => parameters[s.sourceId]?.recipe)?.sourceId ??
@@ -580,10 +552,10 @@ export class Simulator {
       problems,
       name: this.name,
       saved,
-      write: sourceId ? this.writes[sourceId] : undefined,
+      write: sourceId ? recipeWrite(writes[writeKey({ kind: "writeRecipe", sourceId })]) : undefined,
       blocked,
       commands,
-      command: sourceId ? this.commandStates[sourceId] : undefined,
+      command: sourceId ? commandState(writes[writeKey({ kind: "machineCommand", sourceId })], this.lastCommand[sourceId]) : undefined,
       messages: source ? this.messages(source) : [],
       selection: this.selection,
       notice: this.notice,

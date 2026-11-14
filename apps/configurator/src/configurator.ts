@@ -1,21 +1,22 @@
 import { useSyncExternalStore } from "react";
-import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, PROTOCOL_VERSION, emptyDraft, type TrackModuleKind, type ClientMessage, type ComponentConfig, type ConfigMessage, type ParametersMessage, type WriteResultMessage, type ConveyorConfig, type ConveyorState, type Draft, type ProductType, type StateMessage, type Zone } from "@rpp/protocol";
-import { componentKey, type ComponentKey, type SceneSource, type SourceInfo, zoneSides } from "@rpp/machine-view";
+import { DRAFT_FILE_FORMAT_VERSION, DraftSchema, PROTOCOL_VERSION, emptyDraft, type TrackModuleKind, type ComponentConfig, type ConfigMessage, type ParametersMessage, type ConveyorConfig, type ConveyorState, type Draft, type ProductType, type StateMessage, type Zone } from "@rpp/protocol";
+import {
+  componentKey,
+  type ComponentKey,
+  type GatewayLive,
+  type LiveCommand,
+  type SceneSource,
+  type SourceInfo,
+  type TrackedWrite,
+  zoneSides,
+} from "@rpp/machine-view";
 import { beltRange, mcsToBelt } from "./belt-coordinates";
 import { defaultArea, defaultComponent, newBody, newFinger, HARDWARE_FIELDS, PALETTE_LABELS, XTS_MODULE_LENGTH, type AreaField, type PaletteType } from "./component-defaults";
 import { applyEdit, keyOf, type Edit } from "./edits";
 import { hardwareHints, reconcile, type Match, type Reconciliation } from "./reconciliation";
 import { validateDraft, type Issue } from "./validation";
 import { restState } from "./rest-states";
-import {
-  followWrites,
-  parameterSetOf,
-  unwritableHints,
-  wiringHints,
-  writePlan,
-  type WritePlan,
-  type WriteState,
-} from "./writing";
+import { parameterSetOf, unwritableHints, wiringHints, writePlan, type WritePlan } from "./writing";
 
 /**
  * The configurator (ADR 0016): the draft of a machine being edited, the commands that edit it, undo and redo, and the
@@ -27,8 +28,6 @@ export const DRAFT_SOURCE = "draft";
 
 /** The source a PLC's version of changed components is drawn in, faded, beside the draft (ADR 0016). */
 export const ghostSourceId = (sourceId: string) => `${sourceId} (PLC)`;
-
-const NO_PARAMETERS: Readonly<Record<string, ParametersMessage>> = {};
 
 /** Positions are placed on this grid, mm. */
 export const GRID_MM = 10;
@@ -71,22 +70,15 @@ export interface ConfiguratorSnapshot {
   plcOnly: ComponentConfig[];
   /** Per source the parameter sets of its PLC (ADR 0017); a source without Syn_Config has none. */
   plcParameters: Readonly<Record<string, ParametersMessage>>;
-  /** Per component how its last write fares. */
-  writes: Readonly<Record<ComponentKey, WriteState>>;
+  /** Per component how its last write of a parameter set fares (`GatewayLive` follows it). */
+  writes: Readonly<Record<ComponentKey, TrackedWrite>>;
 }
 
-/**
- * The gateway as the configurator reads it (ADR 0016): the PLC sources with their configuration and their live state.
- * `GatewayLive` in the app, a fake in tests.
- */
-export interface ConfiguratorLive {
-  /** The sources, and per source its parameter sets (ADR 0017) when its PLC has Syn_Config. */
-  getSnapshot(): { sources: readonly SourceInfo[]; parameters?: Readonly<Record<string, ParametersMessage>> };
-  subscribe(listener: () => void): () => void;
-  /** Every source as the machine scene takes it, at `now` (performance.now()). */
-  frame(now?: number): SceneSource[];
-  /** Sends a command on parameter sets to the gateway and gives its answer. */
-  command?(command: ClientMessage): Promise<WriteResultMessage>;
+/** The writes of parameter sets among the gateway's writes, by component key. */
+function parameterWrites(writes: Readonly<Record<string, TrackedWrite>>): Record<ComponentKey, TrackedWrite> {
+  return Object.fromEntries(
+    Object.entries(writes).filter(([, w]) => w.kind === "writeParameters" || w.kind === "resetParameters"),
+  );
 }
 
 /** A draft as a file to save. */
@@ -118,8 +110,6 @@ export class Configurator {
   private readonly listeners = new Set<() => void>();
   private framed: { draft: Draft; sources: SceneSource[] } | undefined;
   private stopLive: (() => void) | undefined;
-  /** Request ids of this configurator's commands. */
-  private nextRequest = 1;
   private reconciliation: Reconciliation = { matches: {}, plcOnly: [], plc: new Map() };
   /** The problems of the draft itself, found again only when it changes. */
   private draftIssues: Issue[] = [];
@@ -133,7 +123,7 @@ export class Configurator {
    */
   constructor(
     private readonly confirmDiscard: () => boolean = () => true,
-    private readonly live?: ConfiguratorLive,
+    private readonly live?: GatewayLive,
   ) {
     this.savedDraft = emptyDraft();
     this.snapshot = {
@@ -174,7 +164,7 @@ export class Configurator {
         const set = c && parameterSetOf(c);
         const baseVersion = status.components.find((p) => p.id === c?.id)?.activeVersion;
         if (!c || !set || baseVersion === undefined) return;
-        await this.send(key, { kind: "writeParameters", requestId: this.nextRequest++, sourceId, componentId: c.id, baseVersion, set });
+        await this.send({ kind: "writeParameters", sourceId, componentId: c.id, baseVersion, set });
       }),
     );
   }
@@ -184,21 +174,12 @@ export class Configurator {
     const c = this.component(key);
     const baseVersion = c && this.snapshot.plcParameters[c.sourceId]?.components.find((p) => p.id === c.id)?.activeVersion;
     if (!c || baseVersion === undefined) return;
-    await this.send(key, { kind: "resetParameters", requestId: this.nextRequest++, sourceId: c.sourceId, componentId: c.id, baseVersion });
+    await this.send({ kind: "resetParameters", sourceId: c.sourceId, componentId: c.id, baseVersion });
   }
 
-  private async send(key: ComponentKey, command: ClientMessage): Promise<void> {
-    if (!this.live?.command) return;
-    let write: WriteState;
-    try {
-      const answer = await this.live.command(command);
-      write = answer.ok && answer.stageId !== undefined
-        ? { state: "staged", stageId: answer.stageId }
-        : { state: "failed", message: answer.error ?? "The gateway refused the command." };
-    } catch (error) {
-      write = { state: "failed", message: error instanceof Error ? error.message : String(error) };
-    }
-    this.set_({ writes: followWrites({ ...this.snapshot.writes, [key]: write }, this.snapshot.plcParameters) });
+  /** Stages a write through the gateway, which follows it in its `writes`. */
+  private async send(command: LiveCommand): Promise<void> {
+    await this.live?.stage(command);
   }
 
   /** Takes a matched component's hardware (`HARDWARE_FIELDS`) from its PLC: one step for undo. */
@@ -220,15 +201,13 @@ export class Configurator {
   /** Starts following the gateway's sources. */
   start(): void {
     if (!this.live || this.stopLive) return;
+    let writes: Readonly<Record<string, TrackedWrite>> | undefined;
     const follow = () => {
-      const { sources, parameters = NO_PARAMETERS } = this.live!.getSnapshot();
-      // The gateway also tells of its socket; only a change of the sources or parameter sets concerns the configurator.
-      if (sources === this.snapshot.plcSources && parameters === this.snapshot.plcParameters) return;
-      this.set_({
-        plcSources: sources,
-        plcParameters: parameters,
-        writes: followWrites(this.snapshot.writes, parameters),
-      });
+      const live = this.live!.getSnapshot();
+      // Only a change of the sources, parameter sets or writes concerns the configurator.
+      if (live.sources === this.snapshot.plcSources && live.parameters === this.snapshot.plcParameters && live.writes === writes) return;
+      writes = live.writes;
+      this.set_({ plcSources: live.sources, plcParameters: live.parameters, writes: parameterWrites(live.writes) });
     };
     this.stopLive = this.live.subscribe(follow);
     follow();
