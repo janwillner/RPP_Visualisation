@@ -1,0 +1,204 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="P_VisuDemoMachine" Id="{28579feb-4730-407c-8652-f3d84fd0704d}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+DEMO ONLY: the minimal sequence control of the Delta application's Infeed 1 and Delta 1, as the Simulator drives it<br>
+(ADR 0022). Its Syn_Config machine FB declares the recipe (Infeed 1's belt, Delta 1, the product pattern of the<br>
+generator before Vision 1) and hands it Start, Stop and Reset; the effective recipe goes to DEMO_GlobalVar for<br>
+P_VisuDemoDelta. Run states: STARTING ramps Infeed 1 up to the recipe's speed, RUNNING, STOPPING ramps it down,<br>
+STOPPED; Delta 1 moves only as fast as its belt, so it halts with it. Start is accepted while stopped, Stop while<br>
+starting or running, Reset while stopped: it empties Infeed 1 and Delta 1, restarts the generator from its seed and<br>
+acknowledges the missed-product message and Delta 1's fault. The demo starts running and always reports simulation<br>
+mode. It reports the machine to Syn_Visu (GVL_Visu.stMachine) with two machine messages: 'Reject bin almost full'<br>
+about the reject unit for lr_REJECT_BIN_DURATION of every fault period, and 'Product missed' about Infeed 1. Called<br>
+first by P_VisuDemo.<br>
+****************************************************************************************************)
+PROGRAM P_VisuDemoMachine
+VAR
+	fb_Machine							: _FB_VisuMachine;	// Syn_Visu: run state, simulation mode, machine messages
+	fb_MachineParam						: SynConfig._FB_ConfigMachine;	// Syn_Config: recipe and commands
+	e_RunState							: E_VisuRunState := E_VisuRunState.STARTING;	// the demo starts running
+	lr_TargetSpeed						: LREAL;	// [mm/s] Infeed 1 ramps to this
+	lr_RampStep							: LREAL;	// [mm/s] Infeed 1's speed change at most this cycle
+END_VAR
+VAR PERSISTENT
+	RecipeSet							: SynConfig.ST_ConfigRecipeSet;	// the active recipe, kept over a restart
+END_VAR
+VAR CONSTANT
+	(* Recipe fields, in the order they are declared: keep it, add new ones at the end. *)
+	un_F_BELT_SPEED						: UINT := 1;
+	un_F_BELT_ACCEL						: UINT := 2;
+	un_F_ROBOT_SPEED					: UINT := 3;
+	un_F_ROBOT_ACCEL					: UINT := 4;
+	un_F_PICKS							: UINT := 5;
+	un_F_RATE							: UINT := 6;
+	un_F_LANES							: UINT := 7;
+	un_F_LANE_PITCH						: UINT := 8;
+	un_F_TYPE_MIX						: UINT := 9;
+	un_F_SCATTER_X						: UINT := 10;
+	un_F_SCATTER_Y						: UINT := 11;
+	un_F_SCATTER_RZ						: UINT := 12;
+	un_F_GAP_SHARE						: UINT := 13;
+	un_F_SEED							: UINT := 14;
+	un_F_FEED							: UINT := 15;
+	udn_INFEED1_ID						: UDINT := 1;	// [-] manifest id of Infeed 1 (P_VisuDemoDelta)
+	udn_DELTA1_ID						: UDINT := 10;	// [-] manifest id of Delta 1 (P_VisuDemoDelta)
+	udn_REJECT_UNIT_ID					: UDINT := 60;	// [-] manifest id of the reject unit (P_VisuDemoDelta)
+	udn_MSG_REJECT_BIN					: UDINT := 1;	// [-] machine message: the reject bin is almost full
+	udn_MSG_MISSED						: UDINT := 2;	// [-] machine message: a product passed Infeed 1 unpicked
+	lr_REJECT_BIN_DURATION				: LREAL := 4;	// [s] the reject bin message is active from the start of every fault period
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[(****************************************************************************************************)
+(* RECIPE (declaration idempotent, every cycle)                                                     *)
+(****************************************************************************************************)
+fb_MachineParam.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := 0);
+m_DeclareFields();
+(* The demo takes a recipe over at once; a machine would wait until it stands. *)
+fb_MachineParam.m_Cycle(vio_Set := RecipeSet, vi_b_ApplyAllowed := TRUE);
+DEMO_GlobalVar.DEMO_Recipe.lr_BeltSpeed := fb_MachineParam.m_Value(vi_un_Field := un_F_BELT_SPEED);
+DEMO_GlobalVar.DEMO_Recipe.lr_BeltAccel := fb_MachineParam.m_Value(vi_un_Field := un_F_BELT_ACCEL);
+DEMO_GlobalVar.DEMO_Recipe.lr_RobotSpeed := fb_MachineParam.m_Value(vi_un_Field := un_F_ROBOT_SPEED);
+DEMO_GlobalVar.DEMO_Recipe.lr_RobotAccel := fb_MachineParam.m_Value(vi_un_Field := un_F_ROBOT_ACCEL);
+DEMO_GlobalVar.DEMO_Recipe.dn_PicksPerCycle := fb_MachineParam.m_Integer(vi_un_Field := un_F_PICKS);
+DEMO_GlobalVar.DEMO_Recipe.lr_Rate := fb_MachineParam.m_Value(vi_un_Field := un_F_RATE);
+DEMO_GlobalVar.DEMO_Recipe.dn_Lanes := fb_MachineParam.m_Integer(vi_un_Field := un_F_LANES);
+DEMO_GlobalVar.DEMO_Recipe.lr_LanePitch := fb_MachineParam.m_Value(vi_un_Field := un_F_LANE_PITCH);
+DEMO_GlobalVar.DEMO_Recipe.dn_TypeMix := fb_MachineParam.m_Integer(vi_un_Field := un_F_TYPE_MIX);
+DEMO_GlobalVar.DEMO_Recipe.lr_ScatterX := fb_MachineParam.m_Value(vi_un_Field := un_F_SCATTER_X);
+DEMO_GlobalVar.DEMO_Recipe.lr_ScatterY := fb_MachineParam.m_Value(vi_un_Field := un_F_SCATTER_Y);
+DEMO_GlobalVar.DEMO_Recipe.lr_ScatterRz := fb_MachineParam.m_Value(vi_un_Field := un_F_SCATTER_RZ);
+DEMO_GlobalVar.DEMO_Recipe.lr_GapShare := fb_MachineParam.m_Value(vi_un_Field := un_F_GAP_SHARE);
+DEMO_GlobalVar.DEMO_Recipe.dn_Seed := fb_MachineParam.m_Integer(vi_un_Field := un_F_SEED);
+DEMO_GlobalVar.DEMO_Recipe.b_Feed := fb_MachineParam.m_Switch(vi_un_Field := un_F_FEED);
+
+
+(****************************************************************************************************)
+(* COMMANDS: the application decides                                                                *)
+(****************************************************************************************************)
+DEMO_GlobalVar.DEMO_b_Reset := FALSE;
+CASE fb_MachineParam.m_Command() OF
+	SynConfig.E_ConfigCommand.START:
+		IF e_RunState = E_VisuRunState.STOPPED THEN
+			e_RunState := E_VisuRunState.STARTING;
+			fb_MachineParam.m_AnswerCommand(vi_b_Accepted := TRUE, vi_str_Reason := '');
+		ELSE
+			fb_MachineParam.m_AnswerCommand(vi_b_Accepted := FALSE, vi_str_Reason := 'The machine is not stopped');
+		END_IF
+	SynConfig.E_ConfigCommand.STOP:
+		IF e_RunState = E_VisuRunState.STARTING OR e_RunState = E_VisuRunState.RUNNING THEN
+			e_RunState := E_VisuRunState.STOPPING;
+			fb_MachineParam.m_AnswerCommand(vi_b_Accepted := TRUE, vi_str_Reason := '');
+		ELSE
+			fb_MachineParam.m_AnswerCommand(vi_b_Accepted := FALSE, vi_str_Reason := 'The machine is not running');
+		END_IF
+	SynConfig.E_ConfigCommand.RESET:
+		IF e_RunState = E_VisuRunState.STOPPED THEN
+			DEMO_GlobalVar.DEMO_b_Reset := TRUE;
+			fb_MachineParam.m_AnswerCommand(vi_b_Accepted := TRUE, vi_str_Reason := '');
+		ELSE
+			fb_MachineParam.m_AnswerCommand(vi_b_Accepted := FALSE, vi_str_Reason := 'Stop the machine first');
+		END_IF
+END_CASE
+
+
+(****************************************************************************************************)
+(* RUN STATE: Infeed 1 ramps up while starting and running, down while stopping                     *)
+(****************************************************************************************************)
+IF e_RunState = E_VisuRunState.STARTING OR e_RunState = E_VisuRunState.RUNNING THEN
+	lr_TargetSpeed := DEMO_GlobalVar.DEMO_Recipe.lr_BeltSpeed;
+ELSE
+	lr_TargetSpeed := 0;
+END_IF
+lr_RampStep := DEMO_GlobalVar.DEMO_Recipe.lr_BeltAccel * DEMO_GlobalVar.DEMO_lr_Dt;
+DEMO_GlobalVar.DEMO_lr_Infeed1Speed := _FC_DemoApproach(DEMO_GlobalVar.DEMO_lr_Infeed1Speed, lr_TargetSpeed, lr_RampStep);
+IF e_RunState = E_VisuRunState.STARTING AND DEMO_GlobalVar.DEMO_lr_Infeed1Speed = lr_TargetSpeed THEN
+	e_RunState := E_VisuRunState.RUNNING;
+ELSIF e_RunState = E_VisuRunState.STOPPING AND DEMO_GlobalVar.DEMO_lr_Infeed1Speed = 0 THEN
+	e_RunState := E_VisuRunState.STOPPED;
+END_IF
+
+
+(****************************************************************************************************)
+(* REPORT: the machine to Syn_Visu                                                                  *)
+(****************************************************************************************************)
+fb_Machine.m_Register(vio_Machine := GVL_Visu.stMachine);
+fb_Machine.m_SetRunState(vi_e_RunState := e_RunState, vi_str_Text := '');
+fb_Machine.m_SetSimulation(vi_b_Simulation := TRUE);
+fb_Machine.m_SetMessage(vi_udn_Id := udn_MSG_REJECT_BIN,
+	vi_b_Active := DEMO_GlobalVar.DEMO_lr_FaultPhase < lr_REJECT_BIN_DURATION, vi_e_Severity := E_VisuMessageSeverity.WARNING,
+	vi_str_Text := 'Reject bin almost full', vi_udn_ComponentId := udn_REJECT_UNIT_ID);
+fb_Machine.m_SetMessage(vi_udn_Id := udn_MSG_MISSED, vi_b_Active := DEMO_GlobalVar.DEMO_b_Infeed1Missed,
+	vi_e_Severity := E_VisuMessageSeverity.WARNING, vi_str_Text := 'Product missed', vi_udn_ComponentId := udn_INFEED1_ID);]]></ST>
+    </Implementation>
+    <Method Name="m_DeclareFields" Id="{9ec99845-6e35-45f1-90b3-7bb8e7bde75a}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The demo's recipe fields: Infeed 1's belt, Delta 1 and the product pattern of the generator before Vision 1 (for<br>
+the whole machine). The program values give the pattern the demo had before its recipe: one lane, 60 products a<br>
+minute at 150 mm/s, every product type, scattered across the belt and turned. Rate counts the generator's places a<br>
+minute at the recipe's belt speed: the pattern keeps its spacing while the belt ramps.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_DeclareFields]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[fb_MachineParam.m_DeclareField(vi_un_Field := un_F_BELT_SPEED, vi_str_Name := 'BeltSpeed', vi_udn_Group := udn_INFEED1_ID,
+	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := 'mm/s', vi_lr_Min := 10, vi_lr_Max := 500,
+	vi_lr_ProgramValue := 150);
+fb_MachineParam.m_DeclareField(vi_un_Field := un_F_BELT_ACCEL, vi_str_Name := 'BeltAcceleration', vi_udn_Group := udn_INFEED1_ID,
+	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := 'mm/s2', vi_lr_Min := 50, vi_lr_Max := 2000,
+	vi_lr_ProgramValue := 300);
+fb_MachineParam.m_DeclareField(vi_un_Field := un_F_ROBOT_SPEED, vi_str_Name := 'RobotSpeed', vi_udn_Group := udn_DELTA1_ID,
+	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := '%', vi_lr_Min := 10, vi_lr_Max := 100,
+	vi_lr_ProgramValue := 100);
+fb_MachineParam.m_DeclareField(vi_un_Field := un_F_ROBOT_ACCEL, vi_str_Name := 'RobotAcceleration', vi_udn_Group := udn_DELTA1_ID,
+	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := '%', vi_lr_Min := 10, vi_lr_Max := 100,
+	vi_lr_ProgramValue := 100);
+fb_MachineParam.m_DeclareField(vi_un_Field := un_F_PICKS, vi_str_Name := 'PicksPerCycle', vi_udn_Group := udn_DELTA1_ID,
+	vi_e_Type := SynConfig.E_ConfigFieldType.INTEGER, vi_str_Unit := '', vi_lr_Min := 1, vi_lr_Max := 2,
+	vi_lr_ProgramValue := 2);
+fb_MachineParam.m_DeclareField(vi_un_Field := un_F_RATE, vi_str_Name := 'Rate', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := '1/min', vi_lr_Min := 1, vi_lr_Max := 120,
+	vi_lr_ProgramValue := 60);
+fb_MachineParam.m_DeclareField(vi_un_Field := un_F_LANES, vi_str_Name := 'Lanes', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.INTEGER, vi_str_Unit := '', vi_lr_Min := 1, vi_lr_Max := 4,
+	vi_lr_ProgramValue := 1);
+fb_MachineParam.m_DeclareField(vi_un_Field := un_F_LANE_PITCH, vi_str_Name := 'LanePitch', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := 'mm', vi_lr_Min := 0, vi_lr_Max := 150,
+	vi_lr_ProgramValue := 90);
+fb_MachineParam.m_DeclareField(vi_un_Field := un_F_TYPE_MIX, vi_str_Name := 'TypeMix', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.CHOICE, vi_str_Unit := '', vi_lr_Min := 0, vi_lr_Max := 0,
+	vi_lr_ProgramValue := 0);
+fb_MachineParam.m_SetChoice(vi_un_Field := un_F_TYPE_MIX, vi_un_Value := 0, vi_str_Text := 'Every type');
+fb_MachineParam.m_SetChoice(vi_un_Field := un_F_TYPE_MIX, vi_un_Value := 1, vi_str_Text := 'Boxes');
+fb_MachineParam.m_SetChoice(vi_un_Field := un_F_TYPE_MIX, vi_un_Value := 2, vi_str_Text := 'Round');
+fb_MachineParam.m_DeclareField(vi_un_Field := un_F_SCATTER_X, vi_str_Name := 'ScatterX', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := 'mm', vi_lr_Min := 0, vi_lr_Max := 50,
+	vi_lr_ProgramValue := 0);
+fb_MachineParam.m_DeclareField(vi_un_Field := un_F_SCATTER_Y, vi_str_Name := 'ScatterY', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := 'mm', vi_lr_Min := 0, vi_lr_Max := 100,
+	vi_lr_ProgramValue := 80);
+fb_MachineParam.m_DeclareField(vi_un_Field := un_F_SCATTER_RZ, vi_str_Name := 'ScatterRz', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := 'deg', vi_lr_Min := 0, vi_lr_Max := 90,
+	vi_lr_ProgramValue := 30);
+fb_MachineParam.m_DeclareField(vi_un_Field := un_F_GAP_SHARE, vi_str_Name := 'GapShare', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := '%', vi_lr_Min := 0, vi_lr_Max := 90,
+	vi_lr_ProgramValue := 0);
+fb_MachineParam.m_DeclareField(vi_un_Field := un_F_SEED, vi_str_Name := 'Seed', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.INTEGER, vi_str_Unit := '', vi_lr_Min := 1, vi_lr_Max := 999999,
+	vi_lr_ProgramValue := 12345);
+fb_MachineParam.m_DeclareField(vi_un_Field := un_F_FEED, vi_str_Name := 'Feed', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.SWITCH, vi_str_Unit := '', vi_lr_Min := 0, vi_lr_Max := 0,
+	vi_lr_ProgramValue := 1);]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

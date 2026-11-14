@@ -32,11 +32,13 @@ VAR_GLOBAL CONSTANT
 	   18: stLimitArea for the XTS gantry and the Cartesian robot too, not only the Delta.
 	   19: stTcpLimitArea, a box around the TCP, for the Delta, the XTS gantry and the Cartesian robot.
 	   20: finger stOffset on the gripper flange, finger state bPoseReported (ADR 0018).
-	   21: product marks: product nMark, manifest aMarkNames. *)
-	VISU_un_PROTOCOL_VERSION			: UINT := 21;
+	   21: product marks: product nMark, manifest aMarkNames.
+	   22: the machine entry ST_VisuMachine (run state, simulation mode, machine messages) next to the manifest;
+	       the gateway still reads 21, which lacks only that. *)
+	VISU_un_PROTOCOL_VERSION			: UINT := 22;
 	(* Version of this library as the visualisation shows it (manifest sLibraryVersion). Bump together with
 	   _FC_GetVersionSynVisu and the project version. *)
-	VISU_str_LIBRARY_VERSION			: STRING(15) := '9.6.0';
+	VISU_str_LIBRARY_VERSION			: STRING(15) := '9.7.0';
 	(* Product marks 1..VISU_un_MAX_MARKS a product can carry (nMark); the visualisation has a colour for each, so it
 	   is part of the contract, not a library parameter. *)
 	VISU_un_MAX_MARKS					: UINT := 4;	// [-] product marks

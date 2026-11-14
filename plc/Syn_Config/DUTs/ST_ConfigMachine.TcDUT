@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigMachine" Id="{9b312451-14ca-4923-93c6-bfd549ddf9e0}">
+    <Declaration><![CDATA[TYPE ST_ConfigMachine :
+STRUCT
+	(* vo_Config of _FB_ConfigMachine (config protocol 3, ADR 0022), listed in the config manifest with id 0 and type
+	   NONE. The gateway reads the declared fields once, writes stStaging with aStaged (bStaged or bReset last) and
+	   stCommand (bRequested last), and reads stStatus, aActive and stCommandStatus every cycle. Values are kept by
+	   field index, every type as LREAL (SWITCH 0 / 1, INTEGER and CHOICE whole numbers). *)
+	nFieldCount : UINT; // fields [0..nFieldCount-1] are declared
+	aFields : ARRAY[0..CONFIG_GlobalConst_Param.CONFIG_un_MAX_RECIPE_FIELDS - 1] OF ST_ConfigRecipeField;
+	stStaging : ST_ConfigStaging;
+	aStaged : ARRAY[0..CONFIG_GlobalConst_Param.CONFIG_un_MAX_RECIPE_FIELDS - 1] OF LREAL; // the proposed recipe
+	stStatus : ST_ConfigStatus;
+	aActive : ARRAY[0..CONFIG_GlobalConst_Param.CONFIG_un_MAX_RECIPE_FIELDS - 1] OF LREAL; // effective values
+	stCommand : ST_ConfigCommand;
+	stCommandStatus : ST_ConfigCommandStatus;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

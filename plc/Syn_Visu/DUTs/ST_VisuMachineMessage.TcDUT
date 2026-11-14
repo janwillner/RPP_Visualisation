@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuMachineMessage" Id="{c413f05a-b053-48f4-bc1d-2716d0a6cddc}">
+    <Declaration><![CDATA[(* One machine message in the register of ST_VisuMachine (contract, protocol 22). Set with _FB_VisuMachine.m_SetMessage. *)
+TYPE ST_VisuMachineMessage :
+STRUCT
+	nId : UDINT; // the application's number of the message, > 0, unique in the register
+	eSeverity : E_VisuMessageSeverity;
+	sText : STRING(80); // shown to the operator; empty shows 'Message <nId>'
+	nTime : ULINT; // [ns] DC time when the message appeared last (since 2000-01-01)
+	bActive : BOOL; // FALSE: gone, kept until its place in the register is needed
+	nComponentId : UDINT; // manifest id of the component it is about, 0 = the whole machine
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

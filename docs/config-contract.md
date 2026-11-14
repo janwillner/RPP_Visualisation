@@ -1,4 +1,4 @@
-# Parameter set contract (library `Syn_Config`, config protocol version 2)
+# Parameter set contract (library `Syn_Config`, config protocol version 3)
 
 The library `Syn_Config` (ADR 0017) holds the parameter sets the configurator writes and the application takes over:
 the part of a component's configuration the machine runs with, never its hardware. It is the PLC project
@@ -19,6 +19,24 @@ Its unit tests are the TcUnit suites `_FB_TestConfig*` in `plc/Syn_Visu_Test`, r
 | `<sPath>.stStaged : ST_Config<Type>Param` | written by the gateway | the proposed set |
 | `<sPath>.stStatus : ST_ConfigStatus` | read every cycle | `nActiveVersion` (0 = program values), `nHandledStageId`, `eResult` (`E_ConfigResult`: NONE, PENDING, APPLIED, REJECTED), `sMessage` |
 | `<sPath>.stActive : ST_Config<Type>Param` | read every cycle | the effective values |
+
+The machine FB (`_FB_ConfigMachine`, config protocol 3, ADR 0022) is listed with `nId` 0 and `eType` NONE; its
+`vo_Config : ST_ConfigMachine` holds the machine's recipe and its commands:
+
+| Member | Who | Content |
+| --- | --- | --- |
+| `nFieldCount`, `aFields[0..63] : ST_ConfigRecipeField` | read at discovery | the declared recipe fields: `sName`, `nGroup` (component id, 0 = machine), `eType` (`E_ConfigFieldType`: NUMBER, INTEGER, SWITCH, CHOICE), `sUnit`, `fMin`, `fMax`, `fProgramValue`, `nChoiceCount`, `aChoices[0..7]` |
+| `stStaging : ST_ConfigStaging`, `aStaged[0..63] : LREAL` | written by the gateway | as a parameter set's: the proposed recipe by field index |
+| `stStatus : ST_ConfigStatus`, `aActive[0..63] : LREAL` | read every cycle | the recipe's status and effective values by field index |
+| `stCommand : ST_ConfigCommand` | written by the gateway | `nCommandId`, `eCommand` (`E_ConfigCommand`: START, STOP, RESET), `bRequested` last |
+| `stCommandStatus : ST_ConfigCommandStatus` | read every cycle | `nHandledCommandId`, `eResult` (`E_ConfigCommandResult`: NONE, ACCEPTED, REJECTED), `sMessage` |
+
+Every recipe value travels as LREAL, whatever its type (a SWITCH 0 or 1, an INTEGER or CHOICE a whole number), so the
+gateway needs no type per application. A recipe write goes like a parameter set's: `bStaged := FALSE`, every field's
+`aStaged[i]` (a field the client left out keeps its effective value), `nBaseVersion`, `nStageId`, `bReset := FALSE`,
+`bStaged := TRUE`; a command writes `nCommandId`, `eCommand` and `bRequested := TRUE`. The gateway checks every value
+against its field (type, min, max, choices) before it writes, and writes recipes and commands only while the PLC
+reports simulation mode in its machine entry (`GVL_Visu.stMachine.bSimulation`, protocol 22).
 
 A write goes in this order: `bStaged := FALSE` (withdraws a set still waiting), every leaf of the set,
 `nBaseVersion`, `nStageId`, `bReset := FALSE`, and `bStaged := TRUE`. A reset writes `nBaseVersion`, `nStageId` and
@@ -44,6 +62,7 @@ parameter FB uses (`m_InvalidZones`, `m_InvalidModules`, `m_InvalidFingers`, `m_
 
 | Library | Config protocol | Change |
 | --- | --- | --- |
+| 2.1.0 | 3 | The machine FB `_FB_ConfigMachine`: recipe fields the application declares, their staging, machine commands (ADR 0022). No change to the parameter FBs; the gateway still writes parameter sets to a PLC of config protocol 2 |
 | 2.0.1 | 2 | References `SynVisu` through a placeholder (default: the newest installed) instead of a fixed version, so an application uses one SynVisu for both libraries; redirect the placeholder in the application's library manager when it pins SynVisu. No change to the structures |
 | 2.0.0 | 2 | Gripper fingers (`nFingerCount`, `aFingers` with their `stOffset`) in the robots' sets; references Syn_Visu 9.5.0. The robots' structures changed: gateway and library are updated together |
 | 1.1.0 | 1 | Parameter FBs for the XTS gantry and loop, the Cartesian robot, vision system, sensor and station |
@@ -93,7 +112,63 @@ fb_InfeedParam.m_PassOn(vio_Visu := fb_Infeed);	// origin shift and product type
 - Syn_Visu cannot remove a product type: one a set no longer has stays in the visualisation until the application
   restarts.
 
+## The machine FB: recipe fields and machine commands
+
+A recipe holds the process values the machine runs with (belt and robot speeds, picks per cycle, the product
+pattern), as the application declares them; the Simulator writes them with the same staging as parameter sets
+(ADR 0022). One `_FB_ConfigMachine` per application:
+
+```st
+VAR
+	fb_Machine					: SynConfig._FB_ConfigMachine;
+END_VAR
+VAR PERSISTENT
+	RecipeSet					: SynConfig.ST_ConfigRecipeSet;	// the active recipe, kept over a restart
+END_VAR
+
+fb_Machine.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := 0);	// id 0: the machine
+fb_Machine.m_DeclareField(vi_un_Field := 1, vi_str_Name := 'BeltSpeed', vi_udn_Group := fb_Infeed.m_Id(),
+	vi_e_Type := SynConfig.E_ConfigFieldType.NUMBER, vi_str_Unit := 'mm/s', vi_lr_Min := 0, vi_lr_Max := 500,
+	vi_lr_ProgramValue := 150);
+fb_Machine.m_DeclareField(vi_un_Field := 2, vi_str_Name := 'Pattern', vi_udn_Group := 0,
+	vi_e_Type := SynConfig.E_ConfigFieldType.CHOICE, vi_str_Unit := '', vi_lr_Min := 0, vi_lr_Max := 0,
+	vi_lr_ProgramValue := 0);
+fb_Machine.m_SetChoice(vi_un_Field := 2, vi_un_Value := 0, vi_str_Text := 'Lanes');
+fb_Machine.m_SetChoice(vi_un_Field := 2, vi_un_Value := 1, vi_str_Text := 'Random');
+fb_Machine.m_Cycle(vio_Set := RecipeSet, vi_b_ApplyAllowed := b_MachineStopped);
+lr_BeltSpeed := fb_Machine.m_Value(vi_un_Field := 1);	// m_Integer, m_Switch for the other types
+
+CASE fb_Machine.m_Command() OF
+	SynConfig.E_ConfigCommand.START:
+		fb_Machine.m_AnswerCommand(vi_b_Accepted := b_MachineStopped, vi_str_Reason := 'Not stopped');
+	SynConfig.E_ConfigCommand.STOP, SynConfig.E_ConfigCommand.RESET:
+		fb_Machine.m_AnswerCommand(vi_b_Accepted := TRUE, vi_str_Reason := '');
+END_CASE
+```
+
+- Fields are numbered from 1 and listed up to the highest one declared. The gateway reads the declarations when it
+  discovers the PLC: declare every field from the start, and keep their order (the persistent recipe keeps values by
+  index; add new fields at the end).
+- `m_Cycle` takes a staged recipe over only while `vi_b_ApplyAllowed`, on the active version it is based on, and only
+  when every value fits its field (else REJECTED with the field's name); a reset returns to the program values.
+- A machine command is a request: `m_Command` gives the waiting one, and the application alone decides with
+  `m_AnswerCommand` whether it is carried out. The answer, with its reason, reaches the Simulator.
+- Report simulation mode in the machine entry (Syn_Visu `_FB_VisuMachine.m_SetSimulation`) only where no real machine
+  can move: without it the gateway writes no recipe and sends no command.
+
+The demo wires it in `P_VisuDemoMachine`, called before the applications: its machine FB declares 15 fields (Infeed 1's
+belt speed and acceleration, Delta 1's speed and acceleration in % and picks per cycle, and the product pattern: rate,
+lanes and their pitch, type mix, X / Y / rotation scatter, gap share, seed, feed on / off), copies the effective values
+to `DEMO_GlobalVar.DEMO_Recipe` for `P_VisuDemoDelta`, answers Start (while stopped), Stop (while starting or running)
+and Reset (while stopped), ramps Infeed 1 between 0 and the recipe's speed (STARTING, RUNNING, STOPPING, STOPPED) and
+reports the run state, simulation mode and two machine messages to Syn_Visu. `P_VisuDemoDelta`'s product generator
+(`m_Generate`) makes up raw detections from the pattern with deterministic pseudo-random numbers from the seed (the
+rate counts places a minute at the recipe's belt speed), which its tracking latches as Vision 1's (`m_Track`);
+Delta 1 moves as fast as its belt and recipe allow (`m_Delta1Step`), so it halts with it; Reset empties Infeed 1,
+drops what any robot approaches or carries of it, starts the generator from its seed again and acknowledges Delta 1's
+fault (`m_Reset`); a product passing Infeed 1 unpicked raises "Product missed" (`m_Missed`). The demo starts
+running with the program values, which give the product pattern it had before its recipe.
+
 The demo (`plc/Syn_Visu_Demo`) does this for Infeed 1, Delta 1 and Vision 1 (`P_VisuDemoDelta`; the vision system
 latches its products under its effective lens position) and the IDH XTS gantry (`P_VisuDemoIdh`; its simulated motion
-keeps to the program's track), taking a set over at once; the simulator emulates the same for one component of every
-type (`apps/gateway/src/config-emulation.ts`).
+keeps to the program's track), taking a set over at once; the gateway tests emulate the same (`apps/gateway/src/config-emulation.ts`).

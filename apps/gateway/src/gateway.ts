@@ -1,5 +1,7 @@
 import {
+  MachineSchema,
   MAX_MARKS,
+  MIN_PROTOCOL_VERSION,
   PROTOCOL_VERSION,
   type ClientMessage,
   type ComponentConfig,
@@ -8,6 +10,7 @@ import {
   type DiscoveryError,
   type GatewayMessage,
   type GatewayStatus,
+  type MachineReport,
   type ParametersMessage,
   type ProductMark,
 } from "@rpp/protocol";
@@ -17,12 +20,14 @@ import { CONFIG_MANIFEST_PATH } from "./config-contract";
 import {
   commandWrites,
   discoverParameters,
+  noParameters,
   parameterReadPaths,
   parametersMessage,
   type ParameterDiscovery,
 } from "./parameter-access";
-import { MANIFEST_PATH, enumValue, type ST_VisuManifest } from "./plc-contract";
-import { UnknownEntryError, type EntryMemory } from "./plc-mapping";
+import { MANIFEST_PATH, PLC_MACHINE_TYPE, enumValue, machinePath, type ST_VisuManifest } from "./plc-contract";
+import { mapPlc, UnknownEntryError, type EntryMemory } from "./plc-mapping";
+import { recipeWrites } from "./recipe-access";
 import { SymbolNotFoundError, type SymbolAccess } from "./symbol-access";
 
 export interface GatewayOptions {
@@ -105,11 +110,22 @@ interface ActiveComponent {
   memory: EntryMemory;
 }
 
+/** The machine entry (protocol 22, ADR 0021), read every cycle when the application has one. */
+interface MachineEntry {
+  path: string;
+  /** Its mapped machine messages of the previous read: the register comes as changes like a product register. */
+  memory: EntryMemory;
+}
+
 interface Discovery {
   config: ConfigMessage;
   active: ActiveComponent[];
   parameters: ParameterDiscovery;
+  machine: MachineEntry | undefined;
 }
+
+/** First protocol version with the machine entry. */
+const MACHINE_PROTOCOL_VERSION = 22;
 
 export function createGateway({
   plc,
@@ -134,6 +150,8 @@ export function createGateway({
   const stats = new AcquisitionStatsRecorder();
   /** The last `parameters` message, sent again only when it changes. */
   let parameters: ParametersMessage | undefined;
+  /** The last `machine` message, sent again only when it changes. */
+  let machine: MachineReport | undefined;
   /** Stage ids of this gateway's writes: from its start time, so another run's ids are unlikely to repeat. */
   let stageId = Math.floor(Date.now() / 1000) % 1_000_000_000;
 
@@ -146,7 +164,8 @@ export function createGateway({
     const libraryVersion = manifest.sLibraryVersion?.trim() || undefined;
     const errors: DiscoveryError[] = [];
     const active: ActiveComponent[] = [];
-    let params: ParameterDiscovery = { present: false, entries: [], reason: "The PLC's Syn_Visu does not match this gateway.", errors: [] };
+    let params = noParameters("The PLC's Syn_Visu does not match this gateway.", false);
+    let machineEntry: MachineEntry | undefined;
     const result = (): Discovery => ({
       config: {
         kind: "config",
@@ -160,14 +179,23 @@ export function createGateway({
       },
       active,
       parameters: params,
+      machine: machineEntry,
     });
 
-    if (manifest.nProtocolVersion !== PROTOCOL_VERSION) {
+    if (manifest.nProtocolVersion < MIN_PROTOCOL_VERSION || manifest.nProtocolVersion > PROTOCOL_VERSION) {
       errors.push({
         path: manifestPath,
-        message: `PLC reports protocol version ${manifest.nProtocolVersion}${libraryVersion ? ` (Syn_Visu ${libraryVersion})` : ""}, but this gateway expects ${PROTOCOL_VERSION}. Update the Syn_Visu library or the gateway.`,
+        message: `PLC reports protocol version ${manifest.nProtocolVersion}${libraryVersion ? ` (Syn_Visu ${libraryVersion})` : ""}, but this gateway expects ${MIN_PROTOCOL_VERSION} to ${PROTOCOL_VERSION}. Update the Syn_Visu library or the gateway.`,
       });
       return result();
+    }
+
+    // The machine entry is the application's own, next to its manifest: one without it is read as before.
+    if (manifest.nProtocolVersion >= MACHINE_PROTOCOL_VERSION) {
+      const path = machinePath(manifestPath);
+      const type = await plc.typeOf(path);
+      if (type !== undefined && isExpectedType(type, PLC_MACHINE_TYPE)) machineEntry = { path, memory: new Map() };
+      else if (type !== undefined) errors.push({ path, message: `Symbol has expected type ${PLC_MACHINE_TYPE} but is ${type}` });
     }
 
     for (const entry of manifest.aEntries.slice(0, manifest.nCount)) {
@@ -209,7 +237,7 @@ export function createGateway({
     } catch (error) {
       // A layout the gateway does not know leaves the source read-only; connection errors propagate.
       if (!(error instanceof TypeError) && !(error instanceof SymbolNotFoundError)) throw error;
-      params = { present: true, entries: [], reason: `Cannot read ${configManifestPath}: ${error.message}`, errors: [] };
+      params = noParameters(`Cannot read ${configManifestPath}: ${error.message}`);
     }
     return result();
   }
@@ -226,6 +254,7 @@ export function createGateway({
     session += 1;
     for (const a of current.active) a.memory.clear();
     for (const e of current.parameters.entries) e.memory.clear();
+    current.machine?.memory.clear();
   }
 
   /**
@@ -235,21 +264,28 @@ export function createGateway({
   async function publishSnapshot(current: Discovery, retry = true): Promise<boolean> {
     const readStart = performance.now();
     const paramPaths = parameterReadPaths(current.parameters);
+    const machinePaths = current.machine ? [current.machine.path] : [];
     const [protocolVersion, configVersion, ...rest] = await plc.sumRead(
-      [protocolVersionPath, configVersionPath, ...current.active.map((a) => a.statePath), ...paramPaths],
+      [protocolVersionPath, configVersionPath, ...current.active.map((a) => a.statePath), ...paramPaths, ...machinePaths],
       { changes: changesSession() },
     );
     if (protocolVersion !== current.config.protocolVersion || configVersion !== current.config.configVersion) {
       return false;
     }
     const raws = rest.slice(0, current.active.length);
+    /** Where the machine entry is in `rest`: after the states and the parameter sets. */
+    const machineAt = current.active.length + paramPaths.length;
     const mapStart = performance.now();
     let components: ComponentState[];
     let params: ParametersMessage | undefined;
+    let report: MachineReport | undefined;
     try {
       components = current.active.map((a, i) => mapState(a, raws[i]));
       if (current.parameters.present) {
-        params = parametersMessage(sourceId, current.parameters, rest.slice(current.active.length));
+        params = parametersMessage(sourceId, current.parameters, rest.slice(current.active.length, machineAt));
+      }
+      if (current.machine) {
+        report = { kind: "machine", sourceId, ...mapPlc(MachineSchema, rest[machineAt], {}, current.machine.memory) };
       }
     } catch (error) {
       // Out of step with the PLC access (e.g. a restarted ADS bridge): read again with every entry.
@@ -258,6 +294,7 @@ export function createGateway({
       return publishSnapshot(current, false);
     }
     if (params) publishParameters(params);
+    if (report) publishMachine(report);
     if (current.active.length === 0) return true;
     stats.recordSnapshot(mapStart - readStart, performance.now() - mapStart, components);
     const newest = components.reduce((max, c) => (BigInt(c.timestamp) > max ? BigInt(c.timestamp) : max), 0n);
@@ -280,9 +317,17 @@ export function createGateway({
     emit(next);
   }
 
+  /** Sends the machine's report when it differs from the last one sent. */
+  function publishMachine(next: MachineReport): void {
+    if (machine && JSON.stringify(machine) === JSON.stringify(next)) return;
+    machine = next;
+    emit(next);
+  }
+
   async function rediscover(): Promise<Discovery> {
     const next = await discover();
     parameters = undefined;
+    machine = undefined;
     setStatus({ plcConnected: true });
     discovery = next;
     t0 = undefined;
@@ -301,8 +346,10 @@ export function createGateway({
     discovery = next;
     restartChanges(next);
     emit(next.config);
-    // A client drops a source's parameter sets with its new config: they are sent again with the next snapshot.
+    // A client drops a source's parameter sets and machine with its new config: they are sent again with the next
+    // snapshot.
     parameters = undefined;
+    machine = undefined;
     return next;
   }
 
@@ -315,6 +362,7 @@ export function createGateway({
       listener(statusMessage());
       if (discovery) listener(discovery.config);
       if (discovery && parameters) listener(parameters);
+      if (discovery?.machine && machine) listener(machine);
       return () => listeners.delete(listener);
     },
     acquisition: (id) => (id === sourceId ? stats : undefined),
@@ -323,7 +371,16 @@ export function createGateway({
       const current = discovery;
       if (!current || !status.plcConnected) return { ok: false, error: "The PLC is not connected." };
       const id = (stageId += 1);
-      const planned = commandWrites(command, current.parameters, parameters, id);
+      const planned =
+        command.kind === "writeParameters" || command.kind === "resetParameters"
+          ? commandWrites(command, current.parameters, parameters, id)
+          : recipeWrites(
+              command,
+              current.parameters,
+              // Simulation mode as the application reports it in the machine entry (protocol 22, ADR 0021).
+              { simulation: machine?.simulation === true, current: parameters },
+              id,
+            );
       if ("error" in planned) return { ok: false, error: planned.error };
       try {
         await plc.sumWrite(planned.writes);

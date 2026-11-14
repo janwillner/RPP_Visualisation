@@ -2,7 +2,8 @@
 <TcPlcObject Version="1.1.0.1">
   <GVL Name="DEMO_GlobalVar" Id="{83866ab6-840c-4eb9-9b7b-2342941b264a}">
     <Declaration><![CDATA[(* Shared runtime values of the demo. P_VisuDemo writes the cycle time and fault phase before it calls the
-   applications; every application takes product ids from DEMO_udn_NextId. *)
+   applications; every application takes product ids from DEMO_udn_NextId. P_VisuDemoMachine, called first, writes
+   the effective recipe, Infeed 1's belt speed and the reset; the Delta application reports a missed product. *)
 {attribute 'qualified_only'}
 VAR_GLOBAL
 	DEMO_lr_Dt							: LREAL;	// [s] cycle time of the calling task
@@ -11,6 +12,11 @@ VAR_GLOBAL
 	(* Load test (P_VisuDemoStress): products kept on the stress belt; 0 = off. Write it online. Once set, the stress
 	   belt stays in the manifest until the next download or reset; set back to 0 it runs empty. *)
 	DEMO_un_StressProducts				: UINT := 0;	// [-]
+	(* Machine: the Delta application's sequence control (P_VisuDemoMachine, ADR 0022). *)
+	DEMO_Recipe							: TVisuDemo_Recipe;	// the effective recipe
+	DEMO_lr_Infeed1Speed				: LREAL;	// [mm/s] Infeed 1 now, ramped to the recipe's speed while running, to 0 when stopping
+	DEMO_b_Reset						: BOOL;	// [-] one cycle: Reset accepted, Infeed 1 and Delta 1 start empty
+	DEMO_b_Infeed1Missed				: BOOL;	// [-] a product passed Infeed 1's end unpicked a moment ago
 END_VAR]]></Declaration>
   </GVL>
 </TcPlcObject>

@@ -19,7 +19,7 @@
     <Company>Syntegon Group</Company>
     <Released>false</Released>
     <Title>SynVisu</Title>
-    <ProjectVersion>9.6.0.0</ProjectVersion>
+    <ProjectVersion>9.7.0.0</ProjectVersion>
     <DefaultNamespace>SynVisu</DefaultNamespace>
   </PropertyGroup>
   <ItemGroup>
@@ -46,6 +46,9 @@
     <Compile Include="DUTs\E_VisuComponentType.TcDUT">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="DUTs\E_VisuMessageSeverity.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="DUTs\E_VisuModuleKind.TcDUT">
       <SubType>Code</SubType>
     </Compile>
@@ -53,6 +56,9 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="DUTs\E_VisuProductState.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\E_VisuRunState.TcDUT">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="DUTs\ST_VisuBody.TcDUT">
@@ -113,6 +119,12 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="DUTs\ST_VisuLoopMover.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_VisuMachine.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_VisuMachineMessage.TcDUT">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="DUTs\ST_VisuManifest.TcDUT">
@@ -197,6 +209,9 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\_FB_VisuDetector.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FB_VisuMachine.TcPOU">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\_FB_VisuRobot.TcPOU">

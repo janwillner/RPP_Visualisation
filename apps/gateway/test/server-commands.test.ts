@@ -5,13 +5,13 @@ import { ServerMessageSchema, type ParametersMessage, type ServerMessage } from 
 import { combineGateways, createGateway } from "../src/gateway";
 import { NOT_ALLOWED } from "../src/parameter-access";
 import { FOREIGN_ORIGIN, startServer } from "../src/server";
-import { createSimulator } from "../src/simulator";
+import { fixtureMachine, FIXTURE_SOURCE } from "./fixture-machine";
 
-/** The simulator behind a server; a WebSocket client that collects every message. */
+/** The fixture machine behind a server; a WebSocket client that collects every message. */
 async function connect(allowWrite: boolean) {
-  const sim = createSimulator({ seed: 1 });
-  const gateway = createGateway({ plc: sim.plc, sourceId: "sim", allowWrite });
-  sim.step(20);
+  const machine = fixtureMachine();
+  const gateway = createGateway({ plc: machine.plc, sourceId: FIXTURE_SOURCE, allowWrite });
+  machine.step();
   await gateway.cycle();
   const server = await startServer({ gateway: combineGateways([gateway]), port: 0, host: "127.0.0.1" });
   const socket = new WebSocket(`ws://127.0.0.1:${(server.address() as AddressInfo).port}/ws`);
@@ -30,7 +30,7 @@ async function connect(allowWrite: boolean) {
     socket.close();
     server.close();
   };
-  return { socket, messages, next, close, sim, gateway };
+  return { socket, messages, next, close, machine, gateway };
 }
 
 describe("WebSocket commands (ADR 0017)", () => {
@@ -38,13 +38,13 @@ describe("WebSocket commands (ADR 0017)", () => {
     const { socket, next, close } = await connect(true);
     try {
       const parameters: ParametersMessage = await next("parameters");
-      expect(parameters).toMatchObject({ sourceId: "sim", writable: true });
+      expect(parameters).toMatchObject({ sourceId: FIXTURE_SOURCE, writable: true });
       const robot = parameters.components.find((c) => c.set.type === "delta")!;
 
       socket.send("not json");
       socket.send(JSON.stringify({ kind: "somethingElse" }));
       socket.send(
-        JSON.stringify({ kind: "writeParameters", requestId: 7, sourceId: "sim", componentId: robot.id, baseVersion: 0, set: robot.set }),
+        JSON.stringify({ kind: "writeParameters", requestId: 7, sourceId: FIXTURE_SOURCE, componentId: robot.id, baseVersion: 0, set: robot.set }),
       );
       expect(await next("writeResult")).toEqual({ kind: "writeResult", requestId: 7, ok: true, stageId: expect.any(Number) });
     } finally {
@@ -53,9 +53,9 @@ describe("WebSocket commands (ADR 0017)", () => {
   });
 
   it("refuses commands from a page of another origin: a foreign web page must not write to the PLC", async () => {
-    const sim = createSimulator({ seed: 1 });
-    const gateway = createGateway({ plc: sim.plc, sourceId: "sim", allowWrite: true });
-    sim.step(20);
+    const machine = fixtureMachine();
+    const gateway = createGateway({ plc: machine.plc, sourceId: FIXTURE_SOURCE, allowWrite: true });
+    machine.step();
     await gateway.cycle();
     const server = await startServer({ gateway: combineGateways([gateway]), port: 0, host: "127.0.0.1" });
     const port = (server.address() as AddressInfo).port;
@@ -66,14 +66,15 @@ describe("WebSocket commands (ADR 0017)", () => {
       await new Promise((resolve) => socket.once("open", resolve));
       for (let i = 0; i < 100 && !messages.some((m) => m.kind === "parameters"); i++) await new Promise((r) => setTimeout(r, 10));
       const robot = (messages.find((m) => m.kind === "parameters") as ParametersMessage).components.find((c) => c.set.type === "delta")!;
-      socket.send(JSON.stringify({ kind: "writeParameters", requestId: 9, sourceId: "sim", componentId: robot.id, baseVersion: 0, set: robot.set }));
-      for (let i = 0; i < 100 && !messages.some((m) => m.kind === "writeResult"); i++) await new Promise((r) => setTimeout(r, 10));
-      expect(messages.find((m) => m.kind === "writeResult")).toEqual({
-        kind: "writeResult",
-        requestId: 9,
-        ok: false,
-        error: FOREIGN_ORIGIN,
-      });
+      socket.send(JSON.stringify({ kind: "writeParameters", requestId: 9, sourceId: FIXTURE_SOURCE, componentId: robot.id, baseVersion: 0, set: robot.set }));
+      // Recipes and machine commands alike (ADR 0022).
+      socket.send(JSON.stringify({ kind: "writeRecipe", requestId: 10, sourceId: FIXTURE_SOURCE, baseVersion: 0, values: {} }));
+      socket.send(JSON.stringify({ kind: "resetRecipe", requestId: 11, sourceId: FIXTURE_SOURCE, baseVersion: 0 }));
+      socket.send(JSON.stringify({ kind: "machineCommand", requestId: 12, sourceId: FIXTURE_SOURCE, command: "start" }));
+      for (let i = 0; i < 100 && messages.filter((m) => m.kind === "writeResult").length < 4; i++) await new Promise((r) => setTimeout(r, 10));
+      expect(messages.filter((m) => m.kind === "writeResult")).toEqual(
+        [9, 10, 11, 12].map((requestId) => ({ kind: "writeResult", requestId, ok: false, error: FOREIGN_ORIGIN })),
+      );
     } finally {
       socket.close();
       server.close();
@@ -85,7 +86,7 @@ describe("WebSocket commands (ADR 0017)", () => {
     try {
       const robot = (await next("parameters")).components.find((c) => c.set.type === "delta")!;
       socket.send(
-        JSON.stringify({ kind: "writeParameters", requestId: 8, sourceId: "sim", componentId: robot.id, baseVersion: 0, set: robot.set }),
+        JSON.stringify({ kind: "writeParameters", requestId: 8, sourceId: FIXTURE_SOURCE, componentId: robot.id, baseVersion: 0, set: robot.set }),
       );
       expect(await next("writeResult")).toEqual({ kind: "writeResult", requestId: 8, ok: false, error: NOT_ALLOWED });
     } finally {

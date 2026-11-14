@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { OptionsError, resolveGatewayOptions, type OptionsEnvironment } from "../src/options";
+import { helpText, OptionsError, resolveGatewayOptions, type OptionsEnvironment } from "../src/options";
 
 const here = resolve("/install");
 
@@ -66,7 +66,9 @@ describe("resolveGatewayOptions", () => {
   it.each([
     ["an unknown key", { adsPrt: 852 }, /unknown key "adsPrt"/],
     ["a value of the wrong type", { adsPort: "852" }, /"adsPort" must be a number/],
-    ["an unknown driver", { driver: "opcua" }, /driver must be one of sim, ads, ads-tcp/],
+    ["an unknown driver", { driver: "opcua" }, /driver must be one of ads, ads-tcp/],
+    // The gateway's fake PLC is gone (ADR 0020): the demo application on the user-mode runtime takes its place.
+    ["the former simulator driver", { driver: "sim" }, /driver must be one of ads, ads-tcp/],
     ["invalid JSON", "{ port: 8080 ", /not valid JSON/],
   ])("rejects a config file with %s", (_, content, message) => {
     const files = { "/data/config.json": typeof content === "string" ? content : JSON.stringify(content) };
@@ -75,40 +77,52 @@ describe("resolveGatewayOptions", () => {
     expect(() => resolveGatewayOptions(["--config", "/data/config.json"], env(files))).toThrow(message);
   });
 
-  it("uses the bridge exe and both web apps next to the bundled gateway when packaged", () => {
-    const options = resolveGatewayOptions([], env({}, ["/install/AdsBridge.exe", "/install/web", "/install/web/configurator"]));
+  it("uses the bridge exe and every web app next to the bundled gateway when packaged", () => {
+    const options = resolveGatewayOptions(
+      [],
+      env({}, ["/install/AdsBridge.exe", "/install/web", "/install/web/configurator", "/install/web/simulator"]),
+    );
 
     expect(options.adsBridge).toBe(join(here, "AdsBridge.exe"));
     expect(options.staticDir).toBe(join(here, "web"));
     expect(options.configuratorDir).toBe(join(here, "web", "configurator"));
+    expect(options.simulatorDir).toBe(join(here, "web", "simulator"));
   });
 
   it("uses the repo build output when running from source", () => {
     const src = resolve("/repo/apps/gateway/src");
     const options = resolveGatewayOptions([], {
-      ...env({}, ["/repo/apps/visualisation/dist", "/repo/apps/configurator/dist"]),
+      ...env({}, ["/repo/apps/visualisation/dist", "/repo/apps/configurator/dist", "/repo/apps/simulator/dist"]),
       here: src,
     });
 
     expect(options.adsBridge).toBe(resolve("/repo/apps/ads-bridge/bin/Release/net9.0/AdsBridge.dll"));
     expect(options.staticDir).toBe(resolve("/repo/apps/visualisation/dist"));
     expect(options.configuratorDir).toBe(resolve("/repo/apps/configurator/dist"));
+    expect(options.simulatorDir).toBe(resolve("/repo/apps/simulator/dist"));
   });
 
   it("serves no web app when none is built", () => {
     const options = resolveGatewayOptions([], env());
     expect(options.staticDir).toBeUndefined();
     expect(options.configuratorDir).toBeUndefined();
+    expect(options.simulatorDir).toBeUndefined();
   });
 
   it("resolves relative paths in the config file against the file's folder", () => {
     const options = resolveGatewayOptions(
       ["--config", "/data/config.json"],
-      env({ "/data/config.json": JSON.stringify({ staticDir: "custom-web", configuratorDir: "custom-configurator", adsBridge: "bin/AdsBridge.exe" }) }),
+      env({ "/data/config.json": JSON.stringify({
+        staticDir: "custom-web",
+        configuratorDir: "custom-configurator",
+        simulatorDir: "custom-simulator",
+        adsBridge: "bin/AdsBridge.exe",
+      }) }),
     );
 
     expect(options.staticDir).toBe(resolve("/data/custom-web"));
     expect(options.configuratorDir).toBe(resolve("/data/custom-configurator"));
+    expect(options.simulatorDir).toBe(resolve("/data/custom-simulator"));
     expect(options.adsBridge).toBe(resolve("/data/bin/AdsBridge.exe"));
   });
 
@@ -138,11 +152,10 @@ describe("resolveGatewayOptions", () => {
     ]);
   });
 
-  it("takes the simulator's load test products from the flag, none by default, and refuses them for a real PLC", () => {
-    expect(resolveGatewayOptions(["--sim-products", "4000"], env()).simProducts).toBe(4000);
-    expect(resolveGatewayOptions([], env()).simProducts).toBe(0);
-    expect(() => resolveGatewayOptions(["--driver", "ads", "--sim-products", "100"], env())).toThrow(/simulator only/);
-    expect(() => resolveGatewayOptions(["--sim-products", "1.5"], env())).toThrow(/whole number/);
+  it("reads a PLC through the ADS bridge by default and knows no simulator options any more", () => {
+    expect(resolveGatewayOptions([], env()).driver).toBe("ads");
+    expect(() => resolveGatewayOptions(["--sim-products", "4000"], env())).toThrow(OptionsError);
+    expect(helpText()).not.toMatch(/\bsim\b|sim-products/);
   });
 
   it("takes the AmsNetId and port flags as the short form for one source, defaulting to the local runtime 851", () => {
@@ -164,7 +177,6 @@ describe("resolveGatewayOptions", () => {
       [],
       /5.1.2.3.1.1:851 is listed twice/,
     ],
-    ["a source list with the simulator", { sources: [{ amsNetId: "5.1.2.3.1.1" }] }, [], /the simulator reads no PLC sources/i],
     [
       "several sources with the ads-tcp driver",
       { driver: "ads-tcp", sources: [{ amsNetId: "5.1.2.3.1.1" }, { amsNetId: "5.1.2.4.1.1" }] },

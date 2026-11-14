@@ -36,6 +36,9 @@
     <Compile Include="POUs\Tests\_FB_TestConfigComponent.TcPOU">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="POUs\Tests\_FB_TestConfigMachine.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="POUs\Tests\_FB_TestConfigRobot.TcPOU">
       <SubType>Code</SubType>
     </Compile>
@@ -43,6 +46,9 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\Tests\_FB_TestConveyor.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\Tests\_FB_TestMachine.TcPOU">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\Tests\_FB_TestProductRegister.TcPOU">

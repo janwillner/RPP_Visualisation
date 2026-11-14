@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { COMPONENT_SCHEMAS, TrackModuleKindSchema, type ComponentConfig, type ConveyorConfig, type Draft, type TrackModuleKind } from "@rpp/protocol";
 import {
   APP_VERSION,
@@ -8,18 +8,22 @@ import {
   defaultGatewayUrl,
   download,
   GatewayConnection,
+  GatewayLive,
   LayerToggles,
   type Layers,
   type MachineScene,
+  NumberInput,
   SceneView,
   type Selection,
   SidePanelControls,
   sidePanelsLayout,
+  StatusList,
+  TextInput,
+  TopBar,
   useSidePanel,
   useStore,
   ViewControls,
 } from "@rpp/machine-view";
-import { GatewayLive } from "./gateway-live";
 import { PALETTE_LABELS, PALETTE_TYPES, placementHeight, isAreaField, type PaletteType } from "./component-defaults";
 import { Configurator, DRAFT_FILE_EXTENSION, useConfigurator } from "./configurator";
 import { EditControls, type FloorPicker } from "./EditControls";
@@ -155,8 +159,7 @@ export function ConfiguratorApp() {
 
   return (
     <div className={["app configurator", panels.className].filter(Boolean).join(" ")} style={panels.style}>
-      <header className="toolbar">
-        <strong className="title">RPP Configurator</strong>
+      <TopBar title="RPP Configurator">
         <div className="group">
           <button onClick={() => configurator.newDraft()}>New</button>
           <button onClick={() => fileInput.current?.click()}>Open…</button>
@@ -189,7 +192,7 @@ export function ConfiguratorApp() {
           <TextInput value={draft.name} label="Machine name" onCommit={(name) => configurator.rename(name)} />
         </label>
         <LayerToggles layers={layers} onToggle={(key) => setLayers((l) => ({ ...l, [key]: !l[key] }))} />
-      </header>
+      </TopBar>
 
       <aside className="panel left" hidden={!left.open}>
         <h3>Palette</h3>
@@ -355,7 +358,15 @@ export function ConfiguratorApp() {
           {plcSources.length > 0 ? `Gateway: ${gateway.socket} · ${plcSources.length} PLC` : "Offline draft"}
           {snapshot.saved ? "" : " · not saved"}
         </span>
-        <Problems issues={issues} onSelect={(key) => configurator.select(key)} />
+        <StatusList
+          className="problems"
+          noun={["problem", "problems"]}
+          items={issues.map((issue) => ({
+            text: issue.message,
+            severity: issue.severity === "error" ? "error" : "warning",
+            onSelect: () => configurator.select(issue.key),
+          }))}
+        />
         <span className="statusbar-version">v{APP_VERSION}</span>
       </footer>
     </div>
@@ -570,75 +581,6 @@ function Field(props: { field: PropertyField; conveyors: ConveyorConfig[]; onCom
         </select>
       )}
     </label>
-  );
-}
-
-/** Commits on Enter or when it loses focus, so typing a number is one step for undo; Escape restores the value. */
-function useDraftText(value: string, commit: (text: string) => void) {
-  const [text, setText] = useState(value);
-  // Set by Escape: the blur that follows at once must not commit what was typed.
-  const cancelled = useRef(false);
-  useEffect(() => setText(value), [value]);
-  return {
-    value: text,
-    onChange: (e: { target: { value: string } }) => setText(e.target.value),
-    onBlur: () => {
-      if (!cancelled.current && text !== value) commit(text);
-      cancelled.current = false;
-      // Shown as the value is, also when the text meant the same (2000.0) or was refused; a changed value follows.
-      setText(value);
-    },
-    onKeyDown: (e: ReactKeyboardEvent<HTMLInputElement>) => {
-      if (e.key === "Enter") e.currentTarget.blur();
-      if (e.key === "Escape") {
-        cancelled.current = true;
-        e.currentTarget.blur();
-      }
-    },
-  };
-}
-
-function NumberInput(props: { value: number; integer: boolean; label: string; onCommit: (value: number) => void }) {
-  const input = useDraftText(String(props.value), (text) => {
-    const n = Number(text.replace(",", "."));
-    if (text.trim() !== "" && Number.isFinite(n) && (!props.integer || Number.isInteger(n))) props.onCommit(n);
-  });
-  return <input type="text" inputMode="decimal" aria-label={props.label} {...input} />;
-}
-
-function TextInput(props: { value: string; label: string; onCommit: (value: string) => void }) {
-  const input = useDraftText(props.value, props.onCommit);
-  return <input type="text" aria-label={props.label} {...input} />;
-}
-
-/**
- * The draft's problems in the status bar, as the visualisation shows its discovery errors: their count (red with an
- * error, else yellow), a click lists them above; a click on a problem selects its component.
- */
-function Problems({ issues, onSelect }: { issues: readonly Issue[]; onSelect: (key: ComponentKey) => void }) {
-  const [open, setOpen] = useState(false);
-  const errors = issues.some((i) => i.severity === "error");
-  const tone = errors ? "bad" : issues.length > 0 ? "warn" : "muted";
-  return (
-    <>
-      <button className={`${tone} link`} onClick={() => setOpen((o) => !o)}>
-        {issues.length} problem{issues.length === 1 ? "" : "s"}
-      </button>
-      {open && issues.length > 0 && (
-        <ul className="errors problems">
-          {issues.map((issue, i) => (
-            <li key={i}>
-              <button
-                className={issue.severity === "error" ? "bad link" : "warn link"}
-                onClick={() => onSelect(issue.key)}
-              >
-                {issue.message}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </>
   );
 }
 

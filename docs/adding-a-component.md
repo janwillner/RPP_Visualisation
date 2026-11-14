@@ -72,7 +72,9 @@ Example: the Cartesian robot.
      in its kit and needs an entry in `ROBOT_TCPS` (`machine-facts.ts`) saying where its TCPs lie in its frame (the
      compiler asks for it); its kit draws the flange from the same rule (like `gantryFlange`, `cartesianFlange`), so
      drawn flange and checked TCP agree.
-5. **Simulator** (optional): an instance in `simulator.ts`, so the dev gateway and the browser tests show it.
+5. **Demo and fixture**: an instance in the demo application `Syn_Visu_Demo` (through the TwinCAT MCP tools), so the
+   dev gateway and the browser tests show it (`docs/demo-plc.md`), and one in the gateway tests' fixture machine
+   (`apps/gateway/test/fixture-machine.ts`), whose messages the docs page test checks against the JSON Schema.
 6. **Tests**: the gateway test for config and state, `buildScene` tests for what it draws.
 7. **Docs**: as above.
 

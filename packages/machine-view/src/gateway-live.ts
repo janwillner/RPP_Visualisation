@@ -1,17 +1,19 @@
 import type { ClientMessage, ParametersMessage, WriteResultMessage } from "@rpp/protocol";
-import type { GatewayConnection, SceneSource, SourceInfo } from "@rpp/machine-view";
-import type { ConfiguratorLive } from "./configurator";
+import type { GatewayConnection } from "./gateway-connection";
+import type { SceneSource } from "./scene/scene-model";
+import type { SourceInfo } from "./sources";
 
-type LiveSnapshot = { sources: readonly SourceInfo[]; parameters: Readonly<Record<string, ParametersMessage>> };
+/** The sources and, per source whose PLC has Syn_Config, its parameter sets and recipe. */
+export type LiveSnapshot = { sources: readonly SourceInfo[]; parameters: Readonly<Record<string, ParametersMessage>> };
 
 /** A command not answered within this time counts as failed. */
 const COMMAND_TIMEOUT_MS = 10_000;
 
 /**
- * The gateway as the configurator reads it (ADR 0016, 0017): the connection's sources plus, per source, its PLC's
- * parameter sets, and the commands on them with their answers.
+ * The gateway as the configurator and the Simulator read it (ADR 0016, 0017, 0022): the connection's sources plus, per
+ * source, its PLC's parameter sets and recipe, and the commands on them with their answers.
  */
-export class GatewayLive implements ConfiguratorLive {
+export class GatewayLive {
   private snapshot: LiveSnapshot;
   private readonly listeners = new Set<() => void>();
   /**

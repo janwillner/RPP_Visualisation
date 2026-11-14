@@ -16,6 +16,8 @@ export const WS_PATH = "/ws";
 export const HEALTH_PATH = "/health";
 /** Where the configurator is served (ADR 0016, 0019); everything else of the web is the visualisation. */
 export const CONFIGURATOR_PATH = "/configurator";
+/** Where the Simulator is served (ADR 0020). */
+export const SIMULATOR_PATH = "/simulator";
 export { DOCS_PATH, DOCS_SCHEMA_PATH } from "./docs-page";
 
 /** The answer to a command from a page of another origin. */
@@ -67,14 +69,21 @@ export interface ServerOptions {
   staticDir?: string;
   /** Directory with the built configurator, served at `/configurator/` (ADR 0019). */
   configuratorDir?: string;
+  /** Directory with the built Simulator, served at `/simulator/` (ADR 0020). */
+  simulatorDir?: string;
   /** Release version reported at /health; defaults to this build's. */
   version?: string;
 }
 
 /** One HTTP port serving the built web app plus the WebSocket fan-out, which takes commands on parameter sets only. */
-export function startServer({ gateway, port, host, staticDir, configuratorDir, version = APP_VERSION }: ServerOptions): Promise<Server> {
+export function startServer(options: ServerOptions): Promise<Server> {
+  const { gateway, port, host, staticDir, version = APP_VERSION } = options;
   const root = staticDir ? resolve(staticDir) : undefined;
-  const configuratorRoot = configuratorDir ? resolve(configuratorDir) : undefined;
+  // The apps below their own path (ADR 0019); the visualisation everywhere else.
+  const subApps = [
+    { path: CONFIGURATOR_PATH, name: "configurator", dir: options.configuratorDir },
+    { path: SIMULATOR_PATH, name: "Simulator", dir: options.simulatorDir },
+  ].map((app) => ({ ...app, root: app.dir ? resolve(app.dir) : undefined }));
   const health = watchHealth(gateway, version);
   const docs = createDocsPage(version);
 
@@ -119,14 +128,13 @@ export function startServer({ gateway, port, host, staticDir, configuratorDir, v
       res.writeHead(400).end();
       return;
     }
-    // Two apps (ADR 0019): the configurator below its path, the visualisation everywhere else.
-    const configurator = urlPath === CONFIGURATOR_PATH || urlPath.startsWith(`${CONFIGURATOR_PATH}/`);
-    const appRoot = configurator ? configuratorRoot : root;
+    const subApp = subApps.find((app) => urlPath === app.path || urlPath.startsWith(`${app.path}/`));
+    const appRoot = subApp ? subApp.root : root;
     if (!appRoot) {
-      res.writeHead(404).end(configurator ? "No configurator directory configured" : "No static directory configured");
+      res.writeHead(404).end(subApp ? `No ${subApp.name} directory configured` : "No static directory configured");
       return;
     }
-    let file = normalize(join(appRoot, configurator ? urlPath.slice(CONFIGURATOR_PATH.length) : urlPath));
+    let file = normalize(join(appRoot, subApp ? urlPath.slice(subApp.path.length) : urlPath));
     if (file !== appRoot && !file.startsWith(appRoot + sep)) {
       res.writeHead(403).end();
       return;

@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="E_VisuMessageSeverity" Id="{52572bf1-d1c0-41f6-89c1-9f31aad0fe46}">
+    <Declaration><![CDATA[(* How serious a machine message is (contract, protocol 22): ST_VisuMachineMessage.eSeverity. *)
+{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_VisuMessageSeverity :
+(
+	(* Values are part of the gateway contract: append, never renumber. *)
+	ERROR := 0,
+	WARNING := 1,
+	INFO := 2
+) UINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

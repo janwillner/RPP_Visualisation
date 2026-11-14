@@ -34,13 +34,6 @@ Baseline on a development PC (Vitest, mean values, before any of the improvement
 | 2000 | 23.5 ms | 0.8 ms | 4.1 ms | 0.9 ms | 1.3 ms | 5.9 ms |
 | 4800 | 89.7 ms | 2.4 ms | 10.3 ms | 2.7 ms | 3.6 ms | 18.1 ms |
 
-## Load in the simulator: `--sim-products`
-
-`pnpm dev:gateway -- --sim-products 4000` (or `pnpm start -- --sim-products 4000`) adds a buffer belt at Y = 9000 to
-the simulator: ten lanes, a row every 150 mm, as long as needed for that many products (at most `VISU_un_MAX_PRODUCTS`
-less a few rows). It is full from the start; a row enters at its start every 0.5 s and leaves beyond its end, and every
-25th product is rejected halfway, so the register keeps changing. Without the option the simulator is unchanged.
-
 ## Live figures: `/health`
 
 Every source in `GET /health` has `acquisition` once states arrive, over the last 250 snapshots (about 5 s):
@@ -62,7 +55,7 @@ arrive late.
 The demo application (`plc/Syn_Visu_Demo`) has a stress belt at Y = 11000, off by default. To measure:
 
 1. Log in to the demo (ADS port 852) and write `DEMO_GlobalVar.DEMO_un_StressProducts`, e.g. 4000. The belt joins the
-   manifest, fills up within a few seconds and keeps changing like the simulator's buffer belt; every row entering
+   manifest, fills up within a few seconds and keeps changing; every row entering
    rejects one product of the row half a belt ahead (`m_SetProductState` on a full register).
 2. Read `P_VisuDemoStress.udn_LastExecTime` and `udn_MaxExecTime` (task execution time in 100 ns, all demo programs)
    and `udn_ExceededCount` (cycles over the task cycle time). `b_ResetMax := TRUE` starts them again. Compare with
@@ -136,8 +129,8 @@ the products that changed, plus the ids of the whole register.
 
 | 4000 to 4800 products | Whole states | Register form |
 | --- | --- | --- |
-| State message (simulator, 4083 products) | 757 KB | 25 KB, most of it the id list |
-| To one browser | 17 MB/s (PLC, 4135 products) | 0.9 MB/s (simulator) |
+| State message (the gateway's former simulator, 4083 products) | 757 KB | 25 KB, most of it the id list |
+| To one browser | 17 MB/s (PLC, 4135 products) | 0.9 MB/s (former simulator) |
 | Receiving in the browser (`pnpm bench`, 4800 products, 4 % changed) | 11.0 ms | 1.2 ms (parse, check, decode) |
 
 The gateway's own cost is unchanged by this: reading and mapping still handle every product in every cycle.
@@ -187,8 +180,8 @@ product that enters or leaves. Product snap points are built only in measure mod
 | --- | --- | --- |
 | Build the machine scene | 13.9 ms | 5.9 ms (13.9 ms while measuring) |
 
-In the browser (Edge, RTX 4080 through ANGLE/D3D11, 1280 × 800, simulator with 4000 products on the buffer belt,
-already with changes on the WebSocket):
+In the browser (Edge, RTX 4080 through ANGLE/D3D11, 1280 × 800, the gateway's former simulator (removed, ADR 0020)
+with 4000 products on a buffer belt, already with changes on the WebSocket):
 
 | | Before | After |
 | --- | --- | --- |
@@ -225,12 +218,12 @@ robot state on the other belts) all happened.
 
 The TCP limit areas are checked every frame (scene) and for every state message (timeline, also for the replay
 buffer). Their cost grows with the robots and movers, not with the products. Measured with `tsx` on a development PC
-(mean values; the simulator machine: three robots with a TCP limit area, the IDH with four movers):
+(mean values; the former simulator's machine: three robots with a TCP limit area, the IDH with four movers):
 
 | | First version | Now |
 | --- | --- | --- |
 | Machine scene per frame, extra for the TCP limit areas | 65 µs | 23 µs |
-| `limitViolations`, simulator machine | 34 µs | 8 µs |
+| `limitViolations`, former simulator's machine | 34 µs | 8 µs |
 | `limitViolations`, a machine without TCP limit areas | 3 µs | 0.8 µs |
 | `limitViolations`, one gantry with 32 movers (every pair checked) | 630 µs | 32 µs |
 | Timeline per state message, extra | 34 µs | 8 µs |

@@ -1,0 +1,37 @@
+/* The Simulator's own look, after the shared styles of @rpp/machine-view. */
+
+.simulator .toolbar {
+  gap: 8px;
+}
+
+.simulator .toolbar select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.simulator .recipe fieldset {
+  margin: 10px 0 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.simulator .recipe fieldset.selected {
+  border-color: var(--accent);
+}
+
+.simulator .recipe-field.changed > .property > span {
+  font-weight: 600;
+}
+
+.simulator .recipe-field .hint {
+  margin: -2px 0 6px;
+  font-size: 12px;
+}
+
+.simulator .recipe > .group {
+  margin: 8px 0;
+}

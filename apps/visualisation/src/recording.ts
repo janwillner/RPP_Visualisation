@@ -10,9 +10,8 @@ import {
   type RecordingFileHeader,
   type StateMessage,
 } from "@rpp/protocol";
-import { type SceneSource, type SourceInfo, Sources } from "@rpp/machine-view";
+import { ProductHistory, type SceneSource, type SourceInfo, Sources } from "@rpp/machine-view";
 import { EventTracker, type TimelineEvent } from "./timeline-events";
-import { ProductHistory } from "./product-history";
 
 export { eventTime, type TimelineEvent, type TimelineEventKind } from "./timeline-events";
 
@@ -415,10 +414,11 @@ function buildView(
 }
 
 /**
- * Protocol versions whose recordings this version plays: its own, and 20, which differs only by having no product
- * marks (a product without a mark plays unmarked, `productMark`; a config without marks names none).
+ * Protocol versions whose recordings this version plays: its own; 21, which differs only by having no machine reports
+ * (a source without one has no machine); and 20, which has no product marks either (a product without a mark plays
+ * unmarked, `productMark`; a config without marks names none).
  */
-const PLAYABLE_PROTOCOL_VERSIONS: ReadonlySet<number> = new Set([20, PROTOCOL_VERSION]);
+const PLAYABLE_PROTOCOL_VERSIONS: ReadonlySet<number> = new Set([20, 21, PROTOCOL_VERSION]);
 
 function checkedHeader(line: string): [SourceInfo[], string] {
   let header: Partial<FileHeader>;

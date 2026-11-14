@@ -1,0 +1,26 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="TVisuDemo_Recipe" Id="{892377fe-9dbd-4716-824b-cc529e9388da}">
+    <Declaration><![CDATA[(* The demo's effective recipe (ADR 0022): what P_VisuDemoMachine reads from its Syn_Config machine FB every cycle
+   and the Delta application runs with: Infeed 1's belt, Delta 1 and the product generator before Vision 1. *)
+TYPE TVisuDemo_Recipe :
+STRUCT
+	lr_BeltSpeed						: LREAL;	// [mm/s] Infeed 1
+	lr_BeltAccel						: LREAL;	// [mm/s2] Infeed 1, also its deceleration
+	lr_RobotSpeed						: LREAL;	// [%] Delta 1, of its maximum TCP speed
+	lr_RobotAccel						: LREAL;	// [%] Delta 1, of its maximum TCP acceleration
+	dn_PicksPerCycle					: DINT;	// [-] Delta 1 picks this many products before it places them: 1 or 2
+	lr_Rate								: LREAL;	// [1/min] places the generator fills per minute at the recipe's belt speed
+	dn_Lanes							: DINT;	// [-] lanes across the belt, 1..4; each product goes into one at random
+	lr_LanePitch						: LREAL;	// [mm] between the lanes, centred on the belt
+	dn_TypeMix							: DINT;	// [-] 0 = every type, 1 = boxes, 2 = round (can, oval)
+	lr_ScatterX							: LREAL;	// [mm] at most along the belt, either way
+	lr_ScatterY							: LREAL;	// [mm] at most across the belt, either way
+	lr_ScatterRz						: LREAL;	// [deg] at most turned, either way
+	lr_GapShare							: LREAL;	// [%] of the generator's places left empty
+	dn_Seed								: DINT;	// [-] of the generator's pseudo-random numbers: the same seed gives the same products
+	b_Feed								: BOOL;	// TRUE: the generator feeds products
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

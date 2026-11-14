@@ -376,7 +376,8 @@ Idempotent: call it every cycle. The symbol path the gateway reads comes from th
 Syn_Visu (VISU_un_INSTANCE_PATH_SKIP).<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
-FALSE for vi_udn_Id = 0, an id already used by a different entry, or a full manifest.<br>
+FALSE for vi_udn_Id = 0 (but for _FB_ConfigMachine, which registers with id 0), an id already used by a<br>
+different entry, or a full manifest.<br>
 ****************************************************************************************************)
 METHOD m_Register : BOOL
 VAR_IN_OUT
@@ -395,7 +396,8 @@ END_VAR]]></Declaration>
 vio_Manifest.nProtocolVersion := CONFIG_GlobalConst.CONFIG_un_PROTOCOL_VERSION;
 vio_Manifest.sLibraryVersion := CONFIG_GlobalConst.CONFIG_str_LIBRARY_VERSION;
 e_TempType := m_ComponentType();
-IF vi_udn_Id = 0 OR e_TempType = SynVisu.E_VisuComponentType.NONE THEN
+(* Id 0 is the machine FB's, whose type is NONE (_FB_ConfigMachine); every parameter FB has a component's id. *)
+IF (vi_udn_Id = 0) <> (e_TempType = SynVisu.E_VisuComponentType.NONE) THEN
 	RETURN;
 END_IF
 IF str_SymbolPath = '' THEN

@@ -8,7 +8,8 @@
     "dev:gateway": "pnpm --filter @rpp/gateway dev",
     "dev:visualisation": "pnpm --filter @rpp/visualisation dev",
     "dev:configurator": "pnpm --filter @rpp/configurator dev",
-    "build": "pnpm --filter @rpp/visualisation build && pnpm --filter @rpp/configurator build",
+    "dev:simulator": "pnpm --filter @rpp/simulator dev",
+    "build": "pnpm --filter @rpp/visualisation build && pnpm --filter @rpp/configurator build && pnpm --filter @rpp/simulator build",
     "start": "pnpm --filter @rpp/gateway start",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run",
@@ -16,7 +17,7 @@
     "bench": "vitest bench --run",
     "build:bridge": "dotnet build apps/ads-bridge -c Release",
     "package": "node scripts/package.mjs",
-    "test:e2e": "pnpm --filter @rpp/visualisation test:e2e && pnpm --filter @rpp/configurator test:e2e"
+    "test:e2e": "pnpm --filter @rpp/visualisation test:e2e && pnpm --filter @rpp/configurator test:e2e && pnpm --filter @rpp/simulator test:e2e"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

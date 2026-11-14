@@ -7,9 +7,8 @@ import {
   type Product,
   type StateMessage,
 } from "@rpp/protocol";
-import type { SourceInfo } from "@rpp/machine-view";
+import type { SourceInfo } from "../src/sources";
 import { ProductHistory } from "../src/product-history";
-import { Recorder, Recording } from "../src/recording";
 
 const A = "ads:5.1.2.3.1.1:851";
 
@@ -264,20 +263,5 @@ describe("product history", () => {
     expect(history.of(A, 1, 1)).toEqual([]);
     expect(history.of(A, 1, 2).length).toBe(1);
     expect(history.of(A, 1, 3).length).toBe(1);
-  });
-
-  it("is part of a recording, also of one opened from a file", async () => {
-    const recorder = new Recorder([source]);
-    recorder.add(0, register(0, [product(5, "detected")]));
-    recorder.add(500, register(0, [product(5, "picked", 10)]));
-    recorder.add(800, register(0, []));
-    const recording = await recorder.stop();
-
-    for (const opened of [recording, await Recording.fromFile(await recording.toFile())]) {
-      expect(opened.products.of(A, 1, 5, 600).map((s) => s.text)).toEqual([
-        "Entered the register (detected)",
-        "Picked by client #10",
-      ]);
-    }
   });
 });

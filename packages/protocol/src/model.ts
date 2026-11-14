@@ -11,8 +11,14 @@ import { z } from "zod";
  * generated from them (ADR 0012), and a test fails for a field without one.
  */
 
-/** Version of the PLC <-> gateway contract. Must match `nProtocolVersion` in the PLC manifest. */
-export const PROTOCOL_VERSION = 21;
+/** Version of the PLC <-> gateway contract that the PLC manifest's `nProtocolVersion` reports (22: the machine entry). */
+export const PROTOCOL_VERSION = 22;
+
+/**
+ * The oldest protocol version the gateway still reads. A PLC of protocol 21 differs from 22 only by the missing machine
+ * entry (run state, simulation mode, machine messages; ADR 0021), so it is read as before.
+ */
+export const MIN_PROTOCOL_VERSION = 21;
 
 /** Product marks a PLC can give a product (`Product.mark` 1 to `MAX_MARKS`; protocol 21). */
 export const MAX_MARKS = 4;
@@ -705,15 +711,15 @@ export const GatewayStatusSchema = z
 export type GatewayStatus = z.infer<typeof GatewayStatusSchema>;
 
 /**
- * A PLC the gateway reads, as `ads:<AmsNetId>:<port>` (`sim` for the simulator). Every message carries it, and manifest
+ * A PLC the gateway reads, as `ads:<AmsNetId>:<port>`. Every message carries it, and manifest
  * ids are unique only within one source.
  */
 export const SourceIdSchema = z
   .string()
   .min(1)
   .describe(
-    "The PLC (source) the message is about, as `ads:<AmsNetId>:<port>` (`sim` for the simulator). Manifest ids are " +
-      "unique only within one source.",
+    "The PLC (source) the message is about, as `ads:<AmsNetId>:<port>`. Manifest ids are unique only within one " +
+      "source.",
   );
 
 export const ProductMarkSchema = z
@@ -789,7 +795,59 @@ export const StatusMessageSchema = z
   );
 export type StatusMessage = z.infer<typeof StatusMessageSchema>;
 
+/** What the application reports its machine is doing. */
+export const RunStateSchema = z
+  .enum(["stopped", "starting", "running", "stopping", "fault"])
+  .describe("What the application reports its machine is doing: `stopped`, `starting`, `running`, `stopping` or `fault`.");
+export type RunState = z.infer<typeof RunStateSchema>;
+
+export const MessageSeveritySchema = z
+  .enum(["error", "warning", "info"])
+  .describe("How serious a machine message is: `error`, `warning` or `info`.");
+export type MessageSeverity = z.infer<typeof MessageSeveritySchema>;
+
+/** A message the application raises and clears about its whole machine or one component (protocol 22). */
+export const MachineMessageSchema = z
+  .object({
+    id: int("The application's number of the message; unique within the source while it is listed."),
+    severity: MessageSeveritySchema,
+    text: z.string().describe("The message for the operator."),
+    time: TimestampSchema.describe(
+      "When the message appeared last: PLC distributed clock time in ns since 2000-01-01, as a decimal string.",
+    ),
+    active: z.boolean().describe("The message is active; false once the application cleared it (gone)."),
+    componentId: int("Manifest id of the component the message is about; 0 for the whole machine."),
+  })
+  .describe(
+    "A machine message: raised and cleared by the application, about its whole machine or one component. A gone " +
+      "message stays listed until the application's register needs its place.",
+  );
+export type MachineMessage = z.infer<typeof MachineMessageSchema>;
+
+/** The machine entry as the PLC reports it: run state, simulation mode and machine messages (protocol 22, ADR 0021). */
+export const MachineSchema = z
+  .object({
+    runState: RunStateSchema,
+    runStateText: z.string().describe("What the application says about its run state, e.g. why it is in a fault."),
+    simulation: z
+      .boolean()
+      .describe("The application runs without real hardware (simulation mode): nothing real moves when it is started."),
+    messages: z.array(MachineMessageSchema).describe("The machine messages, active and gone, in the application's order."),
+  })
+  .describe("The machine as its application reports it: run state, simulation mode and machine messages.");
+export type Machine = z.infer<typeof MachineSchema>;
+
+export const MachineReportSchema = MachineSchema.extend({
+  kind: z.literal("machine").describe("Message kind: always `machine`."),
+  sourceId: SourceIdSchema,
+}).describe(
+  "The machine of one source as its application reports it: run state, simulation mode and machine messages " +
+    "(protocol 22). Sent when it changes, and to every new client right after it connects; not sent for an " +
+    "application without the machine entry.",
+);
+export type MachineReport = z.infer<typeof MachineReportSchema>;
+
 export const GatewayMessageSchema = z
-  .discriminatedUnion("kind", [ConfigMessageSchema, StateMessageSchema, StatusMessageSchema])
+  .discriminatedUnion("kind", [ConfigMessageSchema, StateMessageSchema, StatusMessageSchema, MachineReportSchema])
   .describe("Every message the gateway sends on the WebSocket, one JSON object per WebSocket text message.");
 export type GatewayMessage = z.infer<typeof GatewayMessageSchema>;

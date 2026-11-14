@@ -1,11 +1,42 @@
 import { readFile } from "node:fs/promises";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 /** The draft's problems, listed above the status bar once its count is clicked. */
 async function problems(page: Page) {
   const list = page.locator("ul.problems");
   if (!(await list.isVisible())) await page.locator("footer").getByRole("button", { name: /problems?$/ }).click();
   return list;
+}
+
+/** Imports the demo PLC's components into a new draft; gives the component list. */
+async function importDemo(page: Page): Promise<Locator> {
+  await page.goto("/configurator");
+  await page.locator("aside.panel.left .plcs").getByRole("button", { name: "Import" }).first().click();
+  return page.locator("aside.panel.left .components");
+}
+
+/**
+ * Returns a component of the demo PLC to its program values, unless it runs them already; true when it did. The demo
+ * keeps a written parameter set, so every test that writes one returns it at its end, and at its start in case an
+ * earlier run stopped halfway.
+ */
+async function returnToProgramValues(page: Page, component: Locator): Promise<boolean> {
+  await component.click();
+  const properties = page.locator("aside.panel.right");
+  await expect(properties).toContainText(/Parameter set v\d+ active in the PLC|The PLC runs its program values/);
+  const reset = properties.getByRole("button", { name: "Reset to program values" });
+  if (!(await reset.isVisible())) return false;
+  page.once("dialog", (dialog) => void dialog.accept());
+  await reset.click();
+  await expect(properties).toContainText("The PLC runs its program values");
+  return true;
+}
+
+/** Imports the demo PLC's components with the named one on its program values; gives that one in the list. */
+async function importDemoAtProgramValues(page: Page, name: RegExp): Promise<Locator> {
+  const list = await importDemo(page);
+  if (!(await returnToProgramValues(page, list.getByRole("button", { name })))) return list.getByRole("button", { name });
+  return (await importDemo(page)).getByRole("button", { name });
 }
 
 /** Every uncaught error in the page fails the test that saw it. */
@@ -93,16 +124,17 @@ test("configurator: gives a Delta a zone on the conveyor and the conveyor a prod
   await expect(properties.getByRole("group", { name: "Product type 1" })).toHaveCount(0);
 });
 
-test("configurator: imports the simulator's configuration, reconciles it and marks a changed component", async ({ page }) => {
+test("configurator: imports the demo PLC's configuration, reconciles it and marks a changed component", async ({ page }) => {
   await page.goto("/configurator");
   const plcs = page.locator("aside.panel.left .plcs");
-  await expect(plcs).toContainText("Simulator");
+  // The demo PLC, by its AmsNetId and port.
+  await expect(plcs).toContainText(":852");
   await plcs.getByRole("button", { name: "Import" }).first().click();
 
   const list = page.locator("aside.panel.left .components");
   const delta = list.getByRole("button", { name: /Delta 1/ });
   await expect(delta).toContainText("PLC");
-  await expect(list.getByRole("button", { name: /Infeed/ })).toContainText("PLC");
+  await expect(list.getByRole("button", { name: /Infeed 1/ })).toContainText("PLC");
 
   await delta.click();
   const x = page.locator("aside.panel.right fieldset").filter({ hasText: "Pose" }).first().getByLabel("X", { exact: true });
@@ -112,11 +144,8 @@ test("configurator: imports the simulator's configuration, reconciles it and mar
   await expect(page.locator(".statusbar")).toContainText("Gateway: open");
 });
 
-test("configurator: writes a changed zone to the simulator, which takes it over and shows it", async ({ page }) => {
-  await page.goto("/configurator");
-  await page.locator("aside.panel.left .plcs").getByRole("button", { name: "Import" }).first().click();
-  const list = page.locator("aside.panel.left .components");
-  const delta = list.getByRole("button", { name: /Delta 1/ });
+test("configurator: writes a changed zone to the demo PLC, which takes it over and shows it", async ({ page }) => {
+  const delta = await importDemoAtProgramValues(page, /Delta 1/);
   await delta.click();
 
   const zone = page.locator("aside.panel.right").getByRole("group", { name: "Zone 1" });
@@ -134,9 +163,10 @@ test("configurator: writes a changed zone to the simulator, which takes it over 
   await dialog.getByRole("button", { name: "Write", exact: true }).click();
 
   await expect(delta).toContainText("written");
-  // The simulated application passed the new set on to Syn_Visu: the PLC now has what the draft has.
+  // The demo application passed the new set on to Syn_Visu: the PLC now has what the draft has.
   await expect(delta).toContainText("PLC");
   await expect(delta).not.toContainText("changed");
+  expect(await returnToProgramValues(page, delta)).toBe(true);
 });
 
 test("configurator: edits an XTS loop's modules, a station's bodies and a Cartesian robot's limit area", async ({ page }) => {
@@ -167,10 +197,8 @@ test("configurator: edits an XTS loop's modules, a station's bodies and a Cartes
   await expect(properties.getByRole("button", { name: "Add limit area" })).toBeVisible();
 });
 
-test("configurator: writes an XTS gantry's track to the simulator", async ({ page }) => {
-  await page.goto("/configurator");
-  await page.locator("aside.panel.left .plcs").getByRole("button", { name: "Import" }).first().click();
-  const idh = page.locator("aside.panel.left .components").getByRole("button", { name: /^IDH #30/ });
+test("configurator: writes an XTS gantry's track to the demo PLC", async ({ page }) => {
+  const idh = await importDemoAtProgramValues(page, /^IDH #30/);
   await idh.click();
 
   const properties = page.locator("aside.panel.right");
@@ -186,6 +214,7 @@ test("configurator: writes an XTS gantry's track to the simulator", async ({ pag
   await expect(idh).toContainText("written");
   await expect(idh).toContainText("PLC");
   await expect(idh).not.toContainText("changed");
+  expect(await returnToProgramValues(page, idh)).toBe(true);
 });
 
 test("configurator: lays out a Delta's gripper fingers in the top view of its flange", async ({ page }) => {

@@ -25,7 +25,9 @@ export const STATUS = {
   missed: "#ff5fa2",
   offline: "#ffa726",
   online: "#5fd39a",
-  /** Interface accent; also the working areas. */
+  /** A machine message that warns, and a run state on its way (starting, stopping): amber, lighter than offline. */
+  warning: "#ffca28",
+  /** Interface accent; also the working areas and a machine message that informs. */
   accent: "#4fc3f7",
 } as const;
 
@@ -115,6 +117,7 @@ export function paletteCssVariables(): Record<string, string> {
     "--select": STATUS.select,
     "--missed": STATUS.missed,
     "--offline": STATUS.offline,
+    "--warning": STATUS.warning,
     "--stage-top": STAGE.backgroundTop,
     "--stage-bottom": STAGE.backgroundBottom,
   };

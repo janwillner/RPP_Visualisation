@@ -28,6 +28,72 @@ export const PLC_CONFIG_MANIFEST_TYPE = "ST_ConfigManifest";
 /** E_ConfigResult: what became of the last staged set. */
 export const E_ConfigResult = { NONE: 0, PENDING: 1, APPLIED: 2, REJECTED: 3 } as const;
 
+/** E_ConfigFieldType: how a recipe field's value is kept (config protocol 3); the protocol's `RecipeFieldType` by index. */
+export const E_ConfigFieldType = { NUMBER: 0, INTEGER: 1, SWITCH: 2, CHOICE: 3 } as const;
+
+/** E_ConfigCommand: what a machine command asks (config protocol 3). */
+export const E_ConfigCommand = { NONE: 0, START: 1, STOP: 2, RESET: 3 } as const;
+
+/** E_ConfigCommandResult: what the application made of the last machine command. */
+export const E_ConfigCommandResult = { NONE: 0, ACCEPTED: 1, REJECTED: 2 } as const;
+
+/** PLC data type of the machine FB's `vo_Config` (`_FB_ConfigMachine`, config protocol 3, ADR 0022). */
+export const PLC_CONFIG_MACHINE_TYPE = "ST_ConfigMachine";
+
+/** Library defaults of Syn_Config (`CONFIG_GlobalConst_Param`). */
+export const MAX_RECIPE_FIELDS = 64;
+export const MAX_CHOICES = 8;
+
+/** One recipe field as the application declares it with `_FB_ConfigMachine.m_DeclareField`. */
+export interface ST_ConfigRecipeField {
+  /** STRING(31), unique in the recipe. */
+  sName: string;
+  /** Manifest id of the Syn_Visu component it belongs to; 0 = the whole machine. */
+  nGroup: number;
+  /** E_ConfigFieldType */
+  eType: PlcEnum;
+  /** STRING(15) */
+  sUnit: string;
+  fMin: number;
+  fMax: number;
+  fProgramValue: number;
+  nChoiceCount: number;
+  /** STRING(31) each: the names of a choice field's values, from value 0. */
+  aChoices: string[];
+}
+
+/** Written by the gateway, `bRequested` last; the machine FB clears it once the application answered. */
+export interface ST_ConfigCommand {
+  nCommandId: number;
+  /** E_ConfigCommand */
+  eCommand: PlcEnum;
+  bRequested: boolean;
+}
+
+export interface ST_ConfigCommandStatus {
+  nHandledCommandId: number;
+  /** E_ConfigCommandResult */
+  eResult: PlcEnum;
+  /** STRING(80): why the application rejected it. */
+  sMessage: string;
+}
+
+/**
+ * `vo_Config` of the machine FB, listed in the config manifest with id 0 and type NONE: the recipe's declared fields
+ * (read at discovery), its staging (written, values by field index, a value of every type as LREAL), its status and
+ * effective values (read every cycle), the machine command (written) and its answer (read every cycle).
+ */
+export interface ST_ConfigMachine {
+  nFieldCount: number;
+  aFields: ST_ConfigRecipeField[];
+  stStaging: ST_ConfigStaging;
+  aStaged: number[];
+  stStatus: ST_ConfigStatus;
+  aActive: number[];
+  stCommand: ST_ConfigCommand;
+  stCommandStatus: ST_ConfigCommandStatus;
+}
+
 export interface ST_ConfigManifestEntry {
   /** Id of the Syn_Visu component the parameter FB is for. */
   nId: number;

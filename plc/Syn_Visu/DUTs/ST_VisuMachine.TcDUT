@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4026.18">
+  <DUT Name="ST_VisuMachine" Id="{037f9ed4-b68c-467f-b17e-229e82fc7352}">
+    <Declaration><![CDATA[(* The machine entry (contract, protocol 22, ADR 0021): what the application reports about its whole machine. The
+   application declares one instance next to its manifest, GVL_Visu.stMachine, and sets it with _FB_VisuMachine every
+   cycle; the gateway reads it when it is there. It is not a component: no manifest entry, no pose, no body. *)
+TYPE ST_VisuMachine :
+STRUCT
+	eRunState : E_VisuRunState;
+	sRunStateText : STRING(80); // what the application says about its run state, e.g. why it is in a fault
+	bSimulation : BOOL; // TRUE: the application runs without real hardware (simulation mode)
+	nMessageCount : UINT; // entries [0..nMessageCount-1] are listed
+	aMessages : ARRAY[0..VISU_GlobalConst_Param.VISU_un_MAX_MACHINE_MESSAGES - 1] OF ST_VisuMachineMessage;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

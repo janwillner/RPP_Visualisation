@@ -1,4 +1,5 @@
-import { componentName, type SourceInfo } from "@rpp/machine-view";
+import { componentName } from "./naming";
+import type { SourceInfo } from "./sources";
 import { clientAction, type ClientAction, type ProductEvent } from "./product-history";
 
 /** The metrics look back this far. */

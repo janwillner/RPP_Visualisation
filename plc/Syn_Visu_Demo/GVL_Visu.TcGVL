@@ -1,10 +1,12 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <TcPlcObject Version="1.1.0.1">
   <GVL Name="GVL_Visu" Id="{c3c96fb2-d0a3-44e3-b0ba-30f06bf970c2}">
-    <Declaration><![CDATA[(* The application's manifest (ADR-0003): the gateway starts discovery at GVL_Visu.stManifest. *)
+    <Declaration><![CDATA[(* The application's manifest (ADR-0003): the gateway starts discovery at GVL_Visu.stManifest. Next to it the machine
+   entry (protocol 22, ADR 0021): run state, simulation mode and machine messages, set by P_VisuDemo. *)
 {attribute 'qualified_only'}
 VAR_GLOBAL
 	stManifest : ST_VisuManifest;
+	stMachine : ST_VisuMachine;
 END_VAR]]></Declaration>
   </GVL>
 </TcPlcObject>

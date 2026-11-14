@@ -1,0 +1,217 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_TestMachine" Id="{37ff85c1-25d7-46f3-a00d-11f8e43353d3}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+TcUnit test suite of _FB_VisuMachine: run state and simulation mode in the machine entry, machine messages set<br>
+by their level, gone messages kept, and a full register making room with its oldest gone message.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Visu 9.7.0  ¦ 2026-11-13 ¦ J.Willner ¦ Unit tests of the machine entry (protocol 22)<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_TestMachine EXTENDS TcUnit.FB_TestSuite
+VAR
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[m_RunStateAndSimulation();
+m_MessageRaisedAndCleared();
+m_MessageIdZeroRefused();
+m_FullRegisterMakesRoom();]]></ST>
+    </Implementation>
+    <Method Name="m_FullRegisterMakesRoom" Id="{763d9bb1-efe1-48e7-a3fa-cb00c57a8eac}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A register full of active messages refuses a new one. Once some are gone, a new message takes the place of the<br>
+oldest gone one (by its time): the others keep their order, the new one is last.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_FullRegisterMakesRoom
+VAR_INST
+	fb_TempMachine						: _FB_VisuMachine;
+	TempMachine							: ST_VisuMachine;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR
+VAR
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('FullRegisterMakesRoom');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempMachine.m_Register(vio_Machine := TempMachine);
+FOR un_TempIndex := 1 TO VISU_GlobalConst_Param.VISU_un_MAX_MACHINE_MESSAGES DO
+	fb_TempMachine.m_SetMessage(vi_udn_Id := un_TempIndex, vi_b_Active := TRUE,
+		vi_e_Severity := E_VisuMessageSeverity.INFO, vi_str_Text := '', vi_udn_ComponentId := 0);
+END_FOR
+AssertEquals_UINT(Expected := VISU_GlobalConst_Param.VISU_un_MAX_MACHINE_MESSAGES, Actual := TempMachine.nMessageCount,
+	Message := 'register full');
+AssertFalse(Condition := fb_TempMachine.m_SetMessage(vi_udn_Id := 100, vi_b_Active := TRUE,
+	vi_e_Severity := E_VisuMessageSeverity.INFO, vi_str_Text := '', vi_udn_ComponentId := 0),
+	Message := 'full of active messages: a new one is refused');
+
+(* Messages 3 and 5 go; 5 appeared earlier, so it is the oldest gone one. *)
+fb_TempMachine.m_SetMessage(vi_udn_Id := 3, vi_b_Active := FALSE, vi_e_Severity := E_VisuMessageSeverity.INFO,
+	vi_str_Text := '', vi_udn_ComponentId := 0);
+fb_TempMachine.m_SetMessage(vi_udn_Id := 5, vi_b_Active := FALSE, vi_e_Severity := E_VisuMessageSeverity.INFO,
+	vi_str_Text := '', vi_udn_ComponentId := 0);
+TempMachine.aMessages[2].nTime := 2000;
+TempMachine.aMessages[4].nTime := 1000;
+AssertTrue(Condition := fb_TempMachine.m_SetMessage(vi_udn_Id := 100, vi_b_Active := TRUE,
+	vi_e_Severity := E_VisuMessageSeverity.ERROR, vi_str_Text := 'New', vi_udn_ComponentId := 0),
+	Message := 'with gone messages: a new one is listed');
+AssertEquals_UINT(Expected := VISU_GlobalConst_Param.VISU_un_MAX_MACHINE_MESSAGES, Actual := TempMachine.nMessageCount,
+	Message := 'still full');
+AssertEquals_UDINT(Expected := 4, Actual := TempMachine.aMessages[3].nId, Message := 'message 4 before the gap');
+AssertEquals_UDINT(Expected := 6, Actual := TempMachine.aMessages[4].nId, Message := 'message 5 left, 6 moved up');
+AssertEquals_UDINT(Expected := 3, Actual := TempMachine.aMessages[2].nId, Message := 'message 3, gone later, stays');
+AssertEquals_UDINT(Expected := 100, Actual := TempMachine.aMessages[VISU_GlobalConst_Param.VISU_un_MAX_MACHINE_MESSAGES - 1].nId,
+	Message := 'the new message is last');
+AssertTrue(Condition := TempMachine.aMessages[VISU_GlobalConst_Param.VISU_un_MAX_MACHINE_MESSAGES - 1].bActive,
+	Message := 'the new message is active');
+
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_MessageIdZeroRefused" Id="{9ef02cd4-e1d5-4b57-995d-5d32d7d7cd72}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A message with id 0 is refused and not listed.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_MessageIdZeroRefused
+VAR_INST
+	fb_TempMachine						: _FB_VisuMachine;
+	TempMachine							: ST_VisuMachine;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('MessageIdZeroRefused');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempMachine.m_Register(vio_Machine := TempMachine);
+AssertFalse(Condition := fb_TempMachine.m_SetMessage(vi_udn_Id := 0, vi_b_Active := TRUE,
+	vi_e_Severity := E_VisuMessageSeverity.ERROR, vi_str_Text := 'x', vi_udn_ComponentId := 0),
+	Message := 'id 0 refused');
+AssertEquals_UINT(Expected := 0, Actual := TempMachine.nMessageCount, Message := 'nothing listed');
+
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_MessageRaisedAndCleared" Id="{815a5673-02e4-4e77-b1e0-2e9eed32f0de}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A message set active is listed with its severity, text and component; set again it stays one entry and follows<br>
+the inputs. Cleared it is gone but still listed; set active again it is the same entry, active once more. Clearing<br>
+a message that was never listed lists nothing.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_MessageRaisedAndCleared
+VAR_INST
+	fb_TempMachine						: _FB_VisuMachine;
+	TempMachine							: ST_VisuMachine;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('MessageRaisedAndCleared');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+fb_TempMachine.m_Register(vio_Machine := TempMachine);
+AssertTrue(Condition := fb_TempMachine.m_SetMessage(vi_udn_Id := 7, vi_b_Active := TRUE,
+	vi_e_Severity := E_VisuMessageSeverity.WARNING, vi_str_Text := 'Reject bin almost full', vi_udn_ComponentId := 60),
+	Message := 'a new message is listed');
+AssertEquals_UINT(Expected := 1, Actual := TempMachine.nMessageCount, Message := 'one message');
+AssertEquals_UDINT(Expected := 7, Actual := TempMachine.aMessages[0].nId, Message := 'its id');
+AssertTrue(Condition := TempMachine.aMessages[0].bActive, Message := 'active');
+AssertTrue(Condition := TempMachine.aMessages[0].eSeverity = E_VisuMessageSeverity.WARNING, Message := 'severity WARNING');
+AssertEquals_STRING(Expected := 'Reject bin almost full', Actual := TempMachine.aMessages[0].sText, Message := 'its text');
+AssertEquals_UDINT(Expected := 60, Actual := TempMachine.aMessages[0].nComponentId, Message := 'its component');
+
+fb_TempMachine.m_SetMessage(vi_udn_Id := 7, vi_b_Active := TRUE, vi_e_Severity := E_VisuMessageSeverity.ERROR,
+	vi_str_Text := 'Reject bin full', vi_udn_ComponentId := 60);
+AssertEquals_UINT(Expected := 1, Actual := TempMachine.nMessageCount, Message := 'set again: still one message');
+AssertTrue(Condition := TempMachine.aMessages[0].eSeverity = E_VisuMessageSeverity.ERROR, Message := 'severity follows');
+AssertEquals_STRING(Expected := 'Reject bin full', Actual := TempMachine.aMessages[0].sText, Message := 'text follows');
+
+fb_TempMachine.m_SetMessage(vi_udn_Id := 7, vi_b_Active := FALSE, vi_e_Severity := E_VisuMessageSeverity.ERROR,
+	vi_str_Text := 'Reject bin full', vi_udn_ComponentId := 60);
+AssertEquals_UINT(Expected := 1, Actual := TempMachine.nMessageCount, Message := 'cleared: still listed');
+AssertFalse(Condition := TempMachine.aMessages[0].bActive, Message := 'cleared: gone');
+
+fb_TempMachine.m_SetMessage(vi_udn_Id := 7, vi_b_Active := TRUE, vi_e_Severity := E_VisuMessageSeverity.ERROR,
+	vi_str_Text := 'Reject bin full', vi_udn_ComponentId := 60);
+AssertEquals_UINT(Expected := 1, Actual := TempMachine.nMessageCount, Message := 'raised again: the same entry');
+AssertTrue(Condition := TempMachine.aMessages[0].bActive, Message := 'raised again: active');
+
+AssertTrue(Condition := fb_TempMachine.m_SetMessage(vi_udn_Id := 8, vi_b_Active := FALSE,
+	vi_e_Severity := E_VisuMessageSeverity.INFO, vi_str_Text := '', vi_udn_ComponentId := 0),
+	Message := 'clearing an unlisted message succeeds');
+AssertEquals_UINT(Expected := 1, Actual := TempMachine.nMessageCount, Message := '... and lists nothing');
+
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RunStateAndSimulation" Id="{f157eead-2cf0-4b47-bcfa-e76edabcb7e6}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Before m_Register the methods write nothing; after it the run state, its text and simulation mode are in the<br>
+machine entry.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RunStateAndSimulation
+VAR_INST
+	fb_TempMachine						: _FB_VisuMachine;
+	TempMachine							: ST_VisuMachine;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('RunStateAndSimulation');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertFalse(Condition := fb_TempMachine.m_SetRunState(vi_e_RunState := E_VisuRunState.RUNNING, vi_str_Text := ''),
+	Message := 'm_SetRunState before m_Register: FALSE');
+AssertFalse(Condition := fb_TempMachine.m_SetMessage(vi_udn_Id := 1, vi_b_Active := TRUE,
+	vi_e_Severity := E_VisuMessageSeverity.ERROR, vi_str_Text := 'x', vi_udn_ComponentId := 0),
+	Message := 'm_SetMessage before m_Register: FALSE');
+
+AssertTrue(Condition := fb_TempMachine.m_Register(vio_Machine := TempMachine), Message := 'm_Register');
+AssertTrue(Condition := fb_TempMachine.m_SetRunState(vi_e_RunState := E_VisuRunState.FAULT, vi_str_Text := 'Vacuum lost'),
+	Message := 'm_SetRunState after m_Register');
+AssertTrue(Condition := fb_TempMachine.m_SetSimulation(vi_b_Simulation := TRUE), Message := 'm_SetSimulation');
+AssertTrue(Condition := TempMachine.eRunState = E_VisuRunState.FAULT, Message := 'run state FAULT');
+AssertEquals_STRING(Expected := 'Vacuum lost', Actual := TempMachine.sRunStateText, Message := 'run state text');
+AssertTrue(Condition := TempMachine.bSimulation, Message := 'simulation mode');
+AssertEquals_UINT(Expected := 0, Actual := TempMachine.nMessageCount, Message := 'no messages');
+
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

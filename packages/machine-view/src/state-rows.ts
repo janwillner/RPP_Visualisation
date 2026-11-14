@@ -1,5 +1,6 @@
 import type { ComponentState } from "@rpp/protocol";
-import { faultText, fieldLabel, singular } from "@rpp/machine-view";
+import { faultText } from "./machine-facts";
+import { fieldLabel, singular } from "./naming";
 
 /**
  * A component's live values for the inspector, read from its state without knowing its type: every value the PLC

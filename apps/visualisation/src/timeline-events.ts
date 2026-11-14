@@ -1,11 +1,20 @@
-import type { Fault, GatewayMessage } from "@rpp/protocol";
-import { componentName, faultText, isMissed, limitViolations, singular, type SourceInfo } from "@rpp/machine-view";
+import type { Fault, GatewayMessage, MachineMessage } from "@rpp/protocol";
+import {
+  componentName,
+  faultText,
+  isMissed,
+  limitViolations,
+  machineMessagePlace,
+  machineMessageText,
+  singular,
+  type SourceInfo,
+} from "@rpp/machine-view";
 
 /**
  * Moments worth finding again in a recording, marked on its timeline: a fault appears, a source goes offline or
- * comes back, a product is missed, a limit violation starts.
+ * comes back, a product is missed, a limit violation starts, a machine message appears.
  */
-export type TimelineEventKind = "fault" | "offline" | "online" | "missed" | "limit";
+export type TimelineEventKind = "fault" | "offline" | "online" | "missed" | "limit" | "message";
 
 export interface TimelineEvent {
   /** ms after the recording started. */
@@ -30,9 +39,14 @@ export class EventTracker {
   private readonly missed = new Map<string, Set<string>>();
   /** Per source the limit violations of its previous state, by their key. */
   private readonly limits = new Map<string, Set<string>>();
+  /** Per source the machine messages active in its previous report: their time by id. */
+  private readonly messages = new Map<string, Map<number, string>>();
 
   constructor(initial: readonly SourceInfo[]) {
-    for (const s of initial) if (s.status) this.connected.set(s.sourceId, s.status.plcConnected);
+    for (const s of initial) {
+      if (s.status) this.connected.set(s.sourceId, s.status.plcConnected);
+      if (s.machine) this.messages.set(s.sourceId, activeMessageTimes(s.machine.messages));
+    }
   }
 
   /** `source`: the message's source as it is with this message applied (name, config). */
@@ -53,6 +67,17 @@ export class EventTracker {
         this.limits.delete(message.sourceId);
       }
       push(now ? "online" : "offline", `${source.name} ${now ? "online" : "offline"}`);
+      return;
+    }
+    if (message.kind === "machine") {
+      // A message appears when it becomes active, or is active again with another time (raised anew in between).
+      const was = this.messages.get(message.sourceId);
+      for (const m of message.messages) {
+        if (m.active && was?.get(m.id) !== m.time) {
+          push("message", `${machineMessagePlace(m, source.config, source.name)}: ${machineMessageText(m)}`);
+        }
+      }
+      this.messages.set(message.sourceId, activeMessageTimes(message.messages));
       return;
     }
     if (message.kind !== "state") return;
@@ -113,4 +138,8 @@ export function eventTime(events: readonly TimelineEvent[], time: number, direct
   let previous: number | undefined;
   for (const e of events) if (e.at < time) previous = e.at;
   return previous;
+}
+
+function activeMessageTimes(messages: readonly MachineMessage[]): Map<number, string> {
+  return new Map(messages.filter((m) => m.active).map((m) => [m.id, m.time]));
 }

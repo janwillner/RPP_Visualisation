@@ -6,7 +6,6 @@ import { AdsSymbolAccess } from "./ads-symbol-access";
 import { combineGateways, createGateway, type Gateway } from "./gateway";
 import { helpText, OptionsError, resolveGatewayOptions, type GatewayOptions } from "./options";
 import { DOCS_PATH, HEALTH_PATH, startServer, WS_PATH } from "./server";
-import { createSimulator } from "./simulator";
 import type { SymbolAccess } from "./symbol-access";
 import { APP_VERSION } from "./version";
 
@@ -42,27 +41,24 @@ interface SourceRuntime {
   close(): Promise<void> | void;
 }
 
-const simulator = options.driver === "sim" ? createSimulator({ products: options.simProducts }) : undefined;
-const runtimes: SourceRuntime[] = simulator
-  ? [runtime("sim", "Simulator", simulator.plc, () => {})]
-  : options.sources.map((source) => {
-      if (options.driver === "ads") {
-        const plc = new AdsBridgeSymbolAccess({
-          bridgePath: options.adsBridge,
-          targetAmsNetId: source.amsNetId,
-          targetAdsPort: source.adsPort,
-        });
-        return runtime(source.sourceId, source.name, plc, () => plc.close());
-      }
-      const plc = new AdsSymbolAccess({
-        targetAmsNetId: source.amsNetId,
-        targetAdsPort: source.adsPort,
-        ...(options.routerAddress ? { routerAddress: options.routerAddress } : {}),
-        ...(options.routerPort !== undefined ? { routerTcpPort: options.routerPort } : {}),
-        ...(options.localAmsNetId ? { localAmsNetId: options.localAmsNetId } : {}),
-      });
-      return runtime(source.sourceId, source.name, plc, () => plc.close());
+const runtimes: SourceRuntime[] = options.sources.map((source) => {
+  if (options.driver === "ads") {
+    const plc = new AdsBridgeSymbolAccess({
+      bridgePath: options.adsBridge,
+      targetAmsNetId: source.amsNetId,
+      targetAdsPort: source.adsPort,
     });
+    return runtime(source.sourceId, source.name, plc, () => plc.close());
+  }
+  const plc = new AdsSymbolAccess({
+    targetAmsNetId: source.amsNetId,
+    targetAdsPort: source.adsPort,
+    ...(options.routerAddress ? { routerAddress: options.routerAddress } : {}),
+    ...(options.routerPort !== undefined ? { routerTcpPort: options.routerPort } : {}),
+    ...(options.localAmsNetId ? { localAmsNetId: options.localAmsNetId } : {}),
+  });
+  return runtime(source.sourceId, source.name, plc, () => plc.close());
+});
 
 function runtime(sourceId: string, name: string, plc: SymbolAccess, close: () => Promise<void> | void): SourceRuntime {
   const gateway = createGateway({
@@ -83,12 +79,14 @@ const server = await startServer({
   ...(options.host ? { host: options.host } : {}),
   ...(options.staticDir ? { staticDir: options.staticDir } : {}),
   ...(options.configuratorDir ? { configuratorDir: options.configuratorDir } : {}),
+  ...(options.simulatorDir ? { simulatorDir: options.simulatorDir } : {}),
 });
 // ASCII only: the service log is read in consoles and editors with other code pages.
 console.log(
   `RPP visualisation ${APP_VERSION}: gateway (${options.driver}) listening on http://${options.host ?? "localhost"}:${options.port}` +
     ` - WebSocket ${WS_PATH}, health ${HEALTH_PATH}, API docs ${DOCS_PATH}${options.staticDir ? `, serving ${options.staticDir}` : ", no static web app"}` +
-    `${options.configuratorDir ? `, configurator ${options.configuratorDir}` : ""}`,
+    `${options.configuratorDir ? `, configurator ${options.configuratorDir}` : ""}` +
+    `${options.simulatorDir ? `, simulator ${options.simulatorDir}` : ""}`,
 );
 console.log(`Sources: ${runtimes.map((r) => `${r.name} (${r.gateway.sourceId})`).join(", ")}`);
 
@@ -109,11 +107,8 @@ async function loop({ name, gateway }: SourceRuntime): Promise<void> {
       for (const e of m.errors) console.warn(`${name}: discovery: ${e.path ?? ""} ${e.message}`);
     }
   });
-  let lastStep = performance.now();
   while (!stopped) {
     const started = performance.now();
-    simulator?.step(started - lastStep);
-    lastStep = started;
     await gateway.cycle();
     const wait = cycleMs - (performance.now() - started);
     await new Promise((r) => setTimeout(r, Math.max(0, wait)));

@@ -9,14 +9,16 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 DEMO ONLY: independent sample applications side by side, for testing the gateway over ADS. All lines<br>
 start at X = 0 and convey along +X. Each application is its own program:<br>
-- P_VisuDemoDelta (Y = 0..1000): two infeeds, one outfeed, three Delta robots with different grippers.<br>
+- P_VisuDemoDelta (Y = 0..1000): two infeeds, one outfeed, three Delta robots with different grippers; Infeed 1<br>
+  is fed by a product generator and run, with Delta 1, by the sequence control P_VisuDemoMachine.<br>
 - P_VisuDemoFxx (Y = 2500): an XTS loop above two belts evens out irregular gaps.<br>
 - P_VisuDemoIdh (Y = 4100..4850): an XTS gantry picks in batches onto a tray belt.<br>
 - P_VisuDemoCartesian (Y = 6500..7300): a Cartesian robot turns and tilts the products it places.<br>
 - P_VisuDemoCartesianAxes (X = 4000, Y = 6500..7800): Cartesian robots without Y or without Z axis.<br>
 - P_VisuDemoSpacing (Y = 9000): an XTS loop under one belt hands products back with a constant pitch.<br>
 - P_VisuDemoStress (Y = 11000): load test with thousands of products, off unless DEMO_un_StressProducts is set.<br>
-This program, called by PlcTask, sets the shared cycle time and fault phase (DEMO_GlobalVar) and calls them.<br>
+This program, called by PlcTask, sets the shared cycle time and fault phase (DEMO_GlobalVar), calls the machine's<br>
+sequence control (recipe, commands, run state, machine messages: P_VisuDemoMachine) and then the applications.<br>
 Part of the demo application Syn_Visu_Demo, which uses the Syn_Visu library like any machine project.<br>
 ****************************************************************************************************)
 PROGRAM P_VisuDemo
@@ -37,6 +39,12 @@ DEMO_GlobalVar.DEMO_lr_FaultPhase := DEMO_GlobalVar.DEMO_lr_FaultPhase + DEMO_Gl
 IF DEMO_GlobalVar.DEMO_lr_FaultPhase >= DEMO_GlobalConst.DEMO_lr_FAULT_PERIOD THEN
 	DEMO_GlobalVar.DEMO_lr_FaultPhase := DEMO_GlobalVar.DEMO_lr_FaultPhase - DEMO_GlobalConst.DEMO_lr_FAULT_PERIOD;
 END_IF
+
+
+(****************************************************************************************************)
+(* MACHINE: recipe, commands and run state first, so the applications run with this cycle's values    *)
+(****************************************************************************************************)
+P_VisuDemoMachine();
 
 
 (****************************************************************************************************)

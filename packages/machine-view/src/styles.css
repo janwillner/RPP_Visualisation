@@ -486,3 +486,271 @@ a.link {
       width: 16px;
     }
 }
+
+/* The panels the apps share (#44): component tree, inspector with product history and metrics, status bar. */
+
+.tree .fault-lines {
+  flex-basis: 100%;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 30px;
+  color: var(--bad-text);
+  font-size: 0.92em;
+}
+
+.tree button.visibility {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+}
+
+.tree li.hidden button:not(.visibility) {
+  opacity: 0.45;
+}
+
+.tree li.hidden button.visibility {
+  color: var(--muted);
+}
+
+.source-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.source-head button.visibility {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  background: transparent;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: currentColor;
+}
+
+/* The release version sits at the far right of the status bar. */
+/* The API link and the version sit at the right end. */
+.statusbar .statusbar-api {
+  margin-left: auto;
+}
+
+.statusbar .sources-list {
+  left: 12px;
+  right: auto;
+  list-style: none;
+  padding-left: 8px;
+}
+
+.badge {
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #34404e;
+  text-transform: uppercase;
+}
+
+.badge.delta {
+  background: #4b3d5e;
+}
+
+.json {
+  margin: 0;
+  padding: 6px;
+  font-size: 11px;
+  background: #171b21;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.movers {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.movers th,
+.movers td {
+  padding: 1px 6px;
+  text-align: right;
+}
+
+.movers th {
+  color: var(--muted);
+  font-weight: normal;
+}
+
+.tree .fault-lines li.limit,
+.limit-violation {
+  color: var(--bad-text);
+  font-style: italic;
+}
+
+.tree li.faulted > button:not(.visibility) {
+  color: var(--bad-text);
+}
+
+.tree .fault-icon {
+  color: var(--bad-text);
+  margin-right: 4px;
+}
+
+.fault {
+  color: var(--bad-text);
+  margin: 4px 0;
+}
+
+/* A product's history in the inspector, newest first. */
+.product-history {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.product-history li {
+  padding: 2px 0;
+}
+
+.product-history li.missed {
+  color: var(--bad);
+}
+
+/* A selected product's mark in the inspector: its colour, then its name. */
+.product-mark i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+/* The machine's figures in the inspector. */
+table.metrics {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+table.metrics td {
+  padding: 2px 0;
+  vertical-align: top;
+}
+
+table.metrics td + td {
+  padding-left: 8px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The machine as its application reports it, above the components: run state and active machine messages. */
+.machine {
+  margin: 0 0 8px;
+}
+
+.machine .run-state {
+  font-weight: 600;
+}
+
+/* The source is offline: what its application reported last, faded. */
+.machine.stale {
+  opacity: 0.6;
+}
+
+.run-state.running {
+  color: var(--ok);
+}
+
+.run-state.starting,
+.run-state.stopping {
+  color: var(--warning);
+}
+
+.run-state.fault {
+  color: var(--bad-text);
+}
+
+.machine-messages {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 0.92em;
+}
+
+.machine-messages li {
+  padding: 1px 0;
+}
+
+.machine-messages button {
+  text-align: left;
+}
+
+.machine-messages .error {
+  color: var(--bad-text);
+}
+
+.machine-messages .warning {
+  color: var(--warning);
+}
+
+.machine-messages .info {
+  color: var(--accent);
+}
+
+/* Their touch sizes (HMI). */
+@media (pointer: coarse) {
+  .tree button.visibility,
+  .source-head button.visibility {
+    width: 44px;
+  }
+
+  .dot {
+    width: 12px;
+    height: 12px;
+  }
+
+  .badge {
+    font-size: 12px;
+  }
+
+  .json {
+    font-size: 13px;
+  }
+
+  .movers th,
+  .movers td {
+    padding: 4px 8px;
+  }
+}
+
+/* A labelled value in a form: the configurator's properties, the Simulator's recipe. */
+.property {
+  display: grid;
+  grid-template-columns: 1fr 110px;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 0;
+}
+
+.property input[type="text"],
+.property select {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.property input[type="checkbox"] {
+  justify-self: start;
+}

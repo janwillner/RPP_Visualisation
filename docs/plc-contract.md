@@ -1,4 +1,4 @@
-# PLC contract (library `Syn_Visu`, protocol version 21)
+# PLC contract (library `Syn_Visu`, protocol version 22)
 
 This is the PLC side of the contract the gateway reads. It is implemented by the TwinCAT library project in
 `plc/Syn_Visu` (solution `plc/RPP_Visu.sln`). The TypeScript mirror is `apps/gateway/src/plc-contract.ts`,
@@ -17,7 +17,7 @@ their Beckhoff-style names, because the gateway reads them.
 | --- | --- |
 | `plc/RPP_Visu.sln` | TwinCAT solution with both PLC projects |
 | `plc/Syn_Visu/` | The library project: structures, enums, constants and the component function blocks. No task, no application code. |
-| `plc/Syn_Visu_Demo/` | The demo application. It references the installed library like any machine project, so it also tests the library from the outside. ADS port 852. `PlcTask` calls `P_VisuDemo`, which sets the shared cycle time and fault phase (`DEMO_GlobalVar`) and calls one program per application: `P_VisuDemoDelta`, `P_VisuDemoFxx`, `P_VisuDemoIdh`, `P_VisuDemoCartesian`, `P_VisuDemoCartesianAxes` (a Cartesian robot without Y axis and one without Z axis, `m_SetKinematics`), `P_VisuDemoSpacing`, and the load test `P_VisuDemoStress` (off unless `DEMO_GlobalVar.DEMO_un_StressProducts` is set; `docs/performance.md`). Shared constants (belt height and width, product, suction cup, fault timing) are in `DEMO_GlobalConst`, the manifest in `GVL_Visu`. |
+| `plc/Syn_Visu_Demo/` | The demo application. It references the installed library like any machine project, so it also tests the library from the outside. ADS port 852. `PlcTask` calls `P_VisuDemo`, which sets the shared cycle time and fault phase (`DEMO_GlobalVar`) and calls one program per application: `P_VisuDemoDelta`, `P_VisuDemoFxx`, `P_VisuDemoIdh`, `P_VisuDemoCartesian`, `P_VisuDemoCartesianAxes` (a Cartesian robot without Y axis and one without Z axis, `m_SetKinematics`), `P_VisuDemoSpacing`, and the load test `P_VisuDemoStress` (off unless `DEMO_GlobalVar.DEMO_un_StressProducts` is set; `docs/performance.md`). Shared constants (belt height and width, product, suction cup, fault timing) are in `DEMO_GlobalConst`, the manifest and the machine entry in `GVL_Visu`; `P_VisuDemo` reports the machine (running, simulation mode, the machine message "Reject bin almost full" about the reject unit for 4 s of every fault period). |
 | `plc/library/Syn_Visu_<version>.library` | The exported library with its source, committed for every released version. |
 | `plc/library/Syn_Visu_<version>.compiled-library` | The same version compiled, without source code. `pnpm package` puts the newest one into the deployment package (`plc/`); machine projects install it from there. |
 
@@ -202,6 +202,8 @@ every field's PLC member by these rules (`apps/gateway/src/plc-mapping.ts`). Eve
 - Protocol version 20 added each finger's `stOffset` on the gripper flange and the finger state's `bPoseReported`
   (ADR 0018).
 - Protocol version 21 added product marks: the product's `nMark` and the manifest's `aMarkNames`.
+- Protocol version 22 added the machine entry `ST_VisuMachine` next to the manifest (ADR 0021): run state, simulation
+  mode and machine messages. The gateway still reads protocol 21, which lacks only that.
 
 ## What the library contains
 
@@ -213,6 +215,7 @@ application code does not write them.
 | Structure | Read by the gateway as |
 | --- | --- |
 | `ST_VisuManifest`, `ST_VisuManifestEntry`, `E_VisuComponentType` | Discovery: which components exist and where (`GVL_Visu.stManifest`, declared by the application, ADR 0003) |
+| `ST_VisuMachine`, `ST_VisuMachineMessage`, `E_VisuRunState`, `E_VisuMessageSeverity` | The machine entry: run state, simulation mode and machine messages (`GVL_Visu.stMachine`, declared by the application, set with `_FB_VisuMachine`; protocol 22, ADR 0021) |
 | `ST_VisuConveyor` (`stConfig` / `stState`), `ST_VisuProduct`, `ST_VisuProductType` | Conveyor (`_FB_VisuConveyor.vo_Visu`) |
 | `ST_VisuDelta`, `ST_VisuWorkingArea`, `ST_VisuLimitArea`, `ST_VisuZone` | Delta (`_FB_VisuDelta.vo_Visu`) |
 | `ST_VisuXtsGantry`, `ST_VisuGantryMover` | XTS gantry (`_FB_VisuXtsGantry.vo_Visu`) |
@@ -232,8 +235,8 @@ system and a light barrier on the Delta infeeds and a reject unit (station) at t
 
 ## Discovery
 
-The gateway reads `GVL_Visu.stManifest` and refuses to continue when `nProtocolVersion` differs from its own; it keeps
-watching the version and recovers as soon as it matches. For each
+The gateway reads `GVL_Visu.stManifest` and refuses to continue when `nProtocolVersion` is not one it reads (21 or 22);
+it keeps watching the version and recovers as soon as it matches. For each
 of the first `nCount` entries it checks that the symbol at `sPath` has the data type `ST_VisuConveyor`, `ST_VisuDelta`,
 `ST_VisuXtsGantry`, `ST_VisuXtsLoop`, `ST_VisuCartesian`, `ST_VisuDetector` (vision system and product sensor) or
 `ST_VisuStation`
@@ -251,6 +254,29 @@ product marks for the whole PLC: entry n is what mark n means, e.g. `Sample`; an
 gateway reads it during discovery and passes the named marks on in the `config` message (`marks`), so a new name
 needs a config version bump, which the library's function for it does.
 
+## The machine entry (protocol 22)
+
+Next to its manifest the application may declare the machine entry `GVL_Visu.stMachine : ST_VisuMachine` (in the GVL of
+the manifest, whatever `--manifest-path` names; ADR 0021). It is not a component: it has no manifest entry, no pose
+and no body. With protocol 22 the gateway looks for it during discovery: missing, the application is read as before;
+of another type, it is a discovery error. Otherwise the gateway reads it in every cycle's sum-read and publishes it as
+a `machine` message whenever it changes.
+
+| Member | Meaning |
+| --- | --- |
+| `eRunState` (`E_VisuRunState`) | What the machine is doing: stopped, starting, running, stopping, fault |
+| `sRunStateText` (STRING(80)) | What the application says about it, e.g. why it is in a fault |
+| `bSimulation` | The application runs without real hardware (simulation mode): nothing real moves when it is started |
+| `nMessageCount`, `aMessages` | The machine messages, entries `[0..nMessageCount-1]`, `VISU_un_MAX_MACHINE_MESSAGES` (32) at most |
+
+A machine message (`ST_VisuMachineMessage`) has its number `nId` (> 0, unique in the register), `eSeverity`
+(`E_VisuMessageSeverity`), `sText` (STRING(80)), `nTime` (DC time in ns when it appeared last), `bActive` (FALSE:
+gone, kept until its place is needed) and `nComponentId` (the manifest id of the component it is about, 0 for the
+whole machine). The register is read like a product register: as changes by `nId` (ADR 0013). `_FB_VisuMachine` fills
+the entry: `m_Register(vio_Machine)`, `m_SetRunState`, `m_SetSimulation` and `m_SetMessage`, which sets a message by its
+level like a fault; a message that becomes active gets the current time, and in a full register the gone message that
+appeared earliest makes room for a new one.
+
 ## Enumerations
 
 | Enum | Values |
@@ -262,6 +288,8 @@ needs a config version bump, which the library's function for it does.
 | `E_VisuBodyRole` (UINT) | `STRUCTURE` 0, `SENSOR` 1, `BEAM` 2, `FIELD_OF_VIEW` 3 |
 | `E_VisuModuleKind` (UINT) | `STRAIGHT` 0, `CURVE_LEFT` 1, `CURVE_RIGHT` 2 |
 | `E_VisuCartesianAxes` (UINT) | `XYZ` 0, `XZ` 1 (no Y axis), `XY` 2 (no Z axis) |
+| `E_VisuRunState` (UINT) | `STOPPED` 0, `STARTING` 1, `RUNNING` 2, `STOPPING` 3, `FAULT` 4 |
+| `E_VisuMessageSeverity` (UINT) | `ERROR` 0, `WARNING` 1, `INFO` 2 |
 
 Values are part of the contract: append, never renumber. The gateway reads a value as the index of the protocol's
 option, so they count from 0 without gaps.

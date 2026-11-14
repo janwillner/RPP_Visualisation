@@ -1,0 +1,14 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigCommand" Id="{495d85da-ca23-4e61-981c-218afb8be02c}">
+    <Declaration><![CDATA[TYPE ST_ConfigCommand :
+STRUCT
+	(* A machine command, written by the gateway with bRequested last (config protocol 3). The machine FB clears
+	   bRequested once the application answered it. *)
+	nCommandId : UDINT; // chosen by the gateway; ST_ConfigCommandStatus.nHandledCommandId names it once answered
+	eCommand : E_ConfigCommand;
+	bRequested : BOOL; // TRUE: the command waits for the application's answer
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

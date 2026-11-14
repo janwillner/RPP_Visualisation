@@ -13,6 +13,8 @@ sizes of Syn_Visu's (VISU_GlobalConst_Param), so every set fits the visualisatio
 {attribute 'qualified_only'}
 VAR_GLOBAL CONSTANT
 	CONFIG_un_MAX_MANIFEST_ENTRIES		: UINT := 32;	// [-] parameter FBs in the config manifest
+	CONFIG_un_MAX_RECIPE_FIELDS			: UINT := 64;	// [-] fields of the machine's recipe (_FB_ConfigMachine)
+	CONFIG_un_MAX_CHOICES				: UINT := 8;	// [-] named values of a CHOICE recipe field
 END_VAR]]></Declaration>
   </GVL>
 </TcPlcObject>

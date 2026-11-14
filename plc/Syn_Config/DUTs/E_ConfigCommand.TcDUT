@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="E_ConfigCommand" Id="{d5294349-aa0a-46ba-8c2d-8db39f9c6ce9}">
+    <Declaration><![CDATA[{attribute 'qualified_only'}
+{attribute 'strict'}
+TYPE E_ConfigCommand :
+(
+	(* What a machine command asks the application (config protocol 3). Values are part of the gateway contract:
+	   append, never renumber. *)
+	NONE := 0,
+	START := 1,
+	STOP := 2,
+	RESET := 3
+) UINT;
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

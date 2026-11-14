@@ -22,7 +22,7 @@ _Avoid_: log, trace, history
 
 **Playback**:
 Showing a recording in the 3D view instead of the live machine, at any speed or moment.
-_Avoid_: replay (except for the replay buffer and replaying its last minute), simulation (the simulator is something else)
+_Avoid_: replay (except for the replay buffer and replaying its last minute), simulation (the Simulator and simulation mode are something else)
 
 **Replay buffer**:
 What the visualisation always keeps of the last minute it received, from the page's start; one button turns it into a recording.
@@ -261,7 +261,7 @@ _Avoid_: shared code, common library
 
 **Draft**:
 A machine as the configurator edits it: every component's configuration with its source and manifest id, saved as a JSON file. It is made offline, without a PLC.
-_Avoid_: project, layout, model, recipe
+_Avoid_: project, layout, model
 
 **Reconciliation**:
 Matching a draft's components with the PLCs' manifests by source, manifest id and type, telling which the PLC has as the draft does, which differ, and which exist on one side only.
@@ -273,7 +273,7 @@ _Avoid_: shadow, preview, overlay
 
 **Parameter set**:
 The part of a component's configuration its application runs with and the configurator writes (pose, zones, product types, an XTS track's modules, areas; never hardware), held by its parameter FB of the library Syn_Config.
-_Avoid_: recipe, settings, parameters (alone)
+_Avoid_: settings, parameters (alone)
 
 **Staging**:
 Writing a parameter set into a component's parameter FB, where it waits until the application allows taking it over.
@@ -286,3 +286,53 @@ _Avoid_: defaults (in prose), factory settings
 **Palette**:
 The component types the configurator offers to place, by dragging onto the floor or by a click.
 _Avoid_: toolbox, library (the PLC library is something else)
+
+## Simulator
+
+**Simulator**:
+The third web app (served at `/simulator/`, spec #40): with the machine as its PLC reports it, the commissioning engineer feeds products in patterns, sets the recipe and starts, stops and resets the machine, while the application's own sequence control does the work. It writes only while the PLC is in simulation mode.
+_Avoid_: emulator, test bench, fake PLC (the gateway has none; its tests use an in-memory PLC)
+
+**Recipe**:
+The process values a machine runs with, as its application declares them in recipe fields: speeds, accelerations, picks per cycle, the product pattern. Distinct from the parameter set, which holds geometry.
+_Avoid_: parameter set, settings, draft
+
+**Recipe file**:
+A recipe saved by the Simulator as `<name>.rpp-sim.json`: the values of every recipe field per source, by group and field name. Opened again, its values are matched to the recipe the PLC declares now by field name; what differs becomes an edit to write.
+_Avoid_: draft (the configurator's file), recording
+
+**Recipe field**:
+One value of a recipe as the application declares it: name, group (a component or the whole machine), type, unit, min, max and program value.
+_Avoid_: recipe parameter, setting
+
+**Machine FB**:
+The one function block of an application's Syn_Config (`_FB_ConfigMachine`, listed in its config manifest with id 0) that declares the recipe fields, takes a recipe over and hands machine commands to the application (ADR 0022).
+_Avoid_: recipe FB, machine component
+
+**Machine command**:
+Start, Stop or Reset, sent to the application as a request it accepts or rejects with a reason; only to a PLC in simulation mode (ADR 0022).
+_Avoid_: machine control, remote start
+
+**Run state**:
+What the application reports its machine is doing: stopped, starting, running, stopping or fault, with a text.
+_Avoid_: machine state (ambiguous with the components' state), mode, status
+
+**Machine message**:
+A message about the whole machine, or about one of its components, that the application raises and clears: its severity (error, warning or info), id, text and time. Shown next to the component faults.
+_Avoid_: alarm, event, fault (a fault belongs to a component, mover or track module)
+
+**Machine entry**:
+Where the application reports its whole machine, next to its manifest (`GVL_Visu.stMachine`): run state, simulation mode and machine messages. Not a component; an application may leave it out (ADR 0021).
+_Avoid_: machine component, machine state, machine status
+
+**Simulation mode**:
+The application's report that it runs without real hardware. Only then does the Simulator write a recipe or send Start, Stop or Reset.
+_Avoid_: test mode, demo mode, dry run
+
+**Product generator**:
+The part of an application that makes up detections of products from the product pattern in its recipe, the way its real camera or sensor would report them. Always the application's own, never part of a library; this repo has one only in the demo application.
+_Avoid_: product source, spawner, simulator
+
+**Demo application**:
+`Syn_Visu_Demo` (`plc/Syn_Visu_Demo`, ADS port 852): sample applications of every component type that use the libraries like a machine project. The browser tests and `pnpm dev:gateway` read it on the local user-mode runtime (ADR 0020).
+_Avoid_: simulator, test PLC, sample PLC

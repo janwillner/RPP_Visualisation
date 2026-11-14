@@ -20,10 +20,12 @@ VAR
 	fb_TestRobot						: _FB_TestRobot;
 	fb_TestXtsTrack						: _FB_TestXtsTrack;
 	fb_TestBodyComponent				: _FB_TestBodyComponent;
+	fb_TestMachine						: _FB_TestMachine;
 	fb_TestConfigComponent				: _FB_TestConfigComponent;
 	fb_TestConfigStaging				: _FB_TestConfigStaging;
 	fb_TestConfigRobot					: _FB_TestConfigRobot;
 	fb_TestConfigBodyComponent			: _FB_TestConfigBodyComponent;
+	fb_TestConfigMachine				: _FB_TestConfigMachine;
 END_VAR
 ]]></Declaration>
     <Implementation>

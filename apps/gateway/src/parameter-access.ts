@@ -1,21 +1,24 @@
 import { z } from "zod";
 import {
   CONFIG_PROTOCOL_VERSION,
+  MIN_CONFIG_PROTOCOL_VERSION,
   PARAMETER_SCHEMAS,
   ParameterResultSchema,
-  type ClientMessage,
   type ComponentParameters,
   type DiscoveryError,
   type ParametersMessage,
   type ParameterType,
+  type ResetParametersCommand,
   type TypedParameters,
+  type WriteParametersCommand,
 } from "@rpp/protocol";
 import { componentKind } from "./components";
-import { PLC_CONFIG_MANIFEST_TYPE, PLC_CONFIG_TYPES, type ST_ConfigManifest } from "./config-contract";
-import { enumValue } from "./plc-contract";
+import { PLC_CONFIG_MACHINE_TYPE, PLC_CONFIG_MANIFEST_TYPE, PLC_CONFIG_TYPES, type ST_ConfigManifest } from "./config-contract";
+import { E_VisuComponentType, enumValue } from "./plc-contract";
 import { mapPlc, type EntryMemory } from "./plc-mapping";
 import { plcLeaves } from "./plc-writing";
-import type { SymbolAccess, SymbolWrite } from "./symbol-access";
+import { machineFbEntry, machineParameters, machineReadPaths, type MachineFbEntry } from "./recipe-access";
+import { SymbolNotFoundError, type SymbolAccess, type SymbolWrite } from "./symbol-access";
 
 /**
  * One source's parameter sets (library Syn_Config, ADR 0017): which parameter FBs its config manifest lists, their
@@ -41,6 +44,10 @@ export interface ParameterDiscovery {
   reason: string | undefined;
   /** Problems with single entries, reported with the source's discovery errors. */
   errors: DiscoveryError[];
+  /** Config protocol of the PLC's Syn_Config; 0 without one. */
+  protocolVersion: number;
+  /** The application's machine FB with its recipe (config protocol 3, ADR 0022), if it has one. */
+  machine: MachineFbEntry | undefined;
 }
 
 /** Status of a parameter FB as the gateway reads it from `stStatus`. */
@@ -53,13 +60,18 @@ const StatusSchema = z.object({
 
 export const NOT_ALLOWED = "The gateway does not allow writing; start it with --allow-write.";
 
+/** A source without parameter FBs that cannot be written, for `reason`; `present`: it has Syn_Config all the same. */
+export function noParameters(reason: string, present = true): ParameterDiscovery {
+  return { present, entries: [], reason, errors: [], protocolVersion: 0, machine: undefined };
+}
+
 /** Finds the parameter FBs; a source without a config manifest has none and cannot be written. */
 export async function discoverParameters(
   plc: SymbolAccess,
   manifestPath: string,
   allowWrite: boolean,
 ): Promise<ParameterDiscovery> {
-  const none = (reason: string, present = true): ParameterDiscovery => ({ present, entries: [], reason, errors: [] });
+  const none = noParameters;
   const type = await plc.typeOf(manifestPath);
   if (type === undefined) {
     return none(`The PLC has no Syn_Config (${manifestPath} not found): its components cannot be written.`, false);
@@ -68,15 +80,32 @@ export async function discoverParameters(
     return none(`${manifestPath} is a ${type}, not Syn_Config's ${PLC_CONFIG_MANIFEST_TYPE}: nothing can be written.`);
   }
   const manifest = (await plc.read(manifestPath)) as ST_ConfigManifest;
-  if (manifest.nProtocolVersion !== CONFIG_PROTOCOL_VERSION) {
+  if (manifest.nProtocolVersion < MIN_CONFIG_PROTOCOL_VERSION || manifest.nProtocolVersion > CONFIG_PROTOCOL_VERSION) {
     return none(
       `The PLC's Syn_Config ${manifest.sLibraryVersion?.trim() || ""} has protocol version ${manifest.nProtocolVersion}, ` +
-        `but this gateway expects ${CONFIG_PROTOCOL_VERSION}. Update the library or the gateway.`,
+        `but this gateway expects ${MIN_CONFIG_PROTOCOL_VERSION} to ${CONFIG_PROTOCOL_VERSION}. Update the library or the gateway.`,
     );
   }
   const entries: ParameterEntry[] = [];
   const errors: DiscoveryError[] = [];
+  let machine: MachineFbEntry | undefined;
   for (const e of manifest.aEntries.slice(0, manifest.nCount)) {
+    // The machine FB: id 0, type NONE (config protocol 3).
+    if (e.nId === 0 && enumValue(e.eType) === E_VisuComponentType.NONE) {
+      const actual = await plc.typeOf(e.sPath);
+      if (actual !== PLC_CONFIG_MACHINE_TYPE && !actual?.endsWith(`.${PLC_CONFIG_MACHINE_TYPE}`)) {
+        errors.push({ path: e.sPath, message: `Symbol has expected type ${PLC_CONFIG_MACHINE_TYPE} but is ${actual ?? "missing"}` });
+        continue;
+      }
+      try {
+        machine = machineFbEntry(e.sPath, await plc.read(e.sPath));
+      } catch (error) {
+        // A layout the gateway does not know leaves the source without a recipe; connection errors propagate.
+        if (!(error instanceof TypeError) && !(error instanceof SymbolNotFoundError)) throw error;
+        errors.push({ path: e.sPath, message: `Cannot read the recipe fields: ${error.message}` });
+      }
+      continue;
+    }
     const type = componentKind(enumValue(e.eType));
     if (type === undefined) {
       errors.push({ componentId: e.nId, path: e.sPath, message: `Unknown component type ${enumValue(e.eType)} in the config manifest` });
@@ -90,12 +119,22 @@ export async function discoverParameters(
     }
     entries.push({ id: e.nId, type, path: e.sPath, memory: new Map() });
   }
-  return { present: true, entries, reason: allowWrite ? undefined : NOT_ALLOWED, errors };
+  return {
+    present: true,
+    entries,
+    reason: allowWrite ? undefined : NOT_ALLOWED,
+    errors,
+    protocolVersion: manifest.nProtocolVersion,
+    machine,
+  };
 }
 
-/** What the cyclic sum-read reads of every parameter FB, two paths each: status and effective values. */
+/**
+ * What the cyclic sum-read reads: of every parameter FB two paths, status and effective values; then of the machine FB
+ * its recipe status, effective values and command answer.
+ */
 export function parameterReadPaths(d: ParameterDiscovery): string[] {
-  return d.entries.flatMap((e) => [`${e.path}.stStatus`, `${e.path}.stActive`]);
+  return [...d.entries.flatMap((e) => [`${e.path}.stStatus`, `${e.path}.stActive`]), ...(d.machine ? machineReadPaths(d.machine) : [])];
 }
 
 /**
@@ -104,18 +143,27 @@ export function parameterReadPaths(d: ParameterDiscovery): string[] {
  */
 export function parametersMessage(sourceId: string, d: ParameterDiscovery, raws: readonly unknown[]): ParametersMessage {
   let components: ComponentParameters[];
+  let machine: ReturnType<typeof machineParameters> | undefined;
   try {
     components = d.entries.map((e, i): ComponentParameters => {
       const status = mapPlc(StatusSchema, raws[2 * i]);
       const parameters = mapPlc(PARAMETER_SCHEMAS[e.type], raws[2 * i + 1], {}, e.memory);
       return { id: e.id, ...status, set: { type: e.type, parameters } as TypedParameters };
     });
+    if (d.machine) machine = machineParameters(d.machine, raws.slice(2 * d.entries.length));
   } catch (error) {
     if (!(error instanceof TypeError)) throw error;
     const reason = `Cannot read the parameter sets: ${error.message}. Does the gateway match the PLC's Syn_Config?`;
     return { kind: "parameters", sourceId, writable: false, reason, components: [] };
   }
-  return { kind: "parameters", sourceId, writable: d.reason === undefined, ...(d.reason ? { reason: d.reason } : {}), components };
+  return {
+    kind: "parameters",
+    sourceId,
+    writable: d.reason === undefined,
+    ...(d.reason ? { reason: d.reason } : {}),
+    components,
+    ...machine,
+  };
 }
 
 /**
@@ -124,7 +172,7 @@ export function parametersMessage(sourceId: string, d: ParameterDiscovery, raws:
  * never sees a set staged half written.
  */
 export function commandWrites(
-  command: ClientMessage,
+  command: WriteParametersCommand | ResetParametersCommand,
   d: ParameterDiscovery,
   current: ParametersMessage | undefined,
   stageId: number,

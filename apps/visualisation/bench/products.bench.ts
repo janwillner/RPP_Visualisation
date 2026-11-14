@@ -9,8 +9,7 @@ import {
   type ConveyorState,
   type StateMessage,
 } from "@rpp/protocol";
-import { buildMachineScene, MachineFrame, SourceFrame, type SourceInfo } from "@rpp/machine-view";
-import { ProductHistory } from "../src/product-history";
+import { buildMachineScene, MachineFrame, ProductHistory, SourceFrame, type SourceInfo } from "@rpp/machine-view";
 import { Recorder } from "../src/recording";
 
 /**
