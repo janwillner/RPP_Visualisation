@@ -290,12 +290,16 @@ _Avoid_: toolbox, library (the PLC library is something else)
 ## Simulator
 
 **Simulator**:
-The third web app (to be served at `/simulator/`, spec #40): with the machine as its PLC reports it, the commissioning engineer feeds products in patterns, sets the recipe and starts, stops and resets the machine, while the application's own sequence control does the work. It writes only while the PLC is in simulation mode.
+The third web app (served at `/simulator/`, spec #40): with the machine as its PLC reports it, the commissioning engineer feeds products in patterns, sets the recipe and starts, stops and resets the machine, while the application's own sequence control does the work. It writes only while the PLC is in simulation mode.
 _Avoid_: emulator, test bench, fake PLC (the gateway has none; its tests use an in-memory PLC)
 
 **Recipe**:
 The process values a machine runs with, as its application declares them in recipe fields: speeds, accelerations, picks per cycle, the product pattern. Distinct from the parameter set, which holds geometry.
 _Avoid_: parameter set, settings, draft
+
+**Recipe file**:
+A recipe saved by the Simulator as `<name>.rpp-sim.json`: the values of every recipe field per source, by group and field name. Opened again, its values are matched to the recipe the PLC declares now by field name; what differs becomes an edit to write.
+_Avoid_: draft (the configurator's file), recording
 
 **Recipe field**:
 One value of a recipe as the application declares it: name, group (a component or the whole machine), type, unit, min, max and program value.

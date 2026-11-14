@@ -730,3 +730,27 @@ table.metrics td + td {
     padding: 4px 8px;
   }
 }
+
+/* A labelled value in a form: the configurator's properties, the Simulator's recipe. */
+.property {
+  display: grid;
+  grid-template-columns: 1fr 110px;
+  gap: 8px;
+  align-items: center;
+  margin: 4px 0;
+}
+
+.property input[type="text"],
+.property select {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.property input[type="checkbox"] {
+  justify-self: start;
+}

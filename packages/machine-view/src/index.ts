@@ -19,6 +19,9 @@ export {
   type SocketState,
 } from "./gateway-connection";
 export { GATEWAY_LOST, RENDER_DELAY_MS, Sources, isOnline, type SourceInfo } from "./sources";
+// The live machine with its product history, and the parameter sets and recipes with the commands on them.
+export { LiveMachine } from "./live-machine";
+export { GatewayLive, type LiveSnapshot } from "./gateway-live";
 
 // The machine scene and its 3D view.
 export {
@@ -78,6 +81,7 @@ export { Inspector, sourceScene, type InspectorFeed } from "./panels/Inspector";
 export { StatusBar, offlineSources } from "./panels/StatusBar";
 export { StatusList, type StatusItem } from "./panels/StatusList";
 export { TopBar } from "./panels/TopBar";
+export { NumberInput, TextInput } from "./inputs";
 export { useTick } from "./use-tick";
 
 // Look and page helpers.

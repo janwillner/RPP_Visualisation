@@ -54,3 +54,13 @@ well: the component tree, the inspector with the product history and the metrics
 its count and list (`StatusList`, which each app fills: discovery errors, the draft's problems, machine messages) and
 the top bar. The visualisation keeps the viewer, recordings and playback; a page that does not show the inspector
 loads none of it, as the apps' own chunks show.
+
+## Amendment (#45)
+
+The Simulator (ADR 0020) is a third app on the same terms: `apps/simulator`, served from `--simulator-dir` at
+`/simulator/`, packaged into `web/simulator/`, importing only `machine-view`. For it, `machine-view` took over what it
+shares with the other two: the live machine with its product history (`LiveMachine`, from the visualisation), the
+parameter sets and recipes with the commands on them (`GatewayLive`, from the configurator), the text fields that
+commit on Enter (`NumberInput`, `TextInput`) with their `.property` look, and a slot in the status bar for an app's
+own lists. The rule a recipe value must follow (`invalidRecipeValue`) lives in `@rpp/protocol`, so the gateway and the
+Simulator refuse the same values.

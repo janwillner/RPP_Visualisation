@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { GatewayConnection, STALE_AFTER_MS, type ConnectionSnapshot } from "../gateway-connection";
 import type { MachineScene } from "../scene/scene-model";
 import { runStateText } from "../machine-facts";
@@ -25,6 +25,8 @@ export function StatusBar(props: {
   store: GatewayConnection;
   gateway: ConnectionSnapshot;
   modelRef: React.RefObject<MachineScene | undefined>;
+  /** What the app lists besides the discovery errors, e.g. the Simulator's problems and machine messages. */
+  children?: ReactNode;
 }) {
   const { store, gateway, modelRef } = props;
   useTick(250);
@@ -71,6 +73,7 @@ export function StatusBar(props: {
       {single?.config && <span className="muted">Config v{single.config.configVersion}</span>}
       {single?.config?.libraryVersion && <span className="muted">Syn_Visu {single.config.libraryVersion}</span>}
       <StatusList items={errors.map((text) => ({ text, severity: "error" }))} noun={["discovery error", "discovery errors"]} />
+      {props.children}
       <a className="muted link statusbar-api" href="/docs" target="_blank" rel="noopener" title="Guide to the PLC library Syn_Visu">
         PLC guide
       </a>

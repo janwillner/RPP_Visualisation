@@ -21,6 +21,7 @@ One HTTP port (8080 by default) serves:
 | `GET /docs/schema.json` | JSON Schema of the messages, the health report and the recording file lines.                   |
 | `GET /`                 | The visualisation.                                                                              |
 | `GET /configurator/`    | The configurator.                                                                               |
+| `GET /simulator/`       | The Simulator: the machine's recipe, Start / Stop / Reset and its machine messages.             |
 
 There is no authentication. Anyone who can reach the port can read the data, so keep the port inside the machine
 network.

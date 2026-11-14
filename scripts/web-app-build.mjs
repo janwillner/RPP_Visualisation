@@ -1,5 +1,5 @@
-// The build settings both web apps share (ADR 0019): the visualisation and the configurator each have their own Vite
-// config that spreads these and adds its plugins and its base path.
+// The build settings the web apps share (ADR 0019): the visualisation, the configurator and the Simulator each have
+// their own Vite config that spreads these and adds its plugins and its base path.
 import { appVersion } from "./app-version.mjs";
 import { fileURLToPath } from "node:url";
 

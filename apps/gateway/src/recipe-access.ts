@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   CONFIG_PROTOCOL_VERSION,
+  invalidRecipeValue,
   MachineCommandStatusSchema,
   ParameterResultSchema,
   RecipeFieldSchema,
@@ -146,7 +147,7 @@ export function recipeWrites(
     // Only what the client sends is checked: a field it leaves out keeps the value the application runs with.
     const sent = command.values[field.name];
     if (sent !== undefined) {
-      const problem = invalidValue(field, sent);
+      const problem = invalidRecipeValue(field, sent);
       if (problem) return { error: problem };
     }
     const value = sent ?? recipe.values[field.name] ?? (field.type === "switch" ? field.programValue !== 0 : field.programValue);
@@ -162,27 +163,4 @@ export function recipeWrites(
       { path: `${staging}.bStaged`, value: true },
     ],
   };
-}
-
-/** Why `value` is not one of `field`'s; undefined when it is. */
-function invalidValue(field: RecipeField, value: RecipeValue): string | undefined {
-  const { name, type, min, max } = field;
-  switch (type) {
-    case "switch":
-      return typeof value === "boolean" ? undefined : `${name} must be true or false.`;
-    case "choice": {
-      const last = field.choices.length - 1;
-      return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= last
-        ? undefined
-        : `${name} must be one of its choices, 0 to ${last}.`;
-    }
-    case "integer":
-      return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max
-        ? undefined
-        : `${name} must be a whole number from ${min} to ${max}.`;
-    case "number":
-      return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max
-        ? undefined
-        : `${name} must be a number from ${min} to ${max}.`;
-  }
 }

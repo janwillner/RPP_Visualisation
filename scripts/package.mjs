@@ -69,9 +69,13 @@ await build({
   logLevel: "warning",
 });
 
-// Both web apps show the same version as the gateway, even when the tree changes while packaging. The configurator goes
-// into web/configurator/, where the gateway finds it (ADR 0019).
-for (const [app, target] of [["visualisation", "web"], ["configurator", "web/configurator"]]) {
+// Every web app shows the same version as the gateway, even when the tree changes while packaging. The configurator and
+// the Simulator go into web/configurator/ and web/simulator/, where the gateway finds them (ADR 0019, 0020).
+for (const [app, target] of [
+  ["visualisation", "web"],
+  ["configurator", "web/configurator"],
+  ["simulator", "web/simulator"],
+]) {
   step(`Building the ${app}`);
   run(process.execPath, [join(root, `apps/${app}/node_modules/vite/bin/vite.js`), "build"], join(root, `apps/${app}`), {
     RPP_VERSION: version,
@@ -102,7 +106,8 @@ cpSync(join(root, "docs/deployment.md"), join(out, "DEPLOYMENT.md"));
 writeFileSync(join(out, "VERSION"), `${version}\n`);
 
 mkdirSync(join(out, "plc"));
-// Syn_Visu for the visualisation, Syn_Config for the configurator's parameter sets (ADR 0017).
+// Syn_Visu for the visualisation, Syn_Config for the configurator's parameter sets and the Simulator's recipe (ADR 0017,
+// 0022).
 for (const name of ["Syn_Visu", "Syn_Config"]) {
   const library = newestCompiledLibrary(name);
   step(`Adding the PLC library ${library}`);

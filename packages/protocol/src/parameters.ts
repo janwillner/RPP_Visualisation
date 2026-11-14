@@ -186,6 +186,29 @@ export const RecipeSchema = z
   .describe("The machine's recipe: the process values its application declares and runs with.");
 export type Recipe = z.infer<typeof RecipeSchema>;
 
+/** Why `value` is not one of `field`'s (its type, its range, its choices); undefined when it is. */
+export function invalidRecipeValue(field: RecipeField, value: RecipeValue): string | undefined {
+  const { name, type, min, max } = field;
+  switch (type) {
+    case "switch":
+      return typeof value === "boolean" ? undefined : `${name} must be true or false.`;
+    case "choice": {
+      const last = field.choices.length - 1;
+      return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= last
+        ? undefined
+        : `${name} must be one of its choices, 0 to ${last}.`;
+    }
+    case "integer":
+      return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max
+        ? undefined
+        : `${name} must be a whole number from ${min} to ${max}.`;
+    case "number":
+      return typeof value === "number" && Number.isFinite(value) && value >= min && value <= max
+        ? undefined
+        : `${name} must be a number from ${min} to ${max}.`;
+  }
+}
+
 /** What a client may ask the machine to do. */
 export const MachineCommandKindSchema = z
   .enum(["start", "stop", "reset"])

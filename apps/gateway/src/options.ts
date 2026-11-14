@@ -39,6 +39,8 @@ export interface GatewayOptions {
   staticDir?: string;
   /** Built configurator to serve at `/configurator/` (ADR 0019); undefined when none is found. */
   configuratorDir?: string;
+  /** Built Simulator to serve at `/simulator/` (ADR 0020); undefined when none is found. */
+  simulatorDir?: string;
   help: boolean;
 }
 
@@ -130,6 +132,13 @@ export const OPTION_HELP: readonly OptionHelp[] = [
       "packaged gateway, else apps/configurator/dist)",
     ],
   },
+  {
+    flag: "--simulator-dir <dir>",
+    text: [
+      "Built Simulator to serve at /simulator/ (default: web/simulator/ next to the packaged",
+      "gateway, else apps/simulator/dist)",
+    ],
+  },
 ];
 
 /** The `--help` text. */
@@ -145,7 +154,7 @@ const stringKeys = ["driver", "amsNetId", "routerAddress", "localAmsNetId", "hos
 /** Switches: a flag without a value on the command line, true or false in the config file. */
 const booleanKeys = ["allowWrite"] as const;
 /** String settings holding paths; relative ones resolve against the config file's folder or the working directory. */
-const pathKeys = ["adsBridge", "staticDir", "configuratorDir"] as const;
+const pathKeys = ["adsBridge", "staticDir", "configuratorDir", "simulatorDir"] as const;
 const numberKeys = ["adsPort", "routerPort", "cycleMs", "configRecheckMs", "port"] as const;
 
 type StringKey = (typeof stringKeys)[number] | (typeof pathKeys)[number];
@@ -194,7 +203,8 @@ export function resolveGatewayOptions(argv: readonly string[], env: OptionsEnvir
   const driver = settings.driver ?? "ads";
   if (!isOneOf(drivers, driver)) throw new OptionsError(`driver must be one of ${drivers.join(", ")}, got "${driver}"`);
   const staticDir = settings.staticDir ?? defaultStaticDir(env);
-  const configuratorDir = settings.configuratorDir ?? defaultConfiguratorDir(env);
+  const configuratorDir = settings.configuratorDir ?? defaultAppDir("configurator", env);
+  const simulatorDir = settings.simulatorDir ?? defaultAppDir("simulator", env);
   const sources = resolveSources(settings, driver as Driver);
 
   return {
@@ -213,6 +223,7 @@ export function resolveGatewayOptions(argv: readonly string[], env: OptionsEnvir
     adsBridge: settings.adsBridge ?? defaultBridge(env),
     ...(staticDir !== undefined ? { staticDir } : {}),
     ...(configuratorDir !== undefined ? { configuratorDir } : {}),
+    ...(simulatorDir !== undefined ? { simulatorDir } : {}),
     help: values.help === true,
   };
 }
@@ -284,9 +295,12 @@ function defaultStaticDir({ here, exists }: OptionsEnvironment): string | undefi
   return [join(here, "web"), resolve(here, "../../visualisation/dist")].find((dir) => exists(dir));
 }
 
-/** Packaged: web/configurator/ next to the bundle (the package puts it there). From source: apps/configurator/dist. */
-function defaultConfiguratorDir({ here, exists }: OptionsEnvironment): string | undefined {
-  return [join(here, "web", "configurator"), resolve(here, "../../configurator/dist")].find((dir) => exists(dir));
+/**
+ * An app served below its own path: packaged, web/<app>/ next to the bundle (the package puts it there); from source,
+ * apps/<app>/dist.
+ */
+function defaultAppDir(app: "configurator" | "simulator", { here, exists }: OptionsEnvironment): string | undefined {
+  return [join(here, "web", app), resolve(here, `../../${app}/dist`)].find((dir) => exists(dir));
 }
 
 function readConfigFile(path: string, env: OptionsEnvironment): Settings {

@@ -13,6 +13,7 @@ import {
   GatewayConnection,
   LayerToggles,
   type Layers,
+  LiveMachine,
   type MachineScene,
   measureChain,
   type MeasurePoint,
@@ -35,7 +36,6 @@ import {
   type Vec3,
   ViewControls,
 } from "@rpp/machine-view";
-import { LiveMachine } from "./live-machine";
 import {
   PlayerBar,
   PlayerBarToggle,

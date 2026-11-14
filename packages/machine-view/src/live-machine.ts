@@ -1,19 +1,16 @@
 import type { StateMessage } from "@rpp/protocol";
-import {
-  METRICS_WINDOW_MS,
-  ProductHistory,
-  type GatewayConnection,
-  type MessageListener,
-  type SceneSource,
-  type SourceInfo,
-} from "@rpp/machine-view";
-import type { LiveFeed } from "./viewer";
+import type { GatewayConnection, MessageListener } from "./gateway-connection";
+import { METRICS_WINDOW_MS } from "./metrics";
+import type { InspectorFeed } from "./panels/Inspector";
+import { ProductHistory } from "./product-history";
+import type { SceneSource } from "./scene/scene-model";
+import type { SourceInfo } from "./sources";
 
 /**
- * The live machine as the visualisation reads it: the gateway connection's sources plus every product's history and
- * the product events the metrics count, followed from the first message on.
+ * The live machine as the visualisation and the Simulator read it: the gateway connection's sources plus every
+ * product's history and the product events the metrics count, followed from the first message on.
  */
-export class LiveMachine implements LiveFeed {
+export class LiveMachine implements InspectorFeed {
   // Product events are kept a little longer than the metrics look back.
   private readonly products = new ProductHistory(undefined, 2 * METRICS_WINDOW_MS);
   /** Arrival of the first state: the metrics cover no more than the time since. */

@@ -38,29 +38,6 @@
   border-radius: 4px;
 }
 
-.configurator .property {
-  display: grid;
-  grid-template-columns: 1fr 110px;
-  gap: 8px;
-  align-items: center;
-  margin: 4px 0;
-}
-
-.configurator .property input[type="text"],
-.configurator .property select {
-  width: 100%;
-  font: inherit;
-  color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 2px 6px;
-}
-
-.configurator .property input[type="checkbox"] {
-  justify-self: start;
-}
-
 /* Tighter than the visualisation's, so the layer toggles fit beside the file and edit buttons on a 1280 px screen. */
 .configurator .toolbar {
   gap: 8px;
