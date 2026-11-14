@@ -76,6 +76,8 @@ export interface RecipeFormGroup {
   name: string;
   /** The group of the selected component. */
   selected: boolean;
+  /** One of its fields is visible; the page leaves a group out while none is. */
+  visible: boolean;
   fields: RecipeFormField[];
 }
 
@@ -601,7 +603,7 @@ export class Simulator {
         const selection = this.selection;
         const selected =
           field.group !== 0 && selection?.kind === "component" && selection.sourceId === source.sourceId && selection.id === field.group;
-        group = { group: field.group, name, selected, fields: [] };
+        group = { group: field.group, name, selected, visible: false, fields: [] };
         groups.push(group);
       }
       const active = recipe.values[field.name];
@@ -619,6 +621,7 @@ export class Simulator {
         ...(warning ? { warning } : {}),
       });
     }
+    for (const group of groups) group.visible = group.fields.some((f) => f.visible);
     // The machine's own fields after its components'.
     return [...groups.filter((g) => g.group !== 0), ...groups.filter((g) => g.group === 0)];
   }

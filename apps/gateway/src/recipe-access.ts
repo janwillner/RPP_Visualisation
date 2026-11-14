@@ -1,5 +1,7 @@
 import { z } from "zod";
 import {
+  FIELD_TEXT_CONFIG_PROTOCOL_VERSION,
+  RECIPE_CONFIG_PROTOCOL_VERSION,
   invalidRecipeValue,
   recipeProgramValue,
   MachineCommandStatusSchema,
@@ -25,11 +27,6 @@ import type { SymbolWrite } from "./symbol-access";
  * and effective values as part of the `parameters` message, and the leaf values that stage a recipe, a reset or a
  * machine command.
  */
-
-/** The first config protocol with a machine FB: recipe fields and machine commands. */
-const RECIPE_CONFIG_PROTOCOL_VERSION = 3;
-/** The first config protocol whose recipe fields have a label, a description and a visibility condition. */
-const FIELD_TEXT_CONFIG_PROTOCOL_VERSION = 4;
 
 /** The machine FB found in the config manifest (id 0, type NONE). */
 export interface MachineFbEntry {
@@ -87,9 +84,12 @@ export function machineFbEntry(path: string, raw: unknown, protocolVersion: numb
 
 /**
  * The visibility conditions that cannot hold, by field index, with why: one on a field not declared, on the field
- * itself, on a number field (a condition compares whole numbers), or in a ring of fields depending on each other.
+ * itself, on a number field (a condition compares whole numbers), on a value its field can never have, or in a ring of
+ * fields depending on each other.
  */
-function conditionProblems(fields: readonly { name: string; type: RecipeField["type"]; visibleField: number }[]): Map<number, string> {
+function conditionProblems(
+  fields: readonly (Pick<RecipeField, "name" | "type" | "min" | "max" | "choices"> & { visibleField: number; visibleValue: number })[],
+): Map<number, string> {
   const problems = new Map<number, string>();
   const say = (i: number, why: string) => problems.set(i, `Recipe field ${fields[i]!.name} ${why}; it is always shown.`);
   for (const [i, f] of fields.entries()) {
@@ -98,6 +98,9 @@ function conditionProblems(fields: readonly { name: string; type: RecipeField["t
     if (on < 0 || on > fields.length) say(i, `is shown only with field ${on}, which is not declared`);
     else if (on === i + 1) say(i, "depends on itself");
     else if (fields[on - 1]!.type === "number") say(i, `depends on ${fields[on - 1]!.name}, but ${fields[on - 1]!.name} is a number field`);
+    else if (invalidRecipeValue(fields[on - 1]!, conditionValue(fields[on - 1]!, f.visibleValue)) !== undefined) {
+      say(i, `is shown only with ${fields[on - 1]!.name} = ${f.visibleValue}, which ${fields[on - 1]!.name} can never have`);
+    }
   }
   // A ring: following the conditions from a field comes back to it.
   for (const i of fields.keys()) {
@@ -115,6 +118,11 @@ function conditionProblems(fields: readonly { name: string; type: RecipeField["t
     }
   }
   return problems;
+}
+
+/** A condition's whole number as a value of the field it reads: a switch's 0 / 1 as off / on. */
+function conditionValue(field: Pick<RecipeField, "type">, value: number): RecipeValue {
+  return field.type === "switch" ? (value === 0 ? false : value === 1 ? true : value) : value;
 }
 
 /** What the cyclic sum-read reads of the machine FB: the recipe's status, its effective values and the command answer. */

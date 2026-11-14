@@ -328,8 +328,8 @@ Shows the declared field vi_un_Field in the Simulator only while field vi_un_OnF
 (config protocol 4, #49), e.g. a lane count only while the pattern is Lanes. vi_un_OnField must be a SWITCH (0 / 1),<br>
 CHOICE or INTEGER field and may belong to another group; a field depending on a hidden one is hidden too. A hidden<br>
 field keeps its value and is written with the recipe. vi_un_OnField = 0 shows the field always. The gateway reports<br>
-a condition on a NUMBER field, on the field itself, on a field not declared or in a ring as a discovery error and<br>
-shows that field always. Idempotent: call it every cycle with m_DeclareField.<br>
+a condition on a NUMBER field, on the field itself, on a field not declared, on a value that field can never have<br>
+or in a ring as a discovery error and shows that field always. Idempotent: call it every cycle with m_DeclareField.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
 FALSE for a field not declared.<br>

@@ -237,6 +237,7 @@ describe("recipe fields and machine commands (Syn_Config config protocol 3 and 4
     ["itself", 2, 1, /PicksPerCycle.*depends on itself/],
     ["a field not declared", 9, 0, /PicksPerCycle.*field 9, which is not declared/],
     ["a field depending on it", 3, 1, /depend on each other/],
+    ["a value its field can never have", 4, 3, /PicksPerCycle.*Pattern = 3, which Pattern can never have/],
   ])("reports a condition on %s as a discovery error and publishes the field without it", async (_, on, value, error) => {
     const { plc, parameters, messages, cycle } = setup();
     const fields = plc.get<ST_ConfigMachine>(MACHINE_FB).aFields;

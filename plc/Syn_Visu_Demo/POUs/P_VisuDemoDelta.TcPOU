@@ -742,7 +742,7 @@ END_IF
 
 (* Its lane, type and scatter, on the belt: the pattern Lanes puts it into one of its lanes unscattered, Scattered
    into the one lane, scattered. Both draw the same numbers, so a seed gives the same products in either. *)
-IF DEMO_GlobalVar.DEMO_Recipe.b_Lanes THEN
+IF DEMO_GlobalVar.DEMO_Recipe.b_PatternLanes THEN
 	dn_TempLanes := LIMIT(1, DEMO_GlobalVar.DEMO_Recipe.dn_Lanes, 4);
 	lr_TempScatter := 0;
 ELSE

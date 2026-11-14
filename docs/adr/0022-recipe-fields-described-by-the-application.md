@@ -54,9 +54,10 @@ is called (config protocol 4, Syn_Config 2.2.0):
 
 - **A visibility condition per field.** `m_SetVisibleWhen(field, onField, value)`: the field is shown only while
   `onField` (a SWITCH, CHOICE or INTEGER field, in any group) has that value in the Simulator's form, i.e. its edit,
-  else its active value. A field whose condition field is hidden is hidden too. A hidden field keeps its edit, which is
+  else its active value, else its program value. A field whose condition field is hidden is hidden too. A hidden field keeps its edit, which is
   written and named in the write plan, and its value in a recipe file; it is hidden, not disabled. A condition on a
-  NUMBER field, on itself, on an unknown field or in a cycle is a discovery error, and the field stays visible.
+  NUMBER field, on itself, on an unknown field, on a value its field can never have or in a ring is a discovery error,
+  and the field stays visible.
 - **A label and a description per field** (`m_SetText`): free text in the application's language, shown instead of
   the worded name and in the field's tooltip. The name stays the field's key for writing and for recipe files.
 - **Unchanged:** `m_DeclareField`, the persistent recipe set, static declarations read at discovery, 64 fields and 8

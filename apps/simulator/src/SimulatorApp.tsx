@@ -318,7 +318,7 @@ function RecipeGroup({ group, simulator }: { group: RecipeFormGroup; simulator: 
   useEffect(() => {
     if (group.selected) ref.current?.scrollIntoView({ block: "nearest" });
   }, [group.selected]);
-  if (fields.length === 0) return null;
+  if (!group.visible) return null;
   return (
     <fieldset ref={ref} className={group.selected ? "selected" : undefined}>
       <legend>{group.name}</legend>

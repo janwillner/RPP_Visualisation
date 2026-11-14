@@ -29,6 +29,12 @@ import {
  */
 export const CONFIG_PROTOCOL_VERSION = 4;
 
+/** The first config protocol with a machine FB: recipe fields and machine commands (ADR 0022). */
+export const RECIPE_CONFIG_PROTOCOL_VERSION = 3;
+
+/** The first config protocol whose recipe fields have a label, a description and a visibility condition (#49). */
+export const FIELD_TEXT_CONFIG_PROTOCOL_VERSION = 4;
+
 /** The oldest Syn_Config protocol the gateway still writes parameter sets to; it has no recipe and no commands. */
 export const MIN_CONFIG_PROTOCOL_VERSION = 2;
 
@@ -212,7 +218,10 @@ export function recipeProgramValue(field: RecipeField): RecipeValue {
 }
 
 /** Why `value` is not one of `field`'s (its type, its range, its choices); undefined when it is. */
-export function invalidRecipeValue(field: RecipeField, value: RecipeValue): string | undefined {
+export function invalidRecipeValue(
+  field: Pick<RecipeField, "name" | "type" | "min" | "max" | "choices">,
+  value: RecipeValue,
+): string | undefined {
   const { name, type, min, max } = field;
   switch (type) {
     case "switch":

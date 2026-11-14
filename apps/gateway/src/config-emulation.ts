@@ -1,4 +1,4 @@
-import { CONFIG_PROTOCOL_VERSION, PARAMETER_SCHEMAS, type ParameterType } from "@rpp/protocol";
+import { CONFIG_PROTOCOL_VERSION, FIELD_TEXT_CONFIG_PROTOCOL_VERSION, PARAMETER_SCHEMAS, type ParameterType } from "@rpp/protocol";
 import { COMPONENTS } from "./components";
 import {
   CONFIG_MANIFEST_PATH,
@@ -115,7 +115,7 @@ export class ConfigEmulation {
       const { fields } = options.machine;
       // Config protocol 3 declares no label, description or condition.
       const declared = (f: ST_ConfigRecipeField): ST_ConfigRecipeField => {
-        if (manifest.nProtocolVersion >= 4) return f;
+        if (manifest.nProtocolVersion >= FIELD_TEXT_CONFIG_PROTOCOL_VERSION) return f;
         const { sLabel: _l, sDescription: _d, nVisibleField: _f, nVisibleValue: _v, ...older } = f;
         return older;
       };

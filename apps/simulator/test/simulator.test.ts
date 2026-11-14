@@ -222,6 +222,28 @@ describe("Simulator: fields shown by their conditions, with the application's te
     expect(sim.getSnapshot().problems).toEqual([expect.objectContaining({ severity: "error", field: "PicksPerCycle" })]);
   });
 
+  it("opens a file with the value of a field hidden now as an edit of that field", () => {
+    const { sim } = conditional();
+    const file = JSON.parse(sim.save().text);
+    file.sources[0].values["10"].PicksPerCycle = 1;
+    sim.open(JSON.stringify(file));
+    expect(visible(sim)).not.toContain("PicksPerCycle");
+    expect(sim.field("PicksPerCycle")).toMatchObject({ value: 1, changed: true });
+    expect(sim.writePlan().changes).toEqual([expect.objectContaining({ name: "PicksPerCycle", hidden: true })]);
+  });
+
+  it("shows a group only while one of its fields is visible", () => {
+    const { sim } = conditional();
+    // Delta 1's fields both wait for Boxes.
+    expect(sim.getSnapshot().form.map((g) => [g.name, g.visible])).toEqual([
+      ["Infeed 1", true],
+      ["Delta 1", false],
+      ["Machine", true],
+    ]);
+    sim.edit("TypeMix", 1);
+    expect(sim.getSnapshot().form.find((g) => g.name === "Delta 1")?.visible).toBe(true);
+  });
+
   it("labels a field with the application's label, else its name in words, and keeps its description", () => {
     const { live, sim } = simulator();
     live.recipe(A, {

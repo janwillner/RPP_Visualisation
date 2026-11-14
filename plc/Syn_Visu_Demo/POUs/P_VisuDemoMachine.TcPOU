@@ -80,7 +80,7 @@ DEMO_GlobalVar.DEMO_Recipe.lr_ScatterRz := fb_MachineParam.m_Value(vi_un_Field :
 DEMO_GlobalVar.DEMO_Recipe.lr_GapShare := fb_MachineParam.m_Value(vi_un_Field := un_F_GAP_SHARE);
 DEMO_GlobalVar.DEMO_Recipe.dn_Seed := fb_MachineParam.m_Integer(vi_un_Field := un_F_SEED);
 DEMO_GlobalVar.DEMO_Recipe.b_Feed := fb_MachineParam.m_Switch(vi_un_Field := un_F_FEED);
-DEMO_GlobalVar.DEMO_Recipe.b_Lanes := fb_MachineParam.m_Integer(vi_un_Field := un_F_PATTERN) = dn_PATTERN_LANES;
+DEMO_GlobalVar.DEMO_Recipe.b_PatternLanes := fb_MachineParam.m_Integer(vi_un_Field := un_F_PATTERN) = dn_PATTERN_LANES;
 
 
 (****************************************************************************************************)

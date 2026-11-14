@@ -159,7 +159,7 @@ END_CASE
   `vi_un_OnField` (a SWITCH as 0 / 1, a CHOICE or an INTEGER field, in any group) has that value in the Simulator's
   form, e.g. a lane count only for the pattern Lanes; a field depending on a hidden one is hidden too, and
   `vi_un_OnField` 0 shows it always. A hidden field keeps its value and is written with the recipe. The gateway reports
-  a condition on a NUMBER field, on the field itself, on a field not declared or in a ring of fields as a discovery
+  a condition on a NUMBER field, on the field itself, on a field not declared, on a value that field can never have or in a ring of fields as a discovery
   error and shows that field always.
 - `m_Cycle` takes a staged recipe over only while `vi_b_ApplyAllowed`, on the active version it is based on, and only
   when every value fits its field (else REJECTED with the field's name); a reset returns to the program values.

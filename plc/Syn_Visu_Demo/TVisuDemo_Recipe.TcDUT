@@ -20,7 +20,7 @@ STRUCT
 	lr_GapShare							: LREAL;	// [%] of the generator's places left empty
 	dn_Seed								: DINT;	// [-] of the generator's pseudo-random numbers: the same seed gives the same products
 	b_Feed								: BOOL;	// TRUE: the generator feeds products
-	b_Lanes								: BOOL;	// TRUE: pattern Lanes (dn_Lanes, lr_LanePitch, unscattered); FALSE: Scattered (one lane, lr_Scatter*)
+	b_PatternLanes						: BOOL;	// TRUE: pattern Lanes (dn_Lanes, lr_LanePitch, unscattered); FALSE: Scattered (one lane, lr_Scatter*)
 END_STRUCT
 END_TYPE]]></Declaration>
   </DUT>
