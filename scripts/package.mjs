@@ -103,6 +103,7 @@ cpSync(await download(WINSW_URL, "WinSW-v2.12.0-x64.exe", WINSW_SHA256), join(ou
 step("Adding install scripts and docs");
 for (const file of ["install.ps1", "uninstall.ps1"]) cpSync(join(root, "deploy/windows", file), join(out, file));
 cpSync(join(root, "docs/deployment.md"), join(out, "DEPLOYMENT.md"));
+cpSync(join(root, "LICENSE"), join(out, "LICENSE"));
 writeFileSync(join(out, "VERSION"), `${version}\n`);
 
 mkdirSync(join(out, "plc"));
