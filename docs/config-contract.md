@@ -1,4 +1,4 @@
-# Parameter set contract (library `Syn_Config`, config protocol version 4)
+# Parameter set contract (library `Syn_Config`, config protocol version 5)
 
 The library `Syn_Config` (ADR 0017) holds the parameter sets the configurator writes and the application takes over:
 the part of a component's configuration the machine runs with, never its hardware. It is the PLC project
@@ -41,6 +41,23 @@ gateway needs no type per application. A recipe write goes like a parameter set'
 against its field (type, min, max, choices) before it writes, and writes recipes and commands only while the PLC
 reports simulation mode in its machine entry (`GVL_Visu.stMachine.bSimulation`, protocol 22).
 
+The topology FB (`_FB_ConfigTopology`, config protocol 5, ADR 0023) is listed with `nId` 0 and `eType` NONE too; the
+gateway tells the two apart by the type of their `vo_Config`. Its `vo_Config : ST_ConfigTopology` holds the
+application's topology; the gateway never writes it yet:
+
+| Member | Who | Content |
+| --- | --- | --- |
+| `nKindCount`, `aKinds[0..15] : ST_ConfigTopologyKind` | read at discovery | kinds of node by number - 1: `sName`, `nParentKinds` (DWORD, bit k - 1: kind k may be the parent) |
+| `nRoleCount`, `aRoles[0..15] : ST_ConfigTopologyRole` | read at discovery | roles by number - 1: `sName`, `nHolderKind`, `nTargetKinds` (DWORD as above), `bRequired` |
+| `nNodeCount`, `aNodes[0..63] : ST_ConfigTopologyNode` | read at discovery | `nId` (DINT, the application's id), `sName`, `nKind`, `nComponentCount`, `aComponents[0..3]` (manifest ids) |
+| `nRootNode` | read at discovery | id of the root node |
+| `stActive : ST_ConfigTopologyLinks` | read every cycle | the links in effect, the program values: `nLinkCount`, `aLinks[0..127]` of `nNode`, `nRole` (0 = the parent), `nTarget` |
+
+Names of kinds and roles are unique, node ids too; the gateway reports a topology that breaks this as a discovery
+error and publishes none. A role or node of a kind not declared is left out, as is a component the Syn_Visu manifest
+does not list, each with a discovery error; so is a root node not declared. A link of or to a node not declared, or in
+a role not declared, is left out.
+
 A write goes in this order: `bStaged := FALSE` (withdraws a set still waiting), every leaf of the set,
 `nBaseVersion`, `nStageId`, `bReset := FALSE`, and `bStaged := TRUE`. A reset writes `nBaseVersion`, `nStageId` and
 `bReset := TRUE`. The ADS bridge sends all but the last value in one ADS sum-write and the last one (`bStaged` or
@@ -66,6 +83,7 @@ parameter FB and the machine FB (`m_HandleStaging`, below); a derived FB names o
 
 | Library | Config protocol | Change |
 | --- | --- | --- |
+| 2.4.0 | 5 | The topology FB `_FB_ConfigTopology` (ADR 0023): kinds, roles, nodes, root node and the program links. `m_Register` keeps several id 0 entries apart by their path. No change to the other FBs |
 | 2.3.0 | 4 | Needs `SynVisu` 10.0.0: `m_PassOn` passes the pose on too (`m_SetPose`), the application's `m_Configure` keeps only the hardware. One staging lifecycle for every FB (`m_HandleStaging`); the symbol path from `SynVisu._FC_VisuSymbolPath`. Structures and persistent sets unchanged |
 | 2.2.0 | 4 | A recipe field's label, description and visibility condition (`sLabel`, `sDescription`, `nVisibleField`, `nVisibleValue`; `m_SetText`, `m_SetVisibleWhen`; #49). `m_DeclareField` and the persistent `ST_ConfigRecipeSet` are unchanged; the gateway still reads config protocol 3, its fields without them |
 | 2.1.0 | 3 | The machine FB `_FB_ConfigMachine`: recipe fields the application declares, their staging, machine commands (ADR 0022). No change to the parameter FBs; the gateway still writes parameter sets to a PLC of config protocol 2 |
@@ -193,3 +211,41 @@ running with the program values, which give the product pattern it had before it
 The demo (`plc/Syn_Visu_Demo`) does this for Infeed 1, Delta 1 and Vision 1 (`P_VisuDemoDelta`; the vision system
 latches its products under its effective lens position) and the IDH XTS gantry (`P_VisuDemoIdh`; its simulated motion
 keeps to the program's track), taking a set over at once; the gateway tests emulate the same (`apps/gateway/src/config-emulation.ts`).
+
+## The topology FB: nodes, roles and links
+
+The topology says how the parts of an application relate (ADR 0023): every topology node but the root node has a
+parent, and a node may point to other nodes in roles its kind holds (a pick-and-place handling to its infeed
+transport). The application declares the full build-out; a node is in use when it is the root node or its chain of
+parents reaches it. One `_FB_ConfigTopology` per application, every cycle:
+
+```st
+VAR
+	fb_Topology					: SynConfig._FB_ConfigTopology;
+END_VAR
+
+fb_Topology.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := 0);	// id 0, as the machine FB
+fb_Topology.m_DeclareKind(vi_un_Kind := 1, vi_str_Name := 'Cell');
+fb_Topology.m_DeclareKind(vi_un_Kind := 2, vi_str_Name := 'Transport');
+fb_Topology.m_DeclareKind(vi_un_Kind := 3, vi_str_Name := 'PPH');
+fb_Topology.m_AllowParent(vi_un_Kind := 3, vi_un_ParentKind := 1);
+fb_Topology.m_DeclareRole(vi_un_Role := 1, vi_str_Name := 'Infeed1', vi_un_HolderKind := 3, vi_b_Required := TRUE);
+fb_Topology.m_AllowTarget(vi_un_Role := 1, vi_un_TargetKind := 2);
+fb_Topology.m_DeclareNode(vi_dn_Id := 10, vi_str_Name := 'MPS1', vi_un_Kind := 1);
+fb_Topology.m_DeclareNode(vi_dn_Id := 21, vi_str_Name := 'PPH1', vi_un_Kind := 3);
+fb_Topology.m_AddComponent(vi_dn_Node := 21, vi_udn_ComponentId := fb_Delta1.m_Id());
+fb_Topology.m_SetRoot(vi_dn_Node := 10);
+fb_Topology.m_SetParent(vi_dn_Node := 21, vi_dn_Parent := 10);	// program values
+fb_Topology.m_Link(vi_dn_Node := 21, vi_un_Role := 1, vi_dn_Target := 30);
+fb_Topology.m_Cycle();
+```
+
+- Kinds and roles are numbered from 1 and listed up to the highest one declared; nodes by their own id (DINT, e.g.
+  the application's context id, not 0) in the order they are first declared. Declare kinds before roles and nodes,
+  nodes before links. Every method refuses (FALSE) what refers to something not declared, `m_SetRoot` also a second
+  root node.
+- A node has one link per role: linking it again replaces the target. The parent is role 0 (`m_SetParent`).
+- `m_Cycle` gives the program values as the links in effect (`stActive`).
+
+The demo declares a small topology in `P_VisuDemoMachine.m_DeclareTopology`: the line TCAT1 holds the cell MPS1 with
+TBL1 (Infeed 1), PPH1 (Delta 1, Infeed1 = TBL1) and DET1 (Vision 1, Transport = TBL1); PPH2 has no parent.

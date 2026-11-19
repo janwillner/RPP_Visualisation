@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigTopologyKind" Id="{70b5d6e8-fac8-471b-81a7-14f3409ebcb8}">
+    <Declaration><![CDATA[TYPE ST_ConfigTopologyKind :
+STRUCT
+	(* A kind of topology node as the application declares it with _FB_ConfigTopology.m_DeclareKind (config protocol 5,
+	   ADR 0023), referred to by its number from 1. *)
+	sName : STRING(31); // unique in the topology, e.g. 'PPH'
+	nParentKinds : DWORD; // bit k - 1 set: a node of kind k may be the parent of a node of this kind (m_AllowParent)
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

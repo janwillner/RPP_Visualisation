@@ -34,6 +34,8 @@ import { keyOf } from "./edits";
 import type { Match } from "./reconciliation";
 import type { Issue } from "./validation";
 import { properties, type PropertyField, type PropertyGroup } from "./property-fields";
+import { topologyNode } from "./topology";
+import { NodeDetails, TopologyTree } from "./TopologyPanel";
 
 /** Every overlay of the draft is shown: zones, areas and markers are what is being configured. */
 /** Every layer on at the start, the coordinate systems too: origin shifts are set here. */
@@ -116,6 +118,7 @@ export function ConfiguratorApp() {
   const panels = sidePanelsLayout(left, right);
 
   const selected = draft.components.find((c) => keyOf(c) === selection);
+  const selectedNode = snapshot.selectedNode && topologyNode(snapshot.topologies, snapshot.selectedNode);
   const sceneSelection: Selection = selected && { kind: "component", id: selected.id, sourceId: selected.sourceId };
 
   /** Adds from the palette at a client position, or in the middle of the view. */
@@ -236,6 +239,15 @@ export function ConfiguratorApp() {
             ))}
           </ul>
         )}
+        {snapshot.topologies.map((t) => (
+          <TopologyTree
+            key={t.sourceId}
+            topology={t}
+            sourceName={plcSources.find((s) => s.sourceId === t.sourceId)?.name ?? t.sourceId}
+            selected={snapshot.selectedNode}
+            configurator={configurator}
+          />
+        ))}
         <h3>Components</h3>
         {draft.components.length === 0 && <p className="muted">None yet.</p>}
         <ul className="tree components">
@@ -318,6 +330,7 @@ export function ConfiguratorApp() {
       </main>
 
       <aside className="panel right" hidden={!right.open}>
+        {selectedNode && <NodeDetails node={selectedNode} />}
         {selected ? (
           // Keyed by the component: what a panel holds for one component (a conveyor chosen for a new zone) never
           // carries over to the next.
@@ -332,7 +345,7 @@ export function ConfiguratorApp() {
             }
           />
         ) : (
-          <p className="muted">Select a component to edit its values.</p>
+          !selectedNode && <p className="muted">Select a component to edit its values.</p>
         )}
       </aside>
 

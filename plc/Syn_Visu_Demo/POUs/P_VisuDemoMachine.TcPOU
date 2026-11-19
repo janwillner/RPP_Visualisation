@@ -15,13 +15,14 @@ STOPPED; Delta 1 moves only as fast as its belt, so it halts with it. Start is a
 starting or running, Reset while stopped: it empties Infeed 1 and Delta 1, restarts the generator from its seed and<br>
 acknowledges the missed-product message and Delta 1's fault. The demo starts running and always reports simulation<br>
 mode. It reports the machine to Syn_Visu (GVL_Visu.stMachine) with two machine messages: 'Reject bin almost full'<br>
-about the reject unit for lr_REJECT_BIN_DURATION of every fault period, and 'Product missed' about Infeed 1. Called<br>
-first by P_VisuDemo.<br>
+about the reject unit for lr_REJECT_BIN_DURATION of every fault period, and 'Product missed' about Infeed 1. Its<br>
+Syn_Config topology FB declares the demo's topology (ADR 0023, m_DeclareTopology). Called first by P_VisuDemo.<br>
 ****************************************************************************************************)
 PROGRAM P_VisuDemoMachine
 VAR
 	fb_Machine							: _FB_VisuMachine;	// Syn_Visu: run state, simulation mode, machine messages
 	fb_MachineParam						: SynConfig._FB_ConfigMachine;	// Syn_Config: recipe and commands
+	fb_Topology							: SynConfig._FB_ConfigTopology;	// Syn_Config: the demo's topology (ADR 0023)
 	e_RunState							: E_VisuRunState := E_VisuRunState.STARTING;	// the demo starts running
 	lr_TargetSpeed						: LREAL;	// [mm/s] Infeed 1 ramps to this
 	lr_RampStep							: LREAL;	// [mm/s] Infeed 1's speed change at most this cycle
@@ -53,6 +54,7 @@ VAR CONSTANT
 	udn_INFEED1_ID						: UDINT := 1;	// [-] manifest id of Infeed 1 (P_VisuDemoDelta)
 	udn_DELTA1_ID						: UDINT := 10;	// [-] manifest id of Delta 1 (P_VisuDemoDelta)
 	udn_REJECT_UNIT_ID					: UDINT := 60;	// [-] manifest id of the reject unit (P_VisuDemoDelta)
+	udn_VISION1_ID						: UDINT := 50;	// [-] manifest id of Vision 1 (P_VisuDemoDelta)
 	udn_MSG_REJECT_BIN					: UDINT := 1;	// [-] machine message: the reject bin is almost full
 	udn_MSG_MISSED						: UDINT := 2;	// [-] machine message: a product passed Infeed 1 unpicked
 	lr_REJECT_BIN_DURATION				: LREAL := 4;	// [s] the reject bin message is active from the start of every fault period
@@ -81,6 +83,14 @@ DEMO_GlobalVar.DEMO_Recipe.lr_GapShare := fb_MachineParam.m_Value(vi_un_Field :=
 DEMO_GlobalVar.DEMO_Recipe.dn_Seed := fb_MachineParam.m_Integer(vi_un_Field := un_F_SEED);
 DEMO_GlobalVar.DEMO_Recipe.b_Feed := fb_MachineParam.m_Switch(vi_un_Field := un_F_FEED);
 DEMO_GlobalVar.DEMO_Recipe.b_PatternLanes := fb_MachineParam.m_Integer(vi_un_Field := un_F_PATTERN) = dn_PATTERN_LANES;
+
+
+(****************************************************************************************************)
+(* TOPOLOGY (declaration and program values idempotent, every cycle)                                *)
+(****************************************************************************************************)
+fb_Topology.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := 0);
+m_DeclareTopology();
+fb_Topology.m_Cycle();
 
 
 (****************************************************************************************************)
@@ -257,6 +267,69 @@ fb_MachineParam.m_SetVisibleWhen(vi_un_Field := un_F_LANE_PITCH, vi_un_OnField :
 fb_MachineParam.m_SetVisibleWhen(vi_un_Field := un_F_SCATTER_X, vi_un_OnField := un_F_PATTERN, vi_dn_Value := dn_PATTERN_SCATTERED);
 fb_MachineParam.m_SetVisibleWhen(vi_un_Field := un_F_SCATTER_Y, vi_un_OnField := un_F_PATTERN, vi_dn_Value := dn_PATTERN_SCATTERED);
 fb_MachineParam.m_SetVisibleWhen(vi_un_Field := un_F_SCATTER_RZ, vi_un_OnField := un_F_PATTERN, vi_dn_Value := dn_PATTERN_SCATTERED);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_DeclareTopology" Id="{f75c3c0a-ff30-4b54-9fff-4c8e1a835df0}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+DEMO ONLY: the demo's topology (ADR 0023) in the words of the RPP application. The line TCAT1 (root) holds the cell<br>
+MPS1, which holds the transport TBL1 (Infeed 1), the pick-and-place handling PPH1 (Delta 1) taking its products<br>
+from TBL1 and the vision unit DET1 (Vision 1) looking at TBL1. PPH2 belongs to the full build-out but has no<br>
+parent: it is not in use. Idempotent, every cycle.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_DeclareTopology
+VAR CONSTANT
+	un_K_LINE							: UINT := 1;	// [-] kinds
+	un_K_CELL							: UINT := 2;
+	un_K_TRANSPORT						: UINT := 3;
+	un_K_PPH							: UINT := 4;
+	un_K_DET							: UINT := 5;
+	un_R_INFEED1						: UINT := 1;	// [-] roles
+	un_R_TRANSPORT						: UINT := 2;
+	dn_TCAT1							: DINT := 1;	// [-] nodes, numbered like the RPP application's contexts
+	dn_MPS1								: DINT := 10;
+	dn_PPH1								: DINT := 21;
+	dn_PPH2								: DINT := 22;
+	dn_TBL1								: DINT := 30;
+	dn_DET1								: DINT := 60;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[fb_Topology.m_DeclareKind(vi_un_Kind := un_K_LINE, vi_str_Name := 'Line');
+fb_Topology.m_DeclareKind(vi_un_Kind := un_K_CELL, vi_str_Name := 'Cell');
+fb_Topology.m_DeclareKind(vi_un_Kind := un_K_TRANSPORT, vi_str_Name := 'Transport');
+fb_Topology.m_DeclareKind(vi_un_Kind := un_K_PPH, vi_str_Name := 'PPH');
+fb_Topology.m_DeclareKind(vi_un_Kind := un_K_DET, vi_str_Name := 'DET');
+fb_Topology.m_AllowParent(vi_un_Kind := un_K_CELL, vi_un_ParentKind := un_K_LINE);
+fb_Topology.m_AllowParent(vi_un_Kind := un_K_TRANSPORT, vi_un_ParentKind := un_K_CELL);
+fb_Topology.m_AllowParent(vi_un_Kind := un_K_PPH, vi_un_ParentKind := un_K_CELL);
+fb_Topology.m_AllowParent(vi_un_Kind := un_K_DET, vi_un_ParentKind := un_K_CELL);
+fb_Topology.m_DeclareRole(vi_un_Role := un_R_INFEED1, vi_str_Name := 'Infeed1', vi_un_HolderKind := un_K_PPH, vi_b_Required := TRUE);
+fb_Topology.m_AllowTarget(vi_un_Role := un_R_INFEED1, vi_un_TargetKind := un_K_TRANSPORT);
+fb_Topology.m_DeclareRole(vi_un_Role := un_R_TRANSPORT, vi_str_Name := 'Transport', vi_un_HolderKind := un_K_DET, vi_b_Required := TRUE);
+fb_Topology.m_AllowTarget(vi_un_Role := un_R_TRANSPORT, vi_un_TargetKind := un_K_TRANSPORT);
+
+fb_Topology.m_DeclareNode(vi_dn_Id := dn_TCAT1, vi_str_Name := 'TCAT1', vi_un_Kind := un_K_LINE);
+fb_Topology.m_DeclareNode(vi_dn_Id := dn_MPS1, vi_str_Name := 'MPS1', vi_un_Kind := un_K_CELL);
+fb_Topology.m_DeclareNode(vi_dn_Id := dn_TBL1, vi_str_Name := 'TBL1', vi_un_Kind := un_K_TRANSPORT);
+fb_Topology.m_DeclareNode(vi_dn_Id := dn_PPH1, vi_str_Name := 'PPH1', vi_un_Kind := un_K_PPH);
+fb_Topology.m_DeclareNode(vi_dn_Id := dn_PPH2, vi_str_Name := 'PPH2', vi_un_Kind := un_K_PPH);
+fb_Topology.m_DeclareNode(vi_dn_Id := dn_DET1, vi_str_Name := 'DET1', vi_un_Kind := un_K_DET);
+fb_Topology.m_AddComponent(vi_dn_Node := dn_TBL1, vi_udn_ComponentId := udn_INFEED1_ID);
+fb_Topology.m_AddComponent(vi_dn_Node := dn_PPH1, vi_udn_ComponentId := udn_DELTA1_ID);
+fb_Topology.m_AddComponent(vi_dn_Node := dn_DET1, vi_udn_ComponentId := udn_VISION1_ID);
+fb_Topology.m_SetRoot(vi_dn_Node := dn_TCAT1);
+
+(* Program values: the links the demo runs with. *)
+fb_Topology.m_SetParent(vi_dn_Node := dn_MPS1, vi_dn_Parent := dn_TCAT1);
+fb_Topology.m_SetParent(vi_dn_Node := dn_TBL1, vi_dn_Parent := dn_MPS1);
+fb_Topology.m_SetParent(vi_dn_Node := dn_PPH1, vi_dn_Parent := dn_MPS1);
+fb_Topology.m_SetParent(vi_dn_Node := dn_DET1, vi_dn_Parent := dn_MPS1);
+fb_Topology.m_Link(vi_dn_Node := dn_PPH1, vi_un_Role := un_R_INFEED1, vi_dn_Target := dn_TBL1);
+fb_Topology.m_Link(vi_dn_Node := dn_DET1, vi_un_Role := un_R_TRANSPORT, vi_dn_Target := dn_TBL1);]]></ST>
       </Implementation>
     </Method>
   </POU>

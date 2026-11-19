@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigTopologyLink" Id="{bc82102c-47d2-4b63-9290-93fce09a818d}">
+    <Declaration><![CDATA[TYPE ST_ConfigTopologyLink :
+STRUCT
+	(* One link of a topology (config protocol 5, ADR 0023): node nNode points to node nTarget in role nRole. *)
+	nNode : DINT; // id of the node that holds the link
+	nRole : UINT; // its role, from 1; 0 = nTarget is the node's parent
+	nTarget : DINT; // id of the node it points to
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

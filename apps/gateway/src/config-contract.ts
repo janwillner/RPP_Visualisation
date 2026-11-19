@@ -91,6 +91,78 @@ export interface ST_ConfigMachine {
   stCommandStatus: ST_ConfigCommandStatus;
 }
 
+/** PLC data type of the topology FB's `vo_Config` (`_FB_ConfigTopology`, config protocol 5, ADR 0023). */
+export const PLC_CONFIG_TOPOLOGY_TYPE = "ST_ConfigTopology";
+
+/** Library defaults of Syn_Config for the topology (`CONFIG_GlobalConst_Param`). */
+export const MAX_TOPOLOGY_KINDS = 16;
+export const MAX_TOPOLOGY_ROLES = 16;
+export const MAX_TOPOLOGY_NODES = 64;
+export const MAX_TOPOLOGY_LINKS = 128;
+export const MAX_NODE_COMPONENTS = 4;
+
+/** A kind of topology node (`_FB_ConfigTopology.m_DeclareKind`), referred to by its number from 1. */
+export interface ST_ConfigTopologyKind {
+  /** STRING(31), unique in the topology. */
+  sName: string;
+  /** DWORD: bit k - 1 set = kind k may be the parent of a node of this kind (`m_AllowParent`). */
+  nParentKinds: number;
+}
+
+/** A role a link may have (`m_DeclareRole`), referred to by its number from 1; 0 is the parent. */
+export interface ST_ConfigTopologyRole {
+  /** STRING(31), unique in the topology. */
+  sName: string;
+  /** The kind (from 1) of node that holds the role. */
+  nHolderKind: number;
+  /** DWORD: bit k - 1 set = a link in this role may point to a node of kind k (`m_AllowTarget`). */
+  nTargetKinds: number;
+  bRequired: boolean;
+}
+
+/** A topology node (`m_DeclareNode`, `m_AddComponent`). */
+export interface ST_ConfigTopologyNode {
+  /** DINT: the application's id, unique in the topology. */
+  nId: number;
+  /** STRING(31) */
+  sName: string;
+  /** The node's kind, from 1. */
+  nKind: number;
+  nComponentCount: number;
+  /** UDINT each: manifest ids of the Syn_Visu components the node stands for. */
+  aComponents: number[];
+}
+
+/** One link: node `nNode` points to `nTarget` in role `nRole` (0 = its parent). */
+export interface ST_ConfigTopologyLink {
+  nNode: number;
+  nRole: number;
+  nTarget: number;
+}
+
+/** A set of links: the parents and the links of every role. */
+export interface ST_ConfigTopologyLinks {
+  nLinkCount: number;
+  aLinks: ST_ConfigTopologyLink[];
+}
+
+/**
+ * `vo_Config` of the topology FB, listed in the config manifest with id 0 and type NONE like the machine FB: the
+ * declaration (read at discovery) and the links in effect (read every cycle).
+ */
+export interface ST_ConfigTopology {
+  nKindCount: number;
+  aKinds: ST_ConfigTopologyKind[];
+  nRoleCount: number;
+  aRoles: ST_ConfigTopologyRole[];
+  nNodeCount: number;
+  aNodes: ST_ConfigTopologyNode[];
+  /** DINT: id of the root node, 0 = none declared. */
+  nRootNode: number;
+  /** The links in effect: the application's program values. */
+  stActive: ST_ConfigTopologyLinks;
+}
+
 export interface ST_ConfigManifestEntry {
   /** Id of the Syn_Visu component the parameter FB is for. */
   nId: number;

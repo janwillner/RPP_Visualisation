@@ -9,6 +9,7 @@ import {
   StatusMessageSchema,
   MachineReportSchema,
 } from "./model";
+import { TopologySchema } from "./topology";
 
 /**
  * Parameter sets (ADR 0017): the part of a component's configuration the configurator writes to its PLC, where the
@@ -18,9 +19,9 @@ import {
 
 /**
  * Version of the Syn_Config contract the gateway writes (3: recipe fields and machine commands, ADR 0022; 4: their
- * labels, descriptions and visibility conditions, #49).
+ * labels, descriptions and visibility conditions, #49; 5: the topology FB, ADR 0023).
  */
-export const CONFIG_PROTOCOL_VERSION = 4;
+export const CONFIG_PROTOCOL_VERSION = 5;
 
 /** The first config protocol with a machine FB: recipe fields and machine commands (ADR 0022). */
 export const RECIPE_CONFIG_PROTOCOL_VERSION = 3;
@@ -279,6 +280,9 @@ export const ParametersMessageSchema = z
     ).optional(),
     machineCommand: MachineCommandStatusSchema.describe(
       "The application's answer to the last machine command; absent without a machine FB.",
+    ).optional(),
+    topology: TopologySchema.describe(
+      "The machine's topology (Syn_Config config protocol 5 or later, ADR 0023); absent without a topology FB.",
     ).optional(),
   })
   .describe(

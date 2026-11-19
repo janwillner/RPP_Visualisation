@@ -41,6 +41,7 @@ The demo runs these all the time; none of them needs a trigger.
 | A product mark: Vision 1 marks every tenth product on Infeed 1 as "Sample", kept on the outfeed | `P_VisuDemoDelta` |
 | Rejects at the reject unit, missed products at the belt ends | `P_VisuDemoDelta`, `P_VisuDemoFxx`, `P_VisuDemoIdh` |
 | Parameter sets to write: Infeed 1, Vision 1, Delta 1 (a zone) and the IDH (its track) | `P_VisuDemoDelta`, `P_VisuDemoIdh` |
+| A topology (ADR 0023): TCAT1 → MPS1 → TBL1 (Infeed 1), PPH1 (Delta 1), DET1 (Vision 1); PPH2 not in use | `P_VisuDemoMachine.m_DeclareTopology` |
 
 The demo keeps a written parameter set. A browser test that writes one returns the component to its program values at
 its end, and at its start in case an earlier run stopped halfway, so every run starts from the program values.

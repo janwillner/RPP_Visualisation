@@ -237,7 +237,7 @@ export function createGateway({
       }
     }
     try {
-      params = await discoverParameters(plc, configManifestPath, allowWrite);
+      params = await discoverParameters(plc, configManifestPath, allowWrite, new Set(active.map((a) => a.config.id)));
     } catch (error) {
       // A layout the gateway does not know leaves the source read-only; connection errors propagate.
       if (!(error instanceof TypeError) && !(error instanceof SymbolNotFoundError)) throw error;

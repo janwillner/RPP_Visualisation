@@ -278,3 +278,26 @@ test("configurator: closes and resizes its side panels, and keeps them across a 
   await page.getByRole("button", { name: "Show palette and components" }).click();
   await expect(left).toBeVisible();
 });
+
+test("configurator: shows the demo's topology and selects a node's component", async ({ page }) => {
+  await importDemo(page);
+  const topology = page.getByRole("region", { name: /^Topology of / });
+  const tree = topology.locator("ul.tree.topology").first();
+  await expect(tree).toContainText("TCAT1");
+  await expect(tree).toContainText("MPS1");
+  await expect(tree).toContainText("TBL1");
+  await expect(tree).toContainText("PPH1");
+  await expect(tree).toContainText("DET1");
+  await expect(topology.locator("ul.not-in-use")).toContainText("PPH2");
+
+  await tree.getByRole("button", { name: /^PPH1/ }).click();
+  const properties = page.locator("aside.panel.right");
+  const node = properties.getByRole("region", { name: "Topology node PPH1" });
+  await expect(node).toContainText("In use");
+  await expect(node).toContainText("Infeed1");
+  await expect(node).toContainText("TBL1");
+  await expect(properties.locator(".properties h3")).toHaveText("Delta 1");
+
+  await page.locator("aside.panel.left .components").getByRole("button", { name: /Vision 1/ }).click();
+  await expect(properties.getByRole("region", { name: "Topology node DET1" })).toContainText("TBL1");
+});

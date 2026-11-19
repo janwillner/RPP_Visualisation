@@ -5,7 +5,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{3a301515-aff3-44c7-9517-2d7210240937}</ProjectGuid>
     <Name>Syn_Visu_Demo</Name>
-    <ProgramVersion>3.1.4026.22</ProgramVersion>
+    <ProgramVersion>3.1.4026.28</ProgramVersion>
     <Application>{080d2efa-8be1-4181-ba2f-95b7f939d64f}</Application>
     <TypeSystem>{98423983-3171-4abc-97d8-d426b05f8d57}</TypeSystem>
     <Implicit_Task_Info>{a1eb47ce-123a-49b4-9d7b-d84980150bae}</Implicit_Task_Info>
@@ -75,13 +75,13 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <LibraryReference Include="SynConfig,2.3.0.0,Syntegon Group">
+    <LibraryReference Include="SynConfig,2.4.0.0,Syntegon Group">
       <Namespace>SynConfig</Namespace>
     </LibraryReference>
     <LibraryReference Include="SynVisu,10.0.0.0,Syntegon Group">
       <Namespace>SynVisu</Namespace>
     </LibraryReference>
-    <LibraryReference Include="Tc3_Module,3.4.5.0,Beckhoff Automation GmbH">
+    <LibraryReference Include="Tc3_Module,newest,Beckhoff Automation GmbH">
       <Namespace>Tc3_Module</Namespace>
     </LibraryReference>
   </ItemGroup>
