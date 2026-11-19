@@ -11,7 +11,7 @@ import {
   type WriteParametersCommand,
 } from "@rpp/protocol";
 import { COMPONENTS, componentKind } from "./components";
-import { PLC_CONFIG_MACHINE_TYPE, PLC_CONFIG_MANIFEST_TYPE, type ST_ConfigManifest } from "./config-contract";
+import { PLC_CONFIG_MACHINE_TYPE, PLC_CONFIG_MANIFEST_TYPE, PLC_CONFIG_TOPOLOGY_TYPE, type ST_ConfigManifest } from "./config-contract";
 import { E_VisuComponentType, enumValue } from "./plc-contract";
 import { mapPlc, type EntryMemory } from "./plc-mapping";
 import { plcLeaves } from "./plc-writing";
@@ -19,6 +19,7 @@ import { splitByPart, type ReadPart } from "./read-parts";
 import { machineFbEntry, machineFbPart, type MachineFbEntry } from "./recipe-access";
 import { resetWrites, staleBase, stageWrites, stagingStatus } from "./staging";
 import { SymbolNotFoundError, isExpectedType, type SymbolAccess, type SymbolWrite } from "./symbol-access";
+import { topologyFbEntry, topologyFbPart, type TopologyFbEntry } from "./topology-access";
 
 /**
  * One source's parameter sets (library Syn_Config, ADR 0017): which parameter FBs its config manifest lists, their
@@ -48,20 +49,26 @@ export interface ParameterDiscovery {
   protocolVersion: number;
   /** The application's machine FB with its recipe (config protocol 3 or later, ADR 0022), if it has one. */
   machine: MachineFbEntry | undefined;
+  /** The application's topology FB (config protocol 5 or later, ADR 0023), if it has one. */
+  topology: TopologyFbEntry | undefined;
 }
 
 export const NOT_ALLOWED = "The gateway does not allow writing; start it with --allow-write.";
 
 /** A source without parameter FBs that cannot be written, for `reason`; `present`: it has Syn_Config all the same. */
 export function noParameters(reason: string, present = true): ParameterDiscovery {
-  return { present, entries: [], reason, errors: [], protocolVersion: 0, machine: undefined };
+  return { present, entries: [], reason, errors: [], protocolVersion: 0, machine: undefined, topology: undefined };
 }
 
-/** Finds the parameter FBs; a source without a config manifest has none and cannot be written. */
+/**
+ * Finds the parameter FBs, the machine FB and the topology FB; a source without a config manifest has none and cannot
+ * be written. `componentIds` are the Syn_Visu manifest's components, which the topology's nodes may stand for.
+ */
 export async function discoverParameters(
   plc: SymbolAccess,
   manifestPath: string,
   allowWrite: boolean,
+  componentIds: ReadonlySet<number> = new Set(),
 ): Promise<ParameterDiscovery> {
   const none = noParameters;
   const type = await plc.typeOf(manifestPath);
@@ -81,12 +88,26 @@ export async function discoverParameters(
   const entries: ParameterEntry[] = [];
   const errors: DiscoveryError[] = [];
   let machine: MachineFbEntry | undefined;
+  let topology: TopologyFbEntry | undefined;
   for (const e of manifest.aEntries.slice(0, manifest.nCount)) {
-    // The machine FB: id 0, type NONE (config protocol 3 or later).
+    // The machine FB (config protocol 3 or later) and the topology FB (5 or later): id 0, type NONE, told apart by the
+    // type of their vo_Config.
     if (e.nId === 0 && enumValue(e.eType) === E_VisuComponentType.NONE) {
       const actual = await plc.typeOf(e.sPath);
+      if (isExpectedType(actual, PLC_CONFIG_TOPOLOGY_TYPE)) {
+        try {
+          const read = topologyFbEntry(e.sPath, await plc.read(e.sPath), componentIds);
+          topology = read.entry;
+          errors.push(...read.errors.map((message) => ({ path: e.sPath, message })));
+        } catch (error) {
+          if (!(error instanceof TypeError) && !(error instanceof SymbolNotFoundError)) throw error;
+          errors.push({ path: e.sPath, message: `Cannot read the topology: ${error.message}` });
+        }
+        continue;
+      }
       if (!isExpectedType(actual, PLC_CONFIG_MACHINE_TYPE)) {
-        errors.push({ path: e.sPath, message: `Symbol has expected type ${PLC_CONFIG_MACHINE_TYPE} but is ${actual ?? "missing"}` });
+        const expected = `${PLC_CONFIG_MACHINE_TYPE} or ${PLC_CONFIG_TOPOLOGY_TYPE}`;
+        errors.push({ path: e.sPath, message: `Symbol has expected type ${expected} but is ${actual ?? "missing"}` });
         continue;
       }
       try {
@@ -120,6 +141,7 @@ export async function discoverParameters(
     errors,
     protocolVersion: manifest.nProtocolVersion,
     machine,
+    topology,
   };
 }
 
@@ -130,16 +152,19 @@ export async function discoverParameters(
 export function parametersPart(sourceId: string, d: ParameterDiscovery): ReadPart<ParametersMessage> {
   const fbs = d.entries.map(parameterFbPart);
   const machine = d.machine && machineFbPart(d.machine);
-  const parts: ReadPart<unknown>[] = machine ? [...fbs, machine] : fbs;
+  const topology = d.topology && topologyFbPart(d.topology);
+  const parts: ReadPart<unknown>[] = [...fbs, ...(machine ? [machine] : []), ...(topology ? [topology] : [])];
   return {
     paths: parts.flatMap((p) => p.paths),
     map: (raws) => {
       const values = splitByPart(parts, raws);
       let components: ComponentParameters[];
       let recipe: ReturnType<NonNullable<typeof machine>["map"]> | undefined;
+      let topologyRead: ReturnType<NonNullable<typeof topology>["map"]> | undefined;
       try {
         components = fbs.map((p) => p.map(values.get(p)!));
         recipe = machine?.map(values.get(machine)!);
+        topologyRead = topology?.map(values.get(topology)!);
       } catch (error) {
         if (!(error instanceof TypeError)) throw error;
         const reason = `Cannot read the parameter sets: ${error.message}. Does the gateway match the PLC's Syn_Config?`;
@@ -152,6 +177,7 @@ export function parametersPart(sourceId: string, d: ParameterDiscovery): ReadPar
         ...(d.reason ? { reason: d.reason } : {}),
         components,
         ...recipe,
+        ...(topologyRead ? { topology: topologyRead } : {}),
       };
     },
     restart: () => {

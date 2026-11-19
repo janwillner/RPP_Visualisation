@@ -16,6 +16,7 @@ Syn_Config 1.0.0 ¦ 2026-11-10 ¦ J.Willner ¦ First version: conveyor and Delta
 Syn_Config 1.1.0 ¦ 2026-11-10 ¦ J.Willner ¦ Helpers m_PassOn..., m_Invalid... for every type<br>
 Syn_Config 2.0.0 ¦ 2026-11-11 ¦ J.Willner ¦ m_InvalidFingers, m_PassOnFingers (ADR 0018)<br>
 Syn_Config 2.3.0 ¦ 2026-11-14 ¦ J.Willner ¦ m_HandleStaging; symbol path from _FC_VisuSymbolPath<br>
+Syn_Config 2.4.0 ¦ 2026-11-19 ¦ J.Willner ¦ m_Register: several id 0 entries told apart by path (topology FB)<br>
 ****************************************************************************************************)
 {attribute 'reflection'}
 FUNCTION_BLOCK ABSTRACT _FB_ConfigComponent
@@ -456,8 +457,8 @@ Idempotent: call it every cycle. The symbol path the gateway reads comes from th
 Syn_Visu (VISU_un_INSTANCE_PATH_SKIP).<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
-FALSE for vi_udn_Id = 0 (but for _FB_ConfigMachine, which registers with id 0), an id already used by a<br>
-different entry, or a full manifest.<br>
+FALSE for vi_udn_Id = 0 (but for _FB_ConfigMachine and _FB_ConfigTopology, which register with id 0 and are told<br>
+apart by their path), an id already used by a different entry, or a full manifest.<br>
 ****************************************************************************************************)
 METHOD m_Register : BOOL
 VAR_IN_OUT
@@ -476,7 +477,8 @@ END_VAR]]></Declaration>
 vio_Manifest.nProtocolVersion := CONFIG_GlobalConst.CONFIG_un_PROTOCOL_VERSION;
 vio_Manifest.sLibraryVersion := CONFIG_GlobalConst.CONFIG_str_LIBRARY_VERSION;
 e_TempType := m_ComponentType();
-(* Id 0 is the machine FB's, whose type is NONE (_FB_ConfigMachine); every parameter FB has a component's id. *)
+(* Id 0 is the machine-wide FBs', whose type is NONE (_FB_ConfigMachine, _FB_ConfigTopology); every parameter FB has a
+   component's id. *)
 IF (vi_udn_Id = 0) <> (e_TempType = SynVisu.E_VisuComponentType.NONE) THEN
 	RETURN;
 END_IF
@@ -484,10 +486,13 @@ IF str_SymbolPath = '' THEN
 	str_SymbolPath := SynVisu._FC_VisuSymbolPath(vio_str_InstancePath := str_InstancePath, vi_str_Member := '.vo_Config');
 END_IF
 
-(* An existing entry with the same id must match exactly. *)
+(* An existing entry with the same id must match exactly. Id 0 is shared by the machine-wide FBs (machine and
+   topology), told apart by their path. *)
 un_TempIndex := 0;
 WHILE un_TempIndex < vio_Manifest.nCount AND un_TempIndex < CONFIG_GlobalConst_Param.CONFIG_un_MAX_MANIFEST_ENTRIES DO
-	IF vio_Manifest.aEntries[un_TempIndex].nId = vi_udn_Id THEN
+	IF vio_Manifest.aEntries[un_TempIndex].nId = vi_udn_Id
+		AND (vi_udn_Id <> 0 OR vio_Manifest.aEntries[un_TempIndex].sPath = str_SymbolPath)
+	THEN
 		m_Register := vio_Manifest.aEntries[un_TempIndex].eType = e_TempType
 					AND vio_Manifest.aEntries[un_TempIndex].sPath = str_SymbolPath;
 		IF m_Register THEN

@@ -2,12 +2,15 @@
 paths:
   - "apps/gateway/src/parameter-access.ts"
   - "apps/gateway/src/recipe-access.ts"
+  - "apps/gateway/src/topology-access.ts"
   - "apps/gateway/src/staging.ts"
   - "apps/gateway/src/config-*.ts"
   - "apps/gateway/src/plc-writing.ts"
   - "apps/gateway/test/parameters.test.ts"
   - "apps/gateway/test/recipes.test.ts"
+  - "apps/gateway/test/topology.test.ts"
   - "packages/protocol/src/parameters.ts"
+  - "packages/protocol/src/topology.ts"
   - "packages/protocol/src/recipe-file.ts"
   - "packages/machine-view/src/gateway-live.ts"
   - "apps/configurator/src/writing.ts"
@@ -37,6 +40,14 @@ LREAL. `recipe-access.ts` reads the declarations at discovery; a condition that 
 itself, on a field not declared, on a value it can never have, in a ring) is a discovery error and dropped. Machine
 commands (start / stop / reset) are acknowledged requests the application answers.
 
+## Topology (ADR 0023)
+
+The topology FB `_FB_ConfigTopology` (also id 0, type NONE; told apart from the machine FB by its `vo_Config` type)
+declares kinds, roles, nodes (own DINT ids, the components they stand for) and the root node; the links in effect
+(`stActive`, parents as role 0) are its program values for now. `topology-access.ts` reads the declaration at
+discovery (names unique, else no topology; what refers to something undeclared is left out with a discovery error)
+and the links every cycle into `parameters.topology`. `nodesInUse` (`topology.ts`) is the one rule of "in use".
+
 ## Writing
 
 - The order that makes a write safe is in `staging.ts`: a waiting set withdrawn first, values, base version, stage id,
@@ -53,10 +64,12 @@ commands (start / stop / reset) are acknowledged requests the application answer
 ## Emulation
 
 `config-emulation.ts` emulates Syn_Config and an application passing its effective values on to Syn_Visu, generically
-by the naming convention, including the machine FB (`recipeField`, `answerCommand`) and config protocols 2 to 4.
+by the naming convention, including the machine FB (`recipeField`, `answerCommand`), the topology FB
+(`topologyStructure`) and config protocols 2 to 5.
 
 ## Versions
 
-Config protocol 2: fingers (Syn_Config 2.0); 3: machine FB (2.1); 4: field texts and conditions (2.2). The gateway
+Config protocol 2: fingers (Syn_Config 2.0); 3: machine FB (2.1); 4: field texts and conditions (2.2); 5: topology FB
+(2.4). The gateway
 still writes parameter sets to protocol 2 (`MIN_CONFIG_PROTOCOL_VERSION`). An active recipe saved before a field was
 appended gives that field 0, not its program value.

@@ -149,6 +149,11 @@ All three are refused without `--allow-write`, from a page of another origin, wh
 (`machine.simulation`), without a machine FB or with config protocol 2, on another active recipe version, and for an
 unknown field or a value of the wrong type or outside its range.
 
+A PLC whose application has Syn_Config's topology FB (config protocol 5, ADR 0023) also reports its **topology**:
+`parameters` then carries `topology` with the declared `kinds` (each with the `parentKinds` it may hang from), `roles`
+(`holderKind`, `targetKinds`, `required`), `nodes` (`id`, `name`, `kind`, `componentIds`) and `rootId`, and the
+`parents` and `links` in effect. A node is in use when it is the root node or its chain of parents reaches it.
+
 A client that only shows the machine can ignore all of these.
 
 ## Compatibility

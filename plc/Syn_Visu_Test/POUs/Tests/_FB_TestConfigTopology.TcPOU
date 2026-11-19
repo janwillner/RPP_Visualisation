@@ -1,0 +1,190 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_TestConfigTopology" Id="{d223f8dd-8363-49e4-bb83-4be4b458af0c}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+TcUnit test suite of _FB_ConfigTopology (config protocol 5, ADR 0023): registration with id 0 beside the machine<br>
+FB, the declaration of kinds, roles, nodes and the root node with what is refused, and the program values as the<br>
+links in effect.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 2.4.0 ¦ 2026-11-19 ¦ J.Willner ¦ Unit tests of the topology FB (config protocol 5, #56)<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_TestConfigTopology EXTENDS TcUnit.FB_TestSuite
+VAR
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[m_RegisterBesideMachine();
+m_Declaration();
+m_ProgramLinks();]]></ST>
+    </Implementation>
+    <Method Name="m_Declaration" Id="{43b2a627-3fdf-4a92-8d1e-7a4946f41a96}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Kinds, roles, nodes and the root node are published as declared, declared again without change; a kind 0 or<br>
+beyond the list, a role of a kind not declared, a node with id 0 or of a kind not declared, a component of a node<br>
+not declared and a root node not declared are refused.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Declaration
+VAR_INST
+	fb_TempTopology						: SynConfig._FB_ConfigTopology;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigTopologyDeclaration');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+m_Declare(vio_Topology := fb_TempTopology);
+m_Declare(vio_Topology := fb_TempTopology);
+AssertEquals_UINT(Expected := 4, Actual := fb_TempTopology.vo_Config.nKindCount, Message := 'four kinds');
+AssertEquals_STRING(Expected := 'PPH', Actual := fb_TempTopology.vo_Config.aKinds[3].sName, Message := 'kind 4');
+AssertEquals_DWORD(Expected := 2#10, Actual := fb_TempTopology.vo_Config.aKinds[3].nParentKinds, Message := 'a PPH under a cell');
+AssertEquals_UINT(Expected := 1, Actual := fb_TempTopology.vo_Config.nRoleCount, Message := 'one role');
+AssertEquals_UINT(Expected := 4, Actual := fb_TempTopology.vo_Config.aRoles[0].nHolderKind, Message := 'held by a PPH');
+AssertEquals_DWORD(Expected := 2#100, Actual := fb_TempTopology.vo_Config.aRoles[0].nTargetKinds, Message := 'to a transport');
+AssertTrue(Condition := fb_TempTopology.vo_Config.aRoles[0].bRequired, Message := 'required');
+AssertEquals_UINT(Expected := 4, Actual := fb_TempTopology.vo_Config.nNodeCount, Message := 'four nodes, once each');
+AssertEquals_DINT(Expected := 21, Actual := fb_TempTopology.vo_Config.aNodes[3].nId, Message := 'node 4 is PPH1');
+AssertEquals_UINT(Expected := 1, Actual := fb_TempTopology.vo_Config.aNodes[3].nComponentCount, Message := 'one component, once');
+AssertEquals_UDINT(Expected := 2, Actual := fb_TempTopology.vo_Config.aNodes[3].aComponents[0], Message := 'component 2');
+AssertEquals_DINT(Expected := 1, Actual := fb_TempTopology.vo_Config.nRootNode, Message := 'root TCAT1');
+
+AssertFalse(Condition := fb_TempTopology.m_DeclareKind(vi_un_Kind := 0, vi_str_Name := 'x'), Message := 'kind 0 refused');
+AssertFalse(Condition := fb_TempTopology.m_DeclareKind(vi_un_Kind := 17, vi_str_Name := 'x'), Message := 'kind 17 refused');
+AssertFalse(Condition := fb_TempTopology.m_DeclareRole(vi_un_Role := 2, vi_str_Name := 'x', vi_un_HolderKind := 9, vi_b_Required := FALSE),
+	Message := 'role of an undeclared kind refused');
+AssertFalse(Condition := fb_TempTopology.m_AllowTarget(vi_un_Role := 1, vi_un_TargetKind := 9), Message := 'undeclared target kind refused');
+AssertFalse(Condition := fb_TempTopology.m_DeclareNode(vi_dn_Id := 0, vi_str_Name := 'x', vi_un_Kind := 1), Message := 'node id 0 refused');
+AssertFalse(Condition := fb_TempTopology.m_DeclareNode(vi_dn_Id := 99, vi_str_Name := 'x', vi_un_Kind := 9), Message := 'undeclared kind refused');
+AssertFalse(Condition := fb_TempTopology.m_AddComponent(vi_dn_Node := 99, vi_udn_ComponentId := 3), Message := 'undeclared node refused');
+AssertFalse(Condition := fb_TempTopology.m_SetRoot(vi_dn_Node := 99), Message := 'undeclared root refused');
+AssertEquals_UINT(Expected := 4, Actual := fb_TempTopology.vo_Config.nNodeCount, Message := 'still four nodes');
+
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Declare" Id="{9c1cae5c-d1ed-4fc7-8749-f07bd93e55a8}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The topology the tests declare: kinds 1 Line, 2 Cell, 3 Transport, 4 PPH; a cell's parent a line, a transport's and<br>
+a PPH's a cell; role 1 Infeed1 of a PPH to a transport, required; nodes 1 TCAT1 (root), 10 MPS1, 30 TBL1 standing<br>
+for component 1, 21 PPH1 for component 2.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_Declare
+VAR_IN_OUT
+	vio_Topology						: SynConfig._FB_ConfigTopology;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vio_Topology.m_DeclareKind(vi_un_Kind := 1, vi_str_Name := 'Line');
+vio_Topology.m_DeclareKind(vi_un_Kind := 2, vi_str_Name := 'Cell');
+vio_Topology.m_DeclareKind(vi_un_Kind := 3, vi_str_Name := 'Transport');
+vio_Topology.m_DeclareKind(vi_un_Kind := 4, vi_str_Name := 'PPH');
+vio_Topology.m_AllowParent(vi_un_Kind := 2, vi_un_ParentKind := 1);
+vio_Topology.m_AllowParent(vi_un_Kind := 3, vi_un_ParentKind := 2);
+vio_Topology.m_AllowParent(vi_un_Kind := 4, vi_un_ParentKind := 2);
+vio_Topology.m_DeclareRole(vi_un_Role := 1, vi_str_Name := 'Infeed1', vi_un_HolderKind := 4, vi_b_Required := TRUE);
+vio_Topology.m_AllowTarget(vi_un_Role := 1, vi_un_TargetKind := 3);
+vio_Topology.m_DeclareNode(vi_dn_Id := 1, vi_str_Name := 'TCAT1', vi_un_Kind := 1);
+vio_Topology.m_DeclareNode(vi_dn_Id := 10, vi_str_Name := 'MPS1', vi_un_Kind := 2);
+vio_Topology.m_DeclareNode(vi_dn_Id := 30, vi_str_Name := 'TBL1', vi_un_Kind := 3);
+vio_Topology.m_DeclareNode(vi_dn_Id := 21, vi_str_Name := 'PPH1', vi_un_Kind := 4);
+vio_Topology.m_AddComponent(vi_dn_Node := 30, vi_udn_ComponentId := 1);
+vio_Topology.m_AddComponent(vi_dn_Node := 21, vi_udn_ComponentId := 2);
+vio_Topology.m_SetRoot(vi_dn_Node := 1);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_ProgramLinks" Id="{edbca5d0-2103-447e-a34c-305504f0a0f9}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Parents and links given as program values are the links in effect after m_Cycle, one per node and role: linking<br>
+again replaces the target. A link of a node or to a node not declared, or in a role not declared, is refused.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_ProgramLinks
+VAR_INST
+	fb_TempTopology						: SynConfig._FB_ConfigTopology;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigTopologyProgramLinks');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+m_Declare(vio_Topology := fb_TempTopology);
+AssertTrue(Condition := fb_TempTopology.m_SetParent(vi_dn_Node := 10, vi_dn_Parent := 1), Message := 'MPS1 under TCAT1');
+AssertTrue(Condition := fb_TempTopology.m_SetParent(vi_dn_Node := 21, vi_dn_Parent := 10), Message := 'PPH1 under MPS1');
+AssertTrue(Condition := fb_TempTopology.m_Link(vi_dn_Node := 21, vi_un_Role := 1, vi_dn_Target := 10), Message := 'Infeed1');
+AssertTrue(Condition := fb_TempTopology.m_Link(vi_dn_Node := 21, vi_un_Role := 1, vi_dn_Target := 30), Message := 'Infeed1 again');
+AssertFalse(Condition := fb_TempTopology.m_Link(vi_dn_Node := 21, vi_un_Role := 1, vi_dn_Target := 99), Message := 'to an undeclared node');
+AssertFalse(Condition := fb_TempTopology.m_Link(vi_dn_Node := 99, vi_un_Role := 1, vi_dn_Target := 30), Message := 'of an undeclared node');
+AssertFalse(Condition := fb_TempTopology.m_Link(vi_dn_Node := 21, vi_un_Role := 2, vi_dn_Target := 30), Message := 'in an undeclared role');
+AssertEquals_UINT(Expected := 0, Actual := fb_TempTopology.vo_Config.stActive.nLinkCount, Message := 'none in effect before m_Cycle');
+
+AssertTrue(Condition := fb_TempTopology.m_Cycle(), Message := 'cycle');
+AssertEquals_UINT(Expected := 3, Actual := fb_TempTopology.vo_Config.stActive.nLinkCount, Message := 'three links in effect');
+AssertEquals_UINT(Expected := 0, Actual := fb_TempTopology.vo_Config.stActive.aLinks[1].nRole, Message := 'a parent is role 0');
+AssertEquals_DINT(Expected := 10, Actual := fb_TempTopology.vo_Config.stActive.aLinks[1].nTarget, Message := 'PPH1 under MPS1');
+AssertEquals_UINT(Expected := 1, Actual := fb_TempTopology.vo_Config.stActive.aLinks[2].nRole, Message := 'Infeed1');
+AssertEquals_DINT(Expected := 30, Actual := fb_TempTopology.vo_Config.stActive.aLinks[2].nTarget, Message := 'replaced by TBL1');
+
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_RegisterBesideMachine" Id="{2f257275-a6ad-472d-b0db-e639efee86ce}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The topology FB and the machine FB are both listed with id 0 and type NONE, told apart by their path; registering<br>
+again adds no entry, and the manifest reports config protocol 5.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_RegisterBesideMachine
+VAR_INST
+	fb_TempMachine						: SynConfig._FB_ConfigMachine;
+	fb_TempTopology						: SynConfig._FB_ConfigTopology;
+	TempManifest						: SynConfig.ST_ConfigManifest;
+	b_TempDone							: BOOL;	// the test ran
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('ConfigTopologyRegisterBesideMachine');
+IF b_TempDone THEN
+	RETURN;
+END_IF
+b_TempDone := TRUE;
+
+AssertTrue(Condition := fb_TempMachine.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 0), Message := 'machine FB with id 0');
+AssertTrue(Condition := fb_TempTopology.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 0), Message := 'topology FB with id 0');
+AssertTrue(Condition := fb_TempTopology.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 0), Message := 'again');
+AssertTrue(Condition := fb_TempMachine.m_Register(vio_Manifest := TempManifest, vi_udn_Id := 0), Message := 'machine FB again');
+AssertEquals_UINT(Expected := 2, Actual := TempManifest.nCount, Message := 'two entries');
+AssertTrue(Condition := TempManifest.aEntries[1].eType = SynVisu.E_VisuComponentType.NONE, Message := 'type NONE');
+AssertTrue(Condition := TempManifest.aEntries[0].sPath <> TempManifest.aEntries[1].sPath, Message := 'paths differ');
+AssertEquals_UINT(Expected := 5, Actual := TempManifest.nProtocolVersion, Message := 'config protocol 5');
+
+TEST_FINISHED();]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>

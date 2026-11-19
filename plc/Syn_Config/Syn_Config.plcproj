@@ -9,7 +9,7 @@
     <WriteProductVersion>false</WriteProductVersion>
     <GenerateTpy>false</GenerateTpy>
     <Name>Syn_Config</Name>
-    <ProgramVersion>3.1.4026.22</ProgramVersion>
+    <ProgramVersion>3.1.4026.28</ProgramVersion>
     <Application>{9fb4731e-02c5-4da6-8f6b-ecdaaf44bee8}</Application>
     <TypeSystem>{e7ddea8a-6a20-4207-8a13-92f43f4fc0e7}</TypeSystem>
     <Implicit_Task_Info>{98960265-c773-4af8-8c2e-9106cbd281de}</Implicit_Task_Info>
@@ -18,7 +18,7 @@
     <LibraryReferences>{4aaf00a1-38c8-4cd5-b616-5f1157d1ccbb}</LibraryReferences>
     <Company>Syntegon Group</Company>
     <Title>SynConfig</Title>
-    <ProjectVersion>2.3.0.0</ProjectVersion>
+    <ProjectVersion>2.4.0.0</ProjectVersion>
     <DefaultNamespace>SynConfig</DefaultNamespace>
     <Description>Parameter sets the RPP configurator writes and the application takes over (ADR 0017).</Description>
   </PropertyGroup>
@@ -108,6 +108,24 @@
     <Compile Include="DUTs\ST_ConfigStatus.TcDUT">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="DUTs\ST_ConfigTopology.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigTopologyKind.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigTopologyLink.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigTopologyLinks.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigTopologyNode.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="DUTs\ST_ConfigTopologyRole.TcDUT">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="DUTs\ST_ConfigXtsGantry.TcDUT">
       <SubType>Code</SubType>
     </Compile>
@@ -154,6 +172,9 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\_FB_ConfigStation.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\_FB_ConfigTopology.TcPOU">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\_FB_ConfigVision.TcPOU">

@@ -810,6 +810,25 @@ fb_Machine.m_SetMessage(vi_udn_Id := 1, vi_b_Active := RejectBin_Iface.b_AlmostF
 	vi_udn_ComponentId := fb_RejectUnit.m_Id());
 ```
 
+### 14.2 The topology
+
+An application that links its parts (every part has a parent; a pick-and-place handling has its infeed transports and
+its vacuum supply; a vision unit the transport it looks at) declares them with `SynConfig._FB_ConfigTopology`,
+version 2.4.0 or newer, one per application, every cycle (ADR 0023). The configurator shows them as a tree.
+
+| Method | Purpose |
+| --- | --- |
+| `m_Register(vio_Manifest, vi_udn_Id)` | Lists the topology FB in `GVL_Config.stManifest`; always with `vi_udn_Id := 0`, as the machine FB |
+| `m_DeclareKind(vi_un_Kind, vi_str_Name)`, `m_AllowParent(vi_un_Kind, vi_un_ParentKind)` | Declares kind 1, 2, ... of node (`'PPH'`, `'Transport'`) and which kinds may be its parent |
+| `m_DeclareRole(vi_un_Role, vi_str_Name, vi_un_HolderKind, vi_b_Required)`, `m_AllowTarget(vi_un_Role, vi_un_TargetKind)` | Declares role 1, 2, ... of a link (`'Infeed1'` held by a PPH) and the kinds it may point to |
+| `m_DeclareNode(vi_dn_Id, vi_str_Name, vi_un_Kind)`, `m_AddComponent(vi_dn_Node, vi_udn_ComponentId)` | Declares every node of the full build-out, in use or not, by your own id (e.g. its context id), with the components it stands for |
+| `m_SetRoot(vi_dn_Node)` | The one node without a parent |
+| `m_SetParent(vi_dn_Node, vi_dn_Parent)`, `m_Link(vi_dn_Node, vi_un_Role, vi_dn_Target)` | Your program values: the parents and links you run with |
+| `m_Cycle()` | Gives the links in effect to the gateway |
+
+A node is in use when it is the root node or its chain of parents reaches it. The demo application declares a small
+topology in `P_VisuDemoMachine.m_DeclareTopology`.
+
 ## 15. Wrapping existing machine code
 
 On real machines the values come from the machine's own data structures (queues, kinematics configurations, axis

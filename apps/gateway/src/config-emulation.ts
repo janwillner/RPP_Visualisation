@@ -6,9 +6,16 @@ import {
   E_ConfigFieldType,
   E_ConfigResult,
   MAX_CHOICES,
+  MAX_NODE_COMPONENTS,
   MAX_RECIPE_FIELDS,
+  MAX_TOPOLOGY_KINDS,
+  MAX_TOPOLOGY_LINKS,
+  MAX_TOPOLOGY_NODES,
+  MAX_TOPOLOGY_ROLES,
   PLC_CONFIG_MACHINE_TYPE,
   PLC_CONFIG_MANIFEST_TYPE,
+  PLC_CONFIG_TOPOLOGY_TYPE,
+  type ST_ConfigTopology,
   type ST_ConfigComponent,
   type ST_ConfigMachine,
   type ST_ConfigManifest,
@@ -79,6 +86,67 @@ export interface EmulatedMachineFb {
   fields: ST_ConfigRecipeField[];
 }
 
+/** A topology as the tests write it: kinds, roles and nodes by name, the parent as the role `parent`. */
+export interface TopologyDeclaration {
+  kinds: { name: string; parents?: string[] }[];
+  roles: { name: string; holder: string; targets: string[]; required?: boolean }[];
+  nodes: { id: number; name: string; kind: string; components?: number[] }[];
+  root: number;
+  links: { node: number; role: string; target: number }[];
+}
+
+/** The application's topology FB (`_FB_ConfigTopology`, config protocol 5): its `vo_Config` at `path`. */
+export interface EmulatedTopologyFb {
+  path: string;
+  value: ST_ConfigTopology;
+}
+
+/** `vo_Config` of a topology FB that declared `t` (`m_DeclareKind`, `m_DeclareRole`, ...) and links its program values. */
+export function topologyStructure(t: TopologyDeclaration): ST_ConfigTopology {
+  const kind = (name: string) => t.kinds.findIndex((k) => k.name === name) + 1;
+  const bits = (names: readonly string[]) => names.reduce((mask, name) => mask | (1 << (kind(name) - 1)), 0);
+  const pad = <T>(list: T[], size: number, empty: () => T) => [...list, ...Array.from({ length: size - list.length }, empty)];
+  return {
+    nKindCount: t.kinds.length,
+    aKinds: pad(
+      t.kinds.map((k) => ({ sName: k.name, nParentKinds: bits(k.parents ?? []) })),
+      MAX_TOPOLOGY_KINDS,
+      () => ({ sName: "", nParentKinds: 0 }),
+    ),
+    nRoleCount: t.roles.length,
+    aRoles: pad(
+      t.roles.map((r) => ({ sName: r.name, nHolderKind: kind(r.holder), nTargetKinds: bits(r.targets), bRequired: r.required ?? false })),
+      MAX_TOPOLOGY_ROLES,
+      () => ({ sName: "", nHolderKind: 0, nTargetKinds: 0, bRequired: false }),
+    ),
+    nNodeCount: t.nodes.length,
+    aNodes: pad(
+      t.nodes.map((n) => ({
+        nId: n.id,
+        sName: n.name,
+        nKind: kind(n.kind),
+        nComponentCount: n.components?.length ?? 0,
+        aComponents: pad(n.components ?? [], MAX_NODE_COMPONENTS, () => 0),
+      })),
+      MAX_TOPOLOGY_NODES,
+      () => ({ nId: 0, sName: "", nKind: 0, nComponentCount: 0, aComponents: pad([], MAX_NODE_COMPONENTS, () => 0) }),
+    ),
+    nRootNode: t.root,
+    stActive: {
+      nLinkCount: t.links.length,
+      aLinks: pad(
+        t.links.map((l) => ({
+          nNode: l.node,
+          nRole: l.role === "parent" ? 0 : t.roles.findIndex((r) => r.name === l.role) + 1,
+          nTarget: l.target,
+        })),
+        MAX_TOPOLOGY_LINKS,
+        () => ({ nNode: 0, nRole: 0, nTarget: 0 }),
+      ),
+    },
+  };
+}
+
 export class ConfigEmulation {
   /** The application allows taking a staged set over (`vi_b_ApplyAllowed`). */
   applyAllowed = true;
@@ -97,15 +165,24 @@ export class ConfigEmulation {
   constructor(
     private readonly plc: InMemoryPlc,
     entries: EmulatedParameterFb[],
-    options: { manifestPath?: string; protocolVersion?: number; visuManifestPath?: string; machine?: EmulatedMachineFb } = {},
+    options: {
+      manifestPath?: string;
+      protocolVersion?: number;
+      visuManifestPath?: string;
+      machine?: EmulatedMachineFb;
+      topology?: EmulatedTopologyFb;
+    } = {},
   ) {
     this.visuManifestPath = options.visuManifestPath ?? MANIFEST_PATH;
     this.machine = options.machine;
     const listed: ST_ConfigManifestEntry[] = [
       ...entries.map((e): ST_ConfigManifestEntry => ({ nId: e.id, eType: COMPONENTS[e.kind].plcValue, sPath: e.path })),
-      // The machine FB: id 0, type NONE.
+      // The machine FB and the topology FB: id 0, type NONE.
       ...(options.machine ? [{ nId: 0, eType: E_VisuComponentType.NONE, sPath: options.machine.path }] : []),
+      ...(options.topology ? [{ nId: 0, eType: E_VisuComponentType.NONE, sPath: options.topology.path }] : []),
     ];
+    // The topology's links in effect are its program values: nothing changes them from cycle to cycle.
+    if (options.topology) plc.define(options.topology.path, PLC_CONFIG_TOPOLOGY_TYPE, options.topology.value);
     const manifest: ST_ConfigManifest = {
       nProtocolVersion: options.protocolVersion ?? CONFIG_PROTOCOL_VERSION,
       sLibraryVersion: "1.0.0",

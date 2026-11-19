@@ -1,0 +1,15 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigTopologyRole" Id="{50251ae0-711e-4ee8-b486-5145a9e025d1}">
+    <Declaration><![CDATA[TYPE ST_ConfigTopologyRole :
+STRUCT
+	(* What a topology link means, as the application declares it with _FB_ConfigTopology.m_DeclareRole (config
+	   protocol 5, ADR 0023), referred to by its number from 1; role 0 is the parent. *)
+	sName : STRING(31); // unique in the topology, e.g. 'Infeed1'
+	nHolderKind : UINT; // the kind (from 1) of node that holds the role
+	nTargetKinds : DWORD; // bit k - 1 set: a link in this role may point to a node of kind k (m_AllowTarget)
+	bRequired : BOOL; // a node in use of the holder kind must have a link in this role
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

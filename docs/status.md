@@ -9,8 +9,9 @@ when: the closed issues and pull requests, and the history of this file (`git lo
 - Release 0.9.0: the visualisation (`/`), the configurator (`/configurator/`) and the Simulator (`/simulator/`),
   served by one gateway per IPC, installed as a Windows service (ADR 0004).
 - Protocol 22 (machine entry, ADR 0021) with the PLC library Syn_Visu 10.0.0; the gateway still reads protocol 21.
-- Config protocol 4 with Syn_Config 2.3.0: parameter sets (ADR 0017), recipes with labels, descriptions and visibility
-  conditions, and machine commands (ADR 0022); the gateway still reads config protocols 2 and 3.
+- Config protocol 5 with Syn_Config 2.4.0: parameter sets (ADR 0017), recipes with labels, descriptions and visibility
+  conditions, machine commands (ADR 0022) and the topology, declared and shown read-only (ADR 0023, #56); the gateway
+  still reads config protocols 2 to 4.
 - The demo application `Syn_Visu_Demo` runs a machine with every component type, a product generator and a sequence
   control for the Simulator (`docs/demo-plc.md`).
 - Tests: unit tests at the seams, TcUnit suites for both libraries, browser tests of all three apps against the demo.

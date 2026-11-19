@@ -16,6 +16,7 @@ import { applyEdit, keyOf, type Edit } from "./edits";
 import { hardwareHints, reconcile, type Match, type Reconciliation } from "./reconciliation";
 import { validateDraft, type Issue } from "./validation";
 import { restState } from "./rest-states";
+import { nodeOf, sourceTopologies, topologyNode, type NodeKey, type SourceTopology } from "./topology";
 import { parameterSetOf, unwritableHints, wiringHints, writePlan, type WritePlan } from "./writing";
 
 /**
@@ -72,6 +73,10 @@ export interface ConfiguratorSnapshot {
   plcParameters: Readonly<Record<string, ParametersMessage>>;
   /** Per component how its last write of a parameter set fares (`GatewayLive` follows it). */
   writes: Readonly<Record<ComponentKey, TrackedWrite>>;
+  /** The topology of every PLC whose application declares one (ADR 0023). */
+  topologies: SourceTopology[];
+  /** The selected topology node: chosen in the tree, or the node of the selected component. */
+  selectedNode: NodeKey | undefined;
 }
 
 /** The writes of parameter sets among the gateway's writes, by component key. */
@@ -139,6 +144,8 @@ export class Configurator {
       plcOnly: [],
       plcParameters: {},
       writes: {},
+      topologies: [],
+      selectedNode: undefined,
     };
   }
 
@@ -428,11 +435,21 @@ export class Configurator {
     this.show(next);
   }
 
-  /** Selects a component for the property panel; undefined selects none. */
+  /** Selects a component for the property panel, and the topology node it stands for; undefined selects none. */
   select(selection: ComponentKey | undefined): void {
     // Only the draft's components: not a ghost of the PLC's version.
-    if (selection === this.snapshot.selection || (selection !== undefined && !this.component(selection))) return;
-    this.set_({ selection });
+    if (selection !== undefined && !this.component(selection)) return;
+    const selectedNode = selection === undefined ? undefined : nodeOf(this.snapshot.topologies, selection);
+    const { selection: before, selectedNode: nodeBefore } = this.snapshot;
+    if (selection === before && selectedNode?.sourceId === nodeBefore?.sourceId && selectedNode?.id === nodeBefore?.id) return;
+    this.set_({ selection, selectedNode });
+  }
+
+  /** Selects a topology node, and the first component it stands for that the draft has. */
+  selectNode(sourceId: string, id: number): void {
+    const node = topologyNode(this.snapshot.topologies, { sourceId, id });
+    if (!node) return;
+    this.set_({ selectedNode: { sourceId, id }, selection: node.components.find((key) => this.component(key)) });
   }
 
   // Files.
@@ -640,6 +657,7 @@ export class Configurator {
       }
       this.snapshot = {
         ...this.snapshot,
+        ...(plcParameters !== before.plcParameters ? { topologies: sourceTopologies(plcParameters) } : {}),
         matches: this.reconciliation.matches,
         plcOnly: this.reconciliation.plcOnly,
         issues: [

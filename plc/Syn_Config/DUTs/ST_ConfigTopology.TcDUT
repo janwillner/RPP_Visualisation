@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigTopology" Id="{71986660-830d-4efd-a98b-afe57e374d81}">
+    <Declaration><![CDATA[TYPE ST_ConfigTopology :
+STRUCT
+	(* vo_Config of _FB_ConfigTopology (config protocol 5, ADR 0023), listed in the config manifest with id 0 and type
+	   NONE like the machine FB; the gateway tells them apart by this type. It reads the declaration once at discovery
+	   and stActive every cycle. *)
+	nKindCount : UINT; // kinds [0..nKindCount-1] are declared
+	aKinds : ARRAY[0..CONFIG_GlobalConst_Param.CONFIG_un_MAX_TOPOLOGY_KINDS - 1] OF ST_ConfigTopologyKind;
+	nRoleCount : UINT; // roles [0..nRoleCount-1] are declared
+	aRoles : ARRAY[0..CONFIG_GlobalConst_Param.CONFIG_un_MAX_TOPOLOGY_ROLES - 1] OF ST_ConfigTopologyRole;
+	nNodeCount : UINT; // nodes [0..nNodeCount-1] are declared
+	aNodes : ARRAY[0..CONFIG_GlobalConst_Param.CONFIG_un_MAX_TOPOLOGY_NODES - 1] OF ST_ConfigTopologyNode;
+	nRootNode : DINT; // id of the root node, which has no parent; 0 = none set
+	stActive : ST_ConfigTopologyLinks; // the links in effect: the application's program values
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

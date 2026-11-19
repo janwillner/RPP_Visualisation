@@ -1,0 +1,413 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <POU Name="_FB_ConfigTopology" Id="{fc5e6287-cc63-4641-a53c-d48e8c319f3c}" SpecialFunc="None">
+    <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The machine's topology (config protocol 5, ADR 0023): how the parts of the application relate. The application<br>
+declares the kinds of its topology nodes, the roles a link may have, every node of its full build-out with the<br>
+Syn_Visu components it stands for, and its root node; its program values are the parents and links it uses. One per<br>
+application, listed in the config manifest with id 0 like the machine FB. Typical cycle:<br>
+  fb_Topology.m_Register(vio_Manifest := GVL_Config.stManifest, vi_udn_Id := 0);<br>
+  fb_Topology.m_DeclareKind(vi_un_Kind := 1, vi_str_Name := 'Line');<br>
+  fb_Topology.m_DeclareKind(vi_un_Kind := 2, vi_str_Name := 'PPH');<br>
+  fb_Topology.m_AllowParent(vi_un_Kind := 2, vi_un_ParentKind := 1);<br>
+  fb_Topology.m_DeclareRole(vi_un_Role := 1, vi_str_Name := 'Infeed1', vi_un_HolderKind := 2, vi_b_Required := TRUE);<br>
+  fb_Topology.m_AllowTarget(vi_un_Role := 1, vi_un_TargetKind := 3);<br>
+  fb_Topology.m_DeclareNode(vi_dn_Id := 21, vi_str_Name := 'PPH1', vi_un_Kind := 2);<br>
+  fb_Topology.m_AddComponent(vi_dn_Node := 21, vi_udn_ComponentId := fb_Delta1.m_Id());<br>
+  fb_Topology.m_SetRoot(vi_dn_Node := 1);<br>
+  fb_Topology.m_SetParent(vi_dn_Node := 21, vi_dn_Parent := 1);<br>
+  fb_Topology.m_Link(vi_dn_Node := 21, vi_un_Role := 1, vi_dn_Target := 30);<br>
+  fb_Topology.m_Cycle();<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+vo_Config is the contract structure the gateway reads at the path in the config manifest.<br>
+*****************************************************************************************************<br>
+LIMITS:<br>
+CONFIG_un_MAX_TOPOLOGY_KINDS kinds, CONFIG_un_MAX_TOPOLOGY_ROLES roles, CONFIG_un_MAX_TOPOLOGY_NODES nodes,<br>
+CONFIG_un_MAX_TOPOLOGY_LINKS links, CONFIG_un_MAX_NODE_COMPONENTS components per node. The gateway reads the<br>
+declaration when it discovers the PLC: declare everything from the start.<br>
+*****************************************************************************************************<br>
+VERSION         ¦ DATE       ¦ NAME      ¦ CHANGE<br>
+Syn_Config 2.4.0 ¦ 2026-11-19 ¦ J.Willner ¦ Created: declaration and program values (protocol 5, #56)<br>
+****************************************************************************************************)
+FUNCTION_BLOCK _FB_ConfigTopology EXTENDS _FB_ConfigComponent
+VAR_OUTPUT
+	vo_Config							: ST_ConfigTopology;	// contract structure of the gateway
+END_VAR
+VAR
+	ProgramLinks						: ST_ConfigTopologyLinks;	// the program values, given with m_SetParent and m_Link
+END_VAR]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[]]></ST>
+    </Implementation>
+    <Method Name="m_AddComponent" Id="{80729337-dea7-450c-8221-ba64fe8979b3}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Names a Syn_Visu component the declared node vi_dn_Node stands for, e.g. a PPH's Delta robot. Idempotent: call it<br>
+every cycle with m_DeclareNode.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for a node not declared, component id 0, or more than CONFIG_un_MAX_NODE_COMPONENTS components.<br>
+****************************************************************************************************)
+METHOD m_AddComponent : BOOL
+VAR_INPUT
+	vi_dn_Node							: DINT;	// [-] the node's id
+	vi_udn_ComponentId					: UDINT;	// [-] manifest id of the Syn_Visu component, e.g. fb_Delta1.m_Id()
+END_VAR
+VAR
+	n_TempNode							: INT;
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[n_TempNode := m_NodeIndex(vi_dn_Id := vi_dn_Node);
+m_AddComponent := n_TempNode >= 0 AND vi_udn_ComponentId <> 0;
+IF NOT m_AddComponent THEN
+	RETURN;
+END_IF
+un_TempIndex := 0;
+WHILE un_TempIndex < vo_Config.aNodes[n_TempNode].nComponentCount
+	AND un_TempIndex < CONFIG_GlobalConst_Param.CONFIG_un_MAX_NODE_COMPONENTS
+DO
+	IF vo_Config.aNodes[n_TempNode].aComponents[un_TempIndex] = vi_udn_ComponentId THEN
+		RETURN;
+	END_IF
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE
+IF vo_Config.aNodes[n_TempNode].nComponentCount >= CONFIG_GlobalConst_Param.CONFIG_un_MAX_NODE_COMPONENTS THEN
+	m_AddComponent := FALSE;
+	RETURN;
+END_IF
+vo_Config.aNodes[n_TempNode].aComponents[vo_Config.aNodes[n_TempNode].nComponentCount] := vi_udn_ComponentId;
+vo_Config.aNodes[n_TempNode].nComponentCount := vo_Config.aNodes[n_TempNode].nComponentCount + 1;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_AllowParent" Id="{8da02d7d-8028-41af-bfaa-f9c8a76b1904}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Allows a node of kind vi_un_ParentKind to be the parent of a node of kind vi_un_Kind, e.g. a cell the parent of a<br>
+PPH. Idempotent: call it every cycle with m_DeclareKind.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE when either kind is not declared.<br>
+****************************************************************************************************)
+METHOD m_AllowParent : BOOL
+VAR_INPUT
+	vi_un_Kind							: UINT;	// [-] the child's kind, 1..its count
+	vi_un_ParentKind					: UINT;	// [-] the parent's kind, 1..its count
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_AllowParent := vi_un_Kind > 0 AND vi_un_Kind <= vo_Config.nKindCount
+	AND vi_un_ParentKind > 0 AND vi_un_ParentKind <= vo_Config.nKindCount;
+IF NOT m_AllowParent THEN
+	RETURN;
+END_IF
+vo_Config.aKinds[vi_un_Kind - 1].nParentKinds := vo_Config.aKinds[vi_un_Kind - 1].nParentKinds
+	OR SHL(DWORD#1, vi_un_ParentKind - 1);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_AllowTarget" Id="{fbb8fa07-9d89-44b1-8b30-7cc6f81f6ab1}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Allows a link in role vi_un_Role to point to a node of kind vi_un_TargetKind, e.g. Infeed1 to a transport.<br>
+Idempotent: call it every cycle with m_DeclareRole.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE when the role or the kind is not declared.<br>
+****************************************************************************************************)
+METHOD m_AllowTarget : BOOL
+VAR_INPUT
+	vi_un_Role							: UINT;	// [-] the role, 1..its count
+	vi_un_TargetKind					: UINT;	// [-] the kind it may point to, 1..its count
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_AllowTarget := vi_un_Role > 0 AND vi_un_Role <= vo_Config.nRoleCount
+	AND vi_un_TargetKind > 0 AND vi_un_TargetKind <= vo_Config.nKindCount;
+IF NOT m_AllowTarget THEN
+	RETURN;
+END_IF
+vo_Config.aRoles[vi_un_Role - 1].nTargetKinds := vo_Config.aRoles[vi_un_Role - 1].nTargetKinds
+	OR SHL(DWORD#1, vi_un_TargetKind - 1);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Cycle" Id="{38fa1d75-4915-4a10-9667-a02eab69d4d1}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Every cycle, after the declaration and the program values: gives the links in effect in vo_Config.stActive, the<br>
+program values.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+TRUE.<br>
+****************************************************************************************************)
+METHOD m_Cycle : BOOL]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[vo_Config.stActive := ProgramLinks;
+m_Cycle := TRUE;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_DeclareKind" Id="{cc564b34-ae17-457b-b121-34f5e7c58fa4}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Declares kind vi_un_Kind (1..CONFIG_un_MAX_TOPOLOGY_KINDS) of topology node, e.g. 'PPH' or 'Transport'. Kinds are<br>
+listed up to the highest one declared. Idempotent: call it every cycle, before the roles and nodes.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for vi_un_Kind = 0 or above CONFIG_un_MAX_TOPOLOGY_KINDS.<br>
+****************************************************************************************************)
+METHOD m_DeclareKind : BOOL
+VAR_INPUT
+	vi_un_Kind							: UINT;	// [-] 1..CONFIG_un_MAX_TOPOLOGY_KINDS
+	vi_str_Name							: STRING(31);	// unique in the topology, e.g. 'PPH'
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_DeclareKind := vi_un_Kind > 0 AND vi_un_Kind <= CONFIG_GlobalConst_Param.CONFIG_un_MAX_TOPOLOGY_KINDS;
+IF NOT m_DeclareKind THEN
+	RETURN;
+END_IF
+vo_Config.aKinds[vi_un_Kind - 1].sName := vi_str_Name;
+IF vi_un_Kind > vo_Config.nKindCount THEN
+	vo_Config.nKindCount := vi_un_Kind;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_DeclareNode" Id="{572ac106-74a2-4582-b044-363a09c93532}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Declares the topology node vi_dn_Id of the full build-out, in use or not, with its name and kind; nodes are listed<br>
+in the order they are first declared. Idempotent: call it every cycle, after m_DeclareKind.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for id 0, a kind not declared, or more than CONFIG_un_MAX_TOPOLOGY_NODES nodes.<br>
+****************************************************************************************************)
+METHOD m_DeclareNode : BOOL
+VAR_INPUT
+	vi_dn_Id							: DINT;	// [-] the application's id, e.g. its context id; not 0
+	vi_str_Name							: STRING(31);	// e.g. 'PPH1'
+	vi_un_Kind							: UINT;	// [-] its kind, 1..the kind count
+END_VAR
+VAR
+	n_TempIndex							: INT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_DeclareNode := vi_dn_Id <> 0 AND vi_un_Kind > 0 AND vi_un_Kind <= vo_Config.nKindCount;
+IF NOT m_DeclareNode THEN
+	RETURN;
+END_IF
+n_TempIndex := m_NodeIndex(vi_dn_Id := vi_dn_Id);
+IF n_TempIndex < 0 THEN
+	IF vo_Config.nNodeCount >= CONFIG_GlobalConst_Param.CONFIG_un_MAX_TOPOLOGY_NODES THEN
+		m_DeclareNode := FALSE;
+		RETURN;
+	END_IF
+	n_TempIndex := UINT_TO_INT(vo_Config.nNodeCount);
+	vo_Config.nNodeCount := vo_Config.nNodeCount + 1;
+	vo_Config.aNodes[n_TempIndex].nId := vi_dn_Id;
+END_IF
+vo_Config.aNodes[n_TempIndex].sName := vi_str_Name;
+vo_Config.aNodes[n_TempIndex].nKind := vi_un_Kind;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_DeclareRole" Id="{ad15a1d2-5990-41cf-bc01-52bb8b8965fe}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Declares role vi_un_Role (1..CONFIG_un_MAX_TOPOLOGY_ROLES) a link may have, e.g. 'Infeed1' held by a PPH; the kinds<br>
+it may point to are allowed with m_AllowTarget. Roles are listed up to the highest one declared. The parent is no<br>
+role (m_SetParent). Idempotent: call it every cycle, after m_DeclareKind.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for vi_un_Role = 0 or above CONFIG_un_MAX_TOPOLOGY_ROLES, or a holder kind not declared.<br>
+****************************************************************************************************)
+METHOD m_DeclareRole : BOOL
+VAR_INPUT
+	vi_un_Role							: UINT;	// [-] 1..CONFIG_un_MAX_TOPOLOGY_ROLES
+	vi_str_Name							: STRING(31);	// unique in the topology, e.g. 'Infeed1'
+	vi_un_HolderKind					: UINT;	// [-] the kind of node that holds the role
+	vi_b_Required						: BOOL;	// a node in use of that kind must have a link in this role
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_DeclareRole := vi_un_Role > 0 AND vi_un_Role <= CONFIG_GlobalConst_Param.CONFIG_un_MAX_TOPOLOGY_ROLES
+	AND vi_un_HolderKind > 0 AND vi_un_HolderKind <= vo_Config.nKindCount;
+IF NOT m_DeclareRole THEN
+	RETURN;
+END_IF
+vo_Config.aRoles[vi_un_Role - 1].sName := vi_str_Name;
+vo_Config.aRoles[vi_un_Role - 1].nHolderKind := vi_un_HolderKind;
+vo_Config.aRoles[vi_un_Role - 1].bRequired := vi_b_Required;
+IF vi_un_Role > vo_Config.nRoleCount THEN
+	vo_Config.nRoleCount := vi_un_Role;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_InvalidStaged" Id="{4aed711e-b730-4411-a60f-42164c95f043}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+The topology is not staged yet (config protocol 5 has no topology staging): nothing to reject.<br>
+****************************************************************************************************)
+METHOD PROTECTED m_InvalidStaged : STRING(80)]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_InvalidStaged := '';]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_Link" Id="{879adf5e-e5d6-4f8c-a2ad-b1b23aa59415}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A program value: node vi_dn_Node points to node vi_dn_Target in role vi_un_Role, e.g. PPH1's Infeed1 is TBL1. A<br>
+node has one link per role; linking it again in that role replaces the target. Role 0 is the parent<br>
+(m_SetParent). Idempotent: call it every cycle after the declaration, before m_Cycle.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for a node, target or role not declared, or more than CONFIG_un_MAX_TOPOLOGY_LINKS links.<br>
+****************************************************************************************************)
+METHOD m_Link : BOOL
+VAR_INPUT
+	vi_dn_Node							: DINT;	// [-] id of the node that holds the link
+	vi_un_Role							: UINT;	// [-] its role, 1..the role count; 0 = the parent
+	vi_dn_Target						: DINT;	// [-] id of the node it points to
+END_VAR
+VAR
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_Link := m_NodeIndex(vi_dn_Id := vi_dn_Node) >= 0 AND m_NodeIndex(vi_dn_Id := vi_dn_Target) >= 0
+	AND vi_un_Role <= vo_Config.nRoleCount;
+IF NOT m_Link THEN
+	RETURN;
+END_IF
+
+(* The node's link in this role, if it has one. *)
+un_TempIndex := 0;
+WHILE un_TempIndex < ProgramLinks.nLinkCount AND un_TempIndex < CONFIG_GlobalConst_Param.CONFIG_un_MAX_TOPOLOGY_LINKS DO
+	IF ProgramLinks.aLinks[un_TempIndex].nNode = vi_dn_Node AND ProgramLinks.aLinks[un_TempIndex].nRole = vi_un_Role THEN
+		ProgramLinks.aLinks[un_TempIndex].nTarget := vi_dn_Target;
+		RETURN;
+	END_IF
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE
+
+(* New link. *)
+IF ProgramLinks.nLinkCount >= CONFIG_GlobalConst_Param.CONFIG_un_MAX_TOPOLOGY_LINKS THEN
+	m_Link := FALSE;
+	RETURN;
+END_IF
+ProgramLinks.aLinks[ProgramLinks.nLinkCount].nNode := vi_dn_Node;
+ProgramLinks.aLinks[ProgramLinks.nLinkCount].nRole := vi_un_Role;
+ProgramLinks.aLinks[ProgramLinks.nLinkCount].nTarget := vi_dn_Target;
+ProgramLinks.nLinkCount := ProgramLinks.nLinkCount + 1;]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_NodeIndex" Id="{3e0928fe-96b4-443b-bec3-6522c465b859}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Index in vo_Config.aNodes of the node with id vi_dn_Id; -1 when none is declared.<br>
+****************************************************************************************************)
+METHOD PRIVATE m_NodeIndex : INT
+VAR_INPUT
+	vi_dn_Id							: DINT;	// [-] the node's id
+END_VAR
+VAR
+	un_TempIndex						: UINT;
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_NodeIndex := -1;
+un_TempIndex := 0;
+WHILE un_TempIndex < vo_Config.nNodeCount AND un_TempIndex < CONFIG_GlobalConst_Param.CONFIG_un_MAX_TOPOLOGY_NODES DO
+	IF vo_Config.aNodes[un_TempIndex].nId = vi_dn_Id THEN
+		m_NodeIndex := UINT_TO_INT(un_TempIndex);
+		RETURN;
+	END_IF
+	un_TempIndex := un_TempIndex + 1;
+END_WHILE]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetParent" Id="{52c9ea82-42c0-4aeb-b041-0899c5ffdf3c}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+A program value: node vi_dn_Parent is the parent of node vi_dn_Node (m_Link in role 0). Idempotent: call it every<br>
+cycle after the declaration, before m_Cycle.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE as m_Link.<br>
+****************************************************************************************************)
+METHOD m_SetParent : BOOL
+VAR_INPUT
+	vi_dn_Node							: DINT;	// [-] id of the child
+	vi_dn_Parent						: DINT;	// [-] id of its parent
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetParent := m_Link(vi_dn_Node := vi_dn_Node, vi_un_Role := 0, vi_dn_Target := vi_dn_Parent);]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="m_SetRoot" Id="{aa96b9e4-acb3-4d0d-8fbb-d52398cae315}">
+      <Declaration><![CDATA[(****************************************************************************************************<br>
+© Syntegon Group.<br>
+All rights reserved, also regarding any disposal, exploitation, reproduction, editing, distribution,<br>
+as well as in the event of applications for industrial property rights.<br>
+*****************************************************************************************************<br>
+DESCRIPTION:<br>
+Makes the declared node vi_dn_Node the root node: the one node without a parent, from which every node in use<br>
+hangs. Idempotent: call it every cycle after m_DeclareNode.<br>
+*****************************************************************************************************<br>
+OUTPUT VALUES:<br>
+FALSE for a node not declared.<br>
+****************************************************************************************************)
+METHOD m_SetRoot : BOOL
+VAR_INPUT
+	vi_dn_Node							: DINT;	// [-] the node's id
+END_VAR]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[m_SetRoot := m_NodeIndex(vi_dn_Id := vi_dn_Node) >= 0;
+IF m_SetRoot THEN
+	vo_Config.nRootNode := vi_dn_Node;
+END_IF]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>
