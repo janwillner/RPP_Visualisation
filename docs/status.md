@@ -49,6 +49,9 @@ The spec in issue #1 is updated to these; the hard-to-reverse ones are ADRs:
 - An active recipe saved before a recipe field was appended gives that field 0, not its program value; Syn_Config
   could keep a field count in `ST_ConfigRecipeSet`.
 - The trial licence of the user-mode runtime `UmRT_Default` expires on 18 Nov 2026.
+- Topology (ADR 0023): how an application runs its full build-out when the EtherCAT boxes and drives of nodes not in
+  use are missing (optional boxes or hot-connect groups switched off at start, or an I/O configuration per machine)
+  is not decided; it has to be before a topology runs on a real machine.
 - Idea raised but not built: Delta part sizes scaled with the configured geometry.
 - Local leftovers from the ADS investigation, not needed any more: `EnableAmsTcpLoopback` in the Windows registry and
   in `UmRT_Default\3.1\TcRegistry.xml`.

@@ -283,6 +283,32 @@ _Avoid_: defaults (in prose), factory settings
 The component types the configurator offers to place, by dragging onto the floor or by a click.
 _Avoid_: toolbox, library (the PLC library is something else)
 
+## Topology
+
+**Topology**:
+How the parts of a machine's application relate: every topology node's parent and its links, as the application declares them and the configurator sets them (ADR 0023). It takes effect at the next start of the application.
+_Avoid_: context (the RPP application's word), assignment, wiring, hierarchy
+
+**Topology node**:
+One part of an application's machine that has a place in its topology: a transport, a pick-and-place handling, a vision unit, a vacuum supply, a cell. It may stand for components or for none.
+_Avoid_: context, module, unit, component (a component is what the 3D view draws)
+
+**Root node**:
+The one topology node that needs no parent; every other node in use hangs from it.
+_Avoid_: top, machine node
+
+**Role**:
+What a link means, as the application declares it: which kind of node holds it, which kind it may point to, and whether it is required (parent, infeed 1, vacuum supply, the transport a vision unit looks at).
+_Avoid_: link type, relation
+
+**Link**:
+One relation of a topology: a node points to another node in a role.
+_Avoid_: assignment, reference, connection
+
+**In use**:
+A topology node is in use when it is the root node or its chain of parents reaches the root node. The others are part of the full build-out but not of this machine.
+_Avoid_: active (that is a parameter set's or a recipe's version), enabled, present
+
 ## Simulator
 
 **Simulator**:
