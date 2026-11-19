@@ -31,7 +31,7 @@ as well as in the event of applications for industrial property rights.<br>
 DESCRIPTION:<br>
 Kinds, roles, nodes and the root node are published as declared, declared again without change; a kind 0 or<br>
 beyond the list, a role of a kind not declared, a node with id 0 or of a kind not declared, a component of a node<br>
-not declared and a root node not declared are refused.<br>
+not declared, a root node not declared and a second root node are refused.<br>
 ****************************************************************************************************)
 METHOD PRIVATE m_Declaration
 VAR_INST
@@ -69,6 +69,8 @@ AssertFalse(Condition := fb_TempTopology.m_DeclareNode(vi_dn_Id := 0, vi_str_Nam
 AssertFalse(Condition := fb_TempTopology.m_DeclareNode(vi_dn_Id := 99, vi_str_Name := 'x', vi_un_Kind := 9), Message := 'undeclared kind refused');
 AssertFalse(Condition := fb_TempTopology.m_AddComponent(vi_dn_Node := 99, vi_udn_ComponentId := 3), Message := 'undeclared node refused');
 AssertFalse(Condition := fb_TempTopology.m_SetRoot(vi_dn_Node := 99), Message := 'undeclared root refused');
+AssertFalse(Condition := fb_TempTopology.m_SetRoot(vi_dn_Node := 10), Message := 'a second root refused');
+AssertEquals_DINT(Expected := 1, Actual := fb_TempTopology.vo_Config.nRootNode, Message := 'root still TCAT1');
 AssertEquals_UINT(Expected := 4, Actual := fb_TempTopology.vo_Config.nNodeCount, Message := 'still four nodes');
 
 TEST_FINISHED();]]></ST>

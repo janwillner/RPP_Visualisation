@@ -75,7 +75,9 @@ export type Topology = z.infer<typeof TopologySchema>;
  * is not in use is not in use either, nor is one in a ring of parents.
  */
 export function nodesInUse(topology: Pick<Topology, "nodes" | "rootId" | "parents">): Set<number> {
-  const parentOf = new Map(topology.parents.map((p) => [p.node, p.parent]));
+  // A node's first parent link counts, as everywhere a topology is read.
+  const parentOf = new Map<number, number>();
+  for (const p of topology.parents) if (!parentOf.has(p.node)) parentOf.set(p.node, p.parent);
   const inUse = new Set<number>();
   if (!topology.nodes.some((n) => n.id === topology.rootId)) return inUse;
   inUse.add(topology.rootId);

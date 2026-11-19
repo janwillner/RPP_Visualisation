@@ -7,6 +7,7 @@ import {
   type ParametersMessage,
   type ParameterType,
   type ResetParametersCommand,
+  type Topology,
   type TypedParameters,
   type WriteParametersCommand,
 } from "@rpp/protocol";
@@ -68,7 +69,7 @@ export async function discoverParameters(
   plc: SymbolAccess,
   manifestPath: string,
   allowWrite: boolean,
-  componentIds: ReadonlySet<number> = new Set(),
+  componentIds: ReadonlySet<number>,
 ): Promise<ParameterDiscovery> {
   const none = noParameters;
   const type = await plc.typeOf(manifestPath);
@@ -160,7 +161,7 @@ export function parametersPart(sourceId: string, d: ParameterDiscovery): ReadPar
       const values = splitByPart(parts, raws);
       let components: ComponentParameters[];
       let recipe: ReturnType<NonNullable<typeof machine>["map"]> | undefined;
-      let topologyRead: ReturnType<NonNullable<typeof topology>["map"]> | undefined;
+      let topologyRead: Topology | undefined;
       try {
         components = fbs.map((p) => p.map(values.get(p)!));
         recipe = machine?.map(values.get(machine)!);

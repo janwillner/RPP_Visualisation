@@ -330,12 +330,7 @@ export function ConfiguratorApp() {
       </main>
 
       <aside className="panel right" hidden={!right.open}>
-        {selectedNode && (
-          <NodeDetails
-            node={selectedNode}
-            inUse={!snapshot.topologies.some((t) => t.available.some((n) => n === selectedNode))}
-          />
-        )}
+        {selectedNode && <NodeDetails node={selectedNode} />}
         {selected ? (
           // Keyed by the component: what a panel holds for one component (a conveyor chosen for a new zone) never
           // carries over to the next.

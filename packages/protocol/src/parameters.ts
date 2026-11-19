@@ -29,9 +29,6 @@ export const RECIPE_CONFIG_PROTOCOL_VERSION = 3;
 /** The first config protocol whose recipe fields have a label, a description and a visibility condition (#49). */
 export const FIELD_TEXT_CONFIG_PROTOCOL_VERSION = 4;
 
-/** The first config protocol with a topology FB: the application's topology nodes, roles and links (ADR 0023). */
-export const TOPOLOGY_CONFIG_PROTOCOL_VERSION = 5;
-
 /** The oldest Syn_Config protocol the gateway still writes parameter sets to; it has no recipe and no commands. */
 export const MIN_CONFIG_PROTOCOL_VERSION = 2;
 

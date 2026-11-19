@@ -70,6 +70,5 @@ by the naming convention, including the machine FB (`recipeField`, `answerComman
 ## Versions
 
 Config protocol 2: fingers (Syn_Config 2.0); 3: machine FB (2.1); 4: field texts and conditions (2.2); 5: topology FB
-(2.4). The gateway
-still writes parameter sets to protocol 2 (`MIN_CONFIG_PROTOCOL_VERSION`). An active recipe saved before a field was
-appended gives that field 0, not its program value.
+(2.4). The gateway still writes parameter sets to protocol 2 (`MIN_CONFIG_PROTOCOL_VERSION`). An active recipe saved
+before a field was appended gives that field 0, not its program value.

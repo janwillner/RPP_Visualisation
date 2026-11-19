@@ -288,7 +288,7 @@ test("configurator: shows the demo's topology and selects a node's component", a
   await expect(tree).toContainText("TBL1");
   await expect(tree).toContainText("PPH1");
   await expect(tree).toContainText("DET1");
-  await expect(topology.locator("ul.available")).toContainText("PPH2");
+  await expect(topology.locator("ul.not-in-use")).toContainText("PPH2");
 
   await tree.getByRole("button", { name: /^PPH1/ }).click();
   const properties = page.locator("aside.panel.right");

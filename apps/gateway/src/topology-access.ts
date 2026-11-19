@@ -69,19 +69,19 @@ export function topologyFbEntry(
     parentKinds: kindsOf(k.nParentKinds, `Topology kind ${kindNames[i]}`),
   }));
 
-  const roleNames = d.aRoles.slice(0, d.nRoleCount).map((r) => r.sName.trim());
-  unique(roleNames, "role");
+  const declaredRoleNames = d.aRoles.slice(0, d.nRoleCount).map((r) => r.sName.trim());
+  unique(declaredRoleNames, "role");
   const roles: TopologyRole[] = [];
   const usableRoles: (string | undefined)[] = [];
   for (const [i, r] of d.aRoles.slice(0, d.nRoleCount).entries()) {
     const holder = kindName(r.nHolderKind);
     if (holder === undefined) {
-      errors.push(`Topology role ${roleNames[i]} is held by kind ${r.nHolderKind}, which is not declared; it is left out.`);
+      errors.push(`Topology role ${declaredRoleNames[i]} is held by kind ${r.nHolderKind}, which is not declared; it is left out.`);
       usableRoles.push(undefined);
       continue;
     }
-    roles.push({ name: roleNames[i]!, holderKind: holder, targetKinds: kindsOf(r.nTargetKinds, `Topology role ${roleNames[i]}`), required: r.bRequired });
-    usableRoles.push(roleNames[i]);
+    roles.push({ name: declaredRoleNames[i]!, holderKind: holder, targetKinds: kindsOf(r.nTargetKinds, `Topology role ${declaredRoleNames[i]}`), required: r.bRequired });
+    usableRoles.push(declaredRoleNames[i]);
   }
 
   const nodes: TopologyNode[] = [];

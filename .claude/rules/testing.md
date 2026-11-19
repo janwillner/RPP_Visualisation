@@ -16,9 +16,9 @@ page), never on internals. Commands: `.claude/docs/commands.md`.
 
 - **Gateway**: drive an `InMemoryPlc` (or several, combined) and assert on emitted messages; whole machines use
   `test/fixture-machine.ts`. Syn_Config through `config-emulation.ts` (`parameters.test.ts`, `recipes.test.ts`,
-  `machine.test.ts`). The docs page at the gateway seam (`docs-page.test.ts`: diagrams inlined with unique ids, links
-  resolve, every schema field described, the fixture's messages valid against the JSON Schema); `web-pages.test.ts`
-  for the three apps' paths. Deployment seams: `resolveGatewayOptions`, `bridgeLaunch`, the bridge process, `/health`.
+  `machine.test.ts`, `topology.test.ts`). The docs page at the gateway seam (`docs-page.test.ts`: diagrams inlined
+  with unique ids, links resolve, every schema field described, the fixture's messages valid against the JSON
+  Schema); `web-pages.test.ts` for the three apps' paths. Deployment seams: `resolveGatewayOptions`, `bridgeLaunch`, the bridge process, `/health`.
 - **Protocol**: `writeBlockedReason` by a table (`packages/protocol/test`).
 - **machine-view**: `buildScene`, `buildMachineScene`, `Sources`, `GatewayLive` over `FakeConnection`,
   `ProductHistory`, `metrics`, `parseViewSettings`, `stateRows`, `picking.ts`, `product-groups.ts`, `scene-frame.ts`.

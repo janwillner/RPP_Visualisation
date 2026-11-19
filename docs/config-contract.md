@@ -242,7 +242,8 @@ fb_Topology.m_Cycle();
 
 - Kinds and roles are numbered from 1 and listed up to the highest one declared; nodes by their own id (DINT, e.g.
   the application's context id, not 0) in the order they are first declared. Declare kinds before roles and nodes,
-  nodes before links. Every method refuses (FALSE) what refers to something not declared.
+  nodes before links. Every method refuses (FALSE) what refers to something not declared, `m_SetRoot` also a second
+  root node.
 - A node has one link per role: linking it again replaces the target. The parent is role 0 (`m_SetParent`).
 - `m_Cycle` gives the program values as the links in effect (`stActive`).
 

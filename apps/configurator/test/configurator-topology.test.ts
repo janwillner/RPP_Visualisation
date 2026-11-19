@@ -56,6 +56,7 @@ describe("Configurator: a PLC's topology (ADR 0023)", () => {
       id,
       name,
       kind,
+      inUse: true,
       parent: undefined,
       components: [],
       links: [],
@@ -81,14 +82,15 @@ describe("Configurator: a PLC's topology (ADR 0023)", () => {
             }),
           ],
         }),
-        available: [
-          node(11, "MPS2", "Cell"),
+        notInUse: [
+          node(11, "MPS2", "Cell", { inUse: false }),
           node(24, "PPH4", "PPH", {
+            inUse: false,
             parent: { id: 11, name: "MPS2" },
             links: [{ role: "Infeed1", target: { id: 30, name: "TBL1" } }],
           }),
-          node(25, "PPH5", "PPH", { parent: { id: 26, name: "PPH6" } }),
-          node(26, "PPH6", "PPH", { parent: { id: 25, name: "PPH5" } }),
+          node(25, "PPH5", "PPH", { inUse: false, parent: { id: 26, name: "PPH6" } }),
+          node(26, "PPH6", "PPH", { inUse: false, parent: { id: 25, name: "PPH5" } }),
         ],
       },
     ]);

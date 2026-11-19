@@ -393,17 +393,18 @@ as well as in the event of applications for industrial property rights.<br>
 *****************************************************************************************************<br>
 DESCRIPTION:<br>
 Makes the declared node vi_dn_Node the root node: the one node without a parent, from which every node in use<br>
-hangs. Idempotent: call it every cycle after m_DeclareNode.<br>
+hangs. Idempotent: call it every cycle after m_DeclareNode. A topology has one root node: another one is refused.<br>
 *****************************************************************************************************<br>
 OUTPUT VALUES:<br>
-FALSE for a node not declared.<br>
+FALSE for a node not declared, or a second root node.<br>
 ****************************************************************************************************)
 METHOD m_SetRoot : BOOL
 VAR_INPUT
 	vi_dn_Node							: DINT;	// [-] the node's id
 END_VAR]]></Declaration>
       <Implementation>
-        <ST><![CDATA[m_SetRoot := m_NodeIndex(vi_dn_Id := vi_dn_Node) >= 0;
+        <ST><![CDATA[m_SetRoot := m_NodeIndex(vi_dn_Id := vi_dn_Node) >= 0
+	AND (vo_Config.nRootNode = 0 OR vo_Config.nRootNode = vi_dn_Node);
 IF m_SetRoot THEN
 	vo_Config.nRootNode := vi_dn_Node;
 END_IF]]></ST>

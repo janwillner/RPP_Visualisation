@@ -44,8 +44,11 @@ const CELL: TopologyDeclaration = {
   ],
 };
 
-/** A PLC with an infeed (1), a Delta (2) and a vision system (3) whose application declares `topology`. */
-function setup(options: { topology?: ST_ConfigTopology; configProtocol?: number } = {}) {
+/**
+ * A PLC with an infeed (1), a Delta (2) and a vision system (3) whose application declares `topology` (the cell's by
+ * default; null: none, as an application of config protocol 4).
+ */
+function setup(options: { topology?: ST_ConfigTopology | null; configProtocol?: number } = {}) {
   const plc = new InMemoryPlc();
   defineMachine(plc, [
     { id: 1, name: "Infeed", path: "MAIN.stInfeed", kind: "conveyor", value: conveyor() },
@@ -53,7 +56,7 @@ function setup(options: { topology?: ST_ConfigTopology; configProtocol?: number 
     { id: 3, name: "Vision", path: "MAIN.stVision", kind: "vision", value: detector() },
   ]);
   const emulation = new ConfigEmulation(plc, [], {
-    topology: { path: TOPOLOGY_FB, value: options.topology ?? topologyStructure(CELL) },
+    ...(options.topology === null ? {} : { topology: { path: TOPOLOGY_FB, value: options.topology ?? topologyStructure(CELL) } }),
     ...(options.configProtocol !== undefined ? { protocolVersion: options.configProtocol } : {}),
   });
   const gateway = createGateway({ plc, sourceId: "plc1", now: () => 0 });
@@ -65,7 +68,7 @@ function setup(options: { topology?: ST_ConfigTopology; configProtocol?: number 
   };
   const last = <K extends ServerMessage["kind"]>(kind: K) =>
     messages.filter((m): m is Extract<ServerMessage, { kind: K }> => m.kind === kind).at(-1);
-  return { plc, cycle, last };
+  return { cycle, last };
 }
 
 describe("topology (Syn_Config config protocol 5, ADR 0023)", () => {
@@ -106,6 +109,15 @@ describe("topology (Syn_Config config protocol 5, ADR 0023)", () => {
         { node: 60, role: "Transport", target: 30 },
       ],
     });
+    expect(last("config")?.errors).toEqual([]);
+  });
+
+  it("publishes no topology for a PLC of config protocol 4, which has none", async () => {
+    const { cycle, last } = setup({ topology: null, configProtocol: 4 });
+    await cycle();
+
+    expect(last("parameters")).toMatchObject({ kind: "parameters", components: [] });
+    expect(last("parameters")?.topology).toBeUndefined();
     expect(last("config")?.errors).toEqual([]);
   });
 

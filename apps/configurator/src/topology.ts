@@ -16,6 +16,8 @@ export interface TopologyNodeView {
   id: number;
   name: string;
   kind: string;
+  /** The node is in use (`nodesInUse`): part of this machine, not only of the full build-out. */
+  inUse: boolean;
   parent: NodeRef | undefined;
   /** The components the node stands for, as keys of its source. */
   components: ComponentKey[];
@@ -30,7 +32,7 @@ export interface SourceTopology {
   /** The root node with every node in use below it; undefined when the root node is not declared. */
   root: TopologyNodeView | undefined;
   /** The nodes not in use, in their declared order. */
-  available: TopologyNodeView[];
+  notInUse: TopologyNodeView[];
 }
 
 /** A node of a source's topology. */
@@ -56,6 +58,7 @@ function sourceTopology(sourceId: string, t: Topology): SourceTopology {
       id: node.id,
       name: node.name,
       kind: node.kind,
+      inUse: inUse.has(node.id),
       parent: parent && ref(parent.parent),
       components: node.componentIds.map((id) => componentKey(sourceId, id)),
       links: t.links.flatMap((l) => {
@@ -69,7 +72,7 @@ function sourceTopology(sourceId: string, t: Topology): SourceTopology {
     };
   };
   const root = t.nodes.find((n) => n.id === t.rootId);
-  return { sourceId, root: root && view(root), available: t.nodes.filter((n) => !inUse.has(n.id)).map(view) };
+  return { sourceId, root: root && view(root), notInUse: t.nodes.filter((n) => !inUse.has(n.id)).map(view) };
 }
 
 /** The node of `sourceId`'s topology that stands for component `key`; undefined when none does. */
@@ -89,5 +92,5 @@ export function topologyNode(topologies: readonly SourceTopology[], key: NodeKey
 
 function find(t: SourceTopology, test: (n: TopologyNodeView) => boolean): TopologyNodeView | undefined {
   const walk = (n: TopologyNodeView): TopologyNodeView | undefined => (test(n) ? n : n.children.map(walk).find(Boolean));
-  return (t.root && walk(t.root)) ?? t.available.find(test);
+  return (t.root && walk(t.root)) ?? t.notInUse.find(test);
 }

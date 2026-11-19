@@ -9,7 +9,9 @@ deciding which parts are **in use** and how they are linked.
 So, in the library Syn_Config (config protocol 5):
 
 - **The application declares its topology.** One topology FB per application, `_FB_ConfigTopology`, with its own
-  entry in the config manifest, declares its **topology nodes** (id, name, kind, and the manifest ids of the
+  entry in the config manifest (id 0 and type NONE like the machine FB, told apart by the type of its `vo_Config`:
+  the entry's type is Syn_Visu's component type, and a new value there would change Syn_Visu), declares its
+  **topology nodes** (id, name, kind, and the manifest ids of the
   components a node stands for, if any), its **roles** (name, the node kind that holds it, the node kinds it may point
   to, required or optional) and its **root node**. The gateway reads the declaration at discovery. The configurator
   knows no RPP kinds: its tree, its choices and its checks come from the declaration, like the Simulator's form from

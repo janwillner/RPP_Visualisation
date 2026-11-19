@@ -27,10 +27,10 @@ export function TopologyTree(props: {
     <section aria-label={`Topology of ${props.sourceName}`}>
       <h3>Topology · {props.sourceName}</h3>
       {topology.root ? <ul className="tree topology">{item(topology.root)}</ul> : <p className="muted">The root node is not declared.</p>}
-      {topology.available.length > 0 && (
+      {topology.notInUse.length > 0 && (
         <>
           <h4 className="muted">Not in use</h4>
-          <ul className="tree topology available">{topology.available.map(item)}</ul>
+          <ul className="tree topology not-in-use">{topology.notInUse.map(item)}</ul>
         </>
       )}
     </section>
@@ -38,13 +38,13 @@ export function TopologyTree(props: {
 }
 
 /** The selected node's parent and links, as the PLC links them now. */
-export function NodeDetails({ node, inUse }: { node: TopologyNodeView; inUse: boolean }) {
+export function NodeDetails({ node }: { node: TopologyNodeView }) {
   return (
     <section className="node-details" aria-label={`Topology node ${node.name}`}>
       <h3>
         {node.name} <span className="muted">{node.kind}</span>
       </h3>
-      <p className="muted">{inUse ? "In use" : "Not in use"}</p>
+      <p className="muted">{node.inUse ? "In use" : "Not in use"}</p>
       <dl>
         <dt>Parent</dt>
         <dd>{node.parent?.name ?? <span className="muted">none</span>}</dd>
