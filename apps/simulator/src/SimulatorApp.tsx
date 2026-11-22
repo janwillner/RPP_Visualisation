@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import type { MachineCommandKind } from "@rpp/protocol";
 import {
+  ActionBar,
+  ActionButton,
+  ActionGroup,
   ComponentTree,
   defaultGatewayUrl,
   download,
@@ -55,8 +58,8 @@ const COMMAND_LABELS: Record<MachineCommandKind, string> = { start: "Start", sto
 
 /**
  * The Simulator page (ADR 0020): the machine in 3D with its components on the left, the recipe and the metrics on
- * the right, Start / Stop / Reset at the top, problems and machine messages in the status bar. Everything it does
- * goes through the `Simulator`; the page only binds it.
+ * the right, Start / Stop / Reset bottom right in the 3D view, problems and machine messages in the status bar.
+ * Everything it does goes through the `Simulator`; the page only binds it.
  */
 export function SimulatorApp() {
   const store = useMemo(() => new GatewayConnection(defaultGatewayUrl()), []);
@@ -127,6 +130,7 @@ export function SimulatorApp() {
         />
         <SidePanelControls left={left} right={right} />
         <ViewControls onCamera={machineView.requestCamera} />
+        <MachineCommands simulator={simulator} snapshot={snapshot} />
         {snapshot.notice && (
           <div className="recording-notice" role="alert">
             {snapshot.notice} <button onClick={() => simulator.dismissNotice()}>OK</button>
@@ -162,7 +166,7 @@ export function SimulatorApp() {
   );
 }
 
-/** The source choice, the run state and Start / Stop / Reset with the application's answer. */
+/** The source choice, the run state and the application's answer to the last command. */
 function MachineControls({ simulator, snapshot }: { simulator: Simulator; snapshot: SimulatorSnapshot }) {
   const { machine, sources } = snapshot;
   return (
@@ -180,20 +184,38 @@ function MachineControls({ simulator, snapshot }: { simulator: Simulator; snapsh
         {machine ? runStateText(machine) : "No machine reported"}
         {machine && !machine.simulation && <span className="bad"> · not in simulation mode</span>}
       </span>
-      <div className="group">
-        {COMMANDS.map((kind) => (
-          <button
-            key={kind}
-            disabled={!snapshot.commands[kind].enabled}
-            title={snapshot.commands[kind].reason ?? `${COMMAND_LABELS[kind]} the machine`}
-            onClick={() => void simulator.command(kind)}
-          >
-            {COMMAND_LABELS[kind]}
-          </button>
-        ))}
-      </div>
       {snapshot.command && <CommandAnswer command={snapshot.command} />}
     </>
+  );
+}
+
+/** The icon of each machine command: a triangle, a square, an arrow turning back. */
+const COMMAND_ICONS: Record<MachineCommandKind, ReactNode> = {
+  start: <path d="M8 5l11 7-11 7z" fill="currentColor" />,
+  stop: <rect x="6" y="6" width="12" height="12" rx="1" fill="currentColor" />,
+  reset: <path d="M19 12a7 7 0 1 1-2.05-4.95 M19 4v4h-4" fill="none" />,
+};
+
+/** Start, Stop and Reset as icon buttons bottom right in the 3D view; the tooltip says why one is off. */
+function MachineCommands({ simulator, snapshot }: { simulator: Simulator; snapshot: SimulatorSnapshot }) {
+  return (
+    <ActionBar label="Machine">
+      <ActionGroup>
+        {COMMANDS.map((kind) => (
+          <ActionButton
+            key={kind}
+            label={COMMAND_LABELS[kind]}
+            title={snapshot.commands[kind].reason ?? `${COMMAND_LABELS[kind]} the machine`}
+            disabled={!snapshot.commands[kind].enabled}
+            onClick={() => void simulator.command(kind)}
+          >
+            <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              {COMMAND_ICONS[kind]}
+            </svg>
+          </ActionButton>
+        ))}
+      </ActionGroup>
+    </ActionBar>
   );
 }
 

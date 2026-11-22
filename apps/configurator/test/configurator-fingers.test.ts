@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { ComponentConfig, Finger } from "@rpp/protocol";
 import { Configurator } from "../src/configurator";
-import type { PaletteType } from "../src/component-defaults";
 import { properties } from "../src/property-fields";
 import { buildMachineScene } from "@rpp/machine-view";
+import { drafted, openDraft, type SampleType } from "./sample-components";
 
-/** A configurator with one component of `type` placed and selected. */
-function placed(type: PaletteType) {
-  const c = new Configurator();
-  c.add(type, { x: 1000, y: 500 });
+/** A configurator with a draft of one component of `type`, selected. */
+function placed(type: SampleType) {
+  const c = openDraft(new Configurator(), drafted(type, 1, { x: 1000, y: 500 }));
   const key = c.getSnapshot().selection!;
   const component = () => c.getSnapshot().draft.components.find((x) => `${x.sourceId}#${x.id}` === key)!;
   const fingers = () => (component() as Extract<ComponentConfig, { fingers: Finger[] }>).fingers;

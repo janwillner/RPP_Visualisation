@@ -17,12 +17,6 @@ import { beltToMcs } from "./belt-coordinates";
 import type { Configurator, ZoneEdge } from "./configurator";
 import { keyOf } from "./edits";
 
-/**
- * Finds the point of the horizontal plane at `heightMm` (MCS Z) under a client position, MCS mm; undefined when the
- * plane is not there (looking above the horizon).
- */
-export type FloorPicker = (clientX: number, clientY: number, heightMm: number) => { x: number; y: number } | undefined;
-
 /** Radius of the move handle, metres. */
 const MOVE_RADIUS = 0.12;
 /** Radius of a zone's handles, metres. */
@@ -36,8 +30,6 @@ interface EditControlsProps {
   selection: string | undefined;
   /** The machine scene of the last frame: its snap points catch a dragged component. */
   modelRef: MutableRefObject<MachineScene | undefined>;
-  /** Receives the floor picker, for drops from the palette. */
-  floorRef: MutableRefObject<FloorPicker | undefined>;
   /** True from a press on a handle until the tap after it has been decided. */
   pressedRef: MutableRefObject<boolean>;
 }
@@ -55,15 +47,15 @@ interface Drag {
 /**
  * The configurator's controls in the 3D view, drawn as overlay by the configurator itself (ADR 0016): a move handle on
  * the selected component's origin that drags it over the floor (on the grid, caught by other components' snap
- * points), handles on its zones (start, end, CCS, both sides), and the floor picker for the palette.
+ * points) and handles on its zones (start, end, CCS, both sides).
  */
-export function EditControls({ configurator, draft, selection, modelRef, floorRef, pressedRef }: EditControlsProps) {
+export function EditControls({ configurator, draft, selection, modelRef, pressedRef }: EditControlsProps) {
   const { camera, gl, controls } = useThree();
   const raycaster = useMemo(() => new THREE.Raycaster(), []);
   const drag = useRef<Drag | undefined>(undefined);
   const component = draft.components.find((c) => keyOf(c) === selection);
 
-  /** The point of the horizontal plane at `heightMm` under a client position, MCS mm. */
+  /** The point of the horizontal plane at `heightMm` under a client position, MCS mm; none above the horizon. */
   const planePoint = (clientX: number, clientY: number, heightMm: number) => {
     const rect = gl.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
@@ -74,13 +66,6 @@ export function EditControls({ configurator, draft, selection, modelRef, floorRe
     const [x, y] = rendererToMcs([hit.x, hit.y, hit.z]);
     return { x, y };
   };
-
-  useEffect(() => {
-    floorRef.current = planePoint;
-    return () => {
-      floorRef.current = undefined;
-    };
-  });
 
   useEffect(() => {
     const projection: Projection = (position) => {

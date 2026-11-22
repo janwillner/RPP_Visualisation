@@ -26,14 +26,17 @@ import {
   useStore,
   ViewControls,
 } from "@rpp/machine-view";
-import { PALETTE_LABELS, PALETTE_TYPES, placementHeight, isAreaField, type PaletteType } from "./component-defaults";
-import { Configurator, DRAFT_FILE_EXTENSION, useConfigurator } from "./configurator";
-import { EditControls, type FloorPicker } from "./EditControls";
+import { isAreaField } from "./component-defaults";
+import { Configurator, useConfigurator } from "./configurator";
+import { DraftActions } from "./DraftActions";
+import { EditControls } from "./EditControls";
 import { FingerLayout } from "./FingerLayout";
 import { keyOf } from "./edits";
 import type { Match } from "./reconciliation";
 import type { Issue } from "./validation";
 import { properties, type PropertyField, type PropertyGroup } from "./property-fields";
+import { topologyNode } from "./topology";
+import { NodeDetails, TopologyTree } from "./TopologyPanel";
 
 /** Every overlay of the draft is shown: zones, areas and markers are what is being configured. */
 /** Every layer on at the start, the coordinate systems too: origin shifts are set here. */
@@ -46,8 +49,6 @@ const LAYERS: Layers = {
   origins: true,
   marks: true,
 };
-/** MIME type of a palette entry being dragged onto the 3D view. */
-const PALETTE_DRAG_TYPE = "application/x-rpp-palette";
 
 /** Text fields and lists keep their keys; a checkbox or a button does not. */
 const isTyping = (e: KeyboardEvent) => {
@@ -82,7 +83,7 @@ function saveDraft(configurator: Configurator): void {
   download(file.text, file.name, "application/json");
 }
 
-/** The configurator page (ADR 0016): palette and components on the left, the draft in 3D, its properties on the right. */
+/** The configurator page (ADR 0016): PLCs and components on the left, the draft in 3D, its properties on the right. */
 export function ConfiguratorApp() {
   // The gateway that served the page: its PLCs are imported from and shown live over the draft (read-only).
   const store = useMemo(() => new GatewayConnection(defaultGatewayUrl()), []);
@@ -102,29 +103,19 @@ export function ConfiguratorApp() {
   const snapshot = useConfigurator(configurator);
   const { draft, selection, issues, matches, plcOnly, plcSources } = snapshot;
   const modelRef = useRef<MachineScene | undefined>(undefined);
-  const floorRef = useRef<FloorPicker | undefined>(undefined);
   const handlePressed = useRef(false);
-  const viewportRef = useRef<HTMLElement>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
   /** The source whose write is being confirmed. */
   const [writing, setWriting] = useState<string | undefined>(undefined);
   // Layers and camera come back as they were left on this device.
   const machineView = useMachineView("rpp.configurator.view", LAYERS);
   // Both start open, as the visualisation's; open state and width are remembered on this device.
-  const left = useSidePanel("rpp.configurator.panel.left", "Palette and components", () => true);
+  const left = useSidePanel("rpp.configurator.panel.left", "Components", () => true);
   const right = useSidePanel("rpp.configurator.panel.right", "Properties", () => true);
   const panels = sidePanelsLayout(left, right);
 
   const selected = draft.components.find((c) => keyOf(c) === selection);
+  const selectedNode = snapshot.selectedNode && topologyNode(snapshot.topologies, snapshot.selectedNode);
   const sceneSelection: Selection = selected && { kind: "component", id: selected.id, sourceId: selected.sourceId };
-
-  /** Adds from the palette at a client position, or in the middle of the view. */
-  const addAt = (type: PaletteType, clientX?: number, clientY?: number) => {
-    const rect = viewportRef.current?.getBoundingClientRect();
-    const x = clientX ?? (rect ? rect.left + rect.width / 2 : 0);
-    const y = clientY ?? (rect ? rect.top + rect.height / 2 : 0);
-    configurator.add(type, floorRef.current?.(x, y, placementHeight(type)) ?? { x: 0, y: 0 });
-  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -155,33 +146,6 @@ export function ConfiguratorApp() {
   return (
     <div className={["app configurator", panels.className].filter(Boolean).join(" ")} style={panels.style}>
       <TopBar title="RPP Configurator">
-        <div className="group">
-          <button onClick={() => configurator.newDraft()}>New</button>
-          <button onClick={() => fileInput.current?.click()}>Open…</button>
-          <button title="Save (Ctrl+S)" onClick={() => saveDraft(configurator)}>
-            Save
-          </button>
-          <input
-            ref={fileInput}
-            type="file"
-            accept={`${DRAFT_FILE_EXTENSION},.json,application/json`}
-            hidden
-            aria-label="Open a draft file"
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              if (file) configurator.open(await file.text());
-            }}
-          />
-        </div>
-        <div className="group">
-          <button disabled={!snapshot.canUndo} title="Undo (Ctrl+Z)" onClick={() => configurator.undo()}>
-            Undo
-          </button>
-          <button disabled={!snapshot.canRedo} title="Redo (Ctrl+Y)" onClick={() => configurator.redo()}>
-            Redo
-          </button>
-        </div>
         <label className="group">
           <span className="muted">Machine</span>
           <TextInput value={draft.name} label="Machine name" onCommit={(name) => configurator.rename(name)} />
@@ -190,23 +154,6 @@ export function ConfiguratorApp() {
       </TopBar>
 
       <aside className="panel left" hidden={!left.open}>
-        <h3>Palette</h3>
-        <p className="muted">Drag onto the floor, or click to place in the middle of the view.</p>
-        <div className="palette">
-          {PALETTE_TYPES.map((type) => (
-            <button
-              key={type}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData(PALETTE_DRAG_TYPE, type);
-                e.dataTransfer.effectAllowed = "copy";
-              }}
-              onClick={() => addAt(type)}
-            >
-              {PALETTE_LABELS[type]}
-            </button>
-          ))}
-        </div>
         <h3>PLCs</h3>
         {plcSources.length === 0 ? (
           <p className="muted">{gateway.socket === "open" ? "The gateway reads no PLC." : "Not connected to the gateway."}</p>
@@ -236,8 +183,17 @@ export function ConfiguratorApp() {
             ))}
           </ul>
         )}
+        {snapshot.topologies.map((t) => (
+          <TopologyTree
+            key={t.sourceId}
+            topology={t}
+            sourceName={plcSources.find((s) => s.sourceId === t.sourceId)?.name ?? t.sourceId}
+            selected={snapshot.selectedNode}
+            configurator={configurator}
+          />
+        ))}
         <h3>Components</h3>
-        {draft.components.length === 0 && <p className="muted">None yet.</p>}
+        {draft.components.length === 0 && <p className="muted">None yet: import them from a PLC, or open a draft.</p>}
         <ul className="tree components">
           {draft.components.map((c, i) => (
             <li key={`${keyOf(c)}:${i}`}>
@@ -269,21 +225,8 @@ export function ConfiguratorApp() {
       </aside>
 
       <main
-        ref={viewportRef}
         className="viewport"
         onContextMenu={(e) => e.preventDefault()}
-        onDragOver={(e) => {
-          if (e.dataTransfer.types.includes(PALETTE_DRAG_TYPE)) {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "copy";
-          }
-        }}
-        onDrop={(e) => {
-          const type = e.dataTransfer.getData(PALETTE_DRAG_TYPE) as PaletteType;
-          if (!PALETTE_TYPES.includes(type)) return;
-          e.preventDefault();
-          addAt(type, e.clientX, e.clientY);
-        }}
       >
         <SceneView
           frame={(now) => configurator.frame(now)}
@@ -304,12 +247,12 @@ export function ConfiguratorApp() {
             draft={draft}
             selection={selection}
             modelRef={modelRef}
-            floorRef={floorRef}
             pressedRef={handlePressed}
           />
         </SceneView>
         <SidePanelControls left={left} right={right} />
         <ViewControls onCamera={machineView.requestCamera} />
+        <DraftActions configurator={configurator} snapshot={snapshot} onSave={() => saveDraft(configurator)} />
         {snapshot.notice && (
           <div className="recording-notice" role="alert">
             {snapshot.notice} <button onClick={() => configurator.dismissNotice()}>OK</button>
@@ -318,6 +261,7 @@ export function ConfiguratorApp() {
       </main>
 
       <aside className="panel right" hidden={!right.open}>
+        {selectedNode && <NodeDetails node={selectedNode} />}
         {selected ? (
           // Keyed by the component: what a panel holds for one component (a conveyor chosen for a new zone) never
           // carries over to the next.
@@ -332,7 +276,7 @@ export function ConfiguratorApp() {
             }
           />
         ) : (
-          <p className="muted">Select a component to edit its values.</p>
+          !selectedNode && <p className="muted">Select a component to edit its values.</p>
         )}
       </aside>
 

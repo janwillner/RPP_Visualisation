@@ -17,7 +17,7 @@ import {
 import { E_ConfigCommand } from "./config-contract";
 import { mapPlc } from "./plc-mapping";
 import type { ReadPart } from "./read-parts";
-import { resetWrites, staleBase, stageWrites, stagingStatus } from "./staging";
+import { fbWrites, resetWrites, staleBase, stageWrites, stagingStatus } from "./staging";
 import type { SymbolWrite } from "./symbol-access";
 
 /**
@@ -163,12 +163,12 @@ export function recipeWrites(
     const at = `${machine.path}.stCommand`;
     // A command still waiting is withdrawn first, so the application never takes the new id with the old command.
     return {
-      writes: [
+      writes: fbWrites(machine.path, [
         { path: `${at}.bRequested`, value: false },
         { path: `${at}.nCommandId`, value: id },
         { path: `${at}.eCommand`, value: COMMAND_VALUES[command.command] },
         { path: `${at}.bRequested`, value: true },
-      ],
+      ]),
     };
   }
 

@@ -39,7 +39,8 @@ unknown id starts a new session and reads again. Adapters:
   `TwinCAT.Ads`, talking to the local AMS router (no route or AMS TCP loopback needed). One JSON request/response per
   line on stdin/stdout; 64-bit integers as strings. Of an array with a count member it reads only the counted entries
   plus a reserve (`ReadPlan.cs`); asked for changes it compares each entry's bytes by `nId` and converts only changed
-  ones. It writes in one ADS sum-write (`SumWrite.cs`), mapping indices from 0 to the PLC's lower bound.
+  ones. It writes in one ADS sum-write (`SumWrite.cs`), mapping indices from 0 to the PLC's lower bound, except in a
+  write's `base` (the manifest path the PLC reported, whose indices are its own).
 - `AdsSymbolAccess` (`--driver ads-tcp`): pure TCP; needs a route or AMS TCP loopback; cannot write.
 - `InMemoryPlc`: the tests' PLC, built with `plc-builders.ts`, registers as changes like the bridge. Tests needing a
   whole machine use `test/fixture-machine.ts`, one component of every type.

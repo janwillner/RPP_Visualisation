@@ -9,7 +9,7 @@
     <WriteProductVersion>false</WriteProductVersion>
     <GenerateTpy>false</GenerateTpy>
     <Name>Syn_Visu_Test</Name>
-    <ProgramVersion>3.1.4026.22</ProgramVersion>
+    <ProgramVersion>3.1.4026.28</ProgramVersion>
     <Application>{604336b0-59c5-4cf6-97f7-136890ff0846}</Application>
     <TypeSystem>{9d59c8c9-f145-4296-8d23-ff62c2f68d15}</TypeSystem>
     <Implicit_Task_Info>{ec3e70bf-e414-4f41-bdaf-976b1d70329e}</Implicit_Task_Info>
@@ -43,6 +43,9 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\Tests\_FB_TestConfigStaging.TcPOU">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="POUs\Tests\_FB_TestConfigTopology.TcPOU">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="POUs\Tests\_FB_TestConveyor.TcPOU">

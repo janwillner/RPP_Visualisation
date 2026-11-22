@@ -32,25 +32,33 @@ export function staleBase(what: string, active: number, base: number): string | 
   return active === base ? undefined : `${what} ${active} active, not ${base}: reconcile again before writing.`;
 }
 
+/**
+ * The writes to the FB at `fbPath` (a manifest's path, as the PLC reported it) with that path as their `base`: its
+ * array indices are the PLC's own, only those after it count from 0.
+ */
+export function fbWrites(fbPath: string, writes: readonly SymbolWrite[]): SymbolWrite[] {
+  return writes.map((w) => ({ ...w, base: fbPath }));
+}
+
 /** The writes that stage `payload` (the staged values) on the FB at `fbPath`, based on version `base`, as `stageId`. */
 export function stageWrites(fbPath: string, base: number, stageId: number, payload: readonly SymbolWrite[]): SymbolWrite[] {
   const staging = `${fbPath}.stStaging`;
-  return [
+  return fbWrites(fbPath, [
     { path: `${staging}.bStaged`, value: false },
     ...payload,
     { path: `${staging}.nBaseVersion`, value: base },
     { path: `${staging}.nStageId`, value: stageId },
     { path: `${staging}.bReset`, value: false },
     { path: `${staging}.bStaged`, value: true },
-  ];
+  ]);
 }
 
 /** The writes that make the FB's active set invalid (its application's program values apply again), as `stageId`. */
 export function resetWrites(fbPath: string, base: number, stageId: number): SymbolWrite[] {
   const staging = `${fbPath}.stStaging`;
-  return [
+  return fbWrites(fbPath, [
     { path: `${staging}.nBaseVersion`, value: base },
     { path: `${staging}.nStageId`, value: stageId },
     { path: `${staging}.bReset`, value: true },
-  ];
+  ]);
 }

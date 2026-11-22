@@ -10,8 +10,9 @@ namespace AdsBridge;
 /// <summary>
 /// Writes leaf values by symbol path (ADR 0017), in two requests: every value but the last in one ADS sum-write, and
 /// the last one (a parameter set's <c>bStaged</c> or <c>bReset</c>) only when none of them failed. So the PLC never
-/// takes over a set written half. An array index in a path counts from 0, as in every value read; it is mapped to the
-/// array's lower bound from its type name (<c>ARRAY [1..8] OF</c>).
+/// takes over a set written half. An array index in a path after its <c>base</c> (the part the PLC reported, e.g. a
+/// manifest's path, whose indices are the PLC's own) counts from 0, as in every value read; it is mapped to the array's
+/// lower bound from its type name (<c>ARRAY [1..8] OF</c>).
 /// </summary>
 internal static partial class SumWrite
 {
@@ -33,7 +34,8 @@ internal static partial class SumWrite
         var leaves = writes.Select(w =>
         {
             string path = w!["path"]!.GetValue<string>();
-            var symbol = resolve(PlcPath(resolve, path)) ?? throw new SymbolNotFoundException(path);
+            string? basePath = w["base"]?.GetValue<string>();
+            var symbol = resolve(PlcPath(resolve, path, basePath)) ?? throw new SymbolNotFoundException(path);
             return new Leaf(path, symbol.IndexGroup, symbol.IndexOffset, Encode(symbol, w["value"]!, path));
         }).ToList();
         if (leaves.Count == 0) return;
@@ -67,12 +69,12 @@ internal static partial class SumWrite
         }
     }
 
-    /// <summary>The path with every array index moved from 0 to its array's lower bound.</summary>
-    private static string PlcPath(Func<string, ResolvedSymbol?> resolve, string path)
+    /// <summary>The path with every array index after <paramref name="basePath"/> moved from 0 to its array's lower bound.</summary>
+    private static string PlcPath(Func<string, ResolvedSymbol?> resolve, string path, string? basePath)
     {
-        var result = new StringBuilder();
-        int last = 0;
-        foreach (Match m in IndexPattern().Matches(path))
+        int last = basePath != null && path.StartsWith(basePath, StringComparison.Ordinal) ? basePath.Length : 0;
+        var result = new StringBuilder(path[..last]);
+        foreach (Match m in IndexPattern().Matches(path, last))
         {
             result.Append(path, last, m.Index - last);
             var array = resolve(result.ToString()) ?? throw new SymbolNotFoundException(path);

@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigTopologyNode" Id="{5a855049-5012-4b6d-85de-d7ba40e1c68c}">
+    <Declaration><![CDATA[TYPE ST_ConfigTopologyNode :
+STRUCT
+	(* One topology node of the full build-out as the application declares it with _FB_ConfigTopology.m_DeclareNode and
+	   m_AddComponent (config protocol 5, ADR 0023). *)
+	nId : DINT; // the application's id, unique in the topology, e.g. its context id
+	sName : STRING(31); // e.g. 'PPH1'
+	nKind : UINT; // its kind, from 1
+	nComponentCount : UINT; // Syn_Visu components the node stands for
+	aComponents : ARRAY[0..CONFIG_GlobalConst_Param.CONFIG_un_MAX_NODE_COMPONENTS - 1] OF UDINT; // their manifest ids
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

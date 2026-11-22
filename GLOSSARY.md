@@ -248,7 +248,7 @@ _Avoid_: shape (a product type has a shape), part
 ## Configurator
 
 **Configurator**:
-The second web app (`/configurator`, `apps/configurator`): the machine's components are placed in 3D and given their configuration, to be written to the PLC later. The visualisation's counterpart.
+The second web app (`/configurator`, `apps/configurator`): the components the PLCs provide are taken into a draft and given their configuration, to be written to the PLC later. The visualisation's counterpart.
 _Avoid_: editor, designer, RPP_Configurator (the product name, not a term)
 
 **Machine view**:
@@ -256,7 +256,7 @@ What the three web apps share (`@rpp/machine-view`, ADR 0019): the gateway conne
 _Avoid_: shared code, common library
 
 **Draft**:
-A machine as the configurator edits it: every component's configuration with its source and manifest id, saved as a JSON file. It is made offline, without a PLC.
+A machine as the configurator edits it: every component's configuration with its source and manifest id, saved as a JSON file. Its components come from the PLCs; once saved it is opened and edited also without a PLC.
 _Avoid_: project, layout, model
 
 **Reconciliation**:
@@ -279,9 +279,31 @@ _Avoid_: upload, download, commit
 The configuration an application gives in its code, which applies while no parameter set is active.
 _Avoid_: defaults (in prose), factory settings
 
-**Palette**:
-The component types the configurator offers to place, by dragging onto the floor or by a click.
-_Avoid_: toolbox, library (the PLC library is something else)
+## Topology
+
+**Topology**:
+How the parts of a machine's application relate: every topology node's parent and its links, as the application declares them and the configurator sets them (ADR 0023). It takes effect at the next start of the application.
+_Avoid_: context (the RPP application's word), assignment, wiring, hierarchy
+
+**Topology node**:
+One part of an application's machine that has a place in its topology: a transport, a pick-and-place handling, a vision unit, a vacuum supply, a cell. It may stand for components or for none.
+_Avoid_: context, module, unit, component (a component is what the 3D view draws)
+
+**Root node**:
+The one topology node that needs no parent; every other node in use hangs from it.
+_Avoid_: top, machine node
+
+**Role**:
+What a link means, as the application declares it: which kind of node holds it, which kind it may point to, and whether it is required (parent, infeed 1, vacuum supply, the transport a vision unit looks at).
+_Avoid_: link type, relation
+
+**Link**:
+One relation of a topology: a node points to another node in a role.
+_Avoid_: assignment, reference, connection
+
+**In use**:
+A topology node is in use when it is the root node or its chain of parents reaches the root node. The others are part of the full build-out but not of this machine.
+_Avoid_: active (that is a parameter set's or a recipe's version), enabled, present
 
 ## Simulator
 

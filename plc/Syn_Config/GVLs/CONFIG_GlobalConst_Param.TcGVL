@@ -15,6 +15,11 @@ VAR_GLOBAL CONSTANT
 	CONFIG_un_MAX_MANIFEST_ENTRIES		: UINT := 32;	// [-] parameter FBs in the config manifest
 	CONFIG_un_MAX_RECIPE_FIELDS			: UINT := 64;	// [-] fields of the machine's recipe (_FB_ConfigMachine)
 	CONFIG_un_MAX_CHOICES				: UINT := 8;	// [-] named values of a CHOICE recipe field
+	CONFIG_un_MAX_TOPOLOGY_KINDS		: UINT := 16;	// [-] kinds of topology node (_FB_ConfigTopology), at most 32
+	CONFIG_un_MAX_TOPOLOGY_ROLES		: UINT := 16;	// [-] roles a topology link may have
+	CONFIG_un_MAX_TOPOLOGY_NODES		: UINT := 64;	// [-] topology nodes of the full build-out
+	CONFIG_un_MAX_TOPOLOGY_LINKS		: UINT := 128;	// [-] links of a topology, its parents included
+	CONFIG_un_MAX_NODE_COMPONENTS		: UINT := 4;	// [-] Syn_Visu components one topology node stands for
 END_VAR]]></Declaration>
   </GVL>
 </TcPlcObject>

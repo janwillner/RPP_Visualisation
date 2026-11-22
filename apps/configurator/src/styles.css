@@ -1,19 +1,9 @@
 /* The configurator's own look, after the shared stylesheet of @rpp/machine-view. */
 
-/* The configurator (ADR 0016): palette, component list and problems on the left, properties on the right. */
+/* The configurator (ADR 0016): PLCs, component list and problems on the left, properties on the right. */
 .configurator .panel h3 {
   margin: 12px 0 6px;
   font-size: 13px;
-}
-
-.configurator .palette {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.configurator .palette button {
-  cursor: grab;
 }
 
 /* The draft's problems above the status bar: a click selects the component. */
@@ -38,7 +28,7 @@
   border-radius: 4px;
 }
 
-/* Tighter than the visualisation's, so the layer toggles fit beside the file and edit buttons on a 1280 px screen. */
+/* Tighter than the visualisation's, so the machine name and the layer toggles fit on a 1280 px screen. */
 .configurator .toolbar {
   gap: 8px;
 }
@@ -52,6 +42,32 @@
   padding: 2px 6px;
   /* Narrow enough that the layer toggles fit beside it on a 1280 px screen. */
   width: 110px;
+}
+
+/* A topology node's children, indented below it (ADR 0023). */
+.configurator .tree.topology > li {
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 2px;
+}
+
+.configurator .tree.topology .tree.topology {
+  padding-left: 14px;
+}
+
+.configurator .node-details dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 6px 0 12px;
+}
+
+.configurator .node-details dl > div {
+  display: contents;
+}
+
+.configurator .node-details dd {
+  margin: 0;
 }
 
 .configurator .property-list-head {

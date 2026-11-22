@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1">
+  <DUT Name="ST_ConfigTopologyLinks" Id="{17363a5d-4229-430e-b963-12460f4af991}">
+    <Declaration><![CDATA[TYPE ST_ConfigTopologyLinks :
+STRUCT
+	(* The links of a topology, its parents included (config protocol 5, ADR 0023). *)
+	nLinkCount : UINT; // links [0..nLinkCount-1] are set
+	aLinks : ARRAY[0..CONFIG_GlobalConst_Param.CONFIG_un_MAX_TOPOLOGY_LINKS - 1] OF ST_ConfigTopologyLink;
+END_STRUCT
+END_TYPE]]></Declaration>
+  </DUT>
+</TcPlcObject>

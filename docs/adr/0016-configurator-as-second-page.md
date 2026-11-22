@@ -1,5 +1,7 @@
 # The configurator is a second page of the web app, editing a draft
 
+> Partly superseded by ADR 0024: the palette is gone; components enter a draft only from its PLCs or a saved draft.
+
 The visualisation only mirrors what the PLC reports. The configurator (RPP_Configurator) goes the other way: a
 commissioning engineer places the machine's components in 3D, gives them zones, grippers and product types, and
 later writes the result to the PLC as the parameters the application runs with. The configuration in Syn_Visu is

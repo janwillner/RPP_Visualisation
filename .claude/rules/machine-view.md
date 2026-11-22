@@ -47,4 +47,6 @@ state on the source's own `tRel` axis, and `online`. It has no clock: every time
   with something unsaved. `useSidePanel` / `SidePanelControls`: side panels opened by a tab, resized by dragging,
   remembered per device.
 - `naming.ts`: `fieldLabel`, `singular`, `componentName`. `ViewControls`: camera views framing the parts where they
-  are now. The shared look is `styles.css`; each app adds its own stylesheet after it.
+  are now. `ActionBar` (`ActionGroup`, `ActionButton`): an app's commands as icon buttons bottom right in the 3D
+  view, like the visualisation's measure button. The shared look is `styles.css`; each app adds its own stylesheet
+  after it.

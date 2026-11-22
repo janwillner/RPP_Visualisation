@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { PROTOCOL_VERSION, type ComponentConfig } from "@rpp/protocol";
 import { ghostSourceId } from "../src/configurator";
 import { A, connected, conveyor, delta, FakeLive } from "./fake-live";
+import { drafted, openDraft } from "./sample-components";
 
 describe("Configurator with a PLC", () => {
   it("imports a source's configuration into the draft in place of that source's components, as one undo step", () => {
     const live = new FakeLive();
     live.plc(A, [conveyor(1), delta(2)]);
-    const c = connected(live);
-    c.add("conveyor", { x: 0, y: 5000 });
+    const c = openDraft(connected(live), drafted("conveyor", 1, { x: 0, y: 5000 }));
 
     c.importSource(A);
     expect(c.getSnapshot().draft.components.map((x) => `${x.sourceId}#${x.id}`)).toEqual(["draft#1", `${A}#1`, `${A}#2`]);
@@ -26,13 +26,12 @@ describe("Configurator with a PLC", () => {
     const live = new FakeLive();
     live.plc(A, [conveyor(1), delta(2), delta(3), conveyor(4)]);
     live.plc(B, [conveyor(1, B)]);
-    const c = connected(live);
+    const c = openDraft(connected(live), drafted("conveyor", 1)); // no PLC for its source
     c.importSource(A);
     c.importSource(B);
     c.set(`${A}#2`, ["pose", "x"], 1200); // changed
     c.remove(`${A}#3`); // only in the PLC
     c.set(`${A}#4`, ["id"], 9); // only in the draft
-    c.add("conveyor", { x: 0, y: 0 }); // no PLC for its source
     c.set(`${B}#1`, ["type"], "delta"); // another type in the PLC
 
     expect(c.getSnapshot().matches).toEqual({
@@ -55,11 +54,10 @@ describe("Configurator with a PLC", () => {
     const robot = { type: "delta" as const, id: 2, timestamp: "0", actualTcp: tcp, setpointTcp: tcp, fingers: [], fault: null };
     live.plc(A, [conveyor(1), delta(2), conveyor(3)], [belt, robot]);
     live.now = 500;
-    const c = connected(live);
+    const c = openDraft(connected(live), drafted("conveyor", 1));
     c.importSource(A);
     c.set(`${A}#2`, ["pose", "x"], 1200);
     c.set(`${A}#3`, ["id"], 7); // only in the draft: no state of its own
-    c.add("conveyor", { x: 0, y: 0 });
 
     const sources = c.frame(500);
     const own = sources.find((s) => s.sourceId === A)!;
@@ -71,7 +69,7 @@ describe("Configurator with a PLC", () => {
     const ghost = sources.find((s) => s.sourceId === ghostSourceId(A))!;
     expect(ghost).toMatchObject({ online: false, snapshots: [] });
     expect(ghost.config?.components).toEqual([delta(2)]);
-    expect(sources.map((s) => s.sourceId)).toEqual([A, "draft", ghostSourceId(A)]);
+    expect(sources.map((s) => s.sourceId)).toEqual(["draft", A, ghostSourceId(A)]);
   });
 
   it("puts the conveyors a changed robot's zones lie on into its ghost, without a body, so the PLC's zones show", () => {
@@ -121,12 +119,8 @@ describe("Configurator with a PLC", () => {
     const live = new FakeLive();
     const plcDelta = { ...delta(2), upperArmLength: 450, lowerArmLength: 1100 };
     live.plc(A, [conveyor(1), plcDelta]);
-    const c = connected(live);
-    // Placed offline with the palette's assumed geometry, then given the PLC's source and id.
-    c.add("delta", { x: 1000, y: 0 });
-    c.set("draft#1", ["sourceId"], A);
-    c.set(`${A}#1`, ["id"], 2);
-    c.set(`${A}#2`, ["name"], "Delta 2");
+    // A draft saved before the PLC's hardware was known: its Delta has other arm lengths.
+    const c = openDraft(connected(live), delta(2));
 
     expect(c.getSnapshot().issues).toEqual([
       { severity: "warning", hardware: true, key: `${A}#2`, message: "Delta 2: upper arm length is 400 mm in the draft, 450 mm in the PLC" },
