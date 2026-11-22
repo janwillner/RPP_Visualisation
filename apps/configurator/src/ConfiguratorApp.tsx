@@ -27,7 +27,8 @@ import {
   ViewControls,
 } from "@rpp/machine-view";
 import { isAreaField } from "./component-defaults";
-import { Configurator, DRAFT_FILE_EXTENSION, useConfigurator } from "./configurator";
+import { Configurator, useConfigurator } from "./configurator";
+import { DraftActions } from "./DraftActions";
 import { EditControls } from "./EditControls";
 import { FingerLayout } from "./FingerLayout";
 import { keyOf } from "./edits";
@@ -103,7 +104,6 @@ export function ConfiguratorApp() {
   const { draft, selection, issues, matches, plcOnly, plcSources } = snapshot;
   const modelRef = useRef<MachineScene | undefined>(undefined);
   const handlePressed = useRef(false);
-  const fileInput = useRef<HTMLInputElement>(null);
   /** The source whose write is being confirmed. */
   const [writing, setWriting] = useState<string | undefined>(undefined);
   // Layers and camera come back as they were left on this device.
@@ -146,33 +146,6 @@ export function ConfiguratorApp() {
   return (
     <div className={["app configurator", panels.className].filter(Boolean).join(" ")} style={panels.style}>
       <TopBar title="RPP Configurator">
-        <div className="group">
-          <button onClick={() => configurator.newDraft()}>New</button>
-          <button onClick={() => fileInput.current?.click()}>Open…</button>
-          <button title="Save (Ctrl+S)" onClick={() => saveDraft(configurator)}>
-            Save
-          </button>
-          <input
-            ref={fileInput}
-            type="file"
-            accept={`${DRAFT_FILE_EXTENSION},.json,application/json`}
-            hidden
-            aria-label="Open a draft file"
-            onChange={async (e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              if (file) configurator.open(await file.text());
-            }}
-          />
-        </div>
-        <div className="group">
-          <button disabled={!snapshot.canUndo} title="Undo (Ctrl+Z)" onClick={() => configurator.undo()}>
-            Undo
-          </button>
-          <button disabled={!snapshot.canRedo} title="Redo (Ctrl+Y)" onClick={() => configurator.redo()}>
-            Redo
-          </button>
-        </div>
         <label className="group">
           <span className="muted">Machine</span>
           <TextInput value={draft.name} label="Machine name" onCommit={(name) => configurator.rename(name)} />
@@ -279,6 +252,7 @@ export function ConfiguratorApp() {
         </SceneView>
         <SidePanelControls left={left} right={right} />
         <ViewControls onCamera={machineView.requestCamera} />
+        <DraftActions configurator={configurator} snapshot={snapshot} onSave={() => saveDraft(configurator)} />
         {snapshot.notice && (
           <div className="recording-notice" role="alert">
             {snapshot.notice} <button onClick={() => configurator.dismissNotice()}>OK</button>

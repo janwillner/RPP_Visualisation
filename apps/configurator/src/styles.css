@@ -28,7 +28,7 @@
   border-radius: 4px;
 }
 
-/* Tighter than the visualisation's, so the layer toggles fit beside the file and edit buttons on a 1280 px screen. */
+/* Tighter than the visualisation's, so the machine name and the layer toggles fit on a 1280 px screen. */
 .configurator .toolbar {
   gap: 8px;
 }

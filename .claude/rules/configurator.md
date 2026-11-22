@@ -11,7 +11,8 @@ Edits a draft of a machine offline or against its PLCs, and writes parameter set
 ## Seam: `Configurator` (`src/configurator.ts`)
 
 - **Draft**: `DraftSchema` in `@rpp/protocol`, every component's `ComponentConfig` with source and manifest id, saved
-  as `<name>.rpp-draft.json` (save, open, new; unsaved changes are discarded only after `confirmDiscard`).
+  as `<name>.rpp-draft.json` (save, open, new; unsaved changes are discarded only after `confirmDiscard`). New,
+  open, save, undo and redo are icon buttons bottom right in the 3D view (`DraftActions.tsx`, an `ActionBar`).
 - **Edits**: every change is an edit applied by the pure `applyEdit` (`edits.ts`; a path may name list entries by
   index, e.g. `["zones", "1", "end"]`). Undo and redo; a drag between `beginGesture` / `endGesture` is one step.
 - **Problems** (`validation.ts`, `validateDraft`): errors such as an id used twice, a zone on a conveyor neither the

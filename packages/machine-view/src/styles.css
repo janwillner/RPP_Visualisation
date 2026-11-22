@@ -148,6 +148,46 @@ button:hover {
   background: rgba(42, 49, 59, 0.9);
 }
 
+/* An app's commands bottom right in the 3D view (ActionBar), as large as the visualisation's measure button. */
+.action-bar {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-wrap: wrap-reverse;
+  justify-content: flex-end;
+  gap: 4px 16px;
+  max-width: calc(100% - 16px);
+}
+
+.action-group {
+  display: flex;
+  gap: 4px;
+}
+
+.action-bar button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: rgba(42, 49, 59, 0.9);
+}
+
+.action-bar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+  border-color: var(--border);
+}
+
+@media (pointer: coarse) {
+  .action-bar button {
+    width: 52px;
+    height: 52px;
+  }
+}
+
 h2 {
   font-size: 13px;
   margin: 4px 0 8px;
