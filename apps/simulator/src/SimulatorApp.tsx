@@ -95,9 +95,6 @@ export function SimulatorApp() {
     <div className={["app simulator", panels.className].filter(Boolean).join(" ")} style={panels.style}>
       <TopBar title="RPP Simulator">
         <MachineControls simulator={simulator} snapshot={snapshot} />
-        <a className="muted link" href="/" target="_blank" rel="noopener" title="Open the visualisation of the machine">
-          Visualisation
-        </a>
         <LayerToggles layers={machineView.layers} onToggle={machineView.toggleLayer} />
       </TopBar>
 
