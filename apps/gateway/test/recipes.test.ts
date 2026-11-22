@@ -101,7 +101,7 @@ describe("recipe fields and machine commands (Syn_Config config protocol 3 and 4
     expect(recipe?.values).toEqual({ BeltSpeed: 220, PicksPerCycle: 1, Feed: false, Pattern: 0 });
 
     expect(await send({ kind: "resetRecipe", baseVersion: 1 })).toMatchObject({ ok: true });
-    expect(writes[1]!.at(-1)).toEqual({ path: `${MACHINE_FB}.stStaging.bReset`, value: true });
+    expect(writes[1]!.at(-1)).toEqual({ path: `${MACHINE_FB}.stStaging.bReset`, value: true, base: MACHINE_FB });
     await cycle();
     await cycle();
     expect(parameters()?.kind === "parameters" && parameters()!.recipe).toMatchObject({
@@ -117,10 +117,10 @@ describe("recipe fields and machine commands (Syn_Config config protocol 3 and 4
     const started = await send({ kind: "machineCommand", command: "start" });
     expect(started).toEqual({ ok: true, stageId: expect.any(Number) });
     expect(writes[0]).toEqual([
-      { path: `${MACHINE_FB}.stCommand.bRequested`, value: false },
-      { path: `${MACHINE_FB}.stCommand.nCommandId`, value: (started as { stageId: number }).stageId },
-      { path: `${MACHINE_FB}.stCommand.eCommand`, value: 1 },
-      { path: `${MACHINE_FB}.stCommand.bRequested`, value: true },
+      { path: `${MACHINE_FB}.stCommand.bRequested`, value: false, base: MACHINE_FB },
+      { path: `${MACHINE_FB}.stCommand.nCommandId`, value: (started as { stageId: number }).stageId, base: MACHINE_FB },
+      { path: `${MACHINE_FB}.stCommand.eCommand`, value: 1, base: MACHINE_FB },
+      { path: `${MACHINE_FB}.stCommand.bRequested`, value: true, base: MACHINE_FB },
     ]);
     await cycle();
     await cycle();

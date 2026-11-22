@@ -19,8 +19,9 @@ export interface SymbolAccess {
   sumRead(paths: readonly string[], options?: SumReadOptions): Promise<unknown[]>;
   /**
    * Write several leaf values (numbers, switches, texts, enumerations) in one request, in the given order: the PLC
-   * sees the last one written after the others (ADR 0017). An index into an array counts from 0 as in the values
-   * read; the adapter maps it to the array's lower bound. Rejects with `SymbolNotFoundError` for a missing path.
+   * sees the last one written after the others (ADR 0017). An index into an array after a write's `base` counts from 0
+   * as in the values read; the adapter maps it to the array's lower bound. Rejects with `SymbolNotFoundError` for a
+   * missing path.
    */
   sumWrite(writes: readonly SymbolWrite[]): Promise<void>;
 }
@@ -50,10 +51,15 @@ export class SymbolNotFoundError extends Error {
   }
 }
 
-/** One leaf value to write, by its symbol path; array indices count from 0 as in the values read. */
+/** One leaf value to write, by its symbol path; array indices after `base` count from 0 as in the values read. */
 export interface SymbolWrite {
   path: string;
   value: number | boolean | string;
+  /**
+   * The leading part of `path` the PLC reported, e.g. a config manifest's `sPath`: its array indices are the PLC's own
+   * (an instance in `ARRAY[1..8] OF` is `[1]`) and are not mapped.
+   */
+  base?: string;
 }
 
 /** Whether a symbol's PLC type is `expected`: library types may be reported with their namespace, e.g. `SynVisu.ST_VisuDelta`. */

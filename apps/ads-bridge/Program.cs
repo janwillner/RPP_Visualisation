@@ -8,7 +8,8 @@
 //   {"id":2,"op":"read","path":"GVL_Visu.stManifest"}        -> {"id":2,"ok":true,"value":{...}}
 //   {"id":3,"op":"sumRead","paths":["a","b"]}                -> {"id":3,"ok":true,"value":[...,...]}
 //   {"id":4,"op":"sumWrite","writes":[{"path":"a.b[0].fX","value":1.5},{"path":"a.bStaged","value":true}]}
-//                                                            -> {"id":4,"ok":true,"value":null} (in order; indices from 0)
+//                                                            -> {"id":4,"ok":true,"value":null} (in order; indices from 0,
+//                                                               but those in a write's "base", a path the PLC reported)
 //   errors                                                   -> {"id":n,"ok":false,"error":"...","notFound":true|false}
 //
 // Values: structs become objects keyed by member name, arrays become arrays, 64-bit integers become decimal

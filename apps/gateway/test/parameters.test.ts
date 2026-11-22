@@ -12,6 +12,7 @@ import { NOT_ALLOWED } from "../src/parameter-access";
 import { InMemoryPlc } from "../src/in-memory-plc";
 import { cartesian, conveyor, defineMachine, delta, detector, station, xtsGantry, xtsLoop } from "../src/plc-builders";
 import type { MachineComponent } from "../src/plc-builders";
+import type { SymbolWrite } from "../src/symbol-access";
 
 const ZONE = { nConveyorId: 1, fStart: 1100, fEnd: 1900, fAllocationOffset: 0, fCcsOffset: 1100, fStartY: 0, fEndY: 0 };
 
@@ -94,6 +95,22 @@ describe("parameter sets (Syn_Config, ADR 0017)", () => {
     });
     const robot = (last("config") as ConfigMessage).components.find((c) => c.id === 10);
     expect(robot).toMatchObject({ zones: set.parameters.zones, limitArea: set.parameters.limitArea });
+  });
+
+  it("names the parameter FB's manifest path as the base of every write: its indices are the PLC's own", async () => {
+    const { plc, last, cycle, gateway } = setup();
+    await cycle();
+    const writes: SymbolWrite[][] = [];
+    const sumWrite = plc.sumWrite.bind(plc);
+    plc.sumWrite = (w) => (writes.push([...w]), sumWrite(w));
+    const set = component(last("parameters"), 10)!.set;
+
+    await gateway.command({ kind: "writeParameters", requestId: 1, sourceId: "plc1", componentId: 10, baseVersion: 0, set });
+    await gateway.command({ kind: "resetParameters", requestId: 2, sourceId: "plc1", componentId: 10, baseVersion: 0 });
+
+    expect(writes).toHaveLength(2);
+    for (const w of writes.flat()) expect(w).toMatchObject({ base: "MAIN.fbDelta1Param.vo_Config" });
+    expect(writes[0]).toContainEqual(expect.objectContaining({ path: "MAIN.fbDelta1Param.vo_Config.stStaged.aZones[0].fEnd" }));
   });
 
   it("refuses a write based on another active version, for an unknown component or of another type", async () => {
