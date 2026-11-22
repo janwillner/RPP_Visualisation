@@ -198,6 +198,7 @@ test("configurator: edits an XTS loop's modules, a station's bodies and a Cartes
 });
 
 test("configurator: writes an XTS gantry's track to the demo PLC", async ({ page }) => {
+  // The IDH stands for no topology node in the demo: its row is its own, under "Without node".
   const idh = await importDemoAtProgramValues(page, /^IDH #30/);
   await idh.click();
 
@@ -279,9 +280,9 @@ test("configurator: closes and resizes its side panels, and keeps them across a 
   await expect(left).toBeVisible();
 });
 
-test("configurator: shows the demo's topology and selects a node's component", async ({ page }) => {
+test("configurator: lists the demo's components along its topology and selects a node's component", async ({ page }) => {
   await importDemo(page);
-  const topology = page.getByRole("region", { name: /^Topology of / });
+  const topology = page.getByRole("region", { name: /^Components of / });
   const tree = topology.locator("ul.tree.topology").first();
   await expect(tree).toContainText("TCAT1");
   await expect(tree).toContainText("MPS1");
@@ -290,7 +291,8 @@ test("configurator: shows the demo's topology and selects a node's component", a
   await expect(tree).toContainText("DET1");
   await expect(topology.locator("ul.not-in-use")).toContainText("PPH2");
 
-  await tree.getByRole("button", { name: /^PPH1/ }).click();
+  // A node of one component is one row: the node and its component.
+  await tree.getByRole("button", { name: /^PPH1 PPH · Delta 1/ }).click();
   const properties = page.locator("aside.panel.right");
   const node = properties.getByRole("region", { name: "Topology node PPH1" });
   await expect(node).toContainText("In use");

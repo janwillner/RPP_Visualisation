@@ -11,6 +11,7 @@ import {
   zoneSides,
 } from "@rpp/machine-view";
 import { beltRange, mcsToBelt } from "./belt-coordinates";
+import { draftTree, type DraftTree } from "./draft-tree";
 import { defaultArea, newBody, newFinger, XTS_MODULE_LENGTH, type AreaField } from "./component-defaults";
 import { applyEdit, keyOf, type Edit } from "./edits";
 import { hardwareHints, reconcile, type Match, type Reconciliation } from "./reconciliation";
@@ -74,6 +75,8 @@ export interface ConfiguratorSnapshot {
   topologies: SourceTopology[];
   /** The selected topology node: chosen in the tree, or the node of the selected component. */
   selectedNode: NodeKey | undefined;
+  /** The draft's components along their PLCs' topologies, as the component list shows them. */
+  draftTree: DraftTree;
 }
 
 /** The writes of parameter sets among the gateway's writes, by component key. */
@@ -143,6 +146,7 @@ export class Configurator {
       writes: {},
       topologies: [],
       selectedNode: undefined,
+      draftTree: { sources: [], withoutNode: [] },
     };
   }
 
@@ -643,9 +647,11 @@ export class Configurator {
         const { plc, plcOnly } = this.reconciliation;
         this.draftIssues = validateDraft(draft, new Map([...plc, ...plcOnly.map((p) => [keyOf(p), p] as const)]));
       }
+      const topologies = plcParameters !== before.plcParameters ? sourceTopologies(plcParameters) : this.snapshot.topologies;
       this.snapshot = {
         ...this.snapshot,
-        ...(plcParameters !== before.plcParameters ? { topologies: sourceTopologies(plcParameters) } : {}),
+        topologies,
+        draftTree: draftTree(draft, plcSources, topologies, this.reconciliation.plcOnly),
         matches: this.reconciliation.matches,
         plcOnly: this.reconciliation.plcOnly,
         issues: [

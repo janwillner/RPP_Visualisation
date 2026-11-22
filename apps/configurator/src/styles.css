@@ -44,7 +44,7 @@
   width: 110px;
 }
 
-/* A topology node's children, indented below it (ADR 0023). */
+/* The component tree (ADR 0023): a node's components and children indented below it. */
 .configurator .tree.topology > li {
   flex-direction: column;
   gap: 2px;
@@ -53,6 +53,49 @@
 
 .configurator .tree.topology .tree.topology {
   padding-left: 14px;
+}
+
+.configurator .components h4,
+.configurator .components h5 {
+  margin: 10px 0 4px;
+  font-size: 12px;
+}
+
+/* A row: the fold toggle, the node or component, "Add" for one only its PLC has. */
+.configurator .tree.topology .row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.configurator .tree.topology .fold {
+  flex: 0 0 16px;
+  width: 16px;
+  padding: 0;
+  border: none;
+  color: var(--muted);
+}
+
+.configurator .tree.topology .add {
+  flex: 0 0 auto;
+  background: #2a313b;
+}
+
+.configurator .tree.topology .name {
+  flex: 1;
+  padding: 3px 8px;
+}
+
+.configurator .tree.topology li.plc-only > .row .name,
+.configurator .tree.topology li.plc-only > .row > button:not(.fold):not(.add),
+.configurator .tree.not-in-use {
+  opacity: 0.55;
+}
+
+/* Not dimmed twice: a component only the PLC has, in a node not in use. */
+.configurator .tree.not-in-use li.plc-only > .row .name,
+.configurator .tree.not-in-use li.plc-only > .row > button:not(.fold):not(.add) {
+  opacity: 1;
 }
 
 .configurator .node-details dl {

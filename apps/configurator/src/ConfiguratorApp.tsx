@@ -36,7 +36,7 @@ import type { Match } from "./reconciliation";
 import type { Issue } from "./validation";
 import { properties, type PropertyField, type PropertyGroup } from "./property-fields";
 import { topologyNode } from "./topology";
-import { NodeDetails, TopologyTree } from "./TopologyPanel";
+import { DraftTreeView, NodeDetails } from "./ComponentsPanel";
 
 /** Every overlay of the draft is shown: zones, areas and markers are what is being configured. */
 /** Every layer on at the start, the coordinate systems too: origin shifts are set here. */
@@ -101,7 +101,7 @@ export function ConfiguratorApp() {
     };
   }, [store, configurator]);
   const snapshot = useConfigurator(configurator);
-  const { draft, selection, issues, matches, plcOnly, plcSources } = snapshot;
+  const { draft, selection, issues, matches, plcSources } = snapshot;
   const modelRef = useRef<MachineScene | undefined>(undefined);
   const handlePressed = useRef(false);
   /** The source whose write is being confirmed. */
@@ -183,45 +183,18 @@ export function ConfiguratorApp() {
             ))}
           </ul>
         )}
-        {snapshot.topologies.map((t) => (
-          <TopologyTree
-            key={t.sourceId}
-            topology={t}
-            sourceName={plcSources.find((s) => s.sourceId === t.sourceId)?.name ?? t.sourceId}
-            selected={snapshot.selectedNode}
-            configurator={configurator}
-          />
-        ))}
-        <h3>Components</h3>
-        {draft.components.length === 0 && <p className="muted">None yet: import them from a PLC, or open a draft.</p>}
-        <ul className="tree components">
-          {draft.components.map((c, i) => (
-            <li key={`${keyOf(c)}:${i}`}>
-              <button className={keyOf(c) === selection ? "selected" : ""} onClick={() => configurator.select(keyOf(c))}>
-                {c.name} <span className="muted">#{c.id}</span>
-                <MatchBadge match={matches[keyOf(c)] ?? "noPlc"} />
-                <WriteBadge write={snapshot.writes[keyOf(c)]} />
-              </button>
-            </li>
-          ))}
-        </ul>
-        {plcOnly.length > 0 && (
-          <>
-            <h3>In the PLC, not in the draft</h3>
-            <ul className="tree plc-only">
-              {plcOnly.map((c) => (
-                <li key={keyOf(c)}>
-                  <span>
-                    {c.name} <span className="muted">#{c.id}</span>
-                  </span>{" "}
-                  <button title="Take this component from its PLC into the draft" onClick={() => configurator.importComponent(keyOf(c))}>
-                    Add
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
+        <DraftTreeView
+          tree={snapshot.draftTree}
+          selection={selection}
+          selectedNode={snapshot.selectedNode}
+          configurator={configurator}
+          badges={(key) => (
+            <>
+              <MatchBadge match={matches[key] ?? "noPlc"} />
+              <WriteBadge write={snapshot.writes[key]} />
+            </>
+          )}
+        />
       </aside>
 
       <main
