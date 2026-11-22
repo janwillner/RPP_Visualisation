@@ -1,24 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ComponentConfig } from "@rpp/protocol";
-import { Configurator, DRAFT_SOURCE } from "../src/configurator";
+import { Configurator } from "../src/configurator";
+import { drafted, openDraft } from "./sample-components";
 
 /** The components the 3D view gets from the configurator, over every source. */
 const shown = (c: Configurator): ComponentConfig[] => c.frame().flatMap((s) => s.config?.components ?? []);
 
 describe("Configurator", () => {
-  it("places a component from the palette where it is dropped, on the 10 mm grid", () => {
-    const c = new Configurator();
-    c.add("conveyor", { x: 1234.4, y: -56 });
-
-    const [conveyor] = shown(c);
-    expect(conveyor).toMatchObject({ type: "conveyor", id: 1, sourceId: DRAFT_SOURCE, name: "Conveyor 1" });
-    expect(conveyor!.pose).toMatchObject({ x: 1230, y: -60, rx: 0, ry: 0, rz: 0 });
-    expect(c.frame()).toHaveLength(1);
-  });
-
   it("changes any value of a component, e.g. a conveyor's length or the rotation of its pose", () => {
-    const c = new Configurator();
-    c.add("conveyor", { x: 0, y: 0 });
+    const c = openDraft(new Configurator(), drafted("conveyor", 1));
     const key = c.getSnapshot().selection!;
 
     c.set(key, ["length"], 3500);
@@ -28,31 +18,30 @@ describe("Configurator", () => {
   });
 
   it("undoes and redoes every edit; a new edit drops what could be redone", () => {
-    const c = new Configurator();
-    c.add("conveyor", { x: 0, y: 0 });
+    const c = openDraft(new Configurator(), drafted("conveyor", 1));
     const key = c.getSnapshot().selection!;
     c.set(key, ["length"], 3500);
+    c.set(key, ["width"], 600);
 
     c.undo();
-    expect(shown(c)[0]).toMatchObject({ length: 2000 });
+    expect(shown(c)[0]).toMatchObject({ length: 3500, width: 400 });
     c.undo();
-    expect(shown(c)).toEqual([]);
+    expect(shown(c)[0]).toMatchObject({ length: 2000, width: 400 });
     expect(c.getSnapshot()).toMatchObject({ canUndo: false, canRedo: true });
 
     c.redo();
     c.redo();
-    expect(shown(c)[0]).toMatchObject({ length: 3500 });
+    expect(shown(c)[0]).toMatchObject({ length: 3500, width: 600 });
     expect(c.getSnapshot().canRedo).toBe(false);
 
     c.undo();
-    c.set(key, ["width"], 600);
+    c.set(key, ["pose", "rz"], 90);
     expect(c.getSnapshot().canRedo).toBe(false);
-    expect(shown(c)[0]).toMatchObject({ length: 2000, width: 600 });
+    expect(shown(c)[0]).toMatchObject({ length: 3500, width: 400, pose: { rz: 90 } });
   });
 
   it("moves a component along the floor on the grid while it is dragged; one undo puts it back", () => {
-    const c = new Configurator();
-    c.add("delta", { x: 1000, y: 500 });
+    const c = openDraft(new Configurator(), drafted("delta", 1, { x: 1000, y: 500 }));
     const key = c.getSnapshot().selection!;
 
     c.beginGesture();
@@ -66,43 +55,35 @@ describe("Configurator", () => {
   });
 
   it("puts a component caught by a snap point exactly on it, off the grid", () => {
-    const c = new Configurator();
-    c.add("delta", { x: 0, y: 0 });
+    const c = openDraft(new Configurator(), drafted("delta", 1));
     c.moveTo(c.getSnapshot().selection!, { x: 2003.4, y: -201.7 }, { onGrid: false });
     expect(shown(c)[0]!.pose).toMatchObject({ x: 2003.4, y: -201.7 });
   });
 
   it("leaves no undo step and stays saved for a change that changes nothing", () => {
-    const c = new Configurator();
-    c.add("conveyor", { x: 0, y: 0 });
+    const c = openDraft(new Configurator(), drafted("conveyor", 1));
     const key = c.getSnapshot().selection!;
-    c.save();
 
     c.set(key, ["length"], 2000);
     c.moveTo(key, { x: 3, y: -2 });
     expect(c.getSnapshot()).toMatchObject({ saved: true });
-    c.undo();
-    expect(shown(c)).toEqual([]);
+    expect(c.getSnapshot().canUndo).toBe(false);
   });
 
   it("leaves no undo step for a drag that ends where it started", () => {
-    const c = new Configurator();
-    c.add("conveyor", { x: 0, y: 0 });
+    const c = openDraft(new Configurator(), drafted("conveyor", 1));
     const key = c.getSnapshot().selection!;
-    c.save();
 
     c.beginGesture();
     c.moveTo(key, { x: 500, y: 0 });
     c.moveTo(key, { x: 0, y: 0 });
     c.endGesture();
     expect(c.getSnapshot()).toMatchObject({ saved: true });
-    c.undo();
-    expect(shown(c)).toEqual([]);
+    expect(c.getSnapshot().canUndo).toBe(false);
   });
 
   it("turns a component by 90° about its vertical axis, within 0° to 360°", () => {
-    const c = new Configurator();
-    c.add("conveyor", { x: 0, y: 0 });
+    const c = openDraft(new Configurator(), drafted("conveyor", 1));
     const key = c.getSnapshot().selection!;
 
     c.rotate(key, -90);
@@ -113,9 +94,7 @@ describe("Configurator", () => {
   });
 
   it("removes a component and drops its selection", () => {
-    const c = new Configurator();
-    c.add("conveyor", { x: 0, y: 0 });
-    c.add("delta", { x: 0, y: 0 });
+    const c = openDraft(new Configurator(), drafted("conveyor", 1), drafted("delta", 2));
     const delta = c.getSnapshot().selection!;
 
     c.remove(delta);
@@ -124,8 +103,7 @@ describe("Configurator", () => {
   });
 
   it("keeps a component selected when its manifest id or source changes, and draws it in its new source", () => {
-    const c = new Configurator();
-    c.add("conveyor", { x: 0, y: 0 });
+    const c = openDraft(new Configurator(), drafted("conveyor", 1));
 
     c.set(c.getSnapshot().selection!, ["id"], 7);
     c.set(c.getSnapshot().selection!, ["sourceId"], "ads:5.1.2.3.1.1:851");
@@ -136,9 +114,7 @@ describe("Configurator", () => {
   });
 
   it("flags a manifest id used twice in one source, or one that is no positive whole number, as an error", () => {
-    const c = new Configurator();
-    c.add("conveyor", { x: 0, y: 0 });
-    c.add("delta", { x: 0, y: 0 });
+    const c = openDraft(new Configurator(), drafted("conveyor", 1), drafted("delta", 2));
     expect(c.getSnapshot().issues).toEqual([]);
 
     c.set("draft#2", ["id"], 1);
@@ -157,9 +133,7 @@ describe("Configurator", () => {
   });
 
   it("flags a zone on a conveyor its source does not have as an error, e.g. after the conveyor's id changed", () => {
-    const c = new Configurator();
-    c.add("conveyor", { x: 0, y: 0 });
-    c.add("delta", { x: 0, y: 0 });
+    const c = openDraft(new Configurator(), drafted("conveyor", 1), drafted("delta", 2));
     const zone = { conveyorId: 1, start: 100, end: 600, allocationOffset: 0, ccsOffset: 100, startY: 0, endY: 0 };
     c.set("draft#2", ["zones"], [zone]);
     expect(c.getSnapshot().issues).toEqual([]);
@@ -173,9 +147,7 @@ describe("Configurator", () => {
   describe("zones", () => {
     /** A conveyor (draft#1, 2000 mm) and a Delta (draft#2) over it. */
     const line = () => {
-      const c = new Configurator();
-      c.add("conveyor", { x: 0, y: 0 });
-      c.add("delta", { x: 1000, y: 0 });
+      const c = openDraft(new Configurator(), drafted("conveyor", 1), drafted("delta", 2, { x: 1000, y: 0 }));
       return c;
     };
     const zonesOf = (c: Configurator, key: string) =>
@@ -257,8 +229,7 @@ describe("Configurator", () => {
 
   describe("product types", () => {
     it("adds product types to a conveyor with the next free number, a 120 × 80 × 40 mm box to start from", () => {
-      const c = new Configurator();
-      c.add("conveyor", { x: 0, y: 0 });
+      const c = openDraft(new Configurator(), drafted("conveyor", 1));
       c.addProductType("draft#1");
       c.addProductType("draft#1");
       c.set("draft#1", ["productTypes", "1", "shape"], "cylinder");
@@ -272,9 +243,7 @@ describe("Configurator", () => {
     });
 
     it("shows one product of each type on its belt, 100 mm apart from the belt start on", () => {
-      const c = new Configurator();
-      c.add("conveyor", { x: 0, y: 0 });
-      c.add("delta", { x: 0, y: 0 });
+      const c = openDraft(new Configurator(), drafted("conveyor", 1), drafted("delta", 2));
       c.addProductType("draft#1");
       c.addProductType("draft#1");
       c.set("draft#1", ["productTypes", "0", "length"], 200);
@@ -293,8 +262,7 @@ describe("Configurator", () => {
     });
 
     it("shows only the preview products that fit on the belt, lying on its surface also with a raised origin", () => {
-      const c = new Configurator();
-      c.add("conveyor", { x: 0, y: 0 });
+      const c = openDraft(new Configurator(), drafted("conveyor", 1));
       c.set("draft#1", ["originShift"], { x: 0, y: 0, z: 30 });
       for (let i = 0; i < 4; i++) c.addProductType("draft#1");
       for (let i = 0; i < 4; i++) c.set("draft#1", ["productTypes", String(i), "length"], 500);
@@ -309,8 +277,7 @@ describe("Configurator", () => {
     });
 
     it("flags a product type number used twice on a conveyor as an error", () => {
-      const c = new Configurator();
-      c.add("conveyor", { x: 0, y: 0 });
+      const c = openDraft(new Configurator(), drafted("conveyor", 1));
       c.addProductType("draft#1");
       c.addProductType("draft#1");
       c.set("draft#1", ["productTypes", "1", "id"], 1);
@@ -321,9 +288,7 @@ describe("Configurator", () => {
   });
 
   it("warns of a zone or CCS past the belt start or end, as the visualisation does", () => {
-    const c = new Configurator();
-    c.add("conveyor", { x: 0, y: 0 });
-    c.add("delta", { x: 0, y: 0 });
+    const c = openDraft(new Configurator(), drafted("conveyor", 1), drafted("delta", 2));
     c.addZone("draft#2", "draft#1");
     c.set("draft#2", ["zones", "0", "end"], 2100);
     c.set("draft#2", ["zones", "0", "ccsOffset"], -10);
@@ -335,8 +300,7 @@ describe("Configurator", () => {
 
   describe("draft files", () => {
     it("saves the draft as a file named after the machine and opens it again", () => {
-      const c = new Configurator();
-      c.add("conveyor", { x: 0, y: 0 });
+      const c = openDraft(new Configurator(), drafted("conveyor", 1));
       c.set(c.getSnapshot().selection!, ["length"], 4200);
       c.rename("Line 4");
       expect(c.getSnapshot().saved).toBe(false);
@@ -353,8 +317,7 @@ describe("Configurator", () => {
     });
 
     it("refuses a file that is no draft and keeps what is shown", () => {
-      const c = new Configurator();
-      c.add("conveyor", { x: 0, y: 0 });
+      const c = openDraft(new Configurator(), drafted("conveyor", 1));
 
       c.open('{"format":"rpp-recording"}');
       expect(c.getSnapshot().notice).toMatch(/not a draft/i);
@@ -376,8 +339,8 @@ describe("Configurator", () => {
 
     it("discards unsaved changes for a new or opened draft only when allowed to", () => {
       let allow = false;
-      const c = new Configurator(() => allow);
-      c.add("conveyor", { x: 0, y: 0 });
+      const c = openDraft(new Configurator(() => allow), drafted("conveyor", 1));
+      c.set("draft#1", ["length"], 3000);
       const file = new Configurator().save();
 
       c.newDraft();

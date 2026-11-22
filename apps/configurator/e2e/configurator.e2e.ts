@@ -1,5 +1,13 @@
 import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { expect, test, type Locator, type Page } from "@playwright/test";
+
+/** Opens a draft of `e2e/drafts` in a new configurator; gives the component list. */
+async function openDraft(page: Page, name: "line" | "parts"): Promise<Locator> {
+  await page.goto("/configurator");
+  await page.getByLabel("Open a draft file").setInputFiles(fileURLToPath(new URL(`drafts/${name}.rpp-draft.json`, import.meta.url)));
+  return page.locator("aside.panel.left .components");
+}
 
 /** The draft's problems, listed above the status bar once its count is clicked. */
 async function problems(page: Page) {
@@ -46,19 +54,14 @@ test.beforeEach(({ page }) => {
   });
 });
 
-test("configurator: places components, edits a value, undoes it, saves the draft and opens it again", async ({ page }) => {
-  await page.goto("/configurator");
+test("configurator: opens a draft, edits a value, undoes it, saves the draft and opens it again", async ({ page }) => {
+  const list = await openDraft(page, "line");
   await expect(page.locator(".toolbar .title")).toHaveText("RPP Configurator");
   await expect(page.locator("main.viewport canvas")).toBeVisible();
-
-  const palette = page.locator(".palette");
-  await palette.getByRole("button", { name: "Conveyor" }).click();
-  await palette.getByRole("button", { name: "Delta" }).click();
-  const list = page.locator("aside.panel.left .components");
   await expect(list).toContainText("Conveyor 1");
   await expect(list).toContainText("Delta 2");
 
-  // The new Delta is selected; select the conveyor and lengthen it.
+  // Lengthen the conveyor.
   await list.getByRole("button", { name: /Conveyor 1/ }).click();
   const properties = page.locator("aside.panel.right");
   await expect(properties.locator("h3")).toHaveText("Conveyor 1");
@@ -97,10 +100,8 @@ test("configurator: places components, edits a value, undoes it, saves the draft
 });
 
 test("configurator: gives a Delta a zone on the conveyor and the conveyor a product type, and warns of a zone past the belt", async ({ page }) => {
-  await page.goto("/configurator");
-  const palette = page.locator(".palette");
-  await palette.getByRole("button", { name: "Conveyor" }).click();
-  await palette.getByRole("button", { name: "Delta" }).click();
+  const list = await openDraft(page, "line");
+  await list.getByRole("button", { name: /Delta 2/ }).click();
   const properties = page.locator("aside.panel.right");
   await expect(properties.locator("h3")).toHaveText("Delta 2");
 
@@ -113,7 +114,7 @@ test("configurator: gives a Delta a zone on the conveyor and the conveyor a prod
   await end.press("Enter");
   await expect(await problems(page)).toContainText("reaches past the belt");
 
-  await page.locator("aside.panel.left .components").getByRole("button", { name: /Conveyor 1/ }).click();
+  await list.getByRole("button", { name: /Conveyor 1/ }).click();
   await properties.getByRole("button", { name: "Add product type" }).click();
   const type = properties.getByRole("group", { name: "Product type 1" });
   await expect(type.getByLabel("Length", { exact: true })).toHaveValue("120");
@@ -170,11 +171,10 @@ test("configurator: writes a changed zone to the demo PLC, which takes it over a
 });
 
 test("configurator: edits an XTS loop's modules, a station's bodies and a Cartesian robot's limit area", async ({ page }) => {
-  await page.goto("/configurator");
-  const palette = page.locator(".palette");
+  const list = await openDraft(page, "parts");
   const properties = page.locator("aside.panel.right");
 
-  await palette.getByRole("button", { name: "XTS loop" }).click();
+  await list.getByRole("button", { name: /XTS loop 1/ }).click();
   await expect(properties.locator("h3")).toHaveText("XTS loop 1");
   await expect(properties.getByRole("group", { name: "Module 12" })).toBeVisible();
   await properties.getByLabel("Kind of the new module").selectOption("curveRight");
@@ -184,12 +184,12 @@ test("configurator: edits an XTS loop's modules, a station's bodies and a Cartes
   await properties.getByRole("group", { name: "Module 13" }).getByRole("button", { name: /Remove/ }).click();
   await expect(page.getByText("does not end where it starts")).toHaveCount(0);
 
-  await palette.getByRole("button", { name: "Station" }).click();
+  await list.getByRole("button", { name: /Station 2/ }).click();
   await properties.getByRole("button", { name: "Add body" }).click();
   const body = properties.getByRole("group", { name: "Body 3" });
   await expect(body.getByLabel("Height", { exact: true })).toHaveValue("100");
 
-  await palette.getByRole("button", { name: "Cartesian" }).click();
+  await list.getByRole("button", { name: /Cartesian 3/ }).click();
   await properties.getByRole("button", { name: "Add limit area" }).click();
   const area = properties.getByRole("group", { name: "Limit area" });
   await expect(area.getByLabel("X max", { exact: true })).toHaveValue("1200");
@@ -218,8 +218,8 @@ test("configurator: writes an XTS gantry's track to the demo PLC", async ({ page
 });
 
 test("configurator: lays out a Delta's gripper fingers in the top view of its flange", async ({ page }) => {
-  await page.goto("/configurator");
-  await page.locator(".palette").getByRole("button", { name: "Delta" }).click();
+  const list = await openDraft(page, "line");
+  await list.getByRole("button", { name: /Delta 2/ }).click();
   const properties = page.locator("aside.panel.right");
   await properties.getByRole("button", { name: "Add finger" }).click();
   await properties.getByRole("button", { name: "Add finger" }).click();
@@ -261,7 +261,7 @@ test("configurator: closes and resizes its side panels, and keeps them across a 
   await expect(left).toBeVisible();
   await expect(right).toBeVisible();
 
-  await page.getByRole("button", { name: "Hide palette and components" }).click();
+  await page.getByRole("button", { name: "Hide components" }).click();
   await expect(left).toBeHidden();
   const before = (await right.boundingBox())!.width;
   const edge = (await page.getByLabel("Resize properties").boundingBox())!;
@@ -275,7 +275,7 @@ test("configurator: closes and resizes its side panels, and keeps them across a 
   await page.reload();
   await expect(left).toBeHidden();
   expect(Math.abs((await right.boundingBox())!.width - widened)).toBeLessThan(2);
-  await page.getByRole("button", { name: "Show palette and components" }).click();
+  await page.getByRole("button", { name: "Show components" }).click();
   await expect(left).toBeVisible();
 });
 

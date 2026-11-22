@@ -1,0 +1,65 @@
+{
+  "format": "rpp-draft",
+  "formatVersion": 1,
+  "protocolVersion": 22,
+  "name": "Machine",
+  "components": [
+    {
+      "type": "conveyor",
+      "id": 1,
+      "sourceId": "draft",
+      "name": "Conveyor 1",
+      "originShift": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "pose": {
+        "x": 0,
+        "y": 0,
+        "z": 800,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0
+      },
+      "length": 2000,
+      "width": 400,
+      "productTypes": [],
+      "body": true
+    },
+    {
+      "type": "delta",
+      "id": 2,
+      "sourceId": "draft",
+      "name": "Delta 2",
+      "originShift": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "zones": [],
+      "fingers": [],
+      "limitArea": null,
+      "tcpLimitArea": null,
+      "pose": {
+        "x": 1000,
+        "y": 0,
+        "z": 1900,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0
+      },
+      "baseRadius": 200,
+      "effectorRadius": 50,
+      "upperArmLength": 400,
+      "lowerArmLength": 950,
+      "workingArea": {
+        "radius": 700,
+        "zMin": -1300,
+        "zMax": -700,
+        "coneHeight": 200,
+        "coneBottomRadius": 400
+      }
+    }
+  ]
+}

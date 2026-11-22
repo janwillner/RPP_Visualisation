@@ -1,7 +1,7 @@
 import { PROTOCOL_VERSION, type ComponentConfig, type ComponentState } from "@rpp/protocol";
 import { FakeGateway } from "@rpp/machine-view/testing";
-import { defaultComponent } from "../src/component-defaults";
 import { Configurator } from "../src/configurator";
+import { sampleComponent } from "./sample-components";
 
 export const A = "ads:5.1.2.3.1.1:851";
 
@@ -16,9 +16,9 @@ export class FakeLive extends FakeGateway {
 }
 
 export const conveyor = (id: number, sourceId = A, x = 0) =>
-  defaultComponent("conveyor", { id, sourceId, name: `Belt ${id}` }, { x, y: 0 });
+  sampleComponent("conveyor", { id, sourceId, name: `Belt ${id}` }, { x, y: 0 });
 export const delta = (id: number, sourceId = A, x = 1000) =>
-  defaultComponent("delta", { id, sourceId, name: `Delta ${id}` }, { x, y: 0 });
+  sampleComponent("delta", { id, sourceId, name: `Delta ${id}` }, { x, y: 0 });
 
 /** A configurator following `live`, started. */
 export function connected(live: FakeLive): Configurator {

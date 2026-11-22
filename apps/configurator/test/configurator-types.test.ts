@@ -8,26 +8,25 @@ import {
   type XtsGantryConfig,
 } from "@rpp/protocol";
 import { Configurator } from "../src/configurator";
-import { PALETTE_TYPES } from "../src/component-defaults";
 import { properties } from "../src/property-fields";
 import { A, connected, FakeLive } from "./fake-live";
+import { drafted, openDraft, SAMPLE_TYPES, type SampleType } from "./sample-components";
 
 /** The components the 3D view gets from the configurator, over every source. */
 const shown = (c: Configurator): ComponentConfig[] => c.frame().flatMap((s) => s.config?.components ?? []);
 
-/** A configurator with one component of `type` placed and selected. */
-function placed(type: (typeof PALETTE_TYPES)[number]) {
-  const c = new Configurator();
-  c.add(type, { x: 1000, y: 500 });
+/** A configurator with a draft of one component of `type`, selected. */
+function placed(type: SampleType) {
+  const c = openDraft(new Configurator(), drafted(type, 1, { x: 1000, y: 500 }));
   const key = c.getSnapshot().selection!;
   const component = () => c.getSnapshot().draft.components.find((x) => `${x.sourceId}#${x.id}` === key)!;
   return { c, key, component };
 }
 
 describe("Configurator: every component type (#24)", () => {
-  it("offers every component type of the protocol in its palette, each placed as a valid configuration", () => {
-    expect([...PALETTE_TYPES].sort()).toEqual(Object.keys(COMPONENT_SCHEMAS).sort());
-    for (const type of PALETTE_TYPES) {
+  it("draws a draft of every component type of the protocol, each a valid configuration without problems", () => {
+    expect([...SAMPLE_TYPES].sort()).toEqual(Object.keys(COMPONENT_SCHEMAS).sort());
+    for (const type of SAMPLE_TYPES) {
       const { c, component } = placed(type);
       expect(COMPONENT_SCHEMAS[type].config.safeParse(component()).success, type).toBe(true);
       expect(shown(c)[0]).toMatchObject({ type, pose: { x: 1000, y: 500 } });
@@ -37,7 +36,7 @@ describe("Configurator: every component type (#24)", () => {
 
   it("writes the parameter set of every type to a PLC that has the same components", () => {
     const live = new FakeLive();
-    const components = PALETTE_TYPES.map((type, i) => {
+    const components = SAMPLE_TYPES.map((type, i) => {
       const { component } = placed(type);
       return { ...component(), sourceId: A, id: i + 1 } as ComponentConfig;
     });

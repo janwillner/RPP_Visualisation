@@ -8,7 +8,7 @@ First decide which kind it is (ADR 0007):
 - **Own drawing**: its look follows from logic the visualisation computes (kinematics, movers on a track, a register).
 
 PLC steps go through the TwinCAT MCP tools. The compiler asks for most table entries (`satisfies` over every
-`ComponentType`); a test checks that the configurator's palette offers every type.
+`ComponentType`); a test checks that the configurator's sample components cover every type.
 
 ## Drawn from bodies
 
@@ -52,9 +52,9 @@ PLC steps go through the TwinCAT MCP tools. The compiler asks for most table ent
    through the base's helpers). A body component derives from `_FB_ConfigBodyComponent` and adds only
    `m_ComponentType` and `m_PassOn`. Bump the minor version, export it.
 3. **Gateway**: `plcConfigType` in its `COMPONENTS` entry; discovery, writing and emulation need no code.
-4. **Configurator**: `PALETTE_TYPES`, `PALETTE_LABELS` and `defaultComponent` with assumed hardware
-   (`component-defaults.ts`); a new kind of list needs its `AddEntry` and an add command; an optional area its
-   `defaultArea`; a robot with fingers its rest state (`rest-states.ts`) and the flange frame passed to `addGripper`.
+4. **Configurator**: a sample component for the tests (`test/sample-components.ts`); a new kind of list needs its
+   `AddEntry` and an add command; an optional area its `defaultArea`; a robot with fingers its rest state
+   (`rest-states.ts`) and the flange frame passed to `addGripper`.
 5. **Tests**: the gateway write test (`parameters.test.ts`, `it.each` over the types) and
    `configurator-types.test.ts` for a new editor.
 

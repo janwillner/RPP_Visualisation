@@ -1,19 +1,9 @@
 /* The configurator's own look, after the shared stylesheet of @rpp/machine-view. */
 
-/* The configurator (ADR 0016): palette, component list and problems on the left, properties on the right. */
+/* The configurator (ADR 0016): PLCs, component list and problems on the left, properties on the right. */
 .configurator .panel h3 {
   margin: 12px 0 6px;
   font-size: 13px;
-}
-
-.configurator .palette {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.configurator .palette button {
-  cursor: grab;
 }
 
 /* The draft's problems above the status bar: a click selects the component. */

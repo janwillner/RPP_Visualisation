@@ -1,0 +1,169 @@
+{
+  "format": "rpp-draft",
+  "formatVersion": 1,
+  "protocolVersion": 22,
+  "name": "Machine",
+  "components": [
+    {
+      "type": "xtsLoop",
+      "id": 1,
+      "sourceId": "draft",
+      "name": "XTS loop 1",
+      "originShift": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "zones": [],
+      "fingers": [],
+      "pose": {
+        "x": 0,
+        "y": 0,
+        "z": 960,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0
+      },
+      "modules": [
+        {
+          "kind": "straight",
+          "length": 250
+        },
+        {
+          "kind": "straight",
+          "length": 250
+        },
+        {
+          "kind": "straight",
+          "length": 250
+        },
+        {
+          "kind": "straight",
+          "length": 250
+        },
+        {
+          "kind": "curveLeft",
+          "length": 250
+        },
+        {
+          "kind": "curveLeft",
+          "length": 250
+        },
+        {
+          "kind": "straight",
+          "length": 250
+        },
+        {
+          "kind": "straight",
+          "length": 250
+        },
+        {
+          "kind": "straight",
+          "length": 250
+        },
+        {
+          "kind": "straight",
+          "length": 250
+        },
+        {
+          "kind": "curveLeft",
+          "length": 250
+        },
+        {
+          "kind": "curveLeft",
+          "length": 250
+        }
+      ],
+      "toolOffset": 120,
+      "moverLength": 100,
+      "moverWidth": 60
+    },
+    {
+      "type": "station",
+      "id": 2,
+      "sourceId": "draft",
+      "name": "Station 2",
+      "originShift": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "zones": [],
+      "pose": {
+        "x": 2000,
+        "y": 0,
+        "z": 0,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0
+      },
+      "bodies": [
+        {
+          "shape": "box",
+          "role": "structure",
+          "pose": {
+            "x": 0,
+            "y": -70,
+            "z": 0,
+            "rx": 0,
+            "ry": 0,
+            "rz": 0
+          },
+          "length": 160,
+          "width": 140,
+          "height": 920,
+          "topLength": 0,
+          "topWidth": 0
+        },
+        {
+          "shape": "box",
+          "role": "structure",
+          "pose": {
+            "x": 0,
+            "y": 15,
+            "z": 810,
+            "rx": 0,
+            "ry": 0,
+            "rz": 0
+          },
+          "length": 120,
+          "width": 30,
+          "height": 50,
+          "topLength": 0,
+          "topWidth": 0
+        }
+      ]
+    },
+    {
+      "type": "cartesian",
+      "id": 3,
+      "sourceId": "draft",
+      "name": "Cartesian 3",
+      "originShift": {
+        "x": 0,
+        "y": 0,
+        "z": 0
+      },
+      "zones": [],
+      "fingers": [],
+      "limitArea": null,
+      "tcpLimitArea": null,
+      "pose": {
+        "x": 4000,
+        "y": 0,
+        "z": 1440,
+        "rx": 0,
+        "ry": 0,
+        "rz": 0
+      },
+      "axes": "xyz",
+      "xMin": 0,
+      "xMax": 1200,
+      "yMin": 0,
+      "yMax": 1000,
+      "zMin": -600,
+      "zMax": 0,
+      "railHeight": 800
+    }
+  ]
+}

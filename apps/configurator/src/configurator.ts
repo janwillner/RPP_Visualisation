@@ -11,7 +11,7 @@ import {
   zoneSides,
 } from "@rpp/machine-view";
 import { beltRange, mcsToBelt } from "./belt-coordinates";
-import { defaultArea, defaultComponent, newBody, newFinger, PALETTE_LABELS, XTS_MODULE_LENGTH, type AreaField, type PaletteType } from "./component-defaults";
+import { defaultArea, newBody, newFinger, XTS_MODULE_LENGTH, type AreaField } from "./component-defaults";
 import { applyEdit, keyOf, type Edit } from "./edits";
 import { hardwareHints, reconcile, type Match, type Reconciliation } from "./reconciliation";
 import { validateDraft, type Issue } from "./validation";
@@ -23,9 +23,6 @@ import { parameterSetOf, unwritableHints, wiringHints, writePlan, type WritePlan
  * The configurator (ADR 0016): the draft of a machine being edited, the commands that edit it, undo and redo, and the
  * draft file. The 3D view reads the draft through `frame`, drawn by the same kits as the live machine.
  */
-
-/** The source of components placed offline, until they are given the source of a PLC. */
-export const DRAFT_SOURCE = "draft";
 
 /** The source a PLC's version of changed components is drawn in, faded, beside the draft (ADR 0016). */
 export const ghostSourceId = (sourceId: string) => `${sourceId} (PLC)`;
@@ -243,15 +240,6 @@ export class Configurator {
   getSnapshot = () => this.snapshot;
 
   // Edits.
-
-  /** Adds a component of `type` from the palette at (x, y) on the floor plane, MCS mm, and selects it. */
-  add(type: PaletteType, at: { x: number; y: number }): void {
-    const { components } = this.snapshot.draft;
-    const id = 1 + Math.max(0, ...components.filter((c) => c.sourceId === DRAFT_SOURCE).map((c) => c.id));
-    const name = `${PALETTE_LABELS[type]} ${id}`;
-    const component = defaultComponent(type, { id, sourceId: DRAFT_SOURCE, name }, { x: snap(at.x), y: snap(at.y) });
-    this.edit({ kind: "add", component }, keyOf(component));
-  }
 
   /** Sets one value of a component, found by its path of field names, e.g. `["pose", "rz"]`. */
   set(key: ComponentKey, path: readonly string[], value: unknown): void {
@@ -621,14 +609,14 @@ export class Configurator {
     this.set_({ notice: undefined });
   }
 
-  private edit(edit: Edit, selection = this.snapshot.selection): void {
+  private edit(edit: Edit): void {
     // Within a gesture only its first edit leaves an undo step, the draft from before the gesture.
     if (!this.gesture || this.gesture.start === this.snapshot.draft) {
       this.undoStack.push(this.snapshot.draft);
       if (this.undoStack.length > UNDO_LIMIT) this.undoStack.shift();
       this.redoStack.length = 0;
     }
-    this.show(applyEdit(this.snapshot.draft, edit), selection);
+    this.show(applyEdit(this.snapshot.draft, edit));
   }
 
   /** Shows `draft`; a selection whose component it does not hold (removed, undone) is dropped. */

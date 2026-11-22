@@ -17,15 +17,16 @@ Edits a draft of a machine offline or against its PLCs, and writes parameter set
 - **Problems** (`validation.ts`, `validateDraft`): errors such as an id used twice, a zone on a conveyor neither the
   draft nor its PLC has, a track module without a length, a finger without diameter or height; warnings such as
   machine-view's `zoneWarnings` or an XTS loop that does not close. Counted in the status bar; a click selects.
-- **Adding**: the palette (`component-defaults.ts`: every type with assumed hardware) places by click or drop on a
-  10 mm grid. Zones on a conveyor of the same source (`addZone`, dragged edge by edge with `dragZone`, belt
-  coordinates by `belt-coordinates.ts`), product types (`addProductType`), track modules (`addModule`, 250 mm),
-  bodies (`addBody`), areas (`addArea` from `defaultArea`, `removeArea`), list entries removed by `removeListEntry`.
+- **Adding**: components only from the PLCs (`importSource`, `importComponent`) or a saved draft; no palette
+  (ADR 0024). Within a component: zones on a conveyor of the same source (`addZone`, dragged edge by edge with
+  `dragZone`, belt coordinates by `belt-coordinates.ts`), product types (`addProductType`), track modules
+  (`addModule`, 250 mm), bodies (`addBody`), areas (`addArea` from `defaultArea`, `removeArea`), list entries removed
+  by `removeListEntry`; new bodies, fingers and areas start from `component-defaults.ts`.
 - **Gripper**: laid out in a top view of the flange (`FingerLayout.tsx`; `addFinger`, `moveFinger` on a 5 mm grid, one
   undo step per drag); a draft robot with fingers is drawn at rest (`rest-states.ts`, ADR 0018).
 - **Drawing**: `frame()` gives the draft as `SceneSource`s (a preview product per product type, rest states), drawn by
-  the visualisation's kits. `EditControls.tsx` (children of `SceneView`) holds the move and zone handles and the floor
-  picker; the move handle snaps to other components' snap points.
+  the visualisation's kits. `EditControls.tsx` (children of `SceneView`) holds the move and zone handles; the move
+  handle snaps to other components' snap points.
 - **Properties** come from the config schema (`property-fields.ts`): values, nested objects, list entries as groups,
   optional areas named in `optionals`, a zone's conveyor chosen from the source's conveyors.
 
