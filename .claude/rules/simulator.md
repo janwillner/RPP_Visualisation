@@ -8,7 +8,7 @@ paths:
 Sets a machine's recipe and sends Start / Stop / Reset; the sequence control stays in the PLC application, and the
 Simulator writes only while the machine reports simulation mode. Layout: 3D view and component tree as in the
 visualisation; on the right the recipe form above the inspector (metrics while nothing is selected); at the top the
-source choice, run state, the application's answer to a command and a link to the visualisation; the commands as
+source choice, run state and the application's answer to a command; the commands as
 icon buttons bottom right in the 3D view (`ActionBar`); in the status bar the problems and the machine messages with
 the component faults. View state:
 `useMachineView("rpp.simulator.view", LAYERS)`. Writing to the PLC: see the parameter-sets rule.

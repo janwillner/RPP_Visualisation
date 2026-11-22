@@ -36,9 +36,11 @@ Edits a draft of a machine offline or against its PLCs, and writes parameter set
 - Imports a source (`importSource`, one undo step) or a component only the PLC has (`importComponent`).
 - Reconciles the draft with the PLCs (`reconciliation.ts`: matched / changed / draftOnly / typeMismatch / noPlc,
   `plcOnly`); draws matched components live and the PLC's version of changed ones as a faded ghost (`ghostSourceId`).
-- Shows each PLC's topology read-only (`topology.ts`, `TopologyPanel.tsx`, ADR 0023): `topologies` (the nodes in
-  use as a tree from the root node, the others as `notInUse`), `selectNode` selects a node and the first of its
-  components in the draft; selecting a component selects its node (`selectedNode`).
+- Lists the components along each PLC's topology, read-only (ADR 0023; `topology.ts` gives `topologies`,
+  `draft-tree.ts` the `draftTree`, `ComponentsPanel.tsx` draws it): per PLC its nodes in use from the root node with
+  their components (a node of one component is one row), the nodes not in use, flat without a topology; then the
+  components no node stands for. Those only in the PLC are dimmed, with "Add". Nodes fold, remembered per device.
+  `selectNode` selects a node and the first of its components in the draft; selecting a component selects its node.
 - Hints where the draft assumed other hardware than its PLC has (`HARDWARE_FIELDS`, `hardwareHints`;
   `adoptPlcHardware` takes the PLC's).
 - **Writing** (`writing.ts`): `writePlan(sourceId)` lists the changed parameter values (`leafChanges` against the
